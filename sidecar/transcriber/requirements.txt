@@ -1,0 +1,5 @@
+# OneScribe transcriber sidecar — pin theo version đã verify (Python 3.14, 2026-06-13).
+# ctranslate2/tokenizers/onnxruntime/numpy kéo theo bởi faster-whisper.
+faster-whisper==1.2.1
+huggingface_hub==1.19.0
+av==17.1.0

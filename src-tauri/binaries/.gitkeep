@@ -1,0 +1,8 @@
+# Thư mục chứa sidecar binaries (KHÔNG commit vào git).
+#
+# Cần tải thủ công trước khi build:
+#   - ffmpeg-<target>(.exe)   : bản ffmpeg LGPL từ BtbN (https://github.com/BtbN/FFmpeg-Builds)
+#   - ffprobe-<target>(.exe)  : đi kèm bản build trên
+#   - transcriber-<target>(.exe) : Python sidecar faster-whisper (PyInstaller), xem sidecar/transcriber/
+#
+# Với Windows target hiện tại: ffmpeg-x86_64-pc-windows-msvc.exe, ffprobe-x86_64-pc-windows-msvc.exe

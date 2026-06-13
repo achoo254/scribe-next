@@ -1,0 +1,21 @@
+/* OneScribe global styles — token-only (iNET ViUI). Không hex cứng, không !important. */
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  font-family: var(--viui-font-family);
+  font-size: var(--viui-font-size-base);
+  /* màu nền/chữ do Vuetify theme inetOneDark quản (v-application) */
+}
+
+#app {
+  min-height: 100vh;
+}

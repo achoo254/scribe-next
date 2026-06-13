@@ -1,0 +1,49 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Dependencies
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Rust / Cargo (Tauri backend)
+src-tauri/target/
+
+# Tauri generated schemas
+src-tauri/gen/schemas/
+
+# Sidecar binaries (ffmpeg/ffprobe LGPL từ BtbN — tải riêng, xem README)
+src-tauri/binaries/*
+!src-tauri/binaries/.gitkeep
+
+# Python sidecar (transcriber) — venv & build artifacts tái tạo được
+sidecar/transcriber/.venv/
+sidecar/transcriber/build/
+sidecar/transcriber/dist/
+sidecar/transcriber/*.spec
+__pycache__/
+*.pyc
+
+# Local agent memory / tooling
+.claude/agent-memory/
+
+# OS / misc
+Thumbs.db
