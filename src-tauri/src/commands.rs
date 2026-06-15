@@ -15,12 +15,27 @@ pub fn list_devices() -> Vec<DeviceInfo> {
     capture::list_input_devices()
 }
 
+/// Liệt kê output device (render) để ghi "tiếng hệ thống" (loopback). Non-Windows → rỗng.
+#[tauri::command]
+pub fn list_output_devices() -> Vec<DeviceInfo> {
+    #[cfg(windows)]
+    {
+        crate::audio::loopback::list_output_devices()
+    }
+    #[cfg(not(windows))]
+    {
+        Vec::new()
+    }
+}
+
 /// Bắt đầu ghi: tính segment_time từ đơn vị (phút | MB) rồi spawn pipeline.
+/// `source` = "mic" (cpal) | "system" (loopback output, Windows). `device` = tên thiết bị theo nguồn.
 #[tauri::command]
 pub fn start_recording(
     app: AppHandle,
     recorder: State<'_, Recorder>,
-    mic: Option<String>,
+    source: String,
+    device: Option<String>,
     out_dir: String,
     format: String,
     split_value: f64,
@@ -30,7 +45,7 @@ pub fn start_recording(
     if seg < 1.0 {
         return Err("Độ dài mỗi đoạn quá nhỏ (< 1 giây)".into());
     }
-    recorder.start(&app, mic, out_dir, format, seg)
+    recorder.start(&app, source, device, out_dir, format, seg)
 }
 
 #[tauri::command]

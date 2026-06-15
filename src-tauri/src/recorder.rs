@@ -1,7 +1,7 @@
 // Mode A state machine + điều phối: cpal stream → ffmpeg stdin (segment muxer).
 // Stream (!Send) + ffmpeg spawn + writer loop đều nằm TRONG record thread.
 // Stop sạch: drop(stream) ngừng capture, drop(child) đóng stdin → ffmpeg nhận EOF → finalize.
-use crate::audio::{capture, encoder, meter};
+use crate::audio::{encoder, meter, source};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -38,7 +38,8 @@ impl Recorder {
     pub fn start(
         &self,
         app: &AppHandle,
-        mic: Option<String>,
+        source: String,
+        device: Option<String>,
         out_dir: String,
         format: String,
         seg_secs: f64,
@@ -70,7 +71,7 @@ impl Recorder {
         let (r, p, d) = (running.clone(), paused.clone(), done.clone());
 
         let handle = std::thread::spawn(move || {
-            record_loop(app, mic, dir, format, ext, prefix, seg_secs, r, p, d);
+            record_loop(app, source, device, dir, format, ext, prefix, seg_secs, r, p, d);
         });
 
         *guard = Some(Session {
@@ -111,7 +112,8 @@ impl Recorder {
 #[allow(clippy::too_many_arguments)]
 fn record_loop(
     app: AppHandle,
-    mic: Option<String>,
+    source: String,
+    device: Option<String>,
     dir: PathBuf,
     format: String,
     ext: &'static str,
@@ -128,10 +130,10 @@ fn record_loop(
     };
     let pattern = dir.join(format!("{prefix}_%03d.{ext}")).to_string_lossy().to_string();
 
-    // 1) Build cpal stream (Stream !Send — sống trên thread này). Lỗi mic → dừng loop.
+    // 1) Build nguồn ghi (mic cpal | tiếng hệ thống loopback). Lỗi mở thiết bị → dừng loop.
     let (tx, rx) = mpsc::channel::<Vec<i16>>();
     let (app_err, run_err) = (app.clone(), running.clone());
-    let (stream, cfg) = match capture::build_stream(mic.as_deref(), tx, move |e| {
+    let (capture, cfg) = match source::build_capture(&source, device.as_deref(), tx, move |e| {
         run_err.store(false, Ordering::SeqCst);
         let _ = app_err.emit("rec_error", e);
     }) {
@@ -154,8 +156,12 @@ fn record_loop(
         }
     };
 
-    use cpal::traits::StreamTrait;
-    let _ = stream.play();
+    if let Err(e) = capture.play() {
+        let _ = app.emit("rec_error", e);
+        drop(child);
+        finish(&app, &dir, &prefix);
+        return;
+    }
     emit_state(&app, "recording");
 
     // 3) Writer loop: drain event ffmpeg + feed stdin (trừ khi paused) + meter + quét segment.
@@ -166,7 +172,10 @@ fn record_loop(
         drain_events(&app, &mut events, &running);
         match rx.recv_timeout(Duration::from_millis(100)) {
             Ok(buf) => {
-                if !paused.load(Ordering::SeqCst) {
+                // Tạm dừng → không feed ffmpeg (file không tăng) và meter về 0 (báo rõ đang dừng,
+                // tránh hiểu nhầm "vẫn ghi" khi nguồn loopback vẫn phát tiếng hệ thống).
+                let active = !paused.load(Ordering::SeqCst);
+                if active {
                     let mut bytes = Vec::with_capacity(buf.len() * 2);
                     for s in &buf {
                         bytes.extend_from_slice(&s.to_le_bytes());
@@ -176,7 +185,8 @@ fn record_loop(
                     }
                 }
                 if last_level.elapsed() >= Duration::from_millis(33) {
-                    let _ = app.emit("level", meter::compute(&buf));
+                    let lvl = if active { meter::compute(&buf) } else { meter::compute(&[]) };
+                    let _ = app.emit("level", lvl);
                     last_level = Instant::now();
                 }
             }
@@ -190,7 +200,7 @@ fn record_loop(
     }
 
     // 4) Stop sạch: ngừng capture, đóng stdin (EOF) → chờ ffmpeg finalize.
-    drop(stream);
+    capture.stop();
     drop(child);
     loop {
         match events.blocking_recv() {

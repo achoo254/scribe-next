@@ -19,7 +19,8 @@ export interface Level {
 export type RecState = "idle" | "recording" | "paused";
 
 export interface StartOpts {
-  mic: string | null;
+  source: string; // "mic" | "system"
+  device: string | null; // tên thiết bị theo nguồn
   outDir: string;
   format: string;
   splitValue: number;
@@ -27,7 +28,8 @@ export interface StartOpts {
 }
 
 export function useRecorder() {
-  const devices = ref<DeviceInfo[]>([]);
+  const devices = ref<DeviceInfo[]>([]); // mic (input)
+  const outputDevices = ref<DeviceInfo[]>([]); // output (render) — ghi tiếng hệ thống
   const state = ref<RecState>("idle");
   const level = ref<Level>({ rms: 0, peak: 0 });
   const segments = ref<SegmentFile[]>([]);
@@ -40,6 +42,8 @@ export function useRecorder() {
     } catch (e) {
       error.value = String(e);
     }
+    // Output device (loopback) — rỗng trên non-Windows.
+    outputDevices.value = await invoke<DeviceInfo[]>("list_output_devices").catch(() => []);
     unlisteners.push(
       await listen<Level>("level", (e) => (level.value = e.payload)),
       await listen<SegmentFile>("segment_created", (e) => {
@@ -61,7 +65,8 @@ export function useRecorder() {
     segments.value = [];
     level.value = { rms: 0, peak: 0 };
     await invoke("start_recording", {
-      mic: opts.mic,
+      source: opts.source,
+      device: opts.device,
       outDir: opts.outDir,
       format: opts.format,
       splitValue: opts.splitValue,
@@ -75,5 +80,5 @@ export function useRecorder() {
 
   onUnmounted(() => unlisteners.forEach((u) => u()));
 
-  return { devices, state, level, segments, error, init, pickFolder, start, pause, resume, stop };
+  return { devices, outputDevices, state, level, segments, error, init, pickFolder, start, pause, resume, stop };
 }

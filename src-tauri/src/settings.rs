@@ -13,6 +13,15 @@ pub struct AppSettings {
     pub format: String,      // "mp3" (mặc định) | "m4a"
     pub split_value: f64,    // mặc định 10
     pub split_unit: String,  // "minutes" | "megabytes"
+    // Nguồn ghi + thiết bị output (serde default → tương thích settings cũ thiếu field).
+    #[serde(default = "default_source")]
+    pub source: String, // "mic" | "system"
+    #[serde(default)]
+    pub output_id: Option<String>, // tên render device khi source="system"
+}
+
+fn default_source() -> String {
+    "mic".into()
 }
 
 impl Default for AppSettings {
@@ -23,6 +32,8 @@ impl Default for AppSettings {
             format: "mp3".into(),
             split_value: 10.0,
             split_unit: "minutes".into(),
+            source: default_source(),
+            output_id: None,
         }
     }
 }

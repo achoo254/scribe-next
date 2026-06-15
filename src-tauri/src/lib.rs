@@ -39,6 +39,7 @@ pub fn run() {
             commands::get_settings,
             commands::set_settings,
             commands::list_devices,
+            commands::list_output_devices,
             commands::start_recording,
             commands::pause_recording,
             commands::resume_recording,

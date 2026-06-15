@@ -6,6 +6,7 @@ Desktop app (Windows + macOS) ghi âm micro + cắt live, cắt file audio sẵn
 - **Bundle id**: `vn.inet.onescribe`
 - 3 chế độ: **Ghi âm** (Mode A) · **Cắt file** (Mode B) · **Transcript** (Mode C).
 - **Tự động transcript khi ghi** (tùy chọn, Mode A): bật toggle → mỗi đoạn ghi vừa xong tự transcribe ngay (real-time), hiển thị transcript inline dưới từng đoạn + lưu `.txt`/`.srt` cạnh đoạn. Dùng lại sidecar PhoWhisper (model giữ ấm) của Mode C.
+- **Nguồn ghi** (Mode A): chọn **Mic** (cpal) hoặc **Tiếng hệ thống** (âm thanh đang phát ra loa/tai nghe — WASAPI loopback). Ghi tiếng hệ thống hiện **chỉ Windows** (macOS để sau). Crate `wasapi` (Windows-only, target `cfg(windows)`).
 
 ## Yêu cầu môi trường (Windows)
 

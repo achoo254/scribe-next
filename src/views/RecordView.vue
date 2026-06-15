@@ -15,7 +15,9 @@ import { useRecordTranscribe } from "../composables/use-record-transcribe";
 
 const rec = useRecorder();
 const rt = useRecordTranscribe();
+const recSource = ref<"mic" | "system">("mic"); // nguồn ghi: mic | tiếng hệ thống (output)
 const mic = ref<string | null>(null);
+const outputId = ref<string | null>(null); // render device khi ghi tiếng hệ thống
 const outDir = ref("");
 const format = ref("mp3");
 const splitValue = ref(10);
@@ -36,6 +38,19 @@ const isIdle = computed(() => rec.state.value === "idle");
 const isRecording = computed(() => rec.state.value === "recording");
 const isPaused = computed(() => rec.state.value === "paused");
 const micItems = computed(() => rec.devices.value.map((d) => ({ title: d.name, value: d.id })));
+const outputItems = computed(() => rec.outputDevices.value.map((d) => ({ title: d.name, value: d.id })));
+const isSystem = computed(() => recSource.value === "system");
+const deviceItems = computed(() => (isSystem.value ? outputItems.value : micItems.value));
+// Select thiết bị dùng chung — đọc/ghi mic hoặc outputId tùy nguồn.
+const selectedDevice = computed({
+  get: () => (isSystem.value ? outputId.value : mic.value),
+  set: (v: string | null) => {
+    if (isSystem.value) outputId.value = v;
+    else mic.value = v;
+  },
+});
+const deviceLabel = computed(() => (isSystem.value ? "Thiết bị output" : "Micro"));
+const deviceHint = computed(() => (isSystem.value ? "Bỏ trống = thiết bị mặc định" : "Bỏ trống = mic mặc định"));
 const clock = computed(() => {
   const m = Math.floor(elapsed.value / 60).toString().padStart(2, "0");
   const s = (elapsed.value % 60).toString().padStart(2, "0");
@@ -52,6 +67,8 @@ onMounted(async () => {
     format.value = (s.format as string) ?? "mp3";
     splitValue.value = (s.split_value as number) ?? 10;
     splitUnit.value = (s.split_unit as string) ?? "minutes";
+    recSource.value = (s.source as "mic" | "system") ?? "mic";
+    outputId.value = (s.output_id as string) ?? null;
   } catch {
     /* dùng mặc định */
   }
@@ -61,7 +78,7 @@ onMounted(async () => {
 // keep-alive: quay lại tab → re-sync trạng thái model (có thể đã tải xong từ tab Transcript).
 onActivated(() => rt.refreshModel());
 
-watch([mic, outDir, format, splitValue, splitUnit], () => {
+watch([mic, outputId, recSource, outDir, format, splitValue, splitUnit], () => {
   if (!loaded) return;
   invoke("set_settings", {
     settings: {
@@ -70,6 +87,8 @@ watch([mic, outDir, format, splitValue, splitUnit], () => {
       format: format.value,
       split_value: Number(splitValue.value),
       split_unit: splitUnit.value,
+      source: recSource.value,
+      output_id: outputId.value || null,
     },
   }).catch(() => {});
 });
@@ -77,11 +96,15 @@ watch([mic, outDir, format, splitValue, splitUnit], () => {
 watch(
   () => rec.state.value,
   (s) => {
-    if (s === "recording" && !timer) timer = setInterval(() => elapsed.value++, 1000);
-    if (s === "idle") {
-      if (timer) clearInterval(timer);
-      timer = undefined;
-      elapsed.value = 0;
+    // Đồng hồ chỉ chạy khi đang ghi; tạm dừng → đóng băng (giữ giá trị); dừng hẳn → reset.
+    if (s === "recording") {
+      if (!timer) timer = setInterval(() => elapsed.value++, 1000);
+    } else {
+      if (timer) {
+        clearInterval(timer);
+        timer = undefined;
+      }
+      if (s === "idle") elapsed.value = 0;
     }
   },
 );
@@ -110,7 +133,8 @@ async function onStart() {
   }
   rt.reset();
   await rec.start({
-    mic: mic.value,
+    source: recSource.value,
+    device: selectedDevice.value,
     outDir: outDir.value,
     format: format.value,
     splitValue: Number(splitValue.value),
@@ -123,13 +147,18 @@ const locate = (path: string) => revealItemInDir(path).catch(() => {});
 <template>
   <ViCard title="Ghi âm" class="pa-4">
     <div class="os-form">
+      <ViButtonToggle v-model="recSource" mandatory :disabled="!isIdle" density="comfortable">
+        <ViButton value="mic"><ViIcon icon="IconMicrophone" start />Mic</ViButton>
+        <ViButton value="system"><ViIcon icon="IconVolume" start />Tiếng hệ thống</ViButton>
+      </ViButtonToggle>
+
       <ViSelect
-        v-model="mic"
-        :items="micItems"
-        label="Micro"
+        v-model="selectedDevice"
+        :items="deviceItems"
+        :label="deviceLabel"
         :disabled="!isIdle"
         clearable
-        hint="Bỏ trống = mic mặc định"
+        :hint="deviceHint"
         persistent-hint
       />
 
