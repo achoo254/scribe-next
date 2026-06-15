@@ -207,14 +207,11 @@ fn record_loop(
         }
     }
 
-    // 4) Stop sạch: ngừng capture. Ghi âm → đóng stdin (EOF) để ffmpeg finalize; ghi màn hình → kill
-    // (ddagrab vô hạn, không thoát khi stdin đóng), frag-MP4 đảm bảo đoạn đang ghi vẫn phát được.
+    // 4) Stop sạch: ngừng capture rồi ĐÓNG STDIN (drop child) → ffmpeg nhận audio EOF. Ghi màn hình
+    // dùng `-shortest` nên audio EOF làm ffmpeg kết thúc + finalize MP4 hợp lệ. KHÔNG kill cứng:
+    // kill để lại file ~rỗng (fragment chưa flush, "moov atom not found").
     capture.stop();
-    if is_screen {
-        let _ = child.kill();
-    } else {
-        drop(child);
-    }
+    drop(child);
     loop {
         match events.blocking_recv() {
             Some(CommandEvent::Terminated(_)) | None => break,

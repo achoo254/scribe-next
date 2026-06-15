@@ -37,8 +37,9 @@ pub struct Region {
 const VIDEO_BITRATE_KBPS: u32 = 6000;
 
 /// Args ffmpeg ghi màn hình: ddagrab (video, input 0) + stdin s16le (audio, input 1) → segment MP4.
-/// Dừng bằng kill process (ddagrab là nguồn vô hạn, đóng stdin không làm ffmpeg thoát); frag-MP4 nên
-/// file đoạn đang ghi vẫn phát được. Video tải GPU→RAM (hwdownload) rồi encode H.264 bằng openh264 (software).
+/// Dừng bằng cách ĐÓNG STDIN (audio EOF): `-shortest` làm ffmpeg kết thúc theo stream ngắn nhất (audio)
+/// rồi finalize MP4 hợp lệ — KHÔNG kill cứng (kill để lại file ~rỗng vì fragment chưa flush xuống đĩa).
+/// Video tải GPU→RAM (hwdownload) rồi encode H.264 bằng openh264 (software).
 pub fn ffmpeg_args_screen(
     rate: u32,
     channels: u16,
@@ -84,6 +85,10 @@ pub fn ffmpeg_args_screen(
     push(&mut a, &["-g"]);
     a.push((video.fps * 2).to_string());
     push(&mut a, &["-c:a", "aac", "-b:a", "160k"]);
+
+    // Kết thúc theo stream ngắn nhất (audio): khi dừng ghi ta đóng stdin → audio EOF → ffmpeg thoát
+    // dù ddagrab vô hạn, rồi ghi trailer/flush fragment → file MP4 hợp lệ (tránh kill cứng để lại file rỗng).
+    push(&mut a, &["-shortest"]);
 
     // Cắt đoạn theo thời gian + ép keyframe đúng mốc cắt → mỗi đoạn phát độc lập. frag → crash-safe.
     push(&mut a, &["-f", "segment", "-segment_time"]);
