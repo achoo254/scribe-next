@@ -56,6 +56,12 @@ pub fn ffmpeg_args_screen(
 
     push(&mut a, &["-hide_banner", "-loglevel", "error"]);
 
+    // Ép device D3D11 tường minh (adapter 0 = GPU đang xuất hình) cho ddagrab. Máy nhiều GPU: app
+    // (WebView2) có thể chạy trên iGPU → ffmpeg con auto-tạo device trên iGPU, đụng/mất quyền DXGI
+    // duplication → lỗi "Generic error in an external library". Device tường minh tránh phụ thuộc
+    // GPU mặc định của tiến trình. (Phải đặt TRƯỚC input; ddagrab dùng device qua -filter_hw_device.)
+    push(&mut a, &["-init_hw_device", "d3d11va=dx", "-filter_hw_device", "dx"]);
+
     // Input 0 (video): Desktop Duplication (DXGI). draw_mouse để thấy con trỏ; region qua offset/size.
     let mut dda = format!(
         "ddagrab=output_idx={}:framerate={}:draw_mouse=1",
