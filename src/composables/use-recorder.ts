@@ -75,6 +75,8 @@ export function useRecorder() {
       await listen<string>("rec_error", (e) => (error.value = e.payload)),
       await listen<Region>("region_selected", (e) => (region.value = e.payload)),
       await listen("region_cancelled", () => {}),
+      // Nút ✕ trên khung → Rust emit "region_cleared" → xoá vùng (watch sẽ ẩn khung + nút).
+      await listen("region_cleared", () => (region.value = null)),
     );
   }
 

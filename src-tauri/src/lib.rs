@@ -56,6 +56,11 @@ pub fn run() {
             screen::open_region_selector,
             screen::finish_region_selection,
             screen::cancel_region_selection,
+            screen::show_record_border,
+            screen::hide_record_border,
+            screen::show_record_border_close,
+            screen::hide_record_border_close,
+            screen::clear_record_region,
         ])
         .build(tauri::generate_context!())
         .expect("error while running OneScribe")

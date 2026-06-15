@@ -132,6 +132,44 @@ watch(screenMonitor, () => {
   if (loaded) rec.region.value = null;
 });
 
+// Viền đỏ đánh dấu vùng ghi (kiểu Bandicam): hiện NGAY khi đã chọn vùng (region mode), giữ suốt
+// cả lúc đang ghi; ẩn khi đổi sang toàn màn hình / tắt ghi màn hình / xoá vùng. Drive reactive ở
+// đây vì cần cả screenMonitor + regionMode + region (toạ độ vùng tương đối monitor được chọn).
+watch(
+  [recordScreen, regionMode, screenMonitor, rec.region],
+  () => {
+    if (!loaded) return;
+    const r = rec.region.value;
+    if (recordScreen.value && regionMode.value === "region" && r) {
+      invoke("show_record_border", {
+        monitor: Number(screenMonitor.value),
+        x: r.x, y: r.y, w: r.w, h: r.h,
+      }).catch(() => {});
+    } else {
+      invoke("hide_record_border").catch(() => {});
+    }
+  },
+);
+
+// Nút ✕ đóng khung: chỉ hiện khi có khung VÀ đang idle (chưa ghi) → không lọt vào video. Tách watch
+// riêng (thêm dep rec.state) để khung viền không bị tạo lại/nháy mỗi lần bắt đầu/dừng ghi.
+watch(
+  [recordScreen, regionMode, screenMonitor, rec.region, rec.state],
+  () => {
+    if (!loaded) return;
+    const r = rec.region.value;
+    const show = recordScreen.value && regionMode.value === "region" && !!r && rec.state.value === "idle";
+    if (show && r) {
+      invoke("show_record_border_close", {
+        monitor: Number(screenMonitor.value),
+        x: r.x, y: r.y, w: r.w, h: r.h,
+      }).catch(() => {});
+    } else {
+      invoke("hide_record_border_close").catch(() => {});
+    }
+  },
+);
+
 watch(
   () => rec.state.value,
   (s) => {
