@@ -10,8 +10,14 @@ use std::thread;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
 
-// Tổng dung lượng model (model.bin 3086.9MB + vocab ~1MB, verify từ HF). Cap 99% tới khi model_ready.
-const MODEL_TOTAL_BYTES: f64 = 3_088_000_000.0;
+// Dung lượng model.bin ước tính theo size (float16 storage) → tính % tải. Cap 99% tới khi model_ready.
+fn total_bytes(size: &str) -> f64 {
+    match size {
+        "small" => 490_000_000.0,
+        "medium" => 1_540_000_000.0,
+        _ => 3_088_000_000.0, // large
+    }
+}
 
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
@@ -37,25 +43,38 @@ impl Drop for Proc {
     }
 }
 
-/// Thư mục model trong app-data: <app_data>/models/PhoWhisper-large-ct2.
-pub fn model_dir(app: &AppHandle) -> PathBuf {
+/// Thư mục model theo size: <app_data>/models/PhoWhisper-<size>-ct2.
+/// large giữ tên cũ (PhoWhisper-large-ct2) → dùng lại bản đã tải sẵn, khỏi tải lại 3GB.
+pub fn model_dir(app: &AppHandle, size: &str) -> PathBuf {
     let base = app
         .path()
         .app_data_dir()
         .unwrap_or_else(|_| PathBuf::from("."));
-    base.join("models").join("PhoWhisper-large-ct2")
+    base.join("models").join(format!("PhoWhisper-{size}-ct2"))
 }
 
-fn model_present_at(d: &Path) -> bool {
-    d.join("config.json").exists()
-        && std::fs::metadata(d.join("model.bin"))
-            .map(|m| m.len() > 0)
-            .unwrap_or(false)
+/// Có model.bin (>0 byte) ở đâu đó dưới dir không (small/medium nằm trong subfolder của repo).
+fn has_model_bin(dir: &Path) -> bool {
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for e in entries.flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                if has_model_bin(&p) {
+                    return true;
+                }
+            } else if p.file_name().map(|n| n == "model.bin").unwrap_or(false)
+                && std::fs::metadata(&p).map(|m| m.len() > 0).unwrap_or(false)
+            {
+                return true;
+            }
+        }
+    }
+    false
 }
 
-/// Model đã tải ĐỦ chưa: config.json + model.bin (kích thước > 0) — tránh model tải dở qua mặt.
-pub fn model_present(app: &AppHandle) -> bool {
-    model_present_at(&model_dir(app))
+/// Model đã tải ĐỦ chưa: tìm model.bin (>0 byte) — tránh model tải dở qua mặt.
+pub fn model_present(app: &AppHandle, size: &str) -> bool {
+    has_model_bin(&model_dir(app, size))
 }
 
 /// Tổng dung lượng thư mục (gồm cả file .incomplete đang tải) → tính % tải.
@@ -157,9 +176,10 @@ impl Transcriber {
         p.stdin.flush().map_err(|e| e.to_string())
     }
 
-    pub fn ensure_model(&self, app: &AppHandle) -> Result<(), String> {
+    pub fn ensure_model(&self, app: &AppHandle, size: &str) -> Result<(), String> {
         self.ensure_spawned(app)?;
-        let dir = model_dir(app);
+        let dir = model_dir(app, size);
+        let total = total_bytes(size);
         // Poller tiến độ: poll dung lượng thư mục / tổng ước lượng → emit download pct.
         self.download_active.store(true, Ordering::SeqCst);
         let app2 = app.clone();
@@ -171,24 +191,31 @@ impl Transcriber {
                 if !active.load(Ordering::SeqCst) {
                     break;
                 }
-                let pct = ((dir_size(&poll_dir) as f64 / MODEL_TOTAL_BYTES) * 100.0).min(99.0) as u32;
+                let pct = ((dir_size(&poll_dir) as f64 / total) * 100.0).min(99.0) as u32;
                 let _ = app2.emit("transcribe_msg", serde_json::json!({ "type": "download", "pct": pct }));
-                if model_present_at(&poll_dir) {
+                if has_model_bin(&poll_dir) {
                     break;
                 }
             }
         });
         self.send(
-            serde_json::json!({ "cmd": "ensure_model", "model_dir": dir.to_string_lossy() }).to_string(),
+            serde_json::json!({ "cmd": "ensure_model", "model_dir": dir.to_string_lossy(), "size": size })
+                .to_string(),
         )
     }
 
-    pub fn transcribe(&self, app: &AppHandle, paths: Vec<String>, outputs: Vec<String>) -> Result<(), String> {
-        if !model_present(app) {
+    pub fn transcribe(
+        &self,
+        app: &AppHandle,
+        paths: Vec<String>,
+        outputs: Vec<String>,
+        size: &str,
+    ) -> Result<(), String> {
+        if !model_present(app, size) {
             return Err("Chưa tải model — hãy tải model trước".into());
         }
         self.ensure_spawned(app)?;
-        let dir = model_dir(app).to_string_lossy().to_string();
+        let dir = model_dir(app, size).to_string_lossy().to_string();
         for file in paths {
             let out_dir = Path::new(&file)
                 .parent()
@@ -197,7 +224,7 @@ impl Transcriber {
             self.send(
                 serde_json::json!({
                     "cmd": "transcribe", "file": file, "out_dir": out_dir,
-                    "outputs": outputs, "model_dir": dir,
+                    "outputs": outputs, "model_dir": dir, "size": size,
                 })
                 .to_string(),
             )?;

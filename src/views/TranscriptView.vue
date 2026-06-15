@@ -1,15 +1,25 @@
 <script setup lang="ts">
 // Mode C — Transcribe offline tiếng Việt (PhoWhisper). UI Vi* (iNET ViUI), token-only, WCAG AA.
-import { onMounted } from "vue";
+import { onMounted, onActivated } from "vue";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import {
-  ViCard, ViButton, ViIcon, ViList, ViListItem,
+  ViCard, ViButton, ViIcon, ViList, ViListItem, ViSelect,
   ViTextarea, ViProgressLinear, ViAlert,
 } from "../design-system/vi-ui";
 import { useTranscribe } from "../composables/use-transcribe";
 
 const tr = useTranscribe();
 onMounted(() => tr.init());
+// keep-alive: quay lại tab → re-sync trạng thái model (có thể đã tải xong từ tab Ghi âm).
+onActivated(() => tr.refreshModel());
+
+// Picker model: nhanh ↔ chất lượng. Mỗi size tải riêng (dung lượng khác nhau).
+const sizeOptions = [
+  { title: "Small — nhanh nhất, chất lượng khá", value: "small" },
+  { title: "Medium — cân bằng (mặc định)", value: "medium" },
+  { title: "Large — chậm nhất, chất lượng cao nhất", value: "large" },
+];
+const sizeDownloadHint: Record<string, string> = { small: "~0.5GB", medium: "~1.5GB", large: "~3GB" };
 
 const base = (p: string) => p.split(/[\\/]/).pop() || p;
 const locate = (p: string | null) => {
@@ -27,6 +37,15 @@ async function copyText() {
 <template>
   <ViCard title="Transcript" class="pa-4">
     <div class="os-form">
+      <!-- Picker model: nhanh ↔ chất lượng -->
+      <ViSelect
+        v-model="tr.selectedSize.value"
+        :items="sizeOptions"
+        label="Model nhận dạng"
+        :disabled="tr.transcribing.value || tr.downloading.value"
+        hide-details
+      />
+
       <div class="os-row">
         <ViButton variant="outlined" :disabled="tr.transcribing.value" @click="tr.pickFiles()">
           <ViIcon icon="IconFolder" start />Chọn file
@@ -39,11 +58,11 @@ async function copyText() {
 
       <!-- Trạng thái model -->
       <ViAlert v-if="tr.modelReady.value" type="success" variant="tonal" density="compact">
-        Model PhoWhisper sẵn sàng (chạy offline).
+        Model {{ tr.selectedSize.value }} sẵn sàng (chạy offline).
       </ViAlert>
       <template v-else>
         <ViAlert type="warning" variant="tonal" density="compact">
-          Chưa có model — cần tải PhoWhisper-large (~3GB) lần đầu, sau đó chạy offline.
+          Chưa có model {{ tr.selectedSize.value }} — cần tải ({{ sizeDownloadHint[tr.selectedSize.value] }}) lần đầu, sau đó chạy offline.
         </ViAlert>
         <div class="os-row">
           <ViButton color="secondary" :disabled="tr.downloading.value" @click="tr.ensureModel()">
@@ -83,8 +102,11 @@ async function copyText() {
       <span v-if="tr.deviceInfo.value" class="os-muted">⚙ {{ tr.deviceInfo.value }}</span>
 
       <div v-if="tr.transcribing.value" class="os-prog">
-        <span class="os-muted">{{ base(tr.currentFile.value) }} · {{ tr.progressPct.value }}%</span>
-        <ViProgressLinear :model-value="tr.progressPct.value" color="primary" height="6" rounded />
+        <span class="os-muted">
+          {{ tr.doneCount.value }}/{{ tr.total.value }} file · {{ tr.overallPct.value }}%
+          <template v-if="tr.currentFile.value">· đang xử lý: {{ base(tr.currentFile.value) }}</template>
+        </span>
+        <ViProgressLinear :model-value="tr.overallPct.value" color="primary" height="6" rounded />
       </div>
 
       <ViAlert v-if="tr.error.value" type="error" density="compact" closable>

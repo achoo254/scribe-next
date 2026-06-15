@@ -15,3 +15,4 @@ export { default as ViList } from "./vi-list/ViList.vue";
 export { default as ViListItem } from "./vi-list/ViListItem.vue";
 export { default as ViProgressLinear } from "./vi-progress/ViProgressLinear.vue";
 export { default as ViTextarea } from "./vi-textarea/ViTextarea.vue";
+export { default as ViSwitch } from "./vi-switch/ViSwitch.vue";

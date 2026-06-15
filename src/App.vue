@@ -37,7 +37,10 @@ onMounted(async () => {
           <ViTab value="transcript"><ViIcon icon="IconFileText" start />Transcript</ViTab>
         </ViTabs>
 
-        <component :is="currentView" class="os-view" />
+        <!-- keep-alive: giữ state mỗi tab (toggle, danh sách đoạn + transcript, file đã chọn) khi đổi tab. -->
+        <keep-alive>
+          <component :is="currentView" class="os-view" />
+        </keep-alive>
 
         <ViAlert
           v-if="ffmpegError"

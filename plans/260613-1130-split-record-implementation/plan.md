@@ -37,7 +37,7 @@ Design doc nguồn (đã chốt): [`docs/split-record-design.md`](../../docs/spl
 | 1 | [Scaffold and Tauri shell](./phase-01-scaffold-and-tauri-shell.md) | ✅ Done (2026-06-13) |
 | 2 | [Mode A - Record and split live](./phase-02-mode-a-record-and-split-live.md) | 🟡 Implemented (2026-06-13) — chờ test ghi âm thủ công |
 | 3 | [Mode B - Split existing files](./phase-03-mode-b-split-existing-files.md) | 🟡 Implemented (2026-06-13) — chờ test cắt file thủ công |
-| 4 | [Mode C - Transcription sidecar](./phase-04-mode-c-transcription-sidecar.md) | 🟡 Implemented (2026-06-13) — chờ test model 1.5GB + transcribe thật |
+| 4 | [Mode C - Transcription sidecar](./phase-04-mode-c-transcription-sidecar.md) | ✅ Done (2026-06-15) — PyInstaller build + transcribe thật OK + picker đa-model (small/medium/large) + batching |
 | 5 | [Packaging and cross-platform release](./phase-05-packaging-and-cross-platform-release.md) | Pending |
 
 ## Dependency graph (nội bộ plan)

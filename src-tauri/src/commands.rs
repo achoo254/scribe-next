@@ -74,33 +74,34 @@ pub async fn split_files(
     splitter::split_files(app, paths, criterion, value, out_dir).await
 }
 
-/// Mode C: model PhoWhisper đã tải về app-data chưa.
+/// Mode C: model PhoWhisper (theo size: small|medium|large) đã tải về app-data chưa.
 #[tauri::command]
-pub fn model_status(app: AppHandle) -> bool {
-    transcribe::model_present(&app)
+pub fn model_status(app: AppHandle, size: String) -> bool {
+    transcribe::model_present(&app, &size)
 }
 
-/// Mode C: đường dẫn thư mục model (để hiển thị cho user biết model lưu ở đâu).
+/// Mode C: đường dẫn thư mục model theo size (để hiển thị cho user biết model lưu ở đâu).
 #[tauri::command]
-pub fn model_path(app: AppHandle) -> String {
-    transcribe::model_dir(&app).to_string_lossy().to_string()
+pub fn model_path(app: AppHandle, size: String) -> String {
+    transcribe::model_dir(&app, &size).to_string_lossy().to_string()
 }
 
-/// Mode C: tải model lần đầu (progress qua event transcribe_msg type=download).
+/// Mode C: tải model size lần đầu (progress qua event transcribe_msg type=download).
 #[tauri::command]
-pub fn ensure_model(app: AppHandle, transcriber: State<'_, Transcriber>) -> Result<(), String> {
-    transcriber.ensure_model(&app)
+pub fn ensure_model(app: AppHandle, transcriber: State<'_, Transcriber>, size: String) -> Result<(), String> {
+    transcriber.ensure_model(&app, &size)
 }
 
-/// Mode C: transcribe batch (tuần tự trong sidecar, model giữ ấm). Kết quả qua event.
+/// Mode C: transcribe batch bằng model size đã chọn (giữ ấm). Kết quả qua event.
 #[tauri::command]
 pub fn transcribe_files(
     app: AppHandle,
     transcriber: State<'_, Transcriber>,
     paths: Vec<String>,
     outputs: Vec<String>,
+    size: String,
 ) -> Result<(), String> {
-    transcriber.transcribe(&app, paths, outputs)
+    transcriber.transcribe(&app, paths, outputs, &size)
 }
 
 /// Mode C: hủy (kill sidecar → lần sau spawn lại).

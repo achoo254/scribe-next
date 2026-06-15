@@ -5,6 +5,7 @@ Desktop app (Windows + macOS) ghi âm micro + cắt live, cắt file audio sẵn
 - **Stack**: Tauri v2 (Rust) + Vue 3 + Vite + Vuetify 3.5 + iNET ViUI design system (theme One Series dark `inetOneDark`).
 - **Bundle id**: `vn.inet.onescribe`
 - 3 chế độ: **Ghi âm** (Mode A) · **Cắt file** (Mode B) · **Transcript** (Mode C).
+- **Tự động transcript khi ghi** (tùy chọn, Mode A): bật toggle → mỗi đoạn ghi vừa xong tự transcribe ngay (real-time), hiển thị transcript inline dưới từng đoạn + lưu `.txt`/`.srt` cạnh đoạn. Dùng lại sidecar PhoWhisper (model giữ ấm) của Mode C.
 
 ## Yêu cầu môi trường (Windows)
 
@@ -16,7 +17,8 @@ Desktop app (Windows + macOS) ghi âm micro + cắt live, cắt file audio sẵn
 ## Sidecar
 
 - `src-tauri/binaries/ffmpeg-<target>` + `ffprobe-<target>` — bản **ffmpeg LGPL** (BtbN). Dùng cho ghi/cắt audio.
-- (Phase 4) `transcriber-<target>` — Python sidecar faster-whisper (PyInstaller).
+- `transcriber-<target>` — Python sidecar faster-whisper (PyInstaller onefile, CPU int8). Build: `sidecar/transcriber/build_pyinstaller.ps1`.
+  - **Picker đa-model**: small / medium / large (mặc định **medium**) — chọn theo nhu cầu tốc độ ↔ chất lượng. Mỗi size tải riêng (~0.5 / ~1.5 / ~3 GB) về app-data lần đầu, sau đó offline. small/medium từ `quocphu/PhoWhisper-ct2-FasterWhisper`, large từ `kiendt/PhoWhisper-large-ct2`.
 
 ## Design system
 

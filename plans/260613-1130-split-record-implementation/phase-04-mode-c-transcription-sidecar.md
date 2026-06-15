@@ -1,12 +1,13 @@
 ---
 phase: 4
 title: "Mode C - Transcription sidecar"
-status: implemented
+status: done
 priority: P2
 effort: "4-5d"
 dependencies: [1]
 implemented: "2026-06-13"
-note: "Code + build + sidecar smoke (ready/shutdown) + code-review (fix H1 batch-error, H2 partial-model, M1 pct, M2 stderr) + ViUI validate xong. faster-whisper verify import trên Py3.14. HOÃN: PyInstaller build (P5), download model 1.5GB + transcribe thật (cần network + audio tiếng Việt)."
+completed: "2026-06-15"
+note: "DONE 2026-06-15: PyInstaller sidecar built (91.6MB) + externalBin thêm transcriber + transcribe thật trên audio tiếng Việt (frozen binary, CPU int8). Sửa lỗi CUDA (frozen thiếu cublas → CPU-only). Nâng cấp 'v2' luôn: picker đa-model small/medium/large (mặc định medium) + BatchedInferencePipeline (~2x). medium 3.27′ vs large 9.5′ cho cùng 11.6′ audio."
 ---
 
 # Phase 4: Mode C - Transcription sidecar
@@ -69,9 +70,12 @@ UI TranscriptView.vue (Vi*): model status + Transcribe + progress + panel text +
 - [x] transcribe.rs lifecycle (std::process persistent + spawn lazy + reader thread + Drop/Exit kill)
 - [x] commands ensure_model/transcribe_files/cancel/model_status
 - [x] TranscriptView.vue UI (Vi* + token + WCAG): model status, transcribe, progress, panel copy, mở .txt/.srt
-- [ ] **test offline + batch + chất lượng tiếng Việt** (cần download model 1.5GB + audio thật) — HOÃN
+- [x] **test transcribe thật tiếng Việt** (audio 11.6′): frozen binary CPU int8 → text + srt OK. large 9.5′, medium 3.27′.
 - [x] ViUI MCP `validate_brand_usage` → 0 vi phạm (TranscriptView). *`review_design_tokens` không chạy được (MCP sandbox).*
 - [x] sidecar smoke: ready + shutdown sạch (exit 0); faster-whisper import OK trên Python 3.14
+- [x] **PyInstaller build** transcriber-x86_64-pc-windows-msvc.exe (91.6MB, onefile) + externalBin
+- [x] **Fix CUDA**: frozen binary thiếu cublas64_12.dll → CPU int8 thuần (bỏ nhánh GPU)
+- [x] **Picker đa-model** (v2): small/medium/large tự chọn, mặc định medium; mỗi size tải riêng; 1 model nóng (reload khi đổi); BatchedInferencePipeline (~2x CPU). Nguồn: large reuse bản cũ (kiendt), small/medium từ quocphu/PhoWhisper-ct2-FasterWhisper. Research: [research/researcher-cpu-fast-asr-models.md](./research/researcher-cpu-fast-asr-models.md)
 
 ## Success Criteria
 
