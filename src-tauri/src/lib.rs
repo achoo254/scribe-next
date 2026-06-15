@@ -6,6 +6,7 @@ mod audio;
 mod commands;
 mod ffmpeg;
 mod recorder;
+mod screen;
 mod settings;
 mod splitter;
 mod transcribe;
@@ -51,6 +52,10 @@ pub fn run() {
             commands::ensure_model,
             commands::transcribe_files,
             commands::cancel_transcribe,
+            screen::list_monitors,
+            screen::open_region_selector,
+            screen::finish_region_selection,
+            screen::cancel_region_selection,
         ])
         .build(tauri::generate_context!())
         .expect("error while running OneScribe")

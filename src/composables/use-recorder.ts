@@ -18,6 +18,19 @@ export interface Level {
 }
 export type RecState = "idle" | "recording" | "paused";
 
+export interface MonitorInfo {
+  index: number;
+  name: string;
+  width: number;
+  height: number;
+}
+export interface Region {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
 export interface StartOpts {
   source: string; // "mic" | "system"
   device: string | null; // tên thiết bị theo nguồn
@@ -25,11 +38,18 @@ export interface StartOpts {
   format: string;
   splitValue: number;
   splitUnit: string;
+  // Ghi màn hình (tuỳ chọn).
+  recordScreen?: boolean;
+  screenMonitor?: number;
+  screenFps?: number;
+  region?: Region | null;
 }
 
 export function useRecorder() {
   const devices = ref<DeviceInfo[]>([]); // mic (input)
   const outputDevices = ref<DeviceInfo[]>([]); // output (render) — ghi tiếng hệ thống
+  const monitors = ref<MonitorInfo[]>([]); // màn hình để ghi (ghi màn hình)
+  const region = ref<Region | null>(null); // vùng đã chọn từ overlay
   const state = ref<RecState>("idle");
   const level = ref<Level>({ rms: 0, peak: 0 });
   const segments = ref<SegmentFile[]>([]);
@@ -44,6 +64,7 @@ export function useRecorder() {
     }
     // Output device (loopback) — rỗng trên non-Windows.
     outputDevices.value = await invoke<DeviceInfo[]>("list_output_devices").catch(() => []);
+    monitors.value = await invoke<MonitorInfo[]>("list_monitors").catch(() => []);
     unlisteners.push(
       await listen<Level>("level", (e) => (level.value = e.payload)),
       await listen<SegmentFile>("segment_created", (e) => {
@@ -52,7 +73,19 @@ export function useRecorder() {
       await listen<SegmentFile[]>("segments_final", (e) => (segments.value = e.payload)),
       await listen<string>("rec_state", (e) => (state.value = e.payload as RecState)),
       await listen<string>("rec_error", (e) => (error.value = e.payload)),
+      await listen<Region>("region_selected", (e) => (region.value = e.payload)),
+      await listen("region_cancelled", () => {}),
     );
+  }
+
+  // Mở overlay chọn vùng trên `monitor` (kết quả về qua event region_selected → region.value).
+  // Lỗi command (vd window build fail / Rust chưa rebuild) phải hiện lên UI, không nuốt im lặng.
+  async function openRegionSelector(monitor: number) {
+    try {
+      await invoke("open_region_selector", { monitor });
+    } catch (e) {
+      error.value = `Không mở được cửa sổ chọn vùng: ${String(e)}`;
+    }
   }
 
   async function pickFolder(): Promise<string | null> {
@@ -71,6 +104,10 @@ export function useRecorder() {
       format: opts.format,
       splitValue: opts.splitValue,
       splitUnit: opts.splitUnit,
+      recordScreen: opts.recordScreen ?? false,
+      screenMonitor: opts.screenMonitor ?? 0,
+      screenFps: opts.screenFps ?? 30,
+      region: opts.region ?? null,
     });
   }
 
@@ -80,5 +117,8 @@ export function useRecorder() {
 
   onUnmounted(() => unlisteners.forEach((u) => u()));
 
-  return { devices, outputDevices, state, level, segments, error, init, pickFolder, start, pause, resume, stop };
+  return {
+    devices, outputDevices, monitors, region, state, level, segments, error,
+    init, pickFolder, openRegionSelector, start, pause, resume, stop,
+  };
 }

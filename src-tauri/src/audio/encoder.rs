@@ -11,11 +11,89 @@ pub fn segment_time_secs(unit: &str, value: f64) -> f64 {
 }
 
 pub fn ext_for(format: &str) -> &'static str {
-    if format == "m4a" {
-        "m4a"
-    } else {
-        "mp3"
+    match format {
+        "m4a" => "m4a",
+        "mp4" => "mp4", // ghi màn hình
+        _ => "mp3",
     }
+}
+
+/// Cấu hình ghi màn hình. `region` = None → toàn màn hình; Some → vùng (px VẬT LÝ theo monitor đó).
+pub struct VideoConfig {
+    pub monitor: u32, // ddagrab output_idx (= index monitor theo thứ tự enumerate)
+    pub fps: u32,
+    pub region: Option<Region>,
+}
+
+/// Vùng ghi (px vật lý, gốc toạ độ = góc trên-trái của monitor được chọn).
+pub struct Region {
+    pub x: i32,
+    pub y: i32,
+    pub w: u32,
+    pub h: u32,
+}
+
+// Bitrate video mục tiêu. Nội dung tĩnh (màn hình) thường dùng ít hơn nhiều; đây là trần cho cảnh động.
+const VIDEO_BITRATE_KBPS: u32 = 6000;
+
+/// Args ffmpeg ghi màn hình: ddagrab (video, input 0) + stdin s16le (audio, input 1) → segment MP4.
+/// Dừng bằng kill process (ddagrab là nguồn vô hạn, đóng stdin không làm ffmpeg thoát); frag-MP4 nên
+/// file đoạn đang ghi vẫn phát được. Video tải GPU→RAM (hwdownload) rồi encode H.264 bằng openh264 (software).
+pub fn ffmpeg_args_screen(
+    rate: u32,
+    channels: u16,
+    video: &VideoConfig,
+    seg_secs: f64,
+    out_pattern: &str,
+) -> Vec<String> {
+    let mut a: Vec<String> = Vec::new();
+    let push = |a: &mut Vec<String>, items: &[&str]| {
+        for s in items {
+            a.push((*s).to_string());
+        }
+    };
+
+    push(&mut a, &["-hide_banner", "-loglevel", "error"]);
+
+    // Input 0 (video): Desktop Duplication (DXGI). draw_mouse để thấy con trỏ; region qua offset/size.
+    let mut dda = format!(
+        "ddagrab=output_idx={}:framerate={}:draw_mouse=1",
+        video.monitor, video.fps
+    );
+    if let Some(r) = &video.region {
+        dda.push_str(&format!(
+            ":offset_x={}:offset_y={}:video_size={}x{}",
+            r.x, r.y, r.w, r.h
+        ));
+    }
+    push(&mut a, &["-f", "lavfi", "-i"]);
+    a.push(dda);
+
+    // Input 1 (audio): PCM từ Rust qua stdin. thread_queue_size để 2 input đọc song song, không kẹt nhau.
+    push(&mut a, &["-thread_queue_size", "1024", "-f", "s16le", "-ar"]);
+    a.push(rate.to_string());
+    push(&mut a, &["-ac"]);
+    a.push(channels.to_string());
+    push(&mut a, &["-i", "-"]);
+
+    // Map + encode: tải frame GPU→RAM, ép yuv420p (H.264 cần kích thước chẵn), openh264 + AAC.
+    push(&mut a, &["-map", "0:v", "-map", "1:a"]);
+    push(&mut a, &["-filter:v", "hwdownload,format=bgra", "-pix_fmt", "yuv420p"]);
+    push(&mut a, &["-c:v", "libopenh264", "-b:v"]);
+    a.push(format!("{VIDEO_BITRATE_KBPS}k"));
+    push(&mut a, &["-g"]);
+    a.push((video.fps * 2).to_string());
+    push(&mut a, &["-c:a", "aac", "-b:a", "160k"]);
+
+    // Cắt đoạn theo thời gian + ép keyframe đúng mốc cắt → mỗi đoạn phát độc lập. frag → crash-safe.
+    push(&mut a, &["-f", "segment", "-segment_time"]);
+    a.push(format!("{seg_secs}"));
+    push(&mut a, &["-reset_timestamps", "1", "-segment_format", "mp4"]);
+    push(&mut a, &["-force_key_frames"]);
+    a.push(format!("expr:gte(t,n_forced*{seg_secs})"));
+    push(&mut a, &["-segment_format_options", "movflags=+frag_keyframe+empty_moov"]);
+    a.push(out_pattern.to_string());
+    a
 }
 
 /// Args ffmpeg đầy đủ. `out_pattern` ví dụ "<dir>/rec_..._%03d.mp3".

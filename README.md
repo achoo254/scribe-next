@@ -7,6 +7,7 @@ Desktop app (Windows + macOS) ghi âm micro + cắt live, cắt file audio sẵn
 - 3 chế độ: **Ghi âm** (Mode A) · **Cắt file** (Mode B) · **Transcript** (Mode C).
 - **Tự động transcript khi ghi** (tùy chọn, Mode A): bật toggle → mỗi đoạn ghi vừa xong tự transcribe ngay (real-time), hiển thị transcript inline dưới từng đoạn + lưu `.txt`/`.srt` cạnh đoạn. Dùng lại sidecar PhoWhisper (model giữ ấm) của Mode C.
 - **Nguồn ghi** (Mode A): chọn **Mic** (cpal) hoặc **Tiếng hệ thống** (âm thanh đang phát ra loa/tai nghe — WASAPI loopback). Ghi tiếng hệ thống hiện **chỉ Windows** (macOS để sau). Crate `wasapi` (Windows-only, target `cfg(windows)`).
+- **Ghi kèm màn hình → MP4** (tùy chọn, Mode A, **chỉ Windows**): bật toggle "Ghi kèm màn hình" → xuất MP4 (video + audio nguồn đã chọn). **Toàn màn hình** hoặc **chọn vùng** kiểu Bandicam (overlay trong suốt kéo chuột, xử lý DPI scaling). Video bắt bằng `ddagrab` (DXGI Desktop Duplication, GPU), encode `libopenh264` (software, mọi máy), audio giữ pipeline mic/loopback sẵn có; cắt đoạn theo phút (frag-MP4, crash-safe). Auto-transcript chạy trên audio track của MP4 như thường. **Lưu ý đa màn hình**: index màn hình map trực tiếp sang `ddagrab output_idx` — đúng với 1 màn hình; máy ≥2 màn hình cần kiểm tra thực tế. Pause không áp dụng khi ghi màn hình (chỉ Ghi/Dừng).
 
 ## Yêu cầu môi trường (Windows)
 
@@ -17,7 +18,7 @@ Desktop app (Windows + macOS) ghi âm micro + cắt live, cắt file audio sẵn
 
 ## Sidecar
 
-- `src-tauri/binaries/ffmpeg-<target>` + `ffprobe-<target>` — bản **ffmpeg LGPL** (BtbN). Dùng cho ghi/cắt audio.
+- `src-tauri/binaries/ffmpeg-<target>` + `ffprobe-<target>` — bản **ffmpeg LGPL** (BtbN). Dùng cho ghi/cắt audio + **ghi màn hình** (`ddagrab` + `libopenh264`, đều có sẵn trong bản LGPL — không cần libx264/GPL).
 - `transcriber-<target>` — Python sidecar faster-whisper (PyInstaller onefile, CPU int8). Build: `sidecar/transcriber/build_pyinstaller.ps1`.
   - **Picker đa-model**: small / medium / large (mặc định **medium**) — chọn theo nhu cầu tốc độ ↔ chất lượng. Mỗi size tải riêng (~0.5 / ~1.5 / ~3 GB) về app-data lần đầu, sau đó offline. small/medium từ `quocphu/PhoWhisper-ct2-FasterWhisper`, large từ `kiendt/PhoWhisper-large-ct2`.
 
@@ -42,10 +43,12 @@ src/                      # UI Vue 3 + ViUI
   App.vue                 # shell 3 tab
   plugins/vuetify.ts      # theme inetOneDark + Tabler iconset
   assets/styles/viui-tokens.css   # token vendor từ MCP
-  design-system/vi-ui/    # wrapper Vi* (Button/Select/Input/Card/Alert/Icon/Tabs/Radio)
-  views/                  # RecordView / SplitView / TranscriptView
+  design-system/vi-ui/    # wrapper Vi* (Button/Select/Input/Card/Alert/Icon/Tabs/Radio/Switch)
+  views/                  # RecordView / SplitView / TranscriptView / RegionSelectorOverlay (overlay chọn vùng)
 src-tauri/
-  src/{lib,commands,ffmpeg,settings}.rs
-  binaries/               # ffmpeg, ffprobe (+ transcriber ở P4)
+  src/{lib,commands,ffmpeg,settings,screen}.rs   # screen.rs = monitor + overlay chọn vùng ghi màn hình
+  src/audio/encoder.rs    # ffmpeg_args (audio) + ffmpeg_args_screen (ddagrab → MP4)
+  capabilities/           # default.json (main) + region-selector.json (overlay)
+  binaries/               # ffmpeg, ffprobe, transcriber
 docs/ plans/              # thiết kế + kế hoạch triển khai
 ```

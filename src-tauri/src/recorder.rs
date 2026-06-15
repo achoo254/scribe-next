@@ -35,6 +35,7 @@ fn emit_state(app: &AppHandle, state: &str) {
 }
 
 impl Recorder {
+    #[allow(clippy::too_many_arguments)]
     pub fn start(
         &self,
         app: &AppHandle,
@@ -43,6 +44,7 @@ impl Recorder {
         out_dir: String,
         format: String,
         seg_secs: f64,
+        video: Option<encoder::VideoConfig>,
     ) -> Result<(), String> {
         let mut guard = self.inner.lock().map_err(|e| e.to_string())?;
         // Phiên cũ còn chạy → từ chối. Phiên cũ đã tự dừng (done) → dọn rồi tiếp tục.
@@ -71,7 +73,7 @@ impl Recorder {
         let (r, p, d) = (running.clone(), paused.clone(), done.clone());
 
         let handle = std::thread::spawn(move || {
-            record_loop(app, source, device, dir, format, ext, prefix, seg_secs, r, p, d);
+            record_loop(app, source, device, dir, format, ext, prefix, seg_secs, video, r, p, d);
         });
 
         *guard = Some(Session {
@@ -119,10 +121,12 @@ fn record_loop(
     ext: &'static str,
     prefix: String,
     seg_secs: f64,
+    video: Option<encoder::VideoConfig>,
     running: Arc<AtomicBool>,
     paused: Arc<AtomicBool>,
     done: Arc<AtomicBool>,
 ) {
+    let is_screen = video.is_some();
     let finish = |app: &AppHandle, dir: &Path, prefix: &str| {
         let _ = app.emit("segments_final", list_segments(dir, prefix, ext));
         emit_state(app, "idle");
@@ -145,8 +149,11 @@ fn record_loop(
         }
     };
 
-    // 2) Spawn ffmpeg sidecar (đọc stdin), args theo rate/channels gốc.
-    let args = encoder::ffmpeg_args(cfg.sample_rate, cfg.channels, &format, seg_secs, &pattern);
+    // 2) Spawn ffmpeg sidecar. Ghi màn hình: thêm input video ddagrab + mux MP4; ghi âm: stdin → mp3/m4a.
+    let args = match &video {
+        Some(v) => encoder::ffmpeg_args_screen(cfg.sample_rate, cfg.channels, v, seg_secs, &pattern),
+        None => encoder::ffmpeg_args(cfg.sample_rate, cfg.channels, &format, seg_secs, &pattern),
+    };
     let (mut events, mut child) = match app.shell().sidecar("ffmpeg").and_then(|c| c.args(args).spawn()) {
         Ok(v) => v,
         Err(e) => {
@@ -174,7 +181,8 @@ fn record_loop(
             Ok(buf) => {
                 // Tạm dừng → không feed ffmpeg (file không tăng) và meter về 0 (báo rõ đang dừng,
                 // tránh hiểu nhầm "vẫn ghi" khi nguồn loopback vẫn phát tiếng hệ thống).
-                let active = !paused.load(Ordering::SeqCst);
+                // Ghi màn hình: video ddagrab chạy liên tục → không hỗ trợ pause (luôn active) để khỏi lệch A/V.
+                let active = is_screen || !paused.load(Ordering::SeqCst);
                 if active {
                     let mut bytes = Vec::with_capacity(buf.len() * 2);
                     for s in &buf {
@@ -199,9 +207,14 @@ fn record_loop(
         }
     }
 
-    // 4) Stop sạch: ngừng capture, đóng stdin (EOF) → chờ ffmpeg finalize.
+    // 4) Stop sạch: ngừng capture. Ghi âm → đóng stdin (EOF) để ffmpeg finalize; ghi màn hình → kill
+    // (ddagrab vô hạn, không thoát khi stdin đóng), frag-MP4 đảm bảo đoạn đang ghi vẫn phát được.
     capture.stop();
-    drop(child);
+    if is_screen {
+        let _ = child.kill();
+    } else {
+        drop(child);
+    }
     loop {
         match events.blocking_recv() {
             Some(CommandEvent::Terminated(_)) | None => break,

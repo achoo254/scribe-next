@@ -18,10 +18,37 @@ pub struct AppSettings {
     pub source: String, // "mic" | "system"
     #[serde(default)]
     pub output_id: Option<String>, // tên render device khi source="system"
+    // Ghi màn hình (serde default → tương thích settings cũ).
+    #[serde(default)]
+    pub record_screen: bool,
+    #[serde(default)]
+    pub screen_monitor: u32, // index monitor (0 = chính)
+    #[serde(default = "default_fps")]
+    pub screen_fps: u32,
+    #[serde(default = "default_region_mode")]
+    pub region_mode: String, // "full" | "region"
+    #[serde(default)]
+    pub region: Option<RegionStore>, // vùng đã chọn lần trước (px vật lý theo monitor)
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct RegionStore {
+    pub x: i32,
+    pub y: i32,
+    pub w: u32,
+    pub h: u32,
 }
 
 fn default_source() -> String {
     "mic".into()
+}
+
+fn default_fps() -> u32 {
+    30
+}
+
+fn default_region_mode() -> String {
+    "full".into()
 }
 
 impl Default for AppSettings {
@@ -34,6 +61,11 @@ impl Default for AppSettings {
             split_unit: "minutes".into(),
             source: default_source(),
             output_id: None,
+            record_screen: false,
+            screen_monitor: 0,
+            screen_fps: default_fps(),
+            region_mode: default_region_mode(),
+            region: None,
         }
     }
 }

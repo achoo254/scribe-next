@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "region-selector",
+  "description": "Capability cho cửa sổ overlay chọn vùng ghi màn hình (IPC invoke + event).",
+  "windows": ["region-selector"],
+  "permissions": ["core:default"]
+}

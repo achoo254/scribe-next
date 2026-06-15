@@ -10,7 +10,7 @@ import {
 import LevelMeter from "../components/LevelMeter.vue";
 import SegmentTranscriptList from "../components/SegmentTranscriptList.vue";
 import AsrModelControls from "../components/AsrModelControls.vue";
-import { useRecorder } from "../composables/use-recorder";
+import { useRecorder, type Region } from "../composables/use-recorder";
 import { useRecordTranscribe } from "../composables/use-record-transcribe";
 
 const rec = useRecorder();
@@ -22,6 +22,11 @@ const outDir = ref("");
 const format = ref("mp3");
 const splitValue = ref(10);
 const splitUnit = ref("minutes");
+// Ghi màn hình: source (mic/system) ở trên là audio track; các ref này là cấu hình video.
+const recordScreen = ref(false);
+const screenMonitor = ref(0);
+const screenFps = ref(30);
+const regionMode = ref<"full" | "region">("full");
 const elapsed = ref(0);
 let timer: ReturnType<typeof setInterval> | undefined;
 let loaded = false;
@@ -51,6 +56,17 @@ const selectedDevice = computed({
 });
 const deviceLabel = computed(() => (isSystem.value ? "Thiết bị output" : "Micro"));
 const deviceHint = computed(() => (isSystem.value ? "Bỏ trống = thiết bị mặc định" : "Bỏ trống = mic mặc định"));
+// Ghi màn hình: danh sách monitor + FPS; chỉ hiện picker monitor khi có >1 màn hình.
+const hasMultiMonitor = computed(() => rec.monitors.value.length > 1);
+const monitorItems = computed(() =>
+  rec.monitors.value.map((m) => ({ title: `${m.name} (${m.width}×${m.height})`, value: m.index })),
+);
+const fpsItems = [
+  { title: "15 fps", value: 15 },
+  { title: "24 fps", value: 24 },
+  { title: "30 fps", value: 30 },
+  { title: "60 fps", value: 60 },
+];
 const clock = computed(() => {
   const m = Math.floor(elapsed.value / 60).toString().padStart(2, "0");
   const s = (elapsed.value % 60).toString().padStart(2, "0");
@@ -69,6 +85,11 @@ onMounted(async () => {
     splitUnit.value = (s.split_unit as string) ?? "minutes";
     recSource.value = (s.source as "mic" | "system") ?? "mic";
     outputId.value = (s.output_id as string) ?? null;
+    recordScreen.value = (s.record_screen as boolean) ?? false;
+    screenMonitor.value = (s.screen_monitor as number) ?? 0;
+    screenFps.value = (s.screen_fps as number) ?? 30;
+    regionMode.value = (s.region_mode as "full" | "region") ?? "full";
+    rec.region.value = (s.region as Region) ?? null;
   } catch {
     /* dùng mặc định */
   }
@@ -78,19 +99,37 @@ onMounted(async () => {
 // keep-alive: quay lại tab → re-sync trạng thái model (có thể đã tải xong từ tab Transcript).
 onActivated(() => rt.refreshModel());
 
-watch([mic, outputId, recSource, outDir, format, splitValue, splitUnit], () => {
-  if (!loaded) return;
-  invoke("set_settings", {
-    settings: {
-      mic_id: mic.value,
-      out_dir: outDir.value || null,
-      format: format.value,
-      split_value: Number(splitValue.value),
-      split_unit: splitUnit.value,
-      source: recSource.value,
-      output_id: outputId.value || null,
-    },
-  }).catch(() => {});
+watch(
+  [mic, outputId, recSource, outDir, format, splitValue, splitUnit, recordScreen, screenMonitor, screenFps, regionMode, rec.region],
+  () => {
+    if (!loaded) return;
+    invoke("set_settings", {
+      settings: {
+        mic_id: mic.value,
+        out_dir: outDir.value || null,
+        format: format.value,
+        split_value: Number(splitValue.value),
+        split_unit: splitUnit.value,
+        source: recSource.value,
+        output_id: outputId.value || null,
+        record_screen: recordScreen.value,
+        screen_monitor: Number(screenMonitor.value),
+        screen_fps: Number(screenFps.value),
+        region_mode: regionMode.value,
+        region: rec.region.value,
+      },
+    }).catch(() => {});
+  },
+);
+
+// Ghi màn hình chỉ cắt theo thời gian → ép đơn vị về phút khi bật.
+watch(recordScreen, (on) => {
+  if (on) splitUnit.value = "minutes";
+});
+
+// Đổi màn hình → vùng cũ (toạ độ tương đối màn hình trước) hết hiệu lực → xoá, buộc chọn lại.
+watch(screenMonitor, () => {
+  if (loaded) rec.region.value = null;
 });
 
 watch(
@@ -131,14 +170,22 @@ async function onStart() {
     rec.error.value = "Hãy chọn thư mục lưu trước.";
     return;
   }
+  if (recordScreen.value && regionMode.value === "region" && !rec.region.value) {
+    rec.error.value = 'Hãy chọn vùng ghi trước (nút "Chọn vùng…").';
+    return;
+  }
   rt.reset();
   await rec.start({
     source: recSource.value,
     device: selectedDevice.value,
     outDir: outDir.value,
-    format: format.value,
+    format: recordScreen.value ? "mp4" : format.value,
     splitValue: Number(splitValue.value),
-    splitUnit: splitUnit.value,
+    splitUnit: recordScreen.value ? "minutes" : splitUnit.value,
+    recordScreen: recordScreen.value,
+    screenMonitor: Number(screenMonitor.value),
+    screenFps: Number(screenFps.value),
+    region: recordScreen.value && regionMode.value === "region" ? rec.region.value : null,
   });
 }
 const locate = (path: string) => revealItemInDir(path).catch(() => {});
@@ -162,6 +209,38 @@ const locate = (path: string) => revealItemInDir(path).catch(() => {});
         persistent-hint
       />
 
+      <!-- Ghi kèm màn hình → xuất MP4 (video ddagrab + audio nguồn ở trên). Source mic/system = audio track. -->
+      <div class="os-asr">
+        <ViSwitch v-model="recordScreen" label="Ghi kèm màn hình (MP4)" :disabled="!isIdle" />
+        <template v-if="recordScreen">
+          <ViSelect
+            v-if="hasMultiMonitor"
+            v-model="screenMonitor"
+            :items="monitorItems"
+            label="Màn hình"
+            :disabled="!isIdle"
+          />
+          <div class="os-row">
+            <ViButtonToggle v-model="regionMode" mandatory :disabled="!isIdle" density="comfortable">
+              <ViButton value="full">Toàn màn hình</ViButton>
+              <ViButton value="region">Chọn vùng</ViButton>
+            </ViButtonToggle>
+            <ViButton
+              v-if="regionMode === 'region'"
+              variant="outlined"
+              :disabled="!isIdle"
+              @click="rec.openRegionSelector(screenMonitor)"
+            >
+              <ViIcon icon="IconCrop" start />Chọn vùng…
+            </ViButton>
+            <span v-if="regionMode === 'region' && rec.region.value" class="os-muted">
+              {{ rec.region.value.w }}×{{ rec.region.value.h }} @ ({{ rec.region.value.x }}, {{ rec.region.value.y }})
+            </span>
+          </div>
+          <ViSelect v-model="screenFps" :items="fpsItems" label="FPS" :disabled="!isIdle" class="os-num" />
+        </template>
+      </div>
+
       <div class="os-row">
         <ViButton variant="outlined" :disabled="!isIdle" @click="chooseFolder">
           <ViIcon icon="IconFolder" start />Chọn thư mục
@@ -178,13 +257,15 @@ const locate = (path: string) => revealItemInDir(path).catch(() => {});
           min="0.1"
           class="os-num"
         />
-        <ViButtonToggle v-model="splitUnit" mandatory :disabled="!isIdle" density="comfortable">
+        <!-- Ghi màn hình chỉ cắt theo thời gian (MB vô nghĩa với video) → khoá đơn vị phút. -->
+        <ViButtonToggle v-if="!recordScreen" v-model="splitUnit" mandatory :disabled="!isIdle" density="comfortable">
           <ViButton value="minutes">Phút</ViButton>
           <ViButton value="megabytes">MB</ViButton>
         </ViButtonToggle>
+        <span v-else class="os-muted">phút / đoạn</span>
       </div>
 
-      <ViRadioGroup v-model="format" inline label="Định dạng" :disabled="!isIdle">
+      <ViRadioGroup v-if="!recordScreen" v-model="format" inline label="Định dạng" :disabled="!isIdle">
         <ViRadio label="MP3 (khuyến nghị)" value="mp3" />
         <ViRadio label="M4A-AAC" value="m4a" />
       </ViRadioGroup>
@@ -210,10 +291,11 @@ const locate = (path: string) => revealItemInDir(path).catch(() => {});
         <ViButton v-if="!isRecording && !isPaused" color="primary" size="large" @click="onStart">
           <ViIcon icon="IconMicrophone" start />Ghi
         </ViButton>
-        <ViButton v-if="isRecording" color="secondary" @click="rec.pause()">
+        <!-- Pause không áp dụng cho ghi màn hình (2 nguồn live khó đồng bộ) → chỉ Ghi/Dừng. -->
+        <ViButton v-if="isRecording && !recordScreen" color="secondary" @click="rec.pause()">
           <ViIcon icon="IconPlayerPause" start />Tạm dừng
         </ViButton>
-        <ViButton v-if="isPaused" color="primary" @click="rec.resume()">
+        <ViButton v-if="isPaused && !recordScreen" color="primary" @click="rec.resume()">
           <ViIcon icon="IconPlayerPlay" start />Tiếp tục
         </ViButton>
         <ViButton v-if="!isIdle" color="error" variant="outlined" @click="rec.stop()">

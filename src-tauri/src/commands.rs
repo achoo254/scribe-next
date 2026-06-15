@@ -28,9 +28,20 @@ pub fn list_output_devices() -> Vec<DeviceInfo> {
     }
 }
 
+/// Vùng ghi màn hình (px vật lý theo monitor) — từ overlay chọn vùng.
+#[derive(serde::Deserialize)]
+pub struct RegionArg {
+    pub x: i32,
+    pub y: i32,
+    pub w: u32,
+    pub h: u32,
+}
+
 /// Bắt đầu ghi: tính segment_time từ đơn vị (phút | MB) rồi spawn pipeline.
 /// `source` = "mic" (cpal) | "system" (loopback output, Windows). `device` = tên thiết bị theo nguồn.
+/// `record_screen` = true → ghi màn hình (ddagrab) + audio nguồn đã chọn → MP4; segment luôn theo phút.
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub fn start_recording(
     app: AppHandle,
     recorder: State<'_, Recorder>,
@@ -40,12 +51,35 @@ pub fn start_recording(
     format: String,
     split_value: f64,
     split_unit: String,
+    record_screen: bool,
+    screen_monitor: Option<u32>,
+    screen_fps: Option<u32>,
+    region: Option<RegionArg>,
 ) -> Result<(), String> {
-    let seg = encoder::segment_time_secs(&split_unit, split_value);
+    // Video chỉ cắt theo thời gian (bitrate biến động → cắt theo MB vô nghĩa) → ép phút khi ghi màn hình.
+    let seg = if record_screen {
+        split_value * 60.0
+    } else {
+        encoder::segment_time_secs(&split_unit, split_value)
+    };
     if seg < 1.0 {
         return Err("Độ dài mỗi đoạn quá nhỏ (< 1 giây)".into());
     }
-    recorder.start(&app, source, device, out_dir, format, seg)
+    let video = if record_screen {
+        Some(encoder::VideoConfig {
+            monitor: screen_monitor.unwrap_or(0),
+            fps: screen_fps.unwrap_or(30),
+            // Vùng kích thước <=0 (settings hỏng) → coi như toàn màn hình thay vì để ddagrab lỗi.
+            region: region.and_then(|r| {
+                (r.w > 0 && r.h > 0).then_some(encoder::Region { x: r.x, y: r.y, w: r.w, h: r.h })
+            }),
+        })
+    } else {
+        None
+    };
+    // Ghi màn hình → container MP4 (bỏ qua mp3/m4a của ghi âm).
+    let fmt = if record_screen { "mp4".to_string() } else { format };
+    recorder.start(&app, source, device, out_dir, fmt, seg, video)
 }
 
 #[tauri::command]
