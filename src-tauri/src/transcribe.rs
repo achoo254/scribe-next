@@ -43,14 +43,26 @@ impl Drop for Proc {
     }
 }
 
-/// Thư mục model theo size: <app_data>/models/PhoWhisper-<size>-ct2.
-/// large giữ tên cũ (PhoWhisper-large-ct2) → dùng lại bản đã tải sẵn, khỏi tải lại 3GB.
+/// Thư mục model theo size, dưới <app_data>/models/.
+///
+/// small/medium dùng leaf ngắn ("small"/"medium"). Lý do: snapshot_download stage file tải vào
+/// <model_dir>/.cache/huggingface/download/<subfolder-repo>/<tên-hash>.incomplete. Subfolder repo
+/// của 2 size này dài (PhoWhisper-<size>-ct2-fasterWhisper) + tên file hash của huggingface_hub
+/// đẩy tổng đường dẫn chạm 260 = MAX_PATH Windows → open() lỗi [Errno 2] khi long-path chưa bật.
+/// Leaf ngắn giữ path < 260 trên mọi máy, không phụ thuộc registry LongPathsEnabled.
+///
+/// large giữ "PhoWhisper-large-ct2": repo large KHÔNG có subfolder nên path vốn đã đủ ngắn,
+/// đồng thời tái dùng bản ~3GB có thể đã tải sẵn, khỏi tải lại.
 pub fn model_dir(app: &AppHandle, size: &str) -> PathBuf {
     let base = app
         .path()
         .app_data_dir()
         .unwrap_or_else(|_| PathBuf::from("."));
-    base.join("models").join(format!("PhoWhisper-{size}-ct2"))
+    let leaf = match size {
+        "large" => "PhoWhisper-large-ct2",
+        other => other, // "small" | "medium" → leaf ngắn, tránh vượt MAX_PATH
+    };
+    base.join("models").join(leaf)
 }
 
 /// Có model.bin (>0 byte) ở đâu đó dưới dir không (small/medium nằm trong subfolder của repo).
