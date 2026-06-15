@@ -1,0 +1,4 @@
+# Dùng rust-lld (LLD đi kèm toolchain) thay link.exe → giảm thời gian link mỗi lần build.
+# Thử nghiệm: nếu link lỗi trên máy/CI thì xóa file này để quay về MSVC link.exe.
+[target.x86_64-pc-windows-msvc]
+linker = "rust-lld.exe"

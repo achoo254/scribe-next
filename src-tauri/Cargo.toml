@@ -32,3 +32,9 @@ chrono = { version = "0.4", default-features = false, features = ["clock"] }
 # Loopback (ghi tiếng output hệ thống) — Windows-only qua WASAPI.
 [target.'cfg(windows)'.dependencies]
 wasapi = "0.23"
+
+# Bật incremental cho release → rebuild (chỉ sửa code app) nhanh hơn nhiều.
+# Đánh đổi: target/ phình to; binary tối ưu kém hơn không đáng kể (phần nặng nằm ở
+# sidecar ffmpeg/whisper chạy process riêng, không phải trong binary Rust này).
+[profile.release]
+incremental = true
