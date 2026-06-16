@@ -5,7 +5,7 @@ import vuetify from "./plugins/vuetify";
 import App from "./App.vue";
 import RegionSelectorOverlay from "./views/RegionSelectorOverlay.vue";
 import RecordBorderOverlay from "./views/RecordBorderOverlay.vue";
-import RecordBorderCloseButton from "./views/RecordBorderCloseButton.vue";
+import RecordBorderToolbar from "./views/RecordBorderToolbar.vue";
 
 // 2 cửa sổ dùng chung index.html này → chọn root mount theo label cửa sổ hiện tại.
 // "region-selector" = overlay chọn vùng (trong suốt); còn lại = app chính.
@@ -36,9 +36,9 @@ import RecordBorderCloseButton from "./views/RecordBorderCloseButton.vue";
   } else if (label === "record-border") {
     overlayReset();
     createApp(RecordBorderOverlay).mount("#app");
-  } else if (label === "record-border-close") {
+  } else if (label === "record-border-toolbar") {
     overlayReset();
-    createApp(RecordBorderCloseButton).mount("#app");
+    createApp(RecordBorderToolbar).mount("#app");
   } else {
     createApp(App).use(vuetify).mount("#app");
   }

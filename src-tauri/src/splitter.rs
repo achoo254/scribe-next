@@ -10,7 +10,8 @@ use tauri_plugin_shell::process::CommandEvent;
 pub struct MediaInfo {
     pub duration_s: f64,
     pub bitrate_bps: u64,
-    pub codec: String,
+    pub codec: String,  // codec audio (hiển thị)
+    pub vcodec: String, // codec video — quyết định có ép tag hvc1 khi cắt HEVC vào mp4/mov
     pub ext: String,
 }
 
@@ -47,18 +48,22 @@ pub async fn probe_file(app: &AppHandle, path: &str) -> Result<MediaInfo, String
     if bitrate_bps == 0 && duration_s > 0.0 && size > 0 {
         bitrate_bps = ((size as f64 * 8.0) / duration_s) as u64;
     }
-    let codec = json["streams"]
-        .as_array()
-        .and_then(|s| s.iter().find(|x| x["codec_type"] == "audio"))
-        .and_then(|x| x["codec_name"].as_str())
-        .unwrap_or("")
-        .to_string();
+    let find_codec = |kind: &str| {
+        json["streams"]
+            .as_array()
+            .and_then(|s| s.iter().find(|x| x["codec_type"] == kind))
+            .and_then(|x| x["codec_name"].as_str())
+            .unwrap_or("")
+            .to_string()
+    };
+    let codec = find_codec("audio");
+    let vcodec = find_codec("video");
     let ext = Path::new(path)
         .extension()
         .and_then(|e| e.to_str())
         .unwrap_or("mp3")
         .to_string();
-    Ok(MediaInfo { duration_s, bitrate_bps, codec, ext })
+    Ok(MediaInfo { duration_s, bitrate_bps, codec, vcodec, ext })
 }
 
 /// Quy đổi tiêu chí → segment_time (giây).
@@ -100,11 +105,66 @@ fn stem_of(path: &str) -> String {
         .to_string()
 }
 
+/// Cách cắt cho ffmpeg segment muxer.
+enum SegmentArg {
+    /// Cắt đều theo thời gian (Phút / Chia-K) → -segment_time.
+    Time(f64),
+    /// Cắt tại các mốc thời gian cụ thể (Cắt theo MB) → -segment_times.
+    Times(Vec<f64>),
+}
+
+/// Mốc thời gian cắt cho tiêu chí MB: keyframe video ĐẦU TIÊN có byte-offset (pos) vượt mỗi bội số
+/// target_bytes. Bám byte THỰC TẾ trong file (không phải bitrate trung bình) → kích thước đoạn đều hơn
+/// hẳn với video VBR. Vẫn cắt tại keyframe (-c copy lossless) nên đoạn có thể nhỉnh hơn target chút ít
+/// (+ overhead container mỗi đoạn). Rỗng (probe lỗi / file nhỏ hơn 1 đoạn) → caller fallback bitrate TB.
+async fn size_cut_times(app: &AppHandle, path: &str, target_bytes: f64) -> Vec<f64> {
+    let out = match ffprobe_command(app) {
+        Ok(c) => {
+            c.args([
+                "-v", "error", "-select_streams", "v:0", "-show_entries",
+                "packet=pts_time,pos,flags", "-of", "csv=p=0", path,
+            ])
+            .output()
+            .await
+        }
+        Err(_) => return Vec::new(),
+    };
+    let out = match out {
+        Ok(o) if o.status.success() => o,
+        _ => return Vec::new(),
+    };
+    let text = String::from_utf8_lossy(&out.stdout);
+    let mut times = Vec::new();
+    let mut next_boundary = target_bytes;
+    let mut last_t = 0.0_f64;
+    for line in text.lines() {
+        // csv: pts_time,pos,flags — pts_time có thể "N/A", pos có thể -1 → bỏ qua.
+        let mut it = line.split(',');
+        let pts = it.next().and_then(|s| s.trim().parse::<f64>().ok());
+        let pos = it.next().and_then(|s| s.trim().parse::<f64>().ok());
+        let is_key = it.next().map(|f| f.trim_start().starts_with('K')).unwrap_or(false);
+        let (Some(pts), Some(pos)) = (pts, pos) else { continue };
+        if !is_key || pos <= 0.0 || pts <= 0.0 {
+            continue;
+        }
+        if pos >= next_boundary {
+            if pts > last_t {
+                times.push(pts);
+                last_t = pts;
+            }
+            // Nhảy mốc lên trên pos hiện tại — keyframe thưa (GOP > target) thì gộp, không tạo đoạn rỗng.
+            let crossed = (pos / target_bytes).floor();
+            next_boundary = (crossed + 1.0) * target_bytes;
+        }
+    }
+    times
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn split_one(
     app: &AppHandle,
     path: &str,
-    seg_secs: f64,
+    seg: SegmentArg,
     out_dir: &str,
     info: &MediaInfo,
     sub: &str,
@@ -119,14 +179,33 @@ async fn split_one(
         .to_string_lossy()
         .to_string();
 
-    let args: Vec<String> = [
-        "-v", "error", "-progress", "pipe:1", "-i", path, "-f", "segment", "-segment_time",
-    ]
-    .iter()
-    .map(|s| s.to_string())
-    .chain([format!("{seg_secs}")])
-    .chain(["-reset_timestamps", "1", "-c", "copy", &pattern].iter().map(|s| s.to_string()))
-    .collect();
+    // Lệnh cắt: segment muxer + -c copy (lossless). Phút/Chia-K → cắt đều (-segment_time); MB → cắt
+    // tại các mốc keyframe đã tính theo byte (-segment_times) cho kích thước đều hơn với video VBR.
+    let mut args: Vec<String> = vec![
+        "-v".into(), "error".into(),
+        "-progress".into(), "pipe:1".into(),
+        "-i".into(), path.into(),
+        "-f".into(), "segment".into(),
+    ];
+    match &seg {
+        SegmentArg::Time(t) => {
+            args.push("-segment_time".into());
+            args.push(format!("{t}"));
+        }
+        SegmentArg::Times(ts) => {
+            args.push("-segment_times".into());
+            args.push(ts.iter().map(|t| format!("{t}")).collect::<Vec<_>>().join(","));
+        }
+    }
+    args.extend(["-reset_timestamps", "1", "-c", "copy"].iter().map(|s| s.to_string()));
+    // HEVC trong MP4/MOV: ép tag hvc1 — mặc định ffmpeg ghi hev1 khiến nhiều player Windows (Media
+    // Player, Photos) chỉ phát tiếng, mất hình. Chỉ đổi nhãn, vẫn -c copy → không re-encode.
+    let is_hevc = matches!(info.vcodec.as_str(), "hevc" | "h265");
+    if is_hevc && matches!(info.ext.to_ascii_lowercase().as_str(), "mp4" | "mov" | "m4v") {
+        args.push("-tag:v".into());
+        args.push("hvc1".into());
+    }
+    args.push(pattern);
 
     let (mut events, _child) = ffmpeg_command(app)?
         .args(args)
@@ -134,6 +213,7 @@ async fn split_one(
         .map_err(|e| e.to_string())?;
 
     let dur = info.duration_s.max(0.001);
+    let mut stderr_buf = String::new();
     while let Some(ev) = events.recv().await {
         match ev {
             CommandEvent::Stdout(b) => {
@@ -157,11 +237,21 @@ async fn split_one(
                     );
                 }
             }
+            // Gom stderr (đang -v error) → báo lỗi rõ thay vì im lặng tạo ra 0 đoạn.
+            CommandEvent::Stderr(b) => stderr_buf.push_str(&String::from_utf8_lossy(&b)),
             CommandEvent::Terminated(_) => break,
             _ => {}
         }
     }
-    Ok(list_outputs(&subdir, sub, &info.ext))
+    let outputs = list_outputs(&subdir, sub, &info.ext);
+    if outputs.is_empty() {
+        return Err(if stderr_buf.trim().is_empty() {
+            "ffmpeg không tạo được đoạn nào".to_string()
+        } else {
+            format!("ffmpeg: {}", stderr_buf.trim())
+        });
+    }
+    Ok(outputs)
 }
 
 /// Batch tuần tự. Lỗi 1 file → emit split_error + tiếp tục file kế.
@@ -185,7 +275,23 @@ pub async fn split_files(
         }
         let result = async {
             let info = probe_file(&app, path).await?;
-            let seg = compute_segment_time(&criterion, value, &info)?;
+            // MB: cắt theo byte thực tế tại keyframe (đều hơn cho VBR). Không lấy được keyframe/pos
+            // hoặc file nhỏ hơn 1 đoạn → fallback ước lượng theo bitrate trung bình.
+            let seg = if criterion == "megabytes" {
+                let target_bytes = value * 1_000_000.0;
+                let times = if target_bytes >= 1.0 {
+                    size_cut_times(&app, path, target_bytes).await
+                } else {
+                    Vec::new()
+                };
+                if times.is_empty() {
+                    SegmentArg::Time(compute_segment_time(&criterion, value, &info)?)
+                } else {
+                    SegmentArg::Times(times)
+                }
+            } else {
+                SegmentArg::Time(compute_segment_time(&criterion, value, &info)?)
+            };
             split_one(&app, path, seg, &out_dir, &info, &sub, i, total).await
         }
         .await;

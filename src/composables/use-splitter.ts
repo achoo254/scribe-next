@@ -21,6 +21,8 @@ export interface FileResult {
 }
 
 const AUDIO_EXT = ["mp3", "m4a", "wav", "aac", "flac", "ogg", "opus", "wma"];
+// Cắt video bằng -c copy (lossless, bám keyframe). Đuôi output theo đuôi gốc nên giữ nguyên container.
+const VIDEO_EXT = ["mp4", "mkv", "mov", "avi", "webm", "m4v", "ts", "flv", "wmv", "mpg", "mpeg"];
 
 export function useSplitter() {
   const files = ref<string[]>([]);
@@ -51,7 +53,11 @@ export function useSplitter() {
   async function pickFiles() {
     const res = await open({
       multiple: true,
-      filters: [{ name: "Audio", extensions: AUDIO_EXT }],
+      filters: [
+        { name: "Âm thanh & Video", extensions: [...AUDIO_EXT, ...VIDEO_EXT] },
+        { name: "Âm thanh", extensions: AUDIO_EXT },
+        { name: "Video", extensions: VIDEO_EXT },
+      ],
     });
     if (Array.isArray(res)) files.value = res as string[];
     else if (typeof res === "string") files.value = [res];

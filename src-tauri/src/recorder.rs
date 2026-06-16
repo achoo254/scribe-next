@@ -109,6 +109,15 @@ impl Recorder {
         s.running.store(false, Ordering::SeqCst);
         s.handle.take()
     }
+
+    /// Dừng đồng bộ + chờ thread ghi tự dọn (gọi khi thoát app) — tránh bỏ rơi ffmpeg/thread loopback
+    /// đang chạy. take_for_stop đã set running=false; join chờ thread đóng stdin ffmpeg → finalize
+    /// đoạn cuối hợp lệ rồi ffmpeg thoát (không để tiến trình con mồ côi giữ GPU/ổ đĩa).
+    pub fn stop_blocking(&self) {
+        if let Some(handle) = self.take_for_stop() {
+            let _ = handle.join();
+        }
+    }
 }
 
 #[allow(clippy::too_many_arguments)]

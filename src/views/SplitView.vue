@@ -22,6 +22,8 @@ const valueLabel = computed(() =>
       : "Chia thành (số đoạn)",
 );
 const base = (p: string) => p.split(/[\\/]/).pop() || p;
+const VIDEO_RE = /\.(mp4|mkv|mov|avi|webm|m4v|ts|flv|wmv|mpe?g)$/i;
+const hasVideo = computed(() => sp.files.value.some((p) => VIDEO_RE.test(p)));
 const canSplit = computed(() => sp.files.value.length > 0 && !!sp.outDir.value && !sp.running.value);
 function fmtDur(s?: number): string {
   if (!s || s <= 0) return "";
@@ -73,7 +75,13 @@ const openResult = (r: FileResult) => {
       />
 
       <ViAlert v-if="criterion === 'megabytes'" type="info" variant="tonal" density="compact">
-        File VBR: kích thước mỗi đoạn là ước lượng theo bitrate trung bình.
+        Mỗi đoạn xấp xỉ kích thước đặt (cắt tại keyframe để giữ nguyên chất lượng, nên có thể chênh nhẹ /
+        nhỉnh hơn một chút).
+      </ViAlert>
+
+      <ViAlert v-if="hasVideo" type="info" variant="tonal" density="compact">
+        File video cắt không re-encode (giữ nguyên chất lượng, nhanh) nên điểm cắt bám theo keyframe —
+        độ dài mỗi đoạn có thể lệch nhẹ so với giá trị đặt.
       </ViAlert>
 
       <div class="os-row">

@@ -21,11 +21,23 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .manage(recorder::Recorder::default())
         .manage(transcribe::Transcriber::default())
-        .setup(|app| {
+        .manage(screen::RegionDrag::default())
+        .on_window_event(|window, event| {
+            // Đóng cửa sổ chính = thoát hẳn app: exit(0) đóng kèm MỌI overlay (viền/thanh công cụ/
+            // chọn vùng). Overlay skip_taskbar nếu còn mở sẽ giữ app sống ngầm (process treo, không
+            // icon taskbar). exit(0) cũng kích hoạt RunEvent::Exit bên dưới để dừng ghi + kill sidecar.
+            if window.label() == "main" {
+                if let tauri::WindowEvent::CloseRequested { .. } = event {
+                    window.app_handle().exit(0);
+                }
+            }
+        })
+        .setup(|_app| {
             // Debug: log tình trạng ffmpeg sidecar lúc khởi động (chẩn đoán nhanh).
+            // `_app` chỉ dùng trong khối debug này → bản release (debug_assertions off) không cảnh báo unused.
             #[cfg(debug_assertions)]
             {
-                let handle = app.handle().clone();
+                let handle = _app.handle().clone();
                 tauri::async_runtime::spawn(async move {
                     match commands::ffmpeg_version(handle).await {
                         Ok(v) => eprintln!("[onescribe] ffmpeg OK: {v}"),
@@ -58,15 +70,21 @@ pub fn run() {
             screen::cancel_region_selection,
             screen::show_record_border,
             screen::hide_record_border,
-            screen::show_record_border_close,
-            screen::hide_record_border_close,
+            screen::show_record_border_toolbar,
+            screen::hide_record_border_toolbar,
             screen::clear_record_region,
+            screen::begin_region_drag,
+            screen::update_region_drag,
+            screen::end_region_drag,
         ])
         .build(tauri::generate_context!())
         .expect("error while running OneScribe")
         .run(|handle, event| {
-            // Kill Python sidecar khi thoát app (tránh process treo + ~1.5GB RAM).
+            // Thoát app: dừng ghi (đóng stdin → ffmpeg finalize đoạn cuối rồi thoát) trước, sau đó
+            // kill Python sidecar — không để tiến trình con/thread treo lại (tránh rò bộ nhớ +
+            // ffmpeg giữ GPU/ổ đĩa khi đang quay màn hình).
             if let tauri::RunEvent::Exit = event {
+                handle.state::<recorder::Recorder>().stop_blocking();
                 handle.state::<transcribe::Transcriber>().shutdown();
             }
         });

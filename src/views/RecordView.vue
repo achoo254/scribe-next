@@ -28,6 +28,9 @@ const screenMonitor = ref(0);
 const screenFps = ref(30);
 const regionMode = ref<"full" | "region">("full");
 const elapsed = ref(0);
+// Sau khi DỪNG ghi → đóng hẳn khung viền đỏ (dù vùng vẫn còn chọn để ghi lại). Đặt lại false khi
+// bắt đầu ghi hoặc chọn vùng mới → khung hiện lại làm preview / đánh dấu vùng đang ghi.
+const frameDismissed = ref(false);
 let timer: ReturnType<typeof setInterval> | undefined;
 let loaded = false;
 
@@ -136,11 +139,11 @@ watch(screenMonitor, () => {
 // cả lúc đang ghi; ẩn khi đổi sang toàn màn hình / tắt ghi màn hình / xoá vùng. Drive reactive ở
 // đây vì cần cả screenMonitor + regionMode + region (toạ độ vùng tương đối monitor được chọn).
 watch(
-  [recordScreen, regionMode, screenMonitor, rec.region],
+  [recordScreen, regionMode, screenMonitor, rec.region, frameDismissed],
   () => {
     if (!loaded) return;
     const r = rec.region.value;
-    if (recordScreen.value && regionMode.value === "region" && r) {
+    if (recordScreen.value && regionMode.value === "region" && r && !frameDismissed.value) {
       invoke("show_record_border", {
         monitor: Number(screenMonitor.value),
         x: r.x, y: r.y, w: r.w, h: r.h,
@@ -151,21 +154,23 @@ watch(
   },
 );
 
-// Nút ✕ đóng khung: chỉ hiện khi có khung VÀ đang idle (chưa ghi) → không lọt vào video. Tách watch
-// riêng (thêm dep rec.state) để khung viền không bị tạo lại/nháy mỗi lần bắt đầu/dừng ghi.
+// Thanh công cụ (tay nắm kéo di chuyển + nút ✕): chỉ hiện khi có khung VÀ đang idle (chưa ghi) →
+// không lọt vào video, và chỉ cho di chuyển vùng trước khi ghi. Tách watch riêng (thêm dep rec.state)
+// để khung viền không bị dời/nháy mỗi lần bắt đầu/dừng ghi.
 watch(
-  [recordScreen, regionMode, screenMonitor, rec.region, rec.state],
+  [recordScreen, regionMode, screenMonitor, rec.region, rec.state, frameDismissed],
   () => {
     if (!loaded) return;
     const r = rec.region.value;
-    const show = recordScreen.value && regionMode.value === "region" && !!r && rec.state.value === "idle";
+    const show =
+      recordScreen.value && regionMode.value === "region" && !!r && rec.state.value === "idle" && !frameDismissed.value;
     if (show && r) {
-      invoke("show_record_border_close", {
+      invoke("show_record_border_toolbar", {
         monitor: Number(screenMonitor.value),
         x: r.x, y: r.y, w: r.w, h: r.h,
       }).catch(() => {});
     } else {
-      invoke("hide_record_border_close").catch(() => {});
+      invoke("hide_record_border_toolbar").catch(() => {});
     }
   },
 );
@@ -212,6 +217,7 @@ async function onStart() {
     rec.error.value = 'Hãy chọn vùng ghi trước (nút "Chọn vùng…").';
     return;
   }
+  frameDismissed.value = false; // ghi lại → khung viền hiện lại đánh dấu vùng đang ghi
   rt.reset();
   await rec.start({
     source: recSource.value,
@@ -225,6 +231,16 @@ async function onStart() {
     screenFps: Number(screenFps.value),
     region: recordScreen.value && regionMode.value === "region" ? rec.region.value : null,
   });
+}
+// Dừng ghi: đóng luôn khung viền đỏ (đánh dấu phiên ghi đã kết thúc) rồi mới dừng pipeline.
+function onStop() {
+  frameDismissed.value = true;
+  rec.stop();
+}
+// Chọn vùng mới → bỏ cờ đã-dừng để khung hiện lại preview ngay khi có vùng.
+function onPickRegion() {
+  frameDismissed.value = false;
+  rec.openRegionSelector(Number(screenMonitor.value));
 }
 const locate = (path: string) => revealItemInDir(path).catch(() => {});
 </script>
@@ -267,7 +283,7 @@ const locate = (path: string) => revealItemInDir(path).catch(() => {});
               v-if="regionMode === 'region'"
               variant="outlined"
               :disabled="!isIdle"
-              @click="rec.openRegionSelector(screenMonitor)"
+              @click="onPickRegion"
             >
               <ViIcon icon="IconCrop" start />Chọn vùng…
             </ViButton>
@@ -336,7 +352,7 @@ const locate = (path: string) => revealItemInDir(path).catch(() => {});
         <ViButton v-if="isPaused && !recordScreen" color="primary" @click="rec.resume()">
           <ViIcon icon="IconPlayerPlay" start />Tiếp tục
         </ViButton>
-        <ViButton v-if="!isIdle" color="error" variant="outlined" @click="rec.stop()">
+        <ViButton v-if="!isIdle" color="error" variant="outlined" @click="onStop">
           <ViIcon icon="IconPlayerStop" start />Dừng
         </ViButton>
         <span class="os-clock">{{ clock }} · {{ rec.segments.value.length }} đoạn</span>

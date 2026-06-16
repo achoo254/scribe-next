@@ -74,6 +74,8 @@ export function useRecorder() {
       await listen<string>("rec_state", (e) => (state.value = e.payload as RecState)),
       await listen<string>("rec_error", (e) => (error.value = e.payload)),
       await listen<Region>("region_selected", (e) => (region.value = e.payload)),
+      // Kéo thanh công cụ di chuyển khung → Rust emit vùng mới khi thả → cập nhật + lưu.
+      await listen<Region>("region_moved", (e) => (region.value = e.payload)),
       await listen("region_cancelled", () => {}),
       // Nút ✕ trên khung → Rust emit "region_cleared" → xoá vùng (watch sẽ ẩn khung + nút).
       await listen("region_cleared", () => (region.value = null)),

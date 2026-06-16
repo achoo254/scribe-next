@@ -21,6 +21,8 @@ interface Msg {
 }
 
 const AUDIO_EXT = ["mp3", "m4a", "wav", "aac", "flac", "ogg", "opus"];
+// Video: faster-whisper (PyAV) tự rút track âm thanh để transcribe — không cần tách audio trước.
+const VIDEO_EXT = ["mp4", "mkv", "mov", "avi", "webm", "m4v", "ts", "flv", "wmv", "mpg", "mpeg"];
 
 export type ModelSize = "small" | "medium" | "large";
 
@@ -132,7 +134,14 @@ export function useTranscribe() {
   }
 
   async function pickFiles() {
-    const res = await open({ multiple: true, filters: [{ name: "Audio", extensions: AUDIO_EXT }] });
+    const res = await open({
+      multiple: true,
+      filters: [
+        { name: "Âm thanh & Video", extensions: [...AUDIO_EXT, ...VIDEO_EXT] },
+        { name: "Âm thanh", extensions: AUDIO_EXT },
+        { name: "Video", extensions: VIDEO_EXT },
+      ],
+    });
     if (Array.isArray(res)) files.value = res as string[];
     else if (typeof res === "string") files.value = [res];
   }
