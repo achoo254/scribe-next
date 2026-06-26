@@ -1,0 +1,86 @@
+---
+phase: 4
+title: "Web Client Vue"
+status: pending
+priority: P2
+effort: "5-8d"
+dependencies: [2, 3]
+---
+
+# Phase 4: Web Client Vue
+
+## Overview
+
+Xây **web client riêng (Vue 3 + Vuetify + ViUI)** cho khách join bằng trình duyệt — consumer thuần: **xem video + đọc caption realtime**, không transcribe. Thống nhất 1 FE framework (Vue) với desktop, **tái dùng tối đa** ViUI + composable + component meeting từ Phase 2/3.
+
+## Requirements
+
+- **Functional:** mở link phòng → nhập tên → bật camera/mic (publish) → thấy/nghe mọi người → đọc caption realtime kèm tên người nói. KHÔNG có nút host/transcribe.
+- **Non-functional:** chạy trên Chrome/Edge/Safari hiện đại; UI ViUI đồng nhất thương hiệu iNET; responsive (desktop + mobile browser); web client KHÔNG bao giờ được là host (chặn cả ở UI lẫn token).
+
+## Architecture
+
+```
+Monorepo / shared layer (Vue)
+  packages/meeting-shared:  use-livekit-room.ts, use-live-caption.ts (phần subscribe/render),
+                            ParticipantTile.vue, MeetingControls.vue, CaptionPanel.vue
+        ├── apps/desktop (Tauri)  → host + transcribe (Phase 2/3)
+        └── apps/web (Vite)       → consumer thuần (phase này)
+```
+
+- **Tái dùng code:** tách phần dùng chung (kết nối LiveKit, render tile/caption) ra layer chia sẻ; web chỉ bỏ phần host-transcribe (vốn phụ thuộc Tauri/sidecar — không có trên web).
+<!-- Updated: Validation Session 1 — khóa monorepo workspaces -->
+- **Cấu trúc (ĐÃ CHỐT validation): monorepo workspaces** — `apps/desktop` (Tauri) + `apps/web` (Vite) + `packages/meeting-shared`. DRY, một nguồn component. Chấp nhận chi phí refactor cấu hình Tauri/Vite hiện tại sang workspaces (đo + xử lý trong bước 1). Phương án "web app riêng" đã loại.
+- **ViUI trên web:** project ngoài repo iNET → cài npm `@hobui/viui @hobui/tokens vuetify @tabler/icons-vue`, import `{ Vi* } from '@hobui/viui'` + `@hobui/viui/style.css` (theo hướng dẫn ViUI MCP).
+- **Caption phía web:** chỉ subscribe data channel + render (logic transcribe nằm ở host) → web nhẹ, không cần model.
+
+## Related Code Files
+
+- Create: `apps/web/` (Vite + Vue 3 + ViUI) — `MeetingRoomPage.vue`, router, entry, `vite.config.ts`.
+- Create/Refactor: `packages/meeting-shared/` — di chuyển `use-livekit-room.ts`, `ParticipantTile.vue`, `MeetingControls.vue`, `CaptionPanel.vue` ra dùng chung.
+- Modify: `package.json` gốc (khai báo workspaces); `apps/desktop` (app Tauri di chuyển vào) trỏ vào `packages/meeting-shared`.
+- Create: endpoint cấp token cho web guest (role = consumer, canPublish video/audio, KHÔNG host) — phối hợp Phase 5.
+- Read for context: outputs Phase 2/3, hướng dẫn ViUI (`viui://meta/instructions`).
+
+## Implementation Steps
+
+1. Refactor sang **monorepo workspaces** (đã chốt): di chuyển app Tauri hiện tại vào `apps/desktop`, dựng `packages/meeting-shared`, cấu hình workspaces ở `package.json` gốc. Xác minh `npm run tauri dev` vẫn chạy sau refactor.
+2. Scaffold `apps/web` (Vite + Vue 3), cài ViUI qua npm, set theme inetOneDark giống desktop.
+3. Tái dùng (hoặc port) `use-livekit-room.ts` + tile/controls; loại bỏ mọi nhánh host-transcribe khỏi web build.
+4. `MeetingRoomPage.vue`: nhập tên → lấy token guest → connect → publish camera/mic → grid + `CaptionPanel` (subscribe data channel, render caption + tên).
+5. Chặn host trên web: token guest không có quyền/cờ host; UI ẩn nút host/transcribe.
+6. Responsive + mobile browser: kiểm tra layout, getUserMedia trên Safari/iOS, autoplay policy (cần user gesture).
+7. Test xuyên client: host (desktop) + 2 khách web cùng phòng → mọi người thấy video + đọc caption realtime; khách web nói → host transcribe được (xác nhận luồng Phase 3).
+
+## Success Criteria
+
+- [ ] Khách mở link trên Chrome/Edge/Safari → join phòng, publish camera/mic, thấy/nghe mọi người.
+- [ ] Caption realtime hiển thị trên web kèm đúng tên người nói (gồm cả giọng khách web — host transcribe hộ).
+- [ ] Web client KHÔNG thể trở thành host (chặn ở token + UI).
+- [ ] FE web dùng cùng ViUI/theme với desktop (đồng nhất thương hiệu); ESLint ViUI pass.
+- [ ] Code chung desktop/web không bị fork trùng lặp (đạt DRY ở mức đã quyết định ở bước 1).
+- [ ] Hoạt động trên mobile browser (responsive + getUserMedia).
+
+## Risk Assessment
+
+- **Refactor desktop sang monorepo** có thể đụng cấu hình Tauri/Vite hiện tại (đường dẫn `src-tauri`, alias, sidecar path trong `transcribe.rs::find_script`). Giảm thiểu: refactor từng bước + chạy `tauri dev` xác minh sau mỗi bước; làm trên nhánh riêng để dễ revert nếu hỏng.
+- **Safari/iOS WebRTC + autoplay** khắt khe (cần user gesture, codec). Giảm thiểu: test sớm trên thiết bị thật; nút "Tham gia" làm gesture mở media.
+- **ViUI npm version lệch** giữa desktop (alias nội bộ) và web (npm) → UI lệch. Giảm thiểu: khóa version `@hobui/viui`/`@hobui/tokens` thống nhất.
+- **getUserMedia cần HTTPS** trên web (trừ localhost). Giảm thiểu: phối hợp Phase 5 (TLS/domain).
+
+## Red Team Hardening (Session 1)
+
+Monorepo refactor (user giữ trong MVP) đụng NHIỀU đường dẫn cứng — checklist bắt buộc bước 1, verify end-to-end TRƯỚC khi sang bước 2:
+
+- **[H6] Đường dẫn gãy khi dời `src-tauri` vào `apps/desktop/`:**
+  - `tauri.conf.json:10` `frontendDist: "../dist"` → cập nhật theo vị trí mới + đặt `build.outDir` rõ trong `vite.config.ts`; nếu sai, installer ship **màn hình trắng KHÔNG báo lỗi** (frontendDist chỉ check lúc bundle).
+  - `src-tauri/src/transcribe.rs:108-117` `find_script()` walk ancestor tìm `sidecar/transcriber/main.py` — verify `sidecar/` vẫn là ancestor của exe sau khi dời; chạy `tauri dev` xác nhận.
+  - `sidecar/transcriber/build_pyinstaller.ps1:24` `$binDir = "..\..\src-tauri\binaries"` → **sửa thành đường dẫn mới** (`..\..\apps\desktop\src-tauri\binaries`) nếu không **release build copy binary sai chỗ**, `externalBin` (`tauri.conf.json:30`) không thấy.
+  - Cập nhật `package.json` gốc thêm `workspaces`; `Cargo.toml` workspace; đường dẫn trong 3 file `capabilities/*.json`.
+  - **Verify cả `npm run tauri dev` LẪN `npm run tauri build` (release) end-to-end ngay sau refactor.** Làm trên nhánh riêng để revert được.
+- **[H5] `ViRow`/`ViCol` mismatch:** vi-ui local (16 component) thiếu Row/Col mà `@hobui/viui` npm có → shared `packages/meeting-shared` dùng Row/Col sẽ gãy desktop build. Chốt: monorepo này nên cho desktop **cũng import `@hobui/viui` npm** (đồng bộ component set với web), bỏ alias local — giải quyết luôn H5.
+- **[.npmrc] Chống typosquat + pin:** thêm `.npmrc` `@hobui:registry=https://<private-registry>`; pin chính xác `@hobui/viui@<ver>` (package mới, mới 2 version) ở cả apps/web + apps/desktop; review peerDep `apexcharts` (kéo ~300KB không cần cho meeting) — chỉ cài nếu dùng.
+
+### Success Criteria bổ sung
+- [ ] Sau monorepo refactor: `tauri dev` + `tauri build` (release, có sidecar binary đúng chỗ) đều chạy — không màn trắng, không thiếu binary.
+- [ ] Desktop + web dùng cùng nguồn `@hobui/viui` (component set khớp), `.npmrc` private registry + version pin.
