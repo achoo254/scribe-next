@@ -66,10 +66,16 @@ def _join(words):
 
 
 class VadCutStrategy:
-    """Gom chunk khi VAD=speech; im lặng quá hangover → transcribe cả utterance, emit final."""
+    """Gom chunk khi VAD=speech; im lặng quá hangover → transcribe cả utterance, emit final.
 
-    def __init__(self, model, lock, beam: int, prompt: str):
+    Max-utterance cap: người nói dài không nghỉ (no pause) → force-cut mỗi `max_utterance_s` để
+    bound latency caption (không chờ tới hết câu mới có chữ). Cùng tinh thần với hard-cap của
+    LocalAgreementStrategy. max_utterance_s<=0 = tắt cap (chỉ cắt theo silence).
+    """
+
+    def __init__(self, model, lock, beam: int, prompt: str, max_utterance_s: float = 5.0):
         self.model, self.lock, self.beam, self.prompt = model, lock, beam, prompt
+        self.max_utterance_s = max_utterance_s
         self.buf = []
         self.start = None
         self.last_speech_t1 = 0.0
@@ -83,6 +89,11 @@ class VadCutStrategy:
             self.buf.append(chunk)
             self.last_speech_t1 = t1
             self.silence = 0
+            # Force-cut khi utterance dài quá cap (người nói liên tục không nghỉ) → bound latency.
+            if self.max_utterance_s > 0 and (self.last_speech_t1 - self.start) >= self.max_utterance_s:
+                caps, runs = self._finalize()
+                self.in_speech, self.buf, self.start = True, [], t1  # mở utterance mới ngay
+                return caps, runs
             return [], []
         if self.in_speech:
             self.silence += 1

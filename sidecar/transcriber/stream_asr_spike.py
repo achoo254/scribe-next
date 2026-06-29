@@ -49,6 +49,8 @@ def parse_args():
     p.add_argument("--strategy", choices=["vad-cut", "local-agreement"], default="vad-cut")
     p.add_argument("--chunk-ms", type=int, default=1000)
     p.add_argument("--hangover-ms", type=int, default=600, help="im lặng tối thiểu để chốt câu (vad-cut)")
+    p.add_argument("--max-utterance-s", type=float, default=5.0,
+                   help="vad-cut: force-cut utterance dài quá ngưỡng (bound latency); <=0 = tắt")
     p.add_argument("--commit-ms", type=int, default=1000, help="nhịp chạy lại ASR (local-agreement)")
     p.add_argument("--beam", type=int, default=1)
     p.add_argument("--vad", choices=["energy", "webrtc", "none"], default="energy")
@@ -99,7 +101,8 @@ def make_strategy(args, model, lock):
     if args.strategy == "local-agreement":
         return engine.LocalAgreementStrategy(model, lock, args.beam, engine.DEFAULT_PROMPT,
                                              commit_ms=args.commit_ms)
-    return engine.VadCutStrategy(model, lock, args.beam, engine.DEFAULT_PROMPT)
+    return engine.VadCutStrategy(model, lock, args.beam, engine.DEFAULT_PROMPT,
+                                 max_utterance_s=args.max_utterance_s)
 
 
 def run_track(track_id, samples, args, model, lock, stats, barrier):
@@ -183,6 +186,7 @@ def run_tracks(args):
             "size": args.size, "strategy": args.strategy, "vad": args.vad,
             "cpu_threads": nthreads, "cpu_threads_per_model": per_model_threads,
             "chunk_ms": args.chunk_ms, "beam": args.beam,
+            "max_utterance_s": args.max_utterance_s,
             "n_tracks": len(tracks), "realtime": args.realtime,
             "isolated_models": args.isolated_models, "psutil": metrics.has_psutil(),
         },
