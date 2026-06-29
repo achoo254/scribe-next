@@ -9,6 +9,12 @@ dependencies: []
 
 # Phase 2: LiveKit Media Core
 
+> **Tiến độ (2026-06-29 — cook slice nền):** Đã implement + **compile sạch** (`npm run build` ✓ + `cargo check` ✓) + qua **code-review** (DONE_WITH_CONCERNS, C1 đã fix).
+> **Done:** `use-livekit-room.ts` (connect/publish/subscribe/active-speaker + cleanup), `MeetingRoomView`/`ParticipantTile`/`MeetingControls`, tab "Họp" (App.vue), **H1 CSP** (null→có giá trị, cho livekit+media+Vuetify), **H2 hook quyền camera/mic** (`webview_permissions.rs`, chỉ allow CAMERA/MIC), **H5 né bằng CSS grid** (không ViRow/ViCol), infra dev (`infra/livekit/*`, dev-token `server/dev-token/generate-token.mjs`).
+> **Fix review C1:** `onDeactivated(disconnect)` — `<keep-alive>` chặn `onUnmounted` → đổi tab phải release camera/mic.
+> **Defer (theo review):** Reconnecting/Reconnected handler (Phase 3 UX); siết `connect-src wss:/https:` về domain cụ thể (Phase 5 auth); token field `type=password` (Phase 5).
+> **CHƯA verify (QA user — cần LiveKit chạy + camera):** no-white-screen sau đổi CSP · getUserMedia cấp quyền · ≤8 client thấy/nghe nhau · simulcast throttle. Lệnh: `bash infra/livekit/run-livekit-dev.sh` (WSL) + `node server/dev-token/generate-token.mjs <room> <id>`.
+
 ## Overview
 
 Dựng **LiveKit SFU self-host** + tích hợp `livekit-client` (JS) vào app Tauri (Vue 3 + ViUI) để có **phòng họp video/audio cơ bản**: tạo/join phòng, bật camera/mic, thấy/nghe nhau, grid layout. Validate WebRTC chạy ổn trong WebView2.

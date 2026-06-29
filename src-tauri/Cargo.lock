@@ -2564,6 +2564,8 @@ dependencies = [
  "tauri-plugin-shell",
  "tauri-plugin-store",
  "wasapi",
+ "webview2-com",
+ "windows 0.61.3",
 ]
 
 [[package]]

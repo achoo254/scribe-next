@@ -41,7 +41,7 @@ Mở rộng OneScribe (Tauri + Vue 3 + ViUI, transcribe offline PhoWhisper) thà
 |-------|------|--------|
 | 0 | [Bot-join / Loopback Value Validation](./phase-00-bot-join-loopback-validation.md) — **VALUE GATE, làm trước nhất** | Pending |
 | 1 | [Spike Streaming ASR](./phase-01-spike-streaming-asr.md) — **FEASIBILITY GATE** | In Progress (G1 GO + G3+G4 GO; G2 chưa chốt, G5 kém — proxy TTS 2026-06-29; G6 pending) |
-| 2 | [LiveKit Media Core](./phase-02-livekit-media-core.md) | Pending |
+| 2 | [LiveKit Media Core](./phase-02-livekit-media-core.md) | In Progress (slice nền: FE+CSP H1+quyền media H2+infra dev done; compile✓ + code-review✓ C1 fixed; chờ QA E2E + xác nhận no-white-screen) |
 | 3 | [Host Transcribe Relay](./phase-03-host-transcribe-relay.md) | Pending |
 | 4 | [Web Client Vue](./phase-04-web-client-vue.md) | Pending |
 | 5 | [Server Infra Retention](./phase-05-server-infra-retention.md) | Pending |
@@ -120,6 +120,7 @@ Mở rộng OneScribe (Tauri + Vue 3 + ViUI, transcribe offline PhoWhisper) thà
 1. **[Platform/macOS]** Meeting MVP = **Windows-first** (chốt). macOS (WKWebView + NSCamera/Mic entitlements) defer sau MVP → đóng open question macOS của Red Team.
 2. **[Workflow Git]** **Code + push THẲNG trên `main`, KHÔNG nhánh, KHÔNG PR.** Ghi đè khuyến nghị "nhánh riêng" của Red Team (H6/Phase 4 risk). Giữ INTENT revertability bằng: **tag checkpoint trước mỗi refactor rủi ro + commit nhỏ atomic** → `git revert`/reset về tag khi hỏng.
 3. **[Mẫu speech G1/G2]** **KHÔNG có mẫu thật.** → dùng **TTS tiếng Việt đa người (skill ai-multimodal) làm proxy** đo RTF/latency (số LẠC QUAN: không có cross-talk/giọng thật). Cần 1 vòng xác nhận speech thật trước GO cuối nếu khả thi.
+4. **[Gate override — Phase 2 trước G6]** User chủ động chọn cook **Phase 2 (LiveKit Media Core)** dù gate Phase 1 chưa đóng (G6 chân audio WebView2 chưa làm). Đã cảnh báo rủi ro (chân audio chưa chứng minh trước khi đổ công media); user chấp nhận. → Phase 2 build trước, G6 vẫn nợ trước khi cấp ngân sách Phase 3.
 
 #### Impact on Phases
 - Phase 1: đóng G1/G2 bằng TTS-proxy (ghi rõ "proxy"); G6 (chân WebView2) vẫn cần app chạy.

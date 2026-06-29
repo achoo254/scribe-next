@@ -30,8 +30,12 @@ cpal = "0.15"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 
 # Loopback (ghi tiếng output hệ thống) — Windows-only qua WASAPI.
+# webview2-com/windows: hook PermissionRequested cấp quyền camera/mic cho getUserMedia trong WebView2
+# (version khớp wry 0.55 → webview2-com 0.38 + windows 0.61, tránh lệch type ICoreWebView2).
 [target.'cfg(windows)'.dependencies]
 wasapi = "0.23"
+webview2-com = "0.38"
+windows = { version = "0.61", features = ["Win32_System_WinRT", "Win32_Foundation"] }
 
 # Bật incremental cho release → rebuild (chỉ sửa code app) nhanh hơn nhiều.
 # Đánh đổi: target/ phình to; binary tối ưu kém hơn không đáng kể (phần nặng nằm ở

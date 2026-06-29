@@ -10,6 +10,8 @@ mod screen;
 mod settings;
 mod splitter;
 mod transcribe;
+#[cfg(windows)]
+mod webview_permissions;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -33,6 +35,13 @@ pub fn run() {
             }
         })
         .setup(|_app| {
+            // Cấp quyền camera/mic cho WebView2 (Phase 2 — họp video): getUserMedia cần hook này (H2).
+            #[cfg(windows)]
+            if let Some(win) = _app.get_webview_window("main") {
+                if let Err(e) = webview_permissions::grant_media_permissions(&win) {
+                    eprintln!("[onescribe] hook quyền media WebView2 lỗi: {e}");
+                }
+            }
             // Debug: log tình trạng ffmpeg sidecar lúc khởi động (chẩn đoán nhanh).
             // `_app` chỉ dùng trong khối debug này → bản release (debug_assertions off) không cảnh báo unused.
             #[cfg(debug_assertions)]
