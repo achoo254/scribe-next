@@ -63,7 +63,7 @@ Monorepo / shared layer (Vue)
 
 ## Risk Assessment
 
-- **Refactor desktop sang monorepo** có thể đụng cấu hình Tauri/Vite hiện tại (đường dẫn `src-tauri`, alias, sidecar path trong `transcribe.rs::find_script`). Giảm thiểu: refactor từng bước + chạy `tauri dev` xác minh sau mỗi bước; làm trên nhánh riêng để dễ revert nếu hỏng.
+- **Refactor desktop sang monorepo** có thể đụng cấu hình Tauri/Vite hiện tại (đường dẫn `src-tauri`, alias, sidecar path trong `transcribe.rs::find_script`). Giảm thiểu: refactor từng bước + chạy `tauri dev` xác minh sau mỗi bước; **tag git checkpoint TRƯỚC refactor + commit nhỏ atomic** để `git revert`/reset về tag khi hỏng (workflow đã chốt Session 2: code+push thẳng `main`, KHÔNG nhánh/PR).
 - **Safari/iOS WebRTC + autoplay** khắt khe (cần user gesture, codec). Giảm thiểu: test sớm trên thiết bị thật; nút "Tham gia" làm gesture mở media.
 - **ViUI npm version lệch** giữa desktop (alias nội bộ) và web (npm) → UI lệch. Giảm thiểu: khóa version `@hobui/viui`/`@hobui/tokens` thống nhất.
 - **getUserMedia cần HTTPS** trên web (trừ localhost). Giảm thiểu: phối hợp Phase 5 (TLS/domain).
@@ -77,7 +77,7 @@ Monorepo refactor (user giữ trong MVP) đụng NHIỀU đường dẫn cứng 
   - `src-tauri/src/transcribe.rs:108-117` `find_script()` walk ancestor tìm `sidecar/transcriber/main.py` — verify `sidecar/` vẫn là ancestor của exe sau khi dời; chạy `tauri dev` xác nhận.
   - `sidecar/transcriber/build_pyinstaller.ps1:24` `$binDir = "..\..\src-tauri\binaries"` → **sửa thành đường dẫn mới** (`..\..\apps\desktop\src-tauri\binaries`) nếu không **release build copy binary sai chỗ**, `externalBin` (`tauri.conf.json:30`) không thấy.
   - Cập nhật `package.json` gốc thêm `workspaces`; `Cargo.toml` workspace; đường dẫn trong 3 file `capabilities/*.json`.
-  - **Verify cả `npm run tauri dev` LẪN `npm run tauri build` (release) end-to-end ngay sau refactor.** Làm trên nhánh riêng để revert được.
+  - **Verify cả `npm run tauri dev` LẪN `npm run tauri build` (release) end-to-end ngay sau refactor.** Trên `main` (không nhánh): **`git tag pre-monorepo-refactor` TRƯỚC khi dời file** → hỏng thì `git reset --hard` về tag.
 - **[H5] `ViRow`/`ViCol` mismatch:** vi-ui local (16 component) thiếu Row/Col mà `@hobui/viui` npm có → shared `packages/meeting-shared` dùng Row/Col sẽ gãy desktop build. Chốt: monorepo này nên cho desktop **cũng import `@hobui/viui` npm** (đồng bộ component set với web), bỏ alias local — giải quyết luôn H5.
 - **[.npmrc] Chống typosquat + pin:** thêm `.npmrc` `@hobui:registry=https://<private-registry>`; pin chính xác `@hobui/viui@<ver>` (package mới, mới 2 version) ở cả apps/web + apps/desktop; review peerDep `apexcharts` (kéo ~300KB không cần cho meeting) — chỉ cài nếu dùng.
 

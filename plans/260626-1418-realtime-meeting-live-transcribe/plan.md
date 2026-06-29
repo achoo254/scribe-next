@@ -33,14 +33,14 @@ Mở rộng OneScribe (Tauri + Vue 3 + ViUI, transcribe offline PhoWhisper) thà
 | 7 | Web participant = consumer thuần (xem video + đọc caption). |
 | 8 | Recording MP4/audio = tùy chọn, **phía client/host**, KHÔNG ở server. |
 | 9 | FE thống nhất **Vue 3 + Vuetify + ViUI** cho cả desktop lẫn web client. |
-| 10 | Streaming ASR: LocalAgreement (`whisper_online.py` copy, không pip) + `WhisperModel`(PhoWhisper, KHÔNG BatchedInferencePipeline) + VAD webrtcvad/built-in (KHÔNG silero). Live = small; biên bản chuẩn = medium/large batch (tái dùng Mode C). |
+| 10 | Streaming ASR: **vad-cut (utterance-based) + max-utterance cap ~8s** — _cập nhật Session 2: LocalAgreement đo thực tế NO-GO trên CPU yếu (re-transcribe → RTF 5x; xem spike §9), thay bằng vad-cut_. Cap số stream ASR đồng thời **≤2** (Whisper có overhead encoder ~cố định/lần gọi → không cắt vụn). `WhisperModel`(PhoWhisper, KHÔNG BatchedInferencePipeline) + VAD webrtcvad/built-in (KHÔNG silero). Live = small ("tham khảo"); biên bản chuẩn = medium/large batch (tái dùng Mode C). |
 
 ## Phases
 
 | Phase | Name | Status |
 |-------|------|--------|
 | 0 | [Bot-join / Loopback Value Validation](./phase-00-bot-join-loopback-validation.md) — **VALUE GATE, làm trước nhất** | Pending |
-| 1 | [Spike Streaming ASR](./phase-01-spike-streaming-asr.md) — **FEASIBILITY GATE** | In Progress (harness done; G3+G4 GO; G1/G2/G5/G6 pending) |
+| 1 | [Spike Streaming ASR](./phase-01-spike-streaming-asr.md) — **FEASIBILITY GATE** | In Progress (G1 GO + G3+G4 GO; G2 chưa chốt, G5 kém — proxy TTS 2026-06-29; G6 pending) |
 | 2 | [LiveKit Media Core](./phase-02-livekit-media-core.md) | Pending |
 | 3 | [Host Transcribe Relay](./phase-03-host-transcribe-relay.md) | Pending |
 | 4 | [Web Client Vue](./phase-04-web-client-vue.md) | Pending |
@@ -113,6 +113,19 @@ Mở rộng OneScribe (Tauri + Vue 3 + ViUI, transcribe offline PhoWhisper) thà
 - Match còn lại ("web app riêng đã loại") là ghi chú phương án bị loại, đúng ngữ cảnh — không phải mâu thuẫn.
 - **Kết quả: 0 mâu thuẫn tồn đọng. Plan nhất quán, đủ điều kiện implement.**
 
+### Session 2 — 2026-06-29
+**Trigger:** user trả lời 3 open question sau `/ck:predict` 5-persona.
+
+#### Quyết định
+1. **[Platform/macOS]** Meeting MVP = **Windows-first** (chốt). macOS (WKWebView + NSCamera/Mic entitlements) defer sau MVP → đóng open question macOS của Red Team.
+2. **[Workflow Git]** **Code + push THẲNG trên `main`, KHÔNG nhánh, KHÔNG PR.** Ghi đè khuyến nghị "nhánh riêng" của Red Team (H6/Phase 4 risk). Giữ INTENT revertability bằng: **tag checkpoint trước mỗi refactor rủi ro + commit nhỏ atomic** → `git revert`/reset về tag khi hỏng.
+3. **[Mẫu speech G1/G2]** **KHÔNG có mẫu thật.** → dùng **TTS tiếng Việt đa người (skill ai-multimodal) làm proxy** đo RTF/latency (số LẠC QUAN: không có cross-talk/giọng thật). Cần 1 vòng xác nhận speech thật trước GO cuối nếu khả thi.
+
+#### Impact on Phases
+- Phase 1: đóng G1/G2 bằng TTS-proxy (ghi rõ "proxy"); G6 (chân WebView2) vẫn cần app chạy.
+- Phase 2/4: macOS out-of-scope MVP (chỉ target `nsis`); mọi refactor làm trên `main` + tag checkpoint.
+- Phase 4 (monorepo H6): rủi ro cao + không nhánh để revert → BẮT BUỘC tag trước refactor + verify `tauri dev`/`build` release ngay sau.
+
 ## Red Team Review
 
 ### Session 1 — 2026-06-26
@@ -155,4 +168,4 @@ Mở rộng OneScribe (Tauri + Vue 3 + ViUI, transcribe offline PhoWhisper) thà
 - **Unresolved contradictions: 0.**
 
 ### Open question (cần user quyết trước Phase 2)
-- **macOS:** README nói app Windows+macOS, nhưng (a) loopback Phase 0 chỉ Windows; (b) meeting dùng WKWebView trên macOS (không phải WebView2) cần `NSCameraUsageDescription`/entitlements + `tauri.conf.json` hiện chỉ target `nsis`. → **Meeting MVP nên Windows-first, macOS sau?** (khuyến nghị Windows-first cho MVP, xác nhận với user).
+- ~~**macOS:** Meeting MVP nên Windows-first?~~ → **RESOLVED (Session 2, 2026-06-29): Windows-first.** macOS defer sau MVP (WKWebView + entitlements; `tauri.conf.json` chỉ target `nsis`).

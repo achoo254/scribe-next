@@ -41,7 +41,7 @@ HOST (desktop)
   LiveKit publishData(caption JSON, reliable) ──► server relay ──► mọi participant
 ```
 
-- **Mở rộng sidecar:** thêm chế độ streaming song song với batch `transcribe` cũ (KHÔNG phá Mode C). Quản nhiều stream theo `track` id, mỗi stream 1 state whisper_streaming.
+- **Mở rộng sidecar:** thêm chế độ streaming song song với batch `transcribe` cũ (KHÔNG phá Mode C). Quản nhiều stream theo `track` id, mỗi stream 1 state **vad-cut + max-utterance cap ~8s** (port từ spike Phase 1 `engine.VadCutStrategy`; KHÔNG LocalAgreement — đo NO-GO trên CPU). Cap số stream ASR đồng thời ≤2.
 - **Audio tap:** ưu tiên Web Audio API (`MediaStreamTrackProcessor`/`AudioWorklet` trong WebView2) lấy PCM từ remote track → gửi xuống Rust qua Tauri command (hoặc xử lý thẳng trong JS nếu khả thi). Chốt đường đi cụ thể dựa trên kết quả spike Phase 1.
 - **Active-speaker gating:** dùng `ActiveSpeakersChanged` của LiveKit + VAD (webrtcvad/built-in, KHÔNG silero) ở sidecar → chỉ ASR track đang nói; giới hạn số stream đồng thời theo spec Phase 1.
 

@@ -9,11 +9,8 @@ dependencies: []
 
 # Phase 1: Spike Streaming ASR — RISK GATE
 
-> **Tiến độ (2026-06-26):** Harness spike HOÀN THÀNH + verified (`stream_asr_spike.py` + `spike_lib/`),
-> đã qua code-review (3 lỗi đo lường High đã sửa). **G3 (RAM) + G4 (VAD) ĐẠT bằng số thật**
-> (small+medium peak ~2.1GB, webrtcvad build OK Py3.14). **CÒN:** G1/G2 (RTF/latency cần mẫu
-> speech tiếng Việt thật) + G5 (chất lượng định tính) + G6 (mini-spike chân audio WebView2 — cần app).
-> Chi tiết & cách chạy: [`reports/spike-streaming-asr-results.md`](./reports/spike-streaming-asr-results.md).
+> **Tiến độ (2026-06-29 — proxy run TTS):** Harness HOÀN THÀNH + verified; **G1 ĐẠT** (RTF model thô 0.21–0.50 @4 threads, thừa headroom), **G3+G4 ĐẠT**. **G2 CHƯA chốt** (mẫu TTS không có pause → không đo được latency cắt-câu thật), **G5 KÉM** (small méo thuật ngữ + hallucinate). **PHÁT HIỆN:** LocalAgreement = NO-GO trên CPU yếu (RTF wall 5x) → **chiến lược đúng = vad-cut/utterance-based + max-utterance cap** (tinh chỉnh Decision #10, chờ user xác nhận). **CÒN:** G2 (cần speech có pause + max-cap), G5 (giọng thật), G6 (chân audio WebView2 — cần app).
+> Chi tiết & số đo: [`reports/spike-streaming-asr-results.md`](./reports/spike-streaming-asr-results.md) §9.
 > **Gate CHƯA đóng** → chưa cấp ngân sách Phase 2+.
 
 ## Overview
