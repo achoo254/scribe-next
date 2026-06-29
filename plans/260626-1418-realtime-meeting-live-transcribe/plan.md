@@ -40,7 +40,7 @@ Mở rộng OneScribe (Tauri + Vue 3 + ViUI, transcribe offline PhoWhisper) thà
 | Phase | Name | Status |
 |-------|------|--------|
 | 0 | [Bot-join / Loopback Value Validation](./phase-00-bot-join-loopback-validation.md) — **VALUE GATE, làm trước nhất** | Pending |
-| 1 | [Spike Streaming ASR](./phase-01-spike-streaming-asr.md) — **FEASIBILITY GATE** | In Progress (G1 GO + G3+G4 GO; G2 chưa chốt, G5 kém — proxy TTS 2026-06-29; G6 pending) |
+| 1 | [Spike Streaming ASR](./phase-01-spike-streaming-asr.md) — **FEASIBILITY GATE** | In Progress (G1 GO + G3+G4 GO; G2 chưa chốt, G5 kém — proxy TTS; G6 CODE DONE 2026-06-29, chờ QA runtime) |
 | 2 | [LiveKit Media Core](./phase-02-livekit-media-core.md) | In Progress (slice nền: FE+CSP H1+quyền media H2+infra dev done; compile✓ + code-review✓ C1 fixed; chờ QA E2E + xác nhận no-white-screen) |
 | 3 | [Host Transcribe Relay](./phase-03-host-transcribe-relay.md) | Pending |
 | 4 | [Web Client Vue](./phase-04-web-client-vue.md) | Pending |

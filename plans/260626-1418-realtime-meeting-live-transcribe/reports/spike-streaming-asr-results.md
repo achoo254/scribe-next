@@ -68,7 +68,7 @@ Tham số nên quét (Step 5 plan): `--chunk-ms` 500↔1000, `--strategy` vad-cu
 | G3 | RAM small+medium đồng thời KHÔNG OOM trên 8GB | peak < ~6.5GB | ✅ **ĐẠT** — peak **2085.7 MB** (small 349.9 MB → +medium = ~2.1GB). 8GB còn ~6GB headroom |
 | G4 | VAD chọn xong, KHÔNG kéo PyTorch | webrtcvad/energy | ✅ ĐẠT (webrtcvad build OK Py3.14) |
 | G5 | Chất lượng caption small "đủ đọc" tiếng Việt kỹ thuật | định tính | ❌ **KÉM (proxy TTS)** — thuật ngữ méo nặng (observability→"okovabillionary", VictoriaMetrics→"victoria madrid", OpenTelemetry collector→"telema trí colector", systemctl→"system ctia", rsyslog→"red loc") + **hallucinate câu cuối**. Cần glossary prompt mạnh / medium cho biên bản. Lưu ý: giọng TTS có thể tệ hơn/ khác giọng người thật. |
-| G6 | Chân AudioWorklet→Rust→sidecar trong WebView2 chạy + đo được | round-trip đo được | ❌ CHƯA — mini-spike riêng (xem §5) |
+| G6 | Chân AudioWorklet→Rust trong WebView2 chạy + đo được | round-trip đo được | 🟡 **CODE DONE — chờ QA runtime** — getUserMedia→AudioWorklet(16k)→invoke Rust (Uint8Array raw)→echo. Compile✓ (FE+Rust). Số thật cần chạy app (panel "G6" trong tab Họp). Hop Rust→sidecar = cơ học Phase 3. |
 
 ## 5. Unknown khó nhất còn lại — chân audio WebView2 [C5]
 
@@ -79,6 +79,16 @@ Tham số nên quét (Step 5 plan): `--chunk-ms` 500↔1000, `--strategy` vad-cu
 - Tauri command Rust nhận chunk PCM (binary, length-prefix) → ghi stdin sidecar streaming. Đo throughput + round-trip latency thật.
 
 **Khuyến nghị:** chạy mini-spike này NGAY SAU khi §6 cho RTF/latency Python đạt — vì nếu chân WebView2 không đạt, latency Python không cứu được (theo plan).
+
+### Cập nhật 2026-06-29 — G6 mini-spike ĐÃ CODE (chờ QA runtime)
+Đã implement đường đo chân audio (compile ✓ FE + Rust):
+- `public/pcm-tap-worklet.js` — AudioWorklet gom mono Float32 ~100ms.
+- `src/composables/use-audio-tap-probe.ts` — `getUserMedia(audio)` → `AudioContext({sampleRate:16000})` → worklet → batch ~1s → int16 → `invoke("meeting_pcm_probe", {seq, t0Ms, pcm: Uint8Array})`; nghe event `meeting_pcm_echo` → đo round-trip p50/p95 + throughput; report `actualSampleRate`, `SharedArrayBuffer`, `crossOriginIsolated`.
+- `src-tauri/src/meeting_audio.rs` — command nhận `pcm: Vec<u8>` (raw), emit echo.
+- UI: panel **"G6 — Đo chân audio"** trong tab Họp (chạy độc lập LiveKit).
+
+**Cần QA runtime (chỉ chạy app mới biết — tôi không chạy GUI được):** mở app → tab Họp → bấm **"Đo"**. Ghi nhận: (a) AudioWorklet load OK trong WebView2? (b) `actualSampleRate` = 16000 hay 48000 (WebView2 có honor 16k không)? (c) round-trip p50/p95 (ms) + throughput; (d) `SharedArrayBuffer`/`crossOriginIsolated` = có/không (xác nhận có cần fallback postMessage thay SAB không — hiện đã dùng postMessage transfer, KHÔNG cần SAB). (e) Uint8Array có truyền raw không (byte echo khớp ~32KB/chunk, không phình JSON)?
+**Điểm runtime-uncertain:** Tauri v2 truyền `Uint8Array` invoke-arg dạng raw — nếu byte không khớp / chậm → đổi sang `tauri::ipc::Channel`/raw `Request`.
 
 ## 6. Việc cần người dùng để chốt GO/NO-GO
 

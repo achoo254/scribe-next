@@ -5,6 +5,7 @@ use tauri::Manager;
 mod audio;
 mod commands;
 mod ffmpeg;
+mod meeting_audio;
 mod recorder;
 mod screen;
 mod settings;
@@ -73,6 +74,7 @@ pub fn run() {
             commands::ensure_model,
             commands::transcribe_files,
             commands::cancel_transcribe,
+            meeting_audio::meeting_pcm_probe,
             screen::list_monitors,
             screen::open_region_selector,
             screen::finish_region_selection,

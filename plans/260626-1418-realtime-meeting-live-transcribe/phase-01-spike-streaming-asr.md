@@ -9,7 +9,7 @@ dependencies: []
 
 # Phase 1: Spike Streaming ASR — RISK GATE
 
-> **Tiến độ (2026-06-29 — proxy run TTS):** Harness HOÀN THÀNH + verified; **G1 ĐẠT** (RTF model thô 0.21–0.50 @4 threads, thừa headroom), **G3+G4 ĐẠT**. **G2 CHƯA chốt** (mẫu TTS không có pause → không đo được latency cắt-câu thật), **G5 KÉM** (small méo thuật ngữ + hallucinate). **PHÁT HIỆN:** LocalAgreement = NO-GO trên CPU yếu (RTF wall 5x) → **chiến lược đúng = vad-cut/utterance-based + max-utterance cap** (tinh chỉnh Decision #10, chờ user xác nhận). **CÒN:** G2 (cần speech có pause + max-cap), G5 (giọng thật), G6 (chân audio WebView2 — cần app).
+> **Tiến độ (2026-06-29 — proxy run TTS):** Harness HOÀN THÀNH + verified; **G1 ĐẠT** (RTF model thô 0.21–0.50 @4 threads, thừa headroom), **G3+G4 ĐẠT**. **G2 CHƯA chốt** (mẫu TTS không có pause → không đo được latency cắt-câu thật), **G5 KÉM** (small méo thuật ngữ + hallucinate). **PHÁT HIỆN:** LocalAgreement = NO-GO trên CPU yếu (RTF wall 5x) → **chiến lược đúng = vad-cut/utterance-based + max-utterance cap** (tinh chỉnh Decision #10, chờ user xác nhận). **CÒN:** G2 (cần speech có pause + max-cap), G5 (giọng thật), G6 (đã **CODE 2026-06-29**: worklet→Rust echo, compile✓ — chờ QA runtime đo round-trip trong WebView2; xem spike §5).
 > Chi tiết & số đo: [`reports/spike-streaming-asr-results.md`](./reports/spike-streaming-asr-results.md) §9.
 > **Gate CHƯA đóng** → chưa cấp ngân sách Phase 2+.
 
