@@ -3,6 +3,7 @@
 import { ref, computed, onMounted } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { ViTabs, ViTab, ViIcon, ViAlert } from "./design-system/vi-ui";
+import BrandMark from "./components/BrandMark.vue";
 import RecordView from "./views/RecordView.vue";
 import SplitView from "./views/SplitView.vue";
 import TranscriptView from "./views/TranscriptView.vue";
@@ -29,7 +30,7 @@ onMounted(async () => {
     <v-main>
       <div class="os-shell">
         <header class="os-header">
-          <ViIcon icon="IconMicrophone2" class="os-brand-icon" />
+          <BrandMark class="os-brand-icon" />
           <span class="os-brand-name">OneScribe</span>
         </header>
         <ViTabs v-model="tab" color="primary" class="os-tabs">
