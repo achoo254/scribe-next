@@ -1,0 +1,23 @@
+# systemd unit cho OneScribe meeting-server (token + caption store + TURN credential).
+# Cài: copy repo lên server → điền /etc/onescribe/meeting-server.env (từ .env.example, mode 600)
+#      → cp unit này vào /etc/systemd/system/ → systemctl daemon-reload && systemctl enable --now meeting-server
+[Unit]
+Description=OneScribe meeting-server (LiveKit token + caption store)
+After=network.target
+
+[Service]
+Type=simple
+# Sửa WorkingDirectory theo nơi clone repo trên server.
+WorkingDirectory=/opt/onescribe/server/meeting-server
+EnvironmentFile=/etc/onescribe/meeting-server.env
+ExecStart=/usr/bin/node index.mjs
+Restart=on-failure
+RestartSec=3
+# Hardening cơ bản (secret trong EnvironmentFile mode 600, không ghi ngoài).
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
