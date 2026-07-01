@@ -15,24 +15,13 @@ import os
 import sys
 from pathlib import Path
 
+from model_paths import MODELS, resolve_model_path
+
 # Tắt hf-xet: tải qua HTTP/LFS thường (ổn định + tiến độ track được; xet hay kẹt model.bin).
 os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
 
-# size → (repo HF, thư mục con CT2 trong repo). large dùng bản đã tải sẵn (kiendt, không subfolder);
-# small/medium từ quocphu (mỗi size 1 subfolder CT2). Bỏ tiny/base (chất lượng quá thấp).
-MODELS = {
-    "small": ("quocphu/PhoWhisper-ct2-FasterWhisper", "PhoWhisper-small-ct2-fasterWhisper"),
-    "medium": ("quocphu/PhoWhisper-ct2-FasterWhisper", "PhoWhisper-medium-ct2-fasterWhisper"),
-    "large": ("kiendt/PhoWhisper-large-ct2", ""),
-}
 _model = None       # pipeline giữ ấm
 _model_size = None  # size đang nạp — đổi size thì reload
-
-
-def resolve_model_path(model_dir: str, size: str) -> str:
-    # Đường dẫn thật chứa config.json/model.bin (small/medium nằm trong subfolder của repo).
-    _, subdir = MODELS[size]
-    return os.path.join(model_dir, subdir) if subdir else model_dir
 
 # Glossary domain (IT/DevOps) → bias model nhận đúng tên riêng/tiếng Anh. Sửa/mở rộng tùy nội dung.
 DEFAULT_PROMPT = (
@@ -148,4 +137,11 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    # 1 binary, 2 tiến trình khi chạy: mặc định = batch Mode C (main); `--stream` = server streaming
+    # meeting (tiến trình RIÊNG do Rust spawn) → cô lập hoàn toàn, batch blocking KHÔNG chặn caption.
+    if "--stream" in sys.argv:
+        from stream_server import run as run_stream_server
+
+        run_stream_server()
+    else:
+        main()

@@ -24,6 +24,7 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .manage(recorder::Recorder::default())
         .manage(transcribe::Transcriber::default())
+        .manage(meeting_audio::MeetingTranscriber::default())
         .manage(screen::RegionDrag::default())
         .on_window_event(|window, event| {
             // Đóng cửa sổ chính = thoát hẳn app: exit(0) đóng kèm MỌI overlay (viền/thanh công cụ/
@@ -75,6 +76,10 @@ pub fn run() {
             commands::transcribe_files,
             commands::cancel_transcribe,
             meeting_audio::meeting_pcm_probe,
+            meeting_audio::meeting_transcribe_start,
+            meeting_audio::meeting_transcribe_pcm,
+            meeting_audio::meeting_transcribe_end,
+            meeting_audio::meeting_transcribe_stop,
             screen::list_monitors,
             screen::open_region_selector,
             screen::finish_region_selection,
@@ -97,6 +102,7 @@ pub fn run() {
             if let tauri::RunEvent::Exit = event {
                 handle.state::<recorder::Recorder>().stop_blocking();
                 handle.state::<transcribe::Transcriber>().shutdown();
+                handle.state::<meeting_audio::MeetingTranscriber>().shutdown();
             }
         });
 }

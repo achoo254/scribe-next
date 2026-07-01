@@ -117,7 +117,8 @@ fn find_script() -> Option<PathBuf> {
 }
 
 /// (program, args): ưu tiên binary PyInstaller (release), fallback venv python + main.py (dev).
-fn resolve(app: &AppHandle) -> Result<(PathBuf, Vec<String>), String> {
+/// pub(crate): meeting_audio tái dùng để spawn CÙNG sidecar với cờ `--stream` (tiến trình riêng).
+pub(crate) fn resolve(app: &AppHandle) -> Result<(PathBuf, Vec<String>), String> {
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
             for name in ["transcriber-x86_64-pc-windows-msvc.exe", "transcriber.exe", "transcriber"] {
