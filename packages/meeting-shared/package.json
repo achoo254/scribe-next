@@ -1,0 +1,13 @@
+{
+  "name": "@onescribe/meeting-shared",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Code meeting dùng chung OneScribe (caption feed, meeting-server client, LiveKit viewer) — web + desktop.",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "peerDependencies": {
+    "livekit-client": "^2.20.0",
+    "vue": "^3.5.0"
+  }
+}

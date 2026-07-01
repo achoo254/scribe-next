@@ -1,6 +1,7 @@
 import { defineConfig } from "vite";
 import vue from "@vitejs/plugin-vue";
 import vuetify from "vite-plugin-vuetify";
+import { fileURLToPath } from "node:url";
 
 // @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
@@ -8,6 +9,15 @@ const host = process.env.TAURI_DEV_HOST;
 // https://vite.dev/config/
 export default defineConfig(async () => ({
   plugins: [vue(), vuetify({ autoImport: true })],
+
+  // Code meeting dùng chung với web client (Phase 4) — import từ source package cục bộ (chưa build riêng).
+  resolve: {
+    alias: {
+      "@onescribe/meeting-shared": fileURLToPath(
+        new URL("./packages/meeting-shared/src/index.ts", import.meta.url),
+      ),
+    },
+  },
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //
