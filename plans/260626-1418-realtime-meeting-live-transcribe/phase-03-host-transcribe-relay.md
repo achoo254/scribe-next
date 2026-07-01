@@ -1,13 +1,19 @@
 ---
 phase: 3
 title: "Host Transcribe Relay"
-status: pending
+status: in-progress
 priority: P1
 effort: "6-9d"
 dependencies: [1, 2]
 ---
 
 # Phase 3: Host Transcribe Relay
+
+> **Tiến độ (cook, verified trên macOS):** Code DONE toàn tầng.
+> - **Sidecar:** `stream_session.py` (vad-cut + max-cap 8s, port từ spike), `stream_server.py` (tiến trình riêng `--stream`: router thread + per-track worker + model registry — fix **C2**), `model_paths.py` (DRY batch/stream). **13 test pass** (session 6, server 6, integration 1) qua fake-model (không cần tải PhoWhisper).
+> - **Rust:** `meeting_audio.rs::MeetingTranscriber` (writer thread + bounded channel drop-on-full + backpressure, reader demux → `meeting_caption_msg` giữ riêng `transcribe_msg` batch = **H4**, base64 tự cài, sanitize track id, EOF→`sidecar_crashed` = **H3**, mic revocation = mic_lost). `cargo check`✓ + 3 test pass.
+> - **FE:** `use-live-caption.ts` (AudioWorklet tap → invoke, publish host-only, verify sender identity = **C7**), `CaptionPanel/Overlay.vue`, tích hợp MeetingRoomView + lưu transcript `.txt` (Strategy A). `vue-tsc`+`vite build`✓.
+> **CHƯA verify (checklist Windows — WebView2 only):** AudioWorklet tap thật trong WebView2, invoke PCM round-trip runtime, E2E ≥2 client caption đúng người + latency, `tauri build` nsis, compile `#[cfg(windows)]`.
 
 ## Overview
 

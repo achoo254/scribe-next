@@ -42,9 +42,9 @@ Mở rộng OneScribe (Tauri + Vue 3 + ViUI, transcribe offline PhoWhisper) thà
 | 0 | [Bot-join / Loopback Value Validation](./phase-00-bot-join-loopback-validation.md) — **VALUE GATE, làm trước nhất** | Pending |
 | 1 | [Spike Streaming ASR](./phase-01-spike-streaming-asr.md) — **FEASIBILITY GATE** | In Progress (G1 GO + G3+G4 GO; G2 chưa chốt, G5 kém — proxy TTS; G6 CODE DONE 2026-06-29, chờ QA runtime) |
 | 2 | [LiveKit Media Core](./phase-02-livekit-media-core.md) | In Progress (slice nền: FE+CSP H1+quyền media H2+infra dev done; compile✓ + code-review✓ C1 fixed; chờ QA E2E + xác nhận no-white-screen) |
-| 3 | [Host Transcribe Relay](./phase-03-host-transcribe-relay.md) | Pending |
-| 4 | [Web Client Vue](./phase-04-web-client-vue.md) | Pending |
-| 5 | [Server Infra Retention](./phase-05-server-infra-retention.md) | Pending |
+| 3 | [Host Transcribe Relay](./phase-03-host-transcribe-relay.md) | Code done + verified trên mac (sidecar 13 test, Rust check+3 test, FE build); runtime WebView2/E2E = checklist Windows |
+| 4 | [Web Client Vue](./phase-04-web-client-vue.md) | Code done (sibling apps/web + packages/meeting-shared; vue-tsc+vite build✓). Monorepo đầy đủ + ViUI npm defer |
+| 5 | [Server Infra Retention](./phase-05-server-infra-retention.md) | Code done (meeting-server 8 test✓: C6/C7/C8+host-lock+TURN+rate-limit; infra configs). Caption store in-memory (Redis defer); remote NAT/egress/HTTPS = verify sau |
 | 6 | [AI Biên bản / Tóm tắt sau họp (Claude)](./phase-06-ai-meeting-minutes-claude.md) — ⏸️ **POST-COMPLETION, deferred** | Deferred |
 
 ## Thứ tự & phụ thuộc

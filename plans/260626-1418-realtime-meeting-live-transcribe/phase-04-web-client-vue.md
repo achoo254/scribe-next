@@ -1,13 +1,19 @@
 ---
 phase: 4
 title: "Web Client Vue"
-status: pending
+status: in-progress
 priority: P2
 effort: "5-8d"
 dependencies: [2, 3]
 ---
 
 # Phase 4: Web Client Vue
+
+> **Tiến độ (cook, verified trên macOS):** Code DONE theo phương án **sibling** (user chốt: KHÔNG monorepo restructure src-tauri ngay — tránh rủi ro H6 không verify được `tauri build` trên mac).
+> - `packages/meeting-shared/` (consume qua vite alias `@onescribe/meeting-shared`): `types.ts`, `meeting-client.ts` (token/history/pushCaption), `caption-feed.ts` (**C7** guard host sender), `use-livekit-viewer.ts` (TURN qua rtcConfig). Desktop cũng dùng chung (đã bỏ duplicate `use-caption-feed.ts`).
+> - `apps/web/` (Vite + Vue 3, plain + token One Series CSS — KHÔNG kéo `@hobui/viui` private registry để build được trên mac): `MeetingRoomPage.vue` (join guest qua token-service → grid + caption + fetch history), `VideoTile.vue`. Guest-only (không host/transcribe). `vue-tsc`+`vite build`✓ (581KB).
+> **Defer (không đổi quyết định plan, chỉ hoãn thực thi):** monorepo workspaces đầy đủ (dời src-tauri → apps/desktop) + dùng `@hobui/viui` npm cho web — làm khi verify được `tauri build` trên Windows.
+> **CHƯA verify:** getUserMedia thật trên Chrome/Edge/Safari + mobile; E2E host desktop + ≥2 web guest.
 
 ## Overview
 

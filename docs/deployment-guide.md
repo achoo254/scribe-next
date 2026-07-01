@@ -1,7 +1,11 @@
 # Deployment Guide
 
-> Hướng dẫn triển khai hạ tầng OneScribe. Hiện tại: **LiveKit meeting (Phase 2) trên server staging .65**.
+> Hướng dẫn triển khai hạ tầng OneScribe meeting. Stack: **LiveKit SFU** (media) + **meeting-server**
+> (token/caption/TURN, Phase 5) + **coturn** (TURN) + **web client** (Phase 4) + reverse-proxy TLS.
+> Tất cả **NATIVE (KHÔNG Docker)**, điều phối bằng **systemd**. Local-first trên WSL Ubuntu trước, rồi remote.
 > **KHÔNG commit secret** vào repo. Credential SSH + key/secret thật giữ ngoài repo (file ENV nội bộ / vault).
+
+> **Dev nhanh (local):** `bash infra/run-local.sh` chạy LiveKit dev + meeting-server cùng lúc.
 
 ## 1. LiveKit SFU — Staging .65
 
@@ -109,5 +113,47 @@ systemctl daemon-reload; nginx -t && systemctl reload nginx
 - SSH có **fail2ban** — mở quá nhiều phiên liên tiếp → bị chặn tạm (`banner: Not allowed at this time`), tự hết sau ~10-30 phút.
 - Dev devkey/secret + WSL local: xem `infra/livekit/` (Phase 2 local). Auth thật theo role + TURN ephemeral = Phase 5.
 
+## 2. meeting-server (token + caption store + TURN credential)
+
+Node zero-dep. Cấp JWT LiveKit theo role (host/guest), lưu caption text TTL 1 ngày, sinh TURN credential ephemeral.
+
+```bash
+# 1. Copy repo lên server (vd /opt/onescribe). Điền env (KHÔNG commit).
+sudo mkdir -p /etc/onescribe
+sudo cp server/meeting-server/.env.example /etc/onescribe/meeting-server.env
+sudo chmod 600 /etc/onescribe/meeting-server.env
+# Sửa /etc/onescribe/meeting-server.env: LK_API_KEY/LK_API_SECRET KHỚP livekit.yaml; đặt HOST_SECRET
+# ngẫu nhiên dài; LIVEKIT_URL=wss://livekit.tunnel...; TURN_SECRET khớp coturn; ALLOW_ORIGINS=domain web.
+
+# 2. systemd (sửa WorkingDirectory trong unit cho khớp nơi clone)
+sudo cp infra/systemd/meeting-server.service /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now meeting-server
+curl -s localhost:8787/healthz     # → {"ok":true}
+```
+
+- **Auth:** `/token/guest` gán cứng role=guest (client KHÔNG xin được host). `/token/host` cần `HOST_SECRET` + khóa 1-host/phòng. `/captions/:room` cần JWT hợp lệ + room khớp; chỉ host ghi.
+- **Reverse-proxy:** đặt sau nginx/Caddy TLS (vd `api.tunnel.inetdev.io.vn` → `127.0.0.1:8787`). getUserMedia web cần HTTPS.
+- **Webhook (tùy chọn):** trỏ LiveKit webhook → `POST /webhook` để nhả host-lock khi host rời phòng.
+
+## 3. coturn (TURN — qua NAT/firewall doanh nghiệp)
+
+```bash
+sudo apt install coturn
+sudo cp infra/coturn/turnserver.conf /etc/turnserver.conf   # sửa static-auth-secret = TURN_SECRET; realm/external-ip
+sudo systemctl enable --now coturn
+```
+Mở UDP dải relay (`49160-49200`) + `3478` ở cloud security-group. TURN credential do meeting-server sinh (ephemeral, hết hạn ~5').
+
+## 4. Web client (apps/web)
+
+```bash
+# Build (từ repo root; dùng node_modules root — xem apps/web/vite.config.ts)
+npx vite build --config apps/web/vite.config.ts     # → apps/web/dist
+# Serve tĩnh qua Caddy/nginx trên domain HTTPS (getUserMedia bắt buộc HTTPS).
+# Cấu hình VITE_MEETING_SERVER=https://api.tunnel... lúc build (hoặc để mặc định localhost cho dev).
+```
+Xem `infra/caddy/Caddyfile` (mẫu domain `meet.` cho web + `api.` cho meeting-server + `livekit.` cho wss).
+
 ## Open questions
-- Cloud security-group có mở sẵn UDP `50000-50100` cho `.65` không? (cần xác nhận khi test media thật)
+- Cloud security-group có mở sẵn UDP `50000-50100` (LiveKit) + `49160-49200`/`3478` (coturn) cho server không?
+- meeting-server caption store hiện in-memory (mất khi restart) → cân nhắc Redis khi cần bền/multi-instance.

@@ -42,6 +42,11 @@ sidecar/transcriber/*.spec
 __pycache__/
 *.pyc
 
+# Secrets — dotenv (KHÔNG commit; chỉ .env.example là template an toàn)
+.env
+.env.*
+!.env.example
+
 # Local agent memory / tooling
 .claude/agent-memory/
 

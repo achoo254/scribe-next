@@ -1,13 +1,20 @@
 ---
 phase: 5
 title: "Server Infra & Retention"
-status: pending
+status: in-progress
 priority: P2
 effort: "5-7d"
 dependencies: [2, 3, 4]
 ---
 
 # Phase 5: Server Infra & Retention
+
+> **Tiến độ (cook, verified trên macOS):** Code DONE (gộp token-service + caption-store thành 1 process `server/meeting-server`, KISS — plan cho phép gộp).
+> - `index.mjs` + `lib/{jwt,turn,host-lock,caption-store,rate-limit,config}.mjs` (Node zero-dep). **8 test pass** (HTTP thật): **C6** role gán server + host-lock 409, **C7** guest không publishData, **C8** caption store JWT + room khớp + chỉ host ghi, TURN ephemeral, rate-limit, verify token tamper.
+> - **Quyết định caption store (plan yêu cầu chốt trước):** **in-memory** (MVP single-instance local-first) — interface store-agnostic, drop-in Redis khi cần bền qua restart/multi-instance. Đánh đổi: late-joiner-qua-restart mất (chấp nhận MVP).
+> - Client wiring: web guest + desktop host dùng token-service; host `pushCaption` → store (late-joiner `fetchHistory` seed).
+> - Infra configs: `infra/coturn/turnserver.conf` (ephemeral), `infra/caddy/Caddyfile` (TLS + wss + web), `infra/systemd/meeting-server.service`, `infra/run-local.sh`. Docs: `system-architecture.md` (mới) + `deployment-guide.md` (§2-4).
+> **CHƯA verify (cần remote thật, KHÔNG thay được bằng local):** TURN qua NAT/4G/firewall doanh nghiệp thật, egress/giờ thực đo → chi phí, HTTPS thật cho getUserMedia web.
 
 ## Overview
 
