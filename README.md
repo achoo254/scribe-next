@@ -16,10 +16,21 @@ Desktop app (Windows + macOS) ghi âm micro + cắt live, cắt file audio/video
 - **MSVC C++ Build Tools** (Visual Studio Build Tools — workload "Desktop development with C++") + Windows SDK
 - **WebView2 runtime** (Windows 11 đã có sẵn)
 
+## Yêu cầu môi trường (macOS)
+
+- **Node.js** ≥ 18 + npm
+- **Rust** (rustup, target `aarch64-apple-darwin` cho Apple Silicon / `x86_64-apple-darwin` cho Intel)
+- **Xcode Command Line Tools** (`xcode-select --install`)
+- **Homebrew** để cài ffmpeg: `brew install ffmpeg`
+- Overlay chọn vùng ghi dùng `WebviewWindowBuilder::transparent` → cần feature `macos-private-api`
+  (đã bật sẵn trong `Cargo.toml` + `app.macOSPrivateApi` trong `tauri.conf.json`; vô hại với Windows).
+- `tauri.macos.conf.json` override bundle target sang `dmg`/`app` (base là `nsis` cho Windows).
+- **Chỉ Windows** (compile được nhưng không chạy trên Mac): ghi tiếng hệ thống (WASAPI loopback) + ghi màn hình (`ddagrab`).
+
 ## Sidecar
 
 - `src-tauri/binaries/ffmpeg-<target>` + `ffprobe-<target>` — bản **ffmpeg LGPL** (BtbN). Dùng cho ghi/cắt audio + **ghi màn hình** (`ddagrab` + `libopenh264`, đều có sẵn trong bản LGPL — không cần libx264/GPL).
-- `transcriber-<target>` — Python sidecar faster-whisper (PyInstaller onefile, CPU int8). Build: `sidecar/transcriber/build_pyinstaller.ps1`.
+- `transcriber-<target>` — Python sidecar faster-whisper (PyInstaller onefile, CPU int8). Build: Windows `sidecar/transcriber/build_pyinstaller.ps1`; macOS/Linux `bash sidecar/transcriber/build_pyinstaller.sh` (đặt `PYTHON=python3.x` để ép version). Trên macOS, ffmpeg/ffprobe copy từ brew vào `src-tauri/binaries/ffmpeg-<target>` + `ffprobe-<target>`.
   - **Picker đa-model**: small / medium / large (mặc định **medium**) — chọn theo nhu cầu tốc độ ↔ chất lượng. Mỗi size tải riêng (~0.5 / ~1.5 / ~3 GB) về app-data lần đầu, sau đó offline. small/medium từ `quocphu/PhoWhisper-ct2-FasterWhisper`, large từ `kiendt/PhoWhisper-large-ct2`.
 
 ## Design system

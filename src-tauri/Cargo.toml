@@ -17,8 +17,11 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
+# macos-private-api: overlay chọn vùng ghi + viền dùng WebviewWindowBuilder::transparent — method
+# này trên macOS chỉ tồn tại khi bật feature này (kèm app.macOSPrivateApi=true trong tauri.conf.json).
+# Trên Windows feature nằm sau cfg(target_os="macos") nên vô hại (không đổi build/hành vi Windows).
 [dependencies]
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["macos-private-api"] }
 tauri-plugin-opener = "2"
 tauri-plugin-shell = "2"
 tauri-plugin-dialog = "2"
