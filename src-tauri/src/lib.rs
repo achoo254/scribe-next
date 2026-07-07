@@ -5,14 +5,11 @@ use tauri::Manager;
 mod audio;
 mod commands;
 mod ffmpeg;
-mod meeting_audio;
 mod recorder;
 mod screen;
 mod settings;
 mod splitter;
 mod transcribe;
-#[cfg(windows)]
-mod webview_permissions;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -24,7 +21,6 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .manage(recorder::Recorder::default())
         .manage(transcribe::Transcriber::default())
-        .manage(meeting_audio::MeetingTranscriber::default())
         .manage(screen::RegionDrag::default())
         .on_window_event(|window, event| {
             // Đóng cửa sổ chính = thoát hẳn app: exit(0) đóng kèm MỌI overlay (viền/thanh công cụ/
@@ -37,13 +33,6 @@ pub fn run() {
             }
         })
         .setup(|_app| {
-            // Cấp quyền camera/mic cho WebView2 (Phase 2 — họp video): getUserMedia cần hook này (H2).
-            #[cfg(windows)]
-            if let Some(win) = _app.get_webview_window("main") {
-                if let Err(e) = webview_permissions::grant_media_permissions(&win) {
-                    eprintln!("[onescribe] hook quyền media WebView2 lỗi: {e}");
-                }
-            }
             // Debug: log tình trạng ffmpeg sidecar lúc khởi động (chẩn đoán nhanh).
             // `_app` chỉ dùng trong khối debug này → bản release (debug_assertions off) không cảnh báo unused.
             #[cfg(debug_assertions)]
@@ -75,11 +64,6 @@ pub fn run() {
             commands::ensure_model,
             commands::transcribe_files,
             commands::cancel_transcribe,
-            meeting_audio::meeting_pcm_probe,
-            meeting_audio::meeting_transcribe_start,
-            meeting_audio::meeting_transcribe_pcm,
-            meeting_audio::meeting_transcribe_end,
-            meeting_audio::meeting_transcribe_stop,
             screen::list_monitors,
             screen::open_region_selector,
             screen::finish_region_selection,
@@ -102,7 +86,6 @@ pub fn run() {
             if let tauri::RunEvent::Exit = event {
                 handle.state::<recorder::Recorder>().stop_blocking();
                 handle.state::<transcribe::Transcriber>().shutdown();
-                handle.state::<meeting_audio::MeetingTranscriber>().shutdown();
             }
         });
 }

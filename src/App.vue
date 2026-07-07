@@ -7,10 +7,9 @@ import BrandMark from "./components/BrandMark.vue";
 import RecordView from "./views/RecordView.vue";
 import SplitView from "./views/SplitView.vue";
 import TranscriptView from "./views/TranscriptView.vue";
-import MeetingRoomView from "./views/MeetingRoomView.vue";
 
-const tab = ref<"record" | "split" | "transcript" | "meeting">("record");
-const views = { record: RecordView, split: SplitView, transcript: TranscriptView, meeting: MeetingRoomView };
+const tab = ref<"record" | "split" | "transcript">("record");
+const views = { record: RecordView, split: SplitView, transcript: TranscriptView };
 const currentView = computed(() => views[tab.value]);
 
 // Smoke wiring: xác nhận ffmpeg sidecar gọi được khi mở app.
@@ -37,7 +36,6 @@ onMounted(async () => {
           <ViTab value="record"><ViIcon icon="IconMicrophone" start />Ghi âm</ViTab>
           <ViTab value="split"><ViIcon icon="IconScissors" start />Cắt file</ViTab>
           <ViTab value="transcript"><ViIcon icon="IconFileText" start />Transcript</ViTab>
-          <ViTab value="meeting"><ViIcon icon="IconVideo" start />Họp</ViTab>
         </ViTabs>
 
         <!-- keep-alive: giữ state mỗi tab (toggle, danh sách đoạn + transcript, file đã chọn) khi đổi tab. -->

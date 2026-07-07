@@ -1,7 +1,6 @@
 """Ánh xạ size PhoWhisper → (repo HF, subfolder CT2) + resolve đường dẫn model thật.
 
-Invariant dùng chung batch (main.py) lẫn streaming (stream_server.py) — 1 nguồn để đổi khi
-thêm/đổi model, tránh 2 nơi lệch nhau.
+1 nguồn cho main.py khi thêm/đổi model, tránh lệch nhau.
 
 small/medium từ quocphu (mỗi size 1 subfolder CT2). large dùng bản kiendt (không subfolder).
 """

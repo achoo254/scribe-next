@@ -1,18 +1,23 @@
 ---
 title: "Realtime Meeting (camera/mic) + Live Transcribe tiếng Việt"
 description: "Mở rộng OneScribe thành nền tảng họp video (LiveKit SFU) có live-transcribe tiếng Việt tích hợp; host transcribe đa-track, server pure-relay, web client Vue 3"
-status: pending
+status: cancelled
 priority: P2
 branch: "main"
 tags: [webrtc, livekit, asr, phowhisper, vue, conferencing]
 blockedBy: []
 blocks: []
+cancelledReason: "User bỏ hoàn toàn tính năng họp online (2026-07-07): code meeting + LiveKit trên .65 đã gỡ sạch. Xem 260707-1325 gate NO-GO."
 created: "2026-06-26T07:19:08.047Z"
 createdBy: "ck:plan"
 source: skill
 ---
 
 # Realtime Meeting (camera/mic) + Live Transcribe tiếng Việt
+
+> ## 🛑 CANCELLED — 2026-07-07 (tính năng bị bỏ hoàn toàn)
+> **Quyết định user:** bỏ hẳn tính năng họp online khỏi OneScribe. Toàn bộ code meeting (server/meeting-server, packages/meeting-shared, apps/web, infra livekit/coturn/caddy, sidecar stream_*, UI họp desktop + Rust meeting_audio) **đã gỡ khỏi repo**; LiveKit trên server .65 **đã gỡ sạch** (service/binary/config removed). OneScribe giữ nguyên **desktop offline transcribe** (ghi âm/màn hình + batch PhoWhisper).
+> **Bối cảnh:** pivot web-first [260707-1325](../260707-1325-onescribe-web-pivot/plan.md) đã bị hủy sau Phase 1 gate NO-GO (CPU .65 không kham realtime streaming) → user chọn bỏ hẳn meeting thay vì đổi hạ tầng. Plan này KHÔNG còn cook tiếp; giữ làm hồ sơ. Desktop maintenance tiếp tục theo `260613-1130-split-record-implementation`.
 
 ## Overview
 

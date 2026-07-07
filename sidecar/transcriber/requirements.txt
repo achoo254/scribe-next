@@ -3,6 +3,3 @@
 faster-whisper==1.2.1
 huggingface_hub==1.19.0
 av==17.1.0
-# Meeting streaming (Phase 3): VAD gate per-chunk. Pure C ~50KB — KHÔNG silero-vad (kéo PyTorch
-# ~2GB, xung đột ctranslate2 — C4). Fallback energy-RMS nếu wheel không build (stream_session.make_vad).
-webrtcvad==2.0.10

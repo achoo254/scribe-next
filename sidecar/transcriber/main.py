@@ -137,11 +137,4 @@ def main():
 
 
 if __name__ == "__main__":
-    # 1 binary, 2 tiến trình khi chạy: mặc định = batch Mode C (main); `--stream` = server streaming
-    # meeting (tiến trình RIÊNG do Rust spawn) → cô lập hoàn toàn, batch blocking KHÔNG chặn caption.
-    if "--stream" in sys.argv:
-        from stream_server import run as run_stream_server
-
-        run_stream_server()
-    else:
-        main()
+    main()

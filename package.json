@@ -20,7 +20,6 @@
     "@tauri-apps/plugin-opener": "^2",
     "@tauri-apps/plugin-shell": "^2",
     "@tauri-apps/plugin-store": "^2",
-    "livekit-client": "^2.20.0",
     "vue": "^3.5.13",
     "vuetify": "^3.5.0"
   },
