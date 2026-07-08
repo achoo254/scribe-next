@@ -14,7 +14,7 @@ import {
   // app icons
   IconMicrophone, IconMicrophone2, IconScissors, IconFileText,
   IconFolder, IconPlayerPause, IconPlayerPlay, IconPlayerStop,
-  IconCopy, IconDownload,
+  IconCopy, IconDownload, IconRefresh, IconDeviceFloppy, IconTrash,
 } from "@tabler/icons-vue";
 
 const registry: Record<string, Component> = {
@@ -27,7 +27,7 @@ const registry: Record<string, Component> = {
   IconPlus, IconMinus, IconPaperclip, IconCalendar,
   IconMicrophone, IconMicrophone2, IconScissors, IconFileText,
   IconFolder, IconPlayerPause, IconPlayerPlay, IconPlayerStop,
-  IconCopy, IconDownload,
+  IconCopy, IconDownload, IconRefresh, IconDeviceFloppy, IconTrash,
 };
 
 // Vuetify alias -> tên trong registry.

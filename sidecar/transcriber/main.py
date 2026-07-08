@@ -2,7 +2,8 @@
 
 Giao thức (line-delimited JSON):
   stdin :  {"cmd":"ensure_model","model_dir":"...","size":"small|medium|large|large-v3-mlx"}
-           {"cmd":"transcribe","file":"...","out_dir":"...","outputs":["txt","srt"],"model_dir":"...","size":"..."}
+           {"cmd":"transcribe","file":"...","out_dir":"...","outputs":["txt","srt","vtt","json"],
+            "model_dir":"...","size":"...","prompt":"<glossary optional>"}
            {"cmd":"shutdown"}
   stdout:  {"type":"ready"} | {"type":"download","pct":N} | {"type":"model_ready"}
            {"type":"progress","file":...,"pct":N} | {"type":"done",...} | {"type":"error","message":...}
@@ -11,6 +12,10 @@ Giao thức (line-delimited JSON):
 - ct2 (small/medium/large): faster-whisper CPU int8 + BatchedInferencePipeline, giữ ấm 1 model.
 - mlx (large-v3-mlx): mlx-whisper Metal GPU (Apple Silicon), tự cache model. Lazy import.
 Offline sau khi tải model về model_dir.
+
+word_timestamps BẬT mặc định cả 2 backend → có mốc từng từ để (1) resegment SRT/VTT chuẩn phụ đề
+(≤42 ký tự/dòng, ≤2 dòng, ≤6s/cue) và (2) xuất JSON có words[] cho player click-to-seek (UI).
+Glossary (initial_prompt) truyền từ app (settings) — rỗng thì không kèm prompt.
 """
 import json
 import os
@@ -25,8 +30,13 @@ os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
 _model = None       # pipeline giữ ấm
 _model_size = None  # size đang nạp — đổi size thì reload
 
-# Glossary domain (IT/DevOps) → bias model nhận đúng tên riêng/tiếng Anh. Sửa/mở rộng tùy nội dung.
-DEFAULT_PROMPT = (
+# Giới hạn phụ đề (chuẩn thường dùng): ~42 ký tự/dòng, tối đa 2 dòng, ~6s mỗi cue.
+SRT_MAX_CHARS = 42
+SRT_MAX_DUR = 6.0
+
+# Glossary MẪU (domain IT/DevOps) — chỉ để tham khảo/placeholder UI. KHÔNG dùng làm mặc định ngầm;
+# prompt thật lấy từ request (app đọc settings.glossary). Rỗng → transcribe không kèm initial_prompt.
+EXAMPLE_PROMPT = (
     "Bài nói kỹ thuật tiếng Việt về hệ thống và DevOps. Thuật ngữ thường gặp: "
     "VictoriaLogs, VictoriaMetrics, Grafana, OpenTelemetry, observability, log, parse, "
     "JSON, query, cheatsheet, cluster, HA, Docker, server, port, IP, API, systemctl, rsyslog."
@@ -38,12 +48,13 @@ def send(obj):
     sys.stdout.flush()
 
 
-def fmt_ts(seconds: float) -> str:
+def fmt_ts(seconds: float, sep: str = ",") -> str:
+    # sep="," → SRT; sep="." → VTT.
     ms = max(0, int(round(seconds * 1000)))
     h, ms = divmod(ms, 3_600_000)
     m, ms = divmod(ms, 60_000)
     s, ms = divmod(ms, 1000)
-    return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
+    return f"{h:02d}:{m:02d}:{s:02d}{sep}{ms:03d}"
 
 
 def ensure_model(model_dir: str, size: str):
@@ -74,38 +85,112 @@ def get_model(model_dir: str, size: str):
     return _model
 
 
-def _write_outputs(file: str, out_dir: str, outputs, text: str, srt_lines):
-    stem = Path(file).stem
-    out = Path(out_dir)
-    out.mkdir(parents=True, exist_ok=True)
-    txt_path = srt_path = None
-    if "txt" in outputs:
-        txt_path = str(out / f"{stem}.txt")
-        Path(txt_path).write_text(text, encoding="utf-8")
-    if "srt" in outputs:
-        srt_path = str(out / f"{stem}.srt")
-        Path(srt_path).write_text("\n".join(srt_lines), encoding="utf-8")
-    return txt_path, srt_path
+# ── Chuẩn hoá segment về shape chung: {start, end, text, words:[{start,end,word}]} ──────────────
+
+def _wrap_two_lines(text: str, max_chars: int) -> str:
+    """Gói text thành 2 dòng, cắt ở ranh giới từ CÂN BẰNG (điểm cắt gần giữa) → cả 2 dòng ngắn +
+    ≤max_chars khi tổng ≤2*max_chars. Từ đơn dài hơn max_chars thì đành tràn (không cắt giữa từ)."""
+    text = " ".join(text.split())
+    if len(text) <= max_chars:
+        return text
+    words = text.split()
+    best_i, best_diff = 1, None
+    for i in range(1, len(words)):
+        a = len(" ".join(words[:i]))
+        b = len(" ".join(words[i:]))
+        # ưu tiên điểm cắt mà dòng 1 ≤max_chars; trong đó chọn cái cân nhất (|a-b| nhỏ nhất).
+        if a <= max_chars and (best_diff is None or abs(a - b) < best_diff):
+            best_i, best_diff = i, abs(a - b)
+    return " ".join(words[:best_i]) + "\n" + " ".join(words[best_i:])
 
 
-def _transcribe_ct2(file: str, model_dir: str, size: str):
+def resegment_cues(segments, max_chars=SRT_MAX_CHARS, max_dur=SRT_MAX_DUR):
+    """Từ segment (có words) → cue phụ đề chuẩn: gộp/tách theo ngân sách ký tự + thời lượng +
+    ranh giới câu. Không có words (fallback) → mỗi segment 1 cue (chỉ wrap 2 dòng)."""
+    budget = max_chars * 2
+    cues, cur = [], []
+
+    def flush():
+        nonlocal cur
+        if cur:
+            text = "".join(w["word"] for w in cur).strip()
+            if text:
+                cues.append({
+                    "start": cur[0]["start"],
+                    "end": cur[-1]["end"],
+                    "text": _wrap_two_lines(text, max_chars),
+                })
+            cur = []
+
+    for seg in segments:
+        words = seg.get("words") or []
+        if not words:
+            flush()
+            txt = (seg.get("text") or "").strip()
+            if txt:
+                cues.append({
+                    "start": seg["start"], "end": seg["end"],
+                    "text": _wrap_two_lines(txt, max_chars),
+                })
+            continue
+        for w in words:
+            if cur:
+                cur_len = sum(len(x["word"]) for x in cur)
+                dur = w["end"] - cur[0]["start"]
+                if cur_len + len(w["word"]) > budget or dur > max_dur:
+                    flush()
+            cur.append(w)
+            if w["word"].strip().endswith((".", "?", "!", "…")):
+                flush()
+    flush()
+    return cues
+
+
+def to_srt(cues) -> str:
+    return "\n".join(
+        f"{i}\n{fmt_ts(c['start'])} --> {fmt_ts(c['end'])}\n{c['text']}\n"
+        for i, c in enumerate(cues, 1)
+    )
+
+
+def to_vtt(cues) -> str:
+    body = "\n".join(
+        f"{fmt_ts(c['start'], '.')} --> {fmt_ts(c['end'], '.')}\n{c['text']}\n"
+        for c in cues
+    )
+    return "WEBVTT\n\n" + body
+
+
+def to_json(segments, text: str) -> str:
+    return json.dumps({"text": text, "segments": segments}, ensure_ascii=False, indent=2)
+
+
+# ── Backend ─────────────────────────────────────────────────────────────────────────────────
+
+def _transcribe_ct2(file: str, model_dir: str, size: str, prompt):
     model = get_model(model_dir, size)
-    # batched + beam=1 + VAD (bỏ khoảng lặng) → nhanh. initial_prompt (glossary) → đúng thuật ngữ.
+    # batched + beam=1 + VAD (bỏ khoảng lặng) → nhanh. word_timestamps → resegment phụ đề + JSON.
     segments, info = model.transcribe(
         file, batch_size=8, beam_size=1, language="vi",
-        vad_filter=True, initial_prompt=DEFAULT_PROMPT,
+        vad_filter=True, word_timestamps=True, initial_prompt=prompt or None,
     )
     duration = getattr(info, "duration", 0.0) or 0.0
-    full, srt_lines = [], []
-    for i, seg in enumerate(segments, 1):
+    norm, full = [], []
+    for seg in segments:
         full.append(seg.text)
-        srt_lines.append(f"{i}\n{fmt_ts(seg.start)} --> {fmt_ts(seg.end)}\n{seg.text.strip()}\n")
+        words = [
+            {"start": float(w.start), "end": float(w.end), "word": w.word}
+            for w in (seg.words or [])
+        ]
+        norm.append({
+            "start": float(seg.start), "end": float(seg.end), "text": seg.text, "words": words,
+        })
         if duration > 0:
             send({"type": "progress", "file": file, "pct": min(100, int(seg.end / duration * 100))})
-    return "".join(full).strip(), srt_lines
+    return "".join(full).strip(), norm
 
 
-def _transcribe_mlx(file: str, model_dir: str, size: str):
+def _transcribe_mlx(file: str, model_dir: str, size: str, prompt):
     # Apple Silicon Metal GPU. Lazy import: sidecar Windows/Intel không cài mlx → không chạm nhánh này.
     # mlx_whisper tự cache model (ModelHolder); không dùng get_model warm-pool của ct2.
     import mlx_whisper
@@ -113,23 +198,54 @@ def _transcribe_mlx(file: str, model_dir: str, size: str):
     send({"type": "info", "message": f"Đang dùng MLX (Metal GPU) — model {size}"})
     result = mlx_whisper.transcribe(
         file, path_or_hf_repo=resolve_model_path(model_dir, size),
-        language="vi", initial_prompt=DEFAULT_PROMPT,
+        language="vi", word_timestamps=True, initial_prompt=prompt or None,
     )
-    segs = result.get("segments", []) or []
-    srt_lines = [
-        f"{i}\n{fmt_ts(s['start'])} --> {fmt_ts(s['end'])}\n{s['text'].strip()}\n"
-        for i, s in enumerate(segs, 1)
-    ]
-    return (result.get("text") or "").strip(), srt_lines
+    norm = []
+    for s in result.get("segments", []) or []:
+        # .get + lọc word thiếu mốc → degrade nhẹ (bỏ word đó), KHÔNG KeyError hỏng cả file.
+        words = [
+            {"start": float(w["start"]), "end": float(w["end"]), "word": w.get("word", "")}
+            for w in (s.get("words") or [])
+            if w.get("start") is not None and w.get("end") is not None
+        ]
+        norm.append({
+            "start": float(s["start"]), "end": float(s["end"]),
+            "text": s.get("text", ""), "words": words,
+        })
+    return (result.get("text") or "").strip(), norm
 
 
-def transcribe(file: str, out_dir: str, outputs, model_dir: str, size: str):
+def _write_outputs(file: str, out_dir: str, outputs, text: str, segments):
+    stem = Path(file).stem
+    out = Path(out_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    cues = resegment_cues(segments)
+    paths = {"txt": None, "srt": None, "vtt": None, "json": None}
+    writers = {
+        "txt": lambda: text,
+        "srt": lambda: to_srt(cues),
+        "vtt": lambda: to_vtt(cues),
+        "json": lambda: to_json(segments, text),
+    }
+    for fmt, make in writers.items():
+        if fmt in outputs:
+            p = out / f"{stem}.{fmt}"
+            p.write_text(make(), encoding="utf-8")
+            paths[fmt] = str(p)
+    return paths
+
+
+def transcribe(file: str, out_dir: str, outputs, model_dir: str, size: str, prompt=None):
     if backend_of(size) == "mlx":
-        text, srt_lines = _transcribe_mlx(file, model_dir, size)
+        text, segments = _transcribe_mlx(file, model_dir, size, prompt)
     else:
-        text, srt_lines = _transcribe_ct2(file, model_dir, size)
-    txt_path, srt_path = _write_outputs(file, out_dir, outputs, text, srt_lines)
-    send({"type": "done", "file": file, "text": text, "txt_path": txt_path, "srt_path": srt_path})
+        text, segments = _transcribe_ct2(file, model_dir, size, prompt)
+    paths = _write_outputs(file, out_dir, outputs, text, segments)
+    send({
+        "type": "done", "file": file, "text": text, "segments": segments,
+        "txt_path": paths["txt"], "srt_path": paths["srt"],
+        "vtt_path": paths["vtt"], "json_path": paths["json"],
+    })
 
 
 def _install_orphan_guard():
@@ -189,7 +305,7 @@ def main():
             elif cmd == "transcribe":
                 transcribe(
                     req["file"], req["out_dir"], req.get("outputs", ["txt", "srt"]),
-                    req["model_dir"], req.get("size", "medium"),
+                    req["model_dir"], req.get("size", "medium"), req.get("prompt"),
                 )
             elif cmd == "shutdown":
                 break

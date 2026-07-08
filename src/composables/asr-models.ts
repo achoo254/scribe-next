@@ -39,3 +39,31 @@ export function useAsrModels() {
     .catch(() => {});
   return { sizeOptions, sizeHint: SIZE_HINT };
 }
+
+// ── Quản lý model đã tải (Phase 04) ──────────────────────────────────────────────────────────
+export interface ModelInfo {
+  size: ModelSize;
+  present: boolean;
+  bytes: number;
+}
+
+// Đọc trạng thái mọi model (đã tải + dung lượng) + xóa để lấy lại disk.
+export function useModelManager() {
+  const models = ref<ModelInfo[]>([]);
+  async function refresh() {
+    models.value = await invoke<ModelInfo[]>("list_models").catch(() => []);
+  }
+  async function remove(size: ModelSize) {
+    await invoke("delete_model", { size }).catch(() => {});
+    await refresh();
+  }
+  return { models, refresh, remove };
+}
+
+// Format byte → "1.5 GB" / "490 MB" cho UI.
+export function formatBytes(n: number): string {
+  if (n <= 0) return "0 MB";
+  const gb = n / 1_000_000_000;
+  if (gb >= 1) return `${gb.toFixed(1)} GB`;
+  return `${Math.round(n / 1_000_000)} MB`;
+}

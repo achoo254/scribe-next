@@ -13,6 +13,7 @@ import AsrModelControls from "../components/AsrModelControls.vue";
 import { useRecorder, type Region } from "../composables/use-recorder";
 import { useRecordTranscribe } from "../composables/use-record-transcribe";
 import { useAsrModels } from "../composables/asr-models";
+import { patchSettings } from "../composables/settings-store";
 
 const rec = useRecorder();
 const rt = useRecordTranscribe();
@@ -102,22 +103,21 @@ watch(
   [mic, outputId, recSource, outDir, format, splitValue, splitUnit, recordScreen, screenMonitor, screenFps, regionMode, rec.region],
   () => {
     if (!loaded) return;
-    invoke("set_settings", {
-      settings: {
-        mic_id: mic.value,
-        out_dir: outDir.value || null,
-        format: format.value,
-        split_value: Number(splitValue.value),
-        split_unit: splitUnit.value,
-        source: recSource.value,
-        output_id: outputId.value || null,
-        record_screen: recordScreen.value,
-        screen_monitor: Number(screenMonitor.value),
-        screen_fps: Number(screenFps.value),
-        region_mode: regionMode.value,
-        region: rec.region.value,
-      },
-    }).catch(() => {});
+    // patchSettings MERGE → KHÔNG đụng field tab khác (vd glossary do tab Transcript quản).
+    patchSettings({
+      mic_id: mic.value,
+      out_dir: outDir.value || null,
+      format: format.value,
+      split_value: Number(splitValue.value),
+      split_unit: splitUnit.value,
+      source: recSource.value,
+      output_id: outputId.value || null,
+      record_screen: recordScreen.value,
+      screen_monitor: Number(screenMonitor.value),
+      screen_fps: Number(screenFps.value),
+      region_mode: regionMode.value,
+      region: rec.region.value,
+    });
   },
 );
 

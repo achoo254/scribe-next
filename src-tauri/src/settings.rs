@@ -29,6 +29,10 @@ pub struct AppSettings {
     pub region_mode: String, // "full" | "region"
     #[serde(default)]
     pub region: Option<RegionStore>, // vùng đã chọn lần trước (px vật lý theo monitor)
+    // Glossary (initial_prompt ASR) — bias model đúng tên riêng/thuật ngữ. Dùng chung Mode A + C.
+    // Mặc định = glossary DevOps (giữ nguyên trải nghiệm cũ); rỗng → transcribe không kèm prompt.
+    #[serde(default = "default_glossary")]
+    pub glossary: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -51,6 +55,16 @@ fn default_region_mode() -> String {
     "full".into()
 }
 
+/// Glossary mặc định (domain IT/DevOps) — trước đây hardcode trong sidecar; nay là setting sửa được.
+fn default_glossary() -> Option<String> {
+    Some(
+        "Bài nói kỹ thuật tiếng Việt về hệ thống và DevOps. Thuật ngữ thường gặp: \
+VictoriaLogs, VictoriaMetrics, Grafana, OpenTelemetry, observability, log, parse, \
+JSON, query, cheatsheet, cluster, HA, Docker, server, port, IP, API, systemctl, rsyslog."
+            .into(),
+    )
+}
+
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
@@ -66,6 +80,7 @@ impl Default for AppSettings {
             screen_fps: default_fps(),
             region_mode: default_region_mode(),
             region: None,
+            glossary: default_glossary(),
         }
     }
 }

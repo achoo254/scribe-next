@@ -1,32 +1,59 @@
 <script setup lang="ts">
 // Mode C — Transcribe offline tiếng Việt (PhoWhisper). UI Vi* (iNET ViUI), token-only, WCAG AA.
 import { onMounted, onActivated } from "vue";
+import { convertFileSrc } from "@tauri-apps/api/core";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
+import { ask } from "@tauri-apps/plugin-dialog";
 import {
   ViCard, ViButton, ViIcon, ViList, ViListItem, ViSelect,
-  ViTextarea, ViProgressLinear, ViAlert,
+  ViTextarea, ViProgressLinear, ViAlert, ViButtonToggle,
 } from "../design-system/vi-ui";
-import { useTranscribe } from "../composables/use-transcribe";
-import { useAsrModels } from "../composables/asr-models";
+import TranscriptPlayer from "../components/TranscriptPlayer.vue";
+import { useTranscribe, isVideoPath } from "../composables/use-transcribe";
+import { useAsrModels, useModelManager, formatBytes, type ModelSize } from "../composables/asr-models";
+import { useGlossary } from "../composables/use-glossary";
 
 const tr = useTranscribe();
-onMounted(() => tr.init());
-// keep-alive: quay lại tab → re-sync trạng thái model (có thể đã tải xong từ tab Ghi âm).
-onActivated(() => tr.refreshModel());
+const gloss = useGlossary();
+const mm = useModelManager();
+onMounted(() => {
+  tr.init();
+  gloss.load();
+  mm.refresh();
+});
+// keep-alive: quay lại tab → re-sync trạng thái model (có thể đã tải xong từ tab Ghi âm) + model list.
+onActivated(() => {
+  tr.refreshModel();
+  mm.refresh();
+});
 
 // Picker model — catalog dùng chung (asr-models); MLX gated theo nền tảng.
 const { sizeOptions, sizeHint } = useAsrModels();
+
+const EXPORT_OPTS = [
+  { value: "txt", label: "TXT" },
+  { value: "srt", label: "SRT (phụ đề)" },
+  { value: "vtt", label: "VTT" },
+  { value: "json", label: "JSON" },
+];
 
 const base = (p: string) => p.split(/[\\/]/).pop() || p;
 const locate = (p: string | null) => {
   if (p) revealItemInDir(p).catch(() => {});
 };
-async function copyText() {
+async function copyText(text: string) {
   try {
-    await navigator.clipboard.writeText(tr.panelText.value);
+    await navigator.clipboard.writeText(text);
   } catch {
     /* clipboard không khả dụng */
   }
+}
+async function removeModel(size: ModelSize) {
+  const ok = await ask(`Xóa model ${size}? Sẽ phải tải lại khi dùng.`, {
+    title: "Xóa model",
+    kind: "warning",
+  });
+  if (ok) mm.remove(size);
 }
 </script>
 
@@ -41,6 +68,27 @@ async function copyText() {
         :disabled="tr.transcribing.value || tr.downloading.value"
         hide-details
       />
+
+      <!-- Glossary: bias model đúng tên riêng/thuật ngữ (dùng chung Mode A + C) -->
+      <ViTextarea
+        v-model="gloss.glossary.value"
+        label="Thuật ngữ / tên riêng (glossary)"
+        placeholder="VD: VictoriaLogs, Grafana, tên người, tên sản phẩm… — để trống nếu không cần."
+        rows="2"
+        auto-grow
+        hide-details
+        @blur="gloss.save()"
+      />
+
+      <!-- Định dạng xuất -->
+      <div class="os-row">
+        <span class="os-muted">Xuất:</span>
+        <ViButtonToggle v-model="tr.exportFormats.value" multiple divided density="comfortable">
+          <ViButton v-for="o in EXPORT_OPTS" :key="o.value" :value="o.value" size="small">
+            {{ o.label }}
+          </ViButton>
+        </ViButtonToggle>
+      </div>
 
       <div class="os-row">
         <ViButton variant="outlined" :disabled="tr.transcribing.value" @click="tr.pickFiles()">
@@ -116,46 +164,82 @@ async function copyText() {
       <ViAlert v-if="tr.error.value" type="error" density="compact" closable>
         {{ tr.error.value }}
       </ViAlert>
+      <!-- Lỗi từng file + nút thử lại (Phase 04) -->
       <ViAlert
         v-for="(e, i) in tr.fileErrors.value"
         :key="'fe' + i"
         type="error"
         density="compact"
-        closable
       >
-        {{ base(e.file) }}: {{ e.message }}
+        <div class="os-row os-err">
+          <span>{{ base(e.file) }}: {{ e.message }}</span>
+          <ViButton
+            variant="text"
+            size="small"
+            :disabled="tr.transcribing.value"
+            @click="tr.retry(e.file)"
+          >
+            <ViIcon icon="IconRefresh" start />Thử lại
+          </ViButton>
+        </div>
       </ViAlert>
 
-      <!-- Panel transcript -->
-      <ViTextarea
-        v-if="tr.panelText.value"
-        :model-value="tr.panelText.value"
-        label="Nội dung"
-        readonly
-        rows="8"
-        auto-grow
-      />
-      <div v-if="tr.panelText.value" class="os-row">
-        <ViButton variant="text" size="small" @click="copyText">
-          <ViIcon icon="IconCopy" start />Copy
-        </ViButton>
+      <!-- Kết quả per-file: player click-to-seek + editor sửa & lưu (Phase 03) -->
+      <div v-for="(r, i) in tr.results.value" :key="'r' + i" class="os-result">
+        <div class="os-result-head">
+          <ViIcon icon="IconFileText" />
+          <span class="os-result-name">{{ base(r.file) }}</span>
+          <span v-if="r.saved" class="os-muted">✓ đã lưu</span>
+          <ViButton variant="text" size="small" @click="locate(r.txtPath ?? r.file)">
+            <ViIcon icon="IconFolder" />
+          </ViButton>
+        </div>
+
+        <TranscriptPlayer :src="convertFileSrc(r.file)" :is-video="isVideoPath(r.file)" :segments="r.segments" />
+
+        <ViTextarea
+          :model-value="r.text"
+          label="Nội dung (sửa được)"
+          rows="6"
+          auto-grow
+          hide-details
+          @update:model-value="(v: string) => tr.edit(r, v)"
+        />
+        <div class="os-row">
+          <ViButton color="primary" size="small" :disabled="!r.dirty" @click="tr.save(r)">
+            <ViIcon icon="IconDeviceFloppy" start />Lưu lại
+          </ViButton>
+          <ViButton variant="text" size="small" @click="copyText(r.text)">
+            <ViIcon icon="IconCopy" start />Copy
+          </ViButton>
+        </div>
       </div>
 
-      <!-- Kết quả (file .txt/.srt cạnh file gốc) -->
-      <ViList v-if="tr.results.value.length" density="compact" class="os-box">
-        <ViListItem
-          v-for="(r, i) in tr.results.value"
-          :key="i"
-          :title="base(r.file)"
-          subtitle=".txt + .srt cạnh file gốc"
-        >
-          <template #append>
-            <ViButton variant="text" size="small" @click="locate(r.txtPath)">
-              <ViIcon icon="IconFileText" />
-            </ViButton>
-          </template>
-        </ViListItem>
-      </ViList>
+      <!-- Quản lý model đã tải (Phase 04) -->
+      <details class="os-models">
+        <summary class="os-muted">Quản lý model đã tải</summary>
+        <ViList density="compact" class="os-box">
+          <ViListItem
+            v-for="m in mm.models.value"
+            :key="m.size"
+            :title="m.size"
+            :subtitle="m.present ? formatBytes(m.bytes) + ' · đã tải' : 'chưa tải'"
+          >
+            <template #append>
+              <ViButton
+                v-if="m.present"
+                variant="text"
+                size="small"
+                color="error"
+                :disabled="tr.transcribing.value || tr.downloading.value"
+                @click="removeModel(m.size)"
+              >
+                <ViIcon icon="IconTrash" />
+              </ViButton>
+            </template>
+          </ViListItem>
+        </ViList>
+      </details>
     </div>
   </ViCard>
 </template>
@@ -171,6 +255,10 @@ async function copyText() {
   align-items: center;
   gap: var(--viui-space-sm);
   flex-wrap: wrap;
+}
+.os-err {
+  justify-content: space-between;
+  width: 100%;
 }
 .os-muted {
   font-size: var(--viui-font-size-sm);
@@ -190,5 +278,26 @@ async function copyText() {
   display: flex;
   flex-direction: column;
   gap: var(--viui-space-xs);
+}
+.os-result {
+  display: flex;
+  flex-direction: column;
+  gap: var(--viui-space-sm);
+  padding: var(--viui-space-sm);
+  border: 1px solid rgb(var(--v-theme-outline));
+  border-radius: var(--viui-radius-sm, 8px);
+}
+.os-result-head {
+  display: flex;
+  align-items: center;
+  gap: var(--viui-space-sm);
+}
+.os-result-name {
+  flex: 1 1 auto;
+  word-break: break-all;
+  font-size: var(--viui-font-size-sm);
+}
+.os-models > summary {
+  cursor: pointer;
 }
 </style>

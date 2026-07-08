@@ -116,6 +116,41 @@ pub fn model_present(app: &AppHandle, size: &str) -> bool {
     has_model_weights(&model_dir(app, size))
 }
 
+/// Danh sách size model app hỗ trợ (khớp catalog sidecar model_paths.MODELS).
+const ALL_SIZES: [&str; 4] = ["small", "medium", "large", "large-v3-mlx"];
+
+/// Thông tin 1 model cho UI quản lý: đã tải chưa + dung lượng đĩa (byte).
+#[derive(serde::Serialize)]
+pub struct ModelInfo {
+    pub size: String,
+    pub present: bool,
+    pub bytes: u64,
+}
+
+/// Liệt kê trạng thái mọi size (present + dung lượng) → UI hiển thị + cho xóa lấy lại disk.
+pub fn list_models(app: &AppHandle) -> Vec<ModelInfo> {
+    ALL_SIZES
+        .iter()
+        .map(|&size| {
+            let dir = model_dir(app, size);
+            ModelInfo {
+                size: size.to_string(),
+                present: has_model_weights(&dir),
+                bytes: dir_size(&dir),
+            }
+        })
+        .collect()
+}
+
+/// Xóa thư mục model theo size để lấy lại disk. Chưa tồn tại → coi như thành công.
+pub fn delete_model(app: &AppHandle, size: &str) -> Result<(), String> {
+    let dir = model_dir(app, size);
+    if dir.exists() {
+        std::fs::remove_dir_all(&dir).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 /// Tổng dung lượng thư mục (gồm cả file .incomplete đang tải) → tính % tải.
 fn dir_size(dir: &Path) -> u64 {
     let mut total = 0u64;
@@ -265,6 +300,11 @@ impl Transcriber {
         }
         self.ensure_spawned(app)?;
         let dir = model_dir(app, size).to_string_lossy().to_string();
+        // Glossary (initial_prompt) dùng chung Mode A + C — đọc 1 lần từ settings, rỗng → không kèm.
+        let prompt = crate::settings::load(app)
+            .ok()
+            .and_then(|s| s.glossary)
+            .filter(|g| !g.trim().is_empty());
         for file in paths {
             let out_dir = Path::new(&file)
                 .parent()
@@ -273,7 +313,7 @@ impl Transcriber {
             self.send(
                 serde_json::json!({
                     "cmd": "transcribe", "file": file, "out_dir": out_dir,
-                    "outputs": outputs, "model_dir": dir, "size": size,
+                    "outputs": outputs, "model_dir": dir, "size": size, "prompt": prompt,
                 })
                 .to_string(),
             )?;

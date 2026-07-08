@@ -166,6 +166,26 @@ pub fn cancel_transcribe(transcriber: State<'_, Transcriber>) {
     transcriber.shutdown();
 }
 
+/// Mode C: lưu lại transcript đã sửa trong app → ghi đè .txt cạnh file gốc.
+/// Ghi thẳng path do frontend cấp (không validate). App desktop 1 người dùng, offline, path derive
+/// từ file user tự chọn → chấp nhận; KHÔNG dùng cho input không tin cậy.
+#[tauri::command]
+pub fn save_transcript(path: String, content: String) -> Result<(), String> {
+    std::fs::write(&path, content).map_err(|e| e.to_string())
+}
+
+/// Mode C: liệt kê model đã tải + dung lượng (byte) để UI quản lý/dọn disk.
+#[tauri::command]
+pub fn list_models(app: AppHandle) -> Vec<transcribe::ModelInfo> {
+    transcribe::list_models(&app)
+}
+
+/// Mode C: xóa model theo size để lấy lại disk.
+#[tauri::command]
+pub fn delete_model(app: AppHandle, size: String) -> Result<(), String> {
+    transcribe::delete_model(&app, &size)
+}
+
 /// Đọc settings (mic, folder, format, split) — trả mặc định nếu chưa lưu.
 #[tauri::command]
 pub fn get_settings(app: AppHandle) -> Result<AppSettings, String> {
