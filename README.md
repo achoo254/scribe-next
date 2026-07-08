@@ -31,7 +31,8 @@ Desktop app (Windows + macOS) ghi âm micro + cắt live, cắt file audio/video
 
 - `src-tauri/binaries/ffmpeg-<target>` + `ffprobe-<target>` — bản **ffmpeg LGPL** (BtbN). Dùng cho ghi/cắt audio + **ghi màn hình** (`ddagrab` + `libopenh264`, đều có sẵn trong bản LGPL — không cần libx264/GPL).
 - `transcriber-<target>` — Python sidecar faster-whisper (PyInstaller onefile, CPU int8). Build: Windows `sidecar/transcriber/build_pyinstaller.ps1`; macOS/Linux `bash sidecar/transcriber/build_pyinstaller.sh` (đặt `PYTHON=python3.x` để ép version). Trên macOS, ffmpeg/ffprobe copy từ brew vào `src-tauri/binaries/ffmpeg-<target>` + `ffprobe-<target>`.
-  - **Picker đa-model**: small / medium / large (mặc định **medium**) — chọn theo nhu cầu tốc độ ↔ chất lượng. Mỗi size tải riêng (~0.5 / ~1.5 / ~3 GB) về app-data lần đầu, sau đó offline. small/medium từ `quocphu/PhoWhisper-ct2-FasterWhisper`, large từ `kiendt/PhoWhisper-large-ct2`.
+  - **Picker đa-model**: small / medium / large (mặc định **medium**) — chọn theo nhu cầu tốc độ ↔ chất lượng. Mỗi size tải riêng (~0.5 / ~1.5 / ~3 GB) về app-data lần đầu, sau đó offline. small/medium từ `quocphu/PhoWhisper-ct2-FasterWhisper`, large từ `kiendt/PhoWhisper-large-ct2`. Trên macOS Apple Silicon còn có **Whisper Large-v3 (MLX)** chạy Metal GPU.
+  - **Transcript (Mode C) — last mile**: (1) **Glossary sửa được trong app** (thuật ngữ/tên riêng → bias model, mặc định domain DevOps, dùng chung Mode A) thay cho prompt hardcode cũ; (2) **xuất `.txt` / `.srt` / `.vtt` / `.json`** — SRT/VTT resegment chuẩn phụ đề (≤42 ký tự/dòng, ≤2 dòng, ≤6s/cue) nhờ `word_timestamps`; (3) **player nghe lại đồng bộ** (click segment → nhảy tới mốc) + **sửa transcript & Lưu lại** ghi đè `.txt`; batch xem/sửa từng file + **thử lại** file lỗi; (4) **quản lý/xóa model** để lấy lại disk. Phát file local dùng Tauri asset protocol (`convertFileSrc`).
 
 ## Design system
 
