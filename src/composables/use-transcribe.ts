@@ -58,6 +58,10 @@ export function useTranscribe() {
       : 0,
   );
 
+  // MLX transcribe là 1 lời gọi blocking, KHÔNG phát progress từng đoạn → overallPct đứng 0 tới khi
+  // done (trông như treo). Hiện thanh indeterminate = "đang chạy". Cũng phủ lúc ct2 mới khởi động.
+  const indeterminate = computed(() => transcribing.value && overallPct.value === 0);
+
   // Kiểm tra model của size đang chọn đã tải chưa + lấy đường dẫn.
   async function refreshModel() {
     modelReady.value = await invoke<boolean>("model_status", { size: selectedSize.value }).catch(() => false);
@@ -189,7 +193,7 @@ export function useTranscribe() {
 
   return {
     files, selectedSize, modelReady, modelPath, downloading, downloadPct, transcribing, progressPct,
-    overallPct, doneCount: settled, total: expected,
+    overallPct, indeterminate, doneCount: settled, total: expected,
     currentFile, deviceInfo, results, fileErrors, panelText, error,
     init, refreshModel, pickFiles, ensureModel, transcribe, cancel,
   };

@@ -99,10 +99,18 @@ async function copyText() {
 
       <div v-if="tr.transcribing.value" class="os-prog">
         <span class="os-muted">
-          {{ tr.doneCount.value }}/{{ tr.total.value }} file · {{ tr.overallPct.value }}%
-          <template v-if="tr.currentFile.value">· đang xử lý: {{ base(tr.currentFile.value) }}</template>
+          {{ tr.doneCount.value }}/{{ tr.total.value }} file ·
+          <template v-if="tr.indeterminate.value">đang xử lý…</template>
+          <template v-else>{{ tr.overallPct.value }}%</template>
+          <template v-if="tr.currentFile.value">· {{ base(tr.currentFile.value) }}</template>
         </span>
-        <ViProgressLinear :model-value="tr.overallPct.value" color="primary" height="6" rounded />
+        <ViProgressLinear
+          :model-value="tr.overallPct.value"
+          :indeterminate="tr.indeterminate.value"
+          color="primary"
+          height="6"
+          rounded
+        />
       </div>
 
       <ViAlert v-if="tr.error.value" type="error" density="compact" closable>
