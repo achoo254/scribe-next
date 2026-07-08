@@ -6,7 +6,7 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
-use std::thread::JoinHandle;
+use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter};
 use tauri_plugin_shell::process::CommandEvent;
@@ -217,10 +217,28 @@ fn record_loop(
     }
 
     // 4) Stop sạch: ngừng capture rồi ĐÓNG STDIN (drop child) → ffmpeg nhận audio EOF. Ghi màn hình
-    // dùng `-shortest` nên audio EOF làm ffmpeg kết thúc + finalize MP4 hợp lệ. KHÔNG kill cứng:
-    // kill để lại file ~rỗng (fragment chưa flush, "moov atom not found").
+    // dùng `-shortest` nên audio EOF làm ffmpeg kết thúc + finalize MP4 hợp lệ. KHÔNG kill cứng NGAY:
+    // kill sớm để lại file ~rỗng (fragment chưa flush, "moov atom not found").
+    //
+    // Chống chạy ngầm: ffmpeg đọc input từ stdin của app → app thoát/đóng ĐỘT NGỘT là stdin EOF →
+    // ffmpeg tự finalize + thoát (đã kiểm chứng, không mồ côi). Fallback dưới chỉ lo ca hiếm ffmpeg
+    // TREO lúc finalize: hết grace mà chưa thoát → SIGKILL để app không kẹt lúc thoát + ffmpeg không lửng lơ.
     capture.stop();
-    drop(child);
+    let ff_pid = child.pid();
+    drop(child); // đóng stdin → ffmpeg EOF → finalize (đường sạch, thường < 1s)
+    let ffmpeg_exited = Arc::new(AtomicBool::new(false));
+    {
+        let exited = ffmpeg_exited.clone();
+        thread::spawn(move || {
+            for _ in 0..100 {
+                thread::sleep(Duration::from_millis(100)); // grace tối đa ~10s cho finalize
+                if exited.load(Ordering::SeqCst) {
+                    return; // ffmpeg đã thoát bình thường → khỏi kill
+                }
+            }
+            kill_ffmpeg(ff_pid); // treo quá lâu → kill (ffmpeg còn sống nên pid chưa bị tái dụng)
+        });
+    }
     loop {
         match events.blocking_recv() {
             Some(CommandEvent::Terminated(_)) | None => break,
@@ -230,7 +248,22 @@ fn record_loop(
             Some(_) => {}
         }
     }
+    ffmpeg_exited.store(true, Ordering::SeqCst); // báo killer thread: ffmpeg đã thoát, khỏi SIGKILL
     finish(&app, &dir, &prefix);
+}
+
+/// Kill ffmpeg (fallback khi finalize TREO — ffmpeg là 1 tiến trình đơn, không có con).
+fn kill_ffmpeg(pid: u32) {
+    #[cfg(unix)]
+    unsafe {
+        libc::kill(pid as i32, libc::SIGKILL);
+    }
+    #[cfg(windows)]
+    {
+        let _ = std::process::Command::new("taskkill")
+            .args(["/F", "/PID", &pid.to_string()])
+            .status();
+    }
 }
 
 /// Drain non-blocking event ffmpeg trong lúc ghi (tránh đầy channel → block stdin).
