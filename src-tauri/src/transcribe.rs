@@ -37,9 +37,30 @@ struct Proc {
 
 impl Drop for Proc {
     fn drop(&mut self) {
+        // shutdown chỉ ăn khi sidecar RẢNH (đang đọc stdin); lúc transcribe (blocking) nó bỏ qua →
+        // phải kill cứng. kill_tree giết CẢ process group (bootloader onefile + worker Python +
+        // resource_tracker) — child.kill() lẻ chỉ giết bootloader, để worker mồ côi chạy ngầm.
         let _ = self.stdin.write_all(b"{\"cmd\":\"shutdown\"}\n");
-        let _ = self.child.kill();
+        kill_tree(&mut self.child);
         let _ = self.child.wait(); // reap (tránh zombie trên Unix/macOS — P5)
+    }
+}
+
+/// Kill toàn bộ cây tiến trình sidecar (HỦY / thoát app). Unix: SIGKILL cả process group
+/// (ensure_spawned đặt group riêng, group id = pid con) → dọn sạch worker + resource_tracker
+/// của PyInstaller onefile. Windows: child.kill() (fix cây tiến trình = việc sau).
+fn kill_tree(child: &mut Child) {
+    #[cfg(unix)]
+    {
+        let pid = child.id() as i32;
+        // -pid = gửi tới cả process group. An toàn: group này CHỈ có sidecar (spawn process_group(0)).
+        unsafe {
+            libc::kill(-pid, libc::SIGKILL);
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = child.kill();
     }
 }
 
@@ -163,6 +184,16 @@ impl Transcriber {
         cmd.stderr(Stdio::null());
         #[cfg(windows)]
         cmd.creation_flags(CREATE_NO_WINDOW);
+        // Watchdog: sidecar tự kết liễu khi app cha chết ĐỘT NGỘT (crash/force-quit — Drop không chạy),
+        // tránh transcribe chạy ngầm. Xem main.py::_install_orphan_guard.
+        cmd.env("ONESCRIBE_PARENT_PID", std::process::id().to_string());
+        // Process group riêng → kill_tree (SIGKILL -pgid) dọn cả cụm sidecar (bootloader onefile +
+        // worker Python + resource_tracker) khi HỦY/thoát, không để tiến trình con mồ côi.
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::CommandExt;
+            cmd.process_group(0);
+        }
         let mut child = cmd.spawn().map_err(|e| format!("Không chạy được sidecar: {e}"))?;
         let stdin = child.stdin.take().ok_or("Không mở được stdin sidecar")?;
         let stdout = child.stdout.take().ok_or("Không mở được stdout sidecar")?;

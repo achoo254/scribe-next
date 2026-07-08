@@ -132,12 +132,46 @@ def transcribe(file: str, out_dir: str, outputs, model_dir: str, size: str):
     send({"type": "done", "file": file, "text": text, "txt_path": txt_path, "srt_path": srt_path})
 
 
+def _install_orphan_guard():
+    """Sidecar tự kết liễu khi app cha chết ĐỘT NGỘT (crash/force-quit — Rust không kịp kill),
+    tránh transcribe chạy ngầm ngốn CPU/GPU. Theo dõi PID app (env Rust truyền); app chết → kill
+    cả process group của sidecar (Rust đã đặt group: worker + resource_tracker của onefile) rồi thoát cứng.
+    """
+    parent = os.environ.get("ONESCRIBE_PARENT_PID")
+    if not parent:
+        return
+    try:
+        ppid = int(parent)
+    except ValueError:
+        return
+    import signal
+    import threading
+    import time
+
+    def _watch():
+        while True:
+            time.sleep(1.0)
+            try:
+                os.kill(ppid, 0)  # signal 0 = chỉ kiểm tra tồn tại
+            except ProcessLookupError:
+                try:
+                    os.killpg(os.getpgrp(), signal.SIGKILL)  # Unix: dọn cả group; Windows: AttributeError → bỏ qua
+                except (OSError, AttributeError):
+                    pass
+                os._exit(1)
+            except OSError:
+                pass  # PermissionError… → app còn sống, tiếp tục
+
+    threading.Thread(target=_watch, daemon=True, name="orphan-guard").start()
+
+
 def main():
     try:
         sys.stdout.reconfigure(encoding="utf-8")
         sys.stdin.reconfigure(encoding="utf-8")
     except Exception:
         pass
+    _install_orphan_guard()
     send({"type": "ready"})
     for line in sys.stdin:
         line = line.strip().lstrip("﻿")  # phòng BOM lẫn vào dòng JSON

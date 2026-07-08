@@ -40,6 +40,11 @@ wasapi = "0.23"
 webview2-com = "0.38"
 windows = { version = "0.61", features = ["Win32_System_WinRT", "Win32_Foundation"] }
 
+# libc: kill CẢ process group của sidecar (SIGKILL) khi HỦY/thoát — onefile PyInstaller đẻ tiến
+# trình con (worker + resource_tracker); child.kill() lẻ để lại con mồ côi chạy ngầm.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 # Bật incremental cho release → rebuild (chỉ sửa code app) nhanh hơn nhiều.
 # Đánh đổi: target/ phình to; binary tối ưu kém hơn không đáng kể (phần nặng nằm ở
 # sidecar ffmpeg/whisper chạy process riêng, không phải trong binary Rust này).
