@@ -39,6 +39,8 @@ sidecar/transcriber/.venv/
 sidecar/transcriber/build/
 sidecar/transcriber/dist/
 sidecar/transcriber/*.spec
+# transcriber.spec là build config TÙY BIẾN (mlx macOS + exclude torch), build_pyinstaller dùng nó → track.
+!sidecar/transcriber/transcriber.spec
 __pycache__/
 *.pyc
 

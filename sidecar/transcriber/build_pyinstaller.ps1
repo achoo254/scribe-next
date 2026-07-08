@@ -15,11 +15,8 @@ if (-not (Test-Path $pyexe)) {
 & $pyexe -m pip install --upgrade pip
 & $pyexe -m pip install -r requirements.txt pyinstaller
 
-# one-file: gom ctranslate2/av native libs. --collect-all để chắc chắn không thiếu.
-& $pyexe -m PyInstaller --onefile --name transcriber `
-    --collect-all faster_whisper --collect-all ctranslate2 --collect-all av `
-    --collect-all huggingface_hub --collect-all tokenizers `
-    main.py
+# one-file qua transcriber.spec (nguồn duy nhất). Windows: spec tự bỏ qua mlx (chỉ macOS arm64).
+& $pyexe -m PyInstaller --noconfirm transcriber.spec
 
 $binDir = Join-Path $here "..\..\src-tauri\binaries"
 New-Item -ItemType Directory -Force -Path $binDir | Out-Null

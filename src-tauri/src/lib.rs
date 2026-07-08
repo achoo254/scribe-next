@@ -60,6 +60,7 @@ pub fn run() {
             commands::probe_file,
             commands::split_files,
             commands::model_status,
+            commands::mlx_supported,
             commands::model_path,
             commands::ensure_model,
             commands::transcribe_files,

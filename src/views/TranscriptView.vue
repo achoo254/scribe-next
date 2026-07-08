@@ -7,19 +7,15 @@ import {
   ViTextarea, ViProgressLinear, ViAlert,
 } from "../design-system/vi-ui";
 import { useTranscribe } from "../composables/use-transcribe";
+import { useAsrModels } from "../composables/asr-models";
 
 const tr = useTranscribe();
 onMounted(() => tr.init());
 // keep-alive: quay lại tab → re-sync trạng thái model (có thể đã tải xong từ tab Ghi âm).
 onActivated(() => tr.refreshModel());
 
-// Picker model: nhanh ↔ chất lượng. Mỗi size tải riêng (dung lượng khác nhau).
-const sizeOptions = [
-  { title: "Small — nhanh nhất, chất lượng khá", value: "small" },
-  { title: "Medium — cân bằng (mặc định)", value: "medium" },
-  { title: "Large — chậm nhất, chất lượng cao nhất", value: "large" },
-];
-const sizeDownloadHint: Record<string, string> = { small: "~0.5GB", medium: "~1.5GB", large: "~3GB" };
+// Picker model — catalog dùng chung (asr-models); MLX gated theo nền tảng.
+const { sizeOptions, sizeHint } = useAsrModels();
 
 const base = (p: string) => p.split(/[\\/]/).pop() || p;
 const locate = (p: string | null) => {
@@ -62,7 +58,7 @@ async function copyText() {
       </ViAlert>
       <template v-else>
         <ViAlert type="warning" variant="tonal" density="compact">
-          Chưa có model {{ tr.selectedSize.value }} — cần tải ({{ sizeDownloadHint[tr.selectedSize.value] }}) lần đầu, sau đó chạy offline.
+          Chưa có model {{ tr.selectedSize.value }} — cần tải ({{ sizeHint[tr.selectedSize.value] }}) lần đầu, sau đó chạy offline.
         </ViAlert>
         <div class="os-row">
           <ViButton color="secondary" :disabled="tr.downloading.value" @click="tr.ensureModel()">

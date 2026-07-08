@@ -65,16 +65,22 @@ pub fn model_dir(app: &AppHandle, size: &str) -> PathBuf {
     base.join("models").join(leaf)
 }
 
-/// Có model.bin (>0 byte) ở đâu đó dưới dir không (small/medium nằm trong subfolder của repo).
-fn has_model_bin(dir: &Path) -> bool {
+/// Có file trọng số model (>0 byte) ở đâu đó dưới dir không.
+/// ct2 (small/medium/large): model.bin (small/medium nằm trong subfolder repo).
+/// MLX (large-v3-mlx): weights.npz / weights.safetensors.
+fn has_model_weights(dir: &Path) -> bool {
     if let Ok(entries) = std::fs::read_dir(dir) {
         for e in entries.flatten() {
             let p = e.path();
             if p.is_dir() {
-                if has_model_bin(&p) {
+                if has_model_weights(&p) {
                     return true;
                 }
-            } else if p.file_name().map(|n| n == "model.bin").unwrap_or(false)
+            } else if p
+                .file_name()
+                .and_then(|n| n.to_str())
+                .map(|n| matches!(n, "model.bin" | "weights.npz" | "weights.safetensors"))
+                .unwrap_or(false)
                 && std::fs::metadata(&p).map(|m| m.len() > 0).unwrap_or(false)
             {
                 return true;
@@ -84,9 +90,9 @@ fn has_model_bin(dir: &Path) -> bool {
     false
 }
 
-/// Model đã tải ĐỦ chưa: tìm model.bin (>0 byte) — tránh model tải dở qua mặt.
+/// Model đã tải ĐỦ chưa: tìm file trọng số (>0 byte) — tránh model tải dở qua mặt.
 pub fn model_present(app: &AppHandle, size: &str) -> bool {
-    has_model_bin(&model_dir(app, size))
+    has_model_weights(&model_dir(app, size))
 }
 
 /// Tổng dung lượng thư mục (gồm cả file .incomplete đang tải) → tính % tải.
@@ -205,7 +211,7 @@ impl Transcriber {
                 }
                 let pct = ((dir_size(&poll_dir) as f64 / total) * 100.0).min(99.0) as u32;
                 let _ = app2.emit("transcribe_msg", serde_json::json!({ "type": "download", "pct": pct }));
-                if has_model_bin(&poll_dir) {
+                if has_model_weights(&poll_dir) {
                     break;
                 }
             }

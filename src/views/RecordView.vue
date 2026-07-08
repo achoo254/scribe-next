@@ -12,6 +12,7 @@ import SegmentTranscriptList from "../components/SegmentTranscriptList.vue";
 import AsrModelControls from "../components/AsrModelControls.vue";
 import { useRecorder, type Region } from "../composables/use-recorder";
 import { useRecordTranscribe } from "../composables/use-record-transcribe";
+import { useAsrModels } from "../composables/asr-models";
 
 const rec = useRecorder();
 const rt = useRecordTranscribe();
@@ -34,13 +35,8 @@ const frameDismissed = ref(false);
 let timer: ReturnType<typeof setInterval> | undefined;
 let loaded = false;
 
-// Picker model transcript: nhanh ↔ chất lượng (mỗi size tải riêng).
-const sizeOptions = [
-  { title: "Small — nhanh nhất, chất lượng khá", value: "small" },
-  { title: "Medium — cân bằng (mặc định)", value: "medium" },
-  { title: "Large — chậm nhất, chất lượng cao nhất", value: "large" },
-];
-const sizeHint: Record<string, string> = { small: "~0.5GB", medium: "~1.5GB", large: "~3GB" };
+// Picker model transcript — catalog dùng chung (asr-models); MLX gated theo nền tảng.
+const { sizeOptions, sizeHint } = useAsrModels();
 
 const isIdle = computed(() => rec.state.value === "idle");
 const isRecording = computed(() => rec.state.value === "recording");

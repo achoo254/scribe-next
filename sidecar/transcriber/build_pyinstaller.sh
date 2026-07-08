@@ -18,11 +18,8 @@ py="$venv/bin/python"
 "$py" -m pip install --upgrade pip
 "$py" -m pip install -r requirements.txt pyinstaller
 
-# one-file: gom ctranslate2/av native libs. --collect-all để chắc chắn không thiếu.
-"$py" -m PyInstaller --onefile --name transcriber \
-    --collect-all faster_whisper --collect-all ctranslate2 --collect-all av \
-    --collect-all huggingface_hub --collect-all tokenizers \
-    main.py
+# one-file qua transcriber.spec (nguồn duy nhất: collect ct2/av/…; macOS arm64 thêm mlx + loại torch).
+"$py" -m PyInstaller --noconfirm transcriber.spec
 
 bin_dir="$HERE/../../src-tauri/binaries"
 mkdir -p "$bin_dir"

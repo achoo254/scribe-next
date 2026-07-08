@@ -1,21 +1,23 @@
 """OneScribe transcriber sidecar — faster-whisper (PhoWhisper) over JSON stdio.
 
 Giao thức (line-delimited JSON):
-  stdin :  {"cmd":"ensure_model","model_dir":"...","size":"small|medium|large"}
+  stdin :  {"cmd":"ensure_model","model_dir":"...","size":"small|medium|large|large-v3-mlx"}
            {"cmd":"transcribe","file":"...","out_dir":"...","outputs":["txt","srt"],"model_dir":"...","size":"..."}
            {"cmd":"shutdown"}
   stdout:  {"type":"ready"} | {"type":"download","pct":N} | {"type":"model_ready"}
            {"type":"progress","file":...,"pct":N} | {"type":"done",...} | {"type":"error","message":...}
 
-Đa model (small/medium/large): giữ ấm 1 model tại 1 thời điểm, đổi size → load lại.
-CPU int8 + BatchedInferencePipeline (nhanh). Offline sau khi tải model về model_dir.
+Đa model + 2 backend (chọn theo size, xem model_paths.backend_of):
+- ct2 (small/medium/large): faster-whisper CPU int8 + BatchedInferencePipeline, giữ ấm 1 model.
+- mlx (large-v3-mlx): mlx-whisper Metal GPU (Apple Silicon), tự cache model. Lazy import.
+Offline sau khi tải model về model_dir.
 """
 import json
 import os
 import sys
 from pathlib import Path
 
-from model_paths import MODELS, resolve_model_path
+from model_paths import MODELS, backend_of, resolve_model_path
 
 # Tắt hf-xet: tải qua HTTP/LFS thường (ổn định + tiến độ track được; xet hay kẹt model.bin).
 os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
@@ -72,25 +74,7 @@ def get_model(model_dir: str, size: str):
     return _model
 
 
-def transcribe(file: str, out_dir: str, outputs, model_dir: str, size: str):
-    model = get_model(model_dir, size)
-    # batched + beam=1 + VAD (bỏ khoảng lặng) → nhanh. initial_prompt (glossary) → đúng thuật ngữ.
-    segments, info = model.transcribe(
-        file,
-        batch_size=8,
-        beam_size=1,
-        language="vi",
-        vad_filter=True,
-        initial_prompt=DEFAULT_PROMPT,
-    )
-    duration = getattr(info, "duration", 0.0) or 0.0
-    full, srt = [], []
-    for i, seg in enumerate(segments, 1):
-        full.append(seg.text)
-        srt.append(f"{i}\n{fmt_ts(seg.start)} --> {fmt_ts(seg.end)}\n{seg.text.strip()}\n")
-        if duration > 0:
-            send({"type": "progress", "file": file, "pct": min(100, int(seg.end / duration * 100))})
-    text = "".join(full).strip()
+def _write_outputs(file: str, out_dir: str, outputs, text: str, srt_lines):
     stem = Path(file).stem
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -100,7 +84,51 @@ def transcribe(file: str, out_dir: str, outputs, model_dir: str, size: str):
         Path(txt_path).write_text(text, encoding="utf-8")
     if "srt" in outputs:
         srt_path = str(out / f"{stem}.srt")
-        Path(srt_path).write_text("\n".join(srt), encoding="utf-8")
+        Path(srt_path).write_text("\n".join(srt_lines), encoding="utf-8")
+    return txt_path, srt_path
+
+
+def _transcribe_ct2(file: str, model_dir: str, size: str):
+    model = get_model(model_dir, size)
+    # batched + beam=1 + VAD (bỏ khoảng lặng) → nhanh. initial_prompt (glossary) → đúng thuật ngữ.
+    segments, info = model.transcribe(
+        file, batch_size=8, beam_size=1, language="vi",
+        vad_filter=True, initial_prompt=DEFAULT_PROMPT,
+    )
+    duration = getattr(info, "duration", 0.0) or 0.0
+    full, srt_lines = [], []
+    for i, seg in enumerate(segments, 1):
+        full.append(seg.text)
+        srt_lines.append(f"{i}\n{fmt_ts(seg.start)} --> {fmt_ts(seg.end)}\n{seg.text.strip()}\n")
+        if duration > 0:
+            send({"type": "progress", "file": file, "pct": min(100, int(seg.end / duration * 100))})
+    return "".join(full).strip(), srt_lines
+
+
+def _transcribe_mlx(file: str, model_dir: str, size: str):
+    # Apple Silicon Metal GPU. Lazy import: sidecar Windows/Intel không cài mlx → không chạm nhánh này.
+    # mlx_whisper tự cache model (ModelHolder); không dùng get_model warm-pool của ct2.
+    import mlx_whisper
+
+    send({"type": "info", "message": f"Đang dùng MLX (Metal GPU) — model {size}"})
+    result = mlx_whisper.transcribe(
+        file, path_or_hf_repo=resolve_model_path(model_dir, size),
+        language="vi", initial_prompt=DEFAULT_PROMPT,
+    )
+    segs = result.get("segments", []) or []
+    srt_lines = [
+        f"{i}\n{fmt_ts(s['start'])} --> {fmt_ts(s['end'])}\n{s['text'].strip()}\n"
+        for i, s in enumerate(segs, 1)
+    ]
+    return (result.get("text") or "").strip(), srt_lines
+
+
+def transcribe(file: str, out_dir: str, outputs, model_dir: str, size: str):
+    if backend_of(size) == "mlx":
+        text, srt_lines = _transcribe_mlx(file, model_dir, size)
+    else:
+        text, srt_lines = _transcribe_ct2(file, model_dir, size)
+    txt_path, srt_path = _write_outputs(file, out_dir, outputs, text, srt_lines)
     send({"type": "done", "file": file, "text": text, "txt_path": txt_path, "srt_path": srt_path})
 
 

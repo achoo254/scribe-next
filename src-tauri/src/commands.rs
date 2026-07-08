@@ -123,10 +123,17 @@ pub async fn split_files(
     splitter::split_files(app, paths, criterion, value, out_dir).await
 }
 
-/// Mode C: model PhoWhisper (theo size: small|medium|large) đã tải về app-data chưa.
+/// Mode C: model (theo size) đã tải về app-data chưa.
 #[tauri::command]
 pub fn model_status(app: AppHandle, size: String) -> bool {
     transcribe::model_present(&app, &size)
+}
+
+/// MLX (Metal GPU) chỉ chạy trên macOS Apple Silicon (arm64). UI dùng để ẩn option
+/// large-v3-mlx trên Windows/Intel — nơi sidecar không cài mlx-whisper.
+#[tauri::command]
+pub fn mlx_supported() -> bool {
+    cfg!(all(target_os = "macos", target_arch = "aarch64"))
 }
 
 /// Mode C: đường dẫn thư mục model theo size (để hiển thị cho user biết model lưu ở đâu).

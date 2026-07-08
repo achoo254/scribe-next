@@ -3,8 +3,8 @@
 import { ref, watch, onUnmounted } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import type { ModelSize } from "./asr-models";
 
-export type ModelSize = "small" | "medium" | "large";
 export type SegStatus = "pending" | "transcribing" | "done" | "error";
 
 export interface SegTranscript {

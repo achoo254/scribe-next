@@ -3,6 +3,7 @@ import { ref, computed, watch, onUnmounted } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
+import type { ModelSize } from "./asr-models";
 
 export interface TransResult {
   file: string;
@@ -23,8 +24,6 @@ interface Msg {
 const AUDIO_EXT = ["mp3", "m4a", "wav", "aac", "flac", "ogg", "opus"];
 // Video: faster-whisper (PyAV) tự rút track âm thanh để transcribe — không cần tách audio trước.
 const VIDEO_EXT = ["mp4", "mkv", "mov", "avi", "webm", "m4v", "ts", "flv", "wmv", "mpg", "mpeg"];
-
-export type ModelSize = "small" | "medium" | "large";
 
 export function useTranscribe() {
   const files = ref<string[]>([]);
