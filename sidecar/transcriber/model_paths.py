@@ -4,6 +4,9 @@
 
 - small/medium/large: PhoWhisper CT2 (faster-whisper, CPU int8). small/medium từ quocphu (mỗi size
   1 subfolder CT2); large dùng bản kiendt (không subfolder).
+- large-v3-turbo: Whisper large-v3-turbo bản CT2 (deepdml) — cùng backend ct2 như PhoWhisper (chạy
+  CPU int8 hoặc GPU float16), KHÔNG phải MLX. Hợp nội dung Việt-Anh lẫn (code-switch), khác PhoWhisper
+  vốn tối ưu tiếng Việt thuần. Hiện trên mọi OS, không gate platform.
 - large-v3-mlx: Whisper large-v3 bản MLX (mlx-community) — chạy Metal GPU trên Apple Silicon,
   nhanh hơn CT2 CPU nhiều lần. Chỉ khả dụng trên macOS arm64 (xem lib.rs::mlx_supported + UI gating).
 """
@@ -13,6 +16,7 @@ MODELS = {
     "small": ("quocphu/PhoWhisper-ct2-FasterWhisper", "PhoWhisper-small-ct2-fasterWhisper"),
     "medium": ("quocphu/PhoWhisper-ct2-FasterWhisper", "PhoWhisper-medium-ct2-fasterWhisper"),
     "large": ("kiendt/PhoWhisper-large-ct2", ""),
+    "large-v3-turbo": ("deepdml/faster-whisper-large-v3-turbo-ct2", ""),
     "large-v3-mlx": ("mlx-community/whisper-large-v3-mlx", ""),
 }
 

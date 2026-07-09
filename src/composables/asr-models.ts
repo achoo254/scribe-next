@@ -3,9 +3,9 @@
 import { ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 
-// ct2 (faster-whisper CPU int8): small/medium/large PhoWhisper.
+// ct2 (faster-whisper, CPU int8 hoặc GPU float16): small/medium/large PhoWhisper + large-v3-turbo.
 // mlx (mlx-whisper Metal GPU): large-v3-mlx — chỉ macOS Apple Silicon.
-export type ModelSize = "small" | "medium" | "large" | "large-v3-mlx";
+export type ModelSize = "small" | "medium" | "large" | "large-v3-turbo" | "large-v3-mlx";
 
 export type SizeOption = { title: string; value: ModelSize };
 
@@ -13,6 +13,7 @@ const BASE_OPTIONS: SizeOption[] = [
   { title: "Small — nhanh nhất, chất lượng khá", value: "small" },
   { title: "Medium — cân bằng (mặc định)", value: "medium" },
   { title: "Large — chậm nhất, chất lượng cao nhất", value: "large" },
+  { title: "Whisper Large-v3-turbo — nhanh, hợp nội dung Việt-Anh lẫn (kỹ thuật/DevOps)", value: "large-v3-turbo" },
 ];
 
 // Chỉ hiện trên macOS Apple Silicon (mlx_supported). Dùng Metal GPU → nhanh hơn ct2 CPU nhiều lần.
@@ -25,6 +26,7 @@ export const SIZE_HINT: Record<ModelSize, string> = {
   small: "~0.5GB",
   medium: "~1.5GB",
   large: "~3GB",
+  "large-v3-turbo": "~1.6GB",
   "large-v3-mlx": "~3GB",
 };
 

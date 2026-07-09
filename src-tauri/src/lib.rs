@@ -4,6 +4,7 @@ use tauri::Manager;
 
 mod audio;
 mod commands;
+mod cuda;
 mod ffmpeg;
 mod recorder;
 mod screen;
@@ -61,6 +62,9 @@ pub fn run() {
             commands::split_files,
             commands::model_status,
             commands::mlx_supported,
+            commands::cuda_supported,
+            commands::cuda_runtime_status,
+            commands::ensure_cuda_runtime,
             commands::model_path,
             commands::ensure_model,
             commands::transcribe_files,

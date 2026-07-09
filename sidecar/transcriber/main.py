@@ -23,24 +23,18 @@ import sys
 from pathlib import Path
 
 from model_paths import MODELS, backend_of, resolve_model_path
+import cuda_runtime
 
 # Tắt hf-xet: tải qua HTTP/LFS thường (ổn định + tiến độ track được; xet hay kẹt model.bin).
 os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
 
-_model = None       # pipeline giữ ấm
-_model_size = None  # size đang nạp — đổi size thì reload
+_model = None        # pipeline giữ ấm
+_model_size = None   # size đang nạp — đổi size thì reload
+_model_device = None # device đang nạp ("cpu"/"cuda") — đổi device (toggle GPU) thì reload
 
 # Giới hạn phụ đề (chuẩn thường dùng): ~42 ký tự/dòng, tối đa 2 dòng, ~6s mỗi cue.
 SRT_MAX_CHARS = 42
 SRT_MAX_DUR = 6.0
-
-# Glossary MẪU (domain IT/DevOps) — chỉ để tham khảo/placeholder UI. KHÔNG dùng làm mặc định ngầm;
-# prompt thật lấy từ request (app đọc settings.glossary). Rỗng → transcribe không kèm initial_prompt.
-EXAMPLE_PROMPT = (
-    "Bài nói kỹ thuật tiếng Việt về hệ thống và DevOps. Thuật ngữ thường gặp: "
-    "VictoriaLogs, VictoriaMetrics, Grafana, OpenTelemetry, observability, log, parse, "
-    "JSON, query, cheatsheet, cluster, HA, Docker, server, port, IP, API, systemctl, rsyslog."
-)
 
 
 def send(obj):
@@ -68,20 +62,24 @@ def ensure_model(model_dir: str, size: str):
     send({"type": "model_ready"})
 
 
-def get_model(model_dir: str, size: str):
-    # CPU int8: chạy ổn định trên mọi máy + offline, không phụ thuộc DLL CUDA
-    # (binary đóng gói không gói được cublas/cudnn → CUDA chỉ lỗi lúc decode, không fallback kịp).
-    # Giữ ấm 1 model; đổi size → giải phóng cũ rồi nạp mới (tránh ngốn RAM nhiều model cùng lúc).
-    global _model, _model_size
-    if _model is None or _model_size != size:
-        from faster_whisper import WhisperModel, BatchedInferencePipeline
-        base = WhisperModel(
-            resolve_model_path(model_dir, size), device="cpu", compute_type="int8",
-            cpu_threads=os.cpu_count() or 8,
+def get_model(model_dir: str, size: str, use_gpu: bool = False, cuda_dir=None):
+    # GPU (CUDA float16) nếu bật + CUDA runtime sẵn sàng, else CPU int8 (ổn định mọi máy, offline).
+    # Giữ ấm 1 model; đổi size HOẶC device → giải phóng cũ rồi nạp mới (device vào cache key để
+    # toggle GPU on/off giữa 2 lần transcribe cùng size không dùng nhầm model đã nạp sai device).
+    global _model, _model_size, _model_device
+    device_key = "cuda" if use_gpu else "cpu"
+    if _model is None or _model_size != size or _model_device != device_key:
+        # gpu_device TRƯỚC: nó gọi os.add_dll_directory(cuda_dir) rồi mới import faster_whisper —
+        # phải là lần import faster_whisper/ctranslate2 ĐẦU TIÊN của process để DLL search thấy CUDA.
+        import gpu_device
+        base, actual_device, actual_compute = gpu_device.load_whisper_model(
+            resolve_model_path(model_dir, size), use_gpu, cuda_dir,
+            os.cpu_count() or 8, send_info=lambda m: send({"type": "info", "message": m}),
         )
-        _model = BatchedInferencePipeline(model=base)  # batched → nhanh hơn ~2x trên CPU
-        _model_size = size
-        send({"type": "info", "message": f"Đang dùng CPU (int8) — model {size}"})
+        from faster_whisper import BatchedInferencePipeline
+        _model = BatchedInferencePipeline(model=base)  # batched → nhanh hơn ~2x
+        _model_size, _model_device = size, actual_device  # actual_device (GPU fail → "cpu")
+        send({"type": "info", "message": f"Đang dùng {actual_device.upper()} ({actual_compute}) — model {size}"})
     return _model
 
 
@@ -167,8 +165,8 @@ def to_json(segments, text: str) -> str:
 
 # ── Backend ─────────────────────────────────────────────────────────────────────────────────
 
-def _transcribe_ct2(file: str, model_dir: str, size: str, prompt):
-    model = get_model(model_dir, size)
+def _transcribe_ct2(file: str, model_dir: str, size: str, prompt, use_gpu=False, cuda_dir=None):
+    model = get_model(model_dir, size, use_gpu, cuda_dir)
     # batched + beam=1 + VAD (bỏ khoảng lặng) → nhanh. word_timestamps → resegment phụ đề + JSON.
     segments, info = model.transcribe(
         file, batch_size=8, beam_size=1, language="vi",
@@ -235,11 +233,12 @@ def _write_outputs(file: str, out_dir: str, outputs, text: str, segments):
     return paths
 
 
-def transcribe(file: str, out_dir: str, outputs, model_dir: str, size: str, prompt=None):
+def transcribe(file: str, out_dir: str, outputs, model_dir: str, size: str, prompt=None,
+               use_gpu=False, cuda_dir=None):
     if backend_of(size) == "mlx":
-        text, segments = _transcribe_mlx(file, model_dir, size, prompt)
+        text, segments = _transcribe_mlx(file, model_dir, size, prompt)  # MLX: GPU riêng, bỏ qua cuda
     else:
-        text, segments = _transcribe_ct2(file, model_dir, size, prompt)
+        text, segments = _transcribe_ct2(file, model_dir, size, prompt, use_gpu, cuda_dir)
     paths = _write_outputs(file, out_dir, outputs, text, segments)
     send({
         "type": "done", "file": file, "text": text, "segments": segments,
@@ -302,10 +301,14 @@ def main():
         try:
             if cmd == "ensure_model":
                 ensure_model(req["model_dir"], req.get("size", "medium"))
+            elif cmd == "ensure_cuda":
+                cuda_runtime.ensure_cuda_runtime(req["cuda_dir"])
+                send({"type": "cuda_ready"})
             elif cmd == "transcribe":
                 transcribe(
                     req["file"], req["out_dir"], req.get("outputs", ["txt", "srt"]),
                     req["model_dir"], req.get("size", "medium"), req.get("prompt"),
+                    req.get("use_gpu", False), req.get("cuda_dir"),
                 )
             elif cmd == "shutdown":
                 break

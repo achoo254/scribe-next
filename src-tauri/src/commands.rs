@@ -136,6 +136,24 @@ pub fn mlx_supported() -> bool {
     cfg!(all(target_os = "macos", target_arch = "aarch64"))
 }
 
+/// Mode C: máy có GPU NVIDIA không (runtime check nvidia-smi). UI dùng để hiện/ẩn toggle GPU.
+#[tauri::command]
+pub fn cuda_supported() -> bool {
+    crate::cuda::gpu_detected()
+}
+
+/// Mode C: CUDA runtime (cuBLAS + cuDNN) đã tải on-demand xong chưa.
+#[tauri::command]
+pub fn cuda_runtime_status(app: AppHandle) -> bool {
+    crate::cuda::cuda_runtime_present(&app)
+}
+
+/// Mode C: tải CUDA runtime lần đầu (progress qua event transcribe_msg type=cuda_download).
+#[tauri::command]
+pub fn ensure_cuda_runtime(app: AppHandle, transcriber: State<'_, Transcriber>) -> Result<(), String> {
+    transcriber.ensure_cuda_runtime(&app)
+}
+
 /// Mode C: đường dẫn thư mục model theo size (để hiển thị cho user biết model lưu ở đâu).
 #[tauri::command]
 pub fn model_path(app: AppHandle, size: String) -> String {

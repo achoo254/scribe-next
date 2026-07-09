@@ -33,6 +33,10 @@ pub struct AppSettings {
     // Mặc định = glossary DevOps (giữ nguyên trải nghiệm cũ); rỗng → transcribe không kèm prompt.
     #[serde(default = "default_glossary")]
     pub glossary: Option<String>,
+    // Dùng GPU (CUDA) cho transcribe — mặc định false: bật GPU kéo theo tải ~1.3GB CUDA runtime,
+    // phải là hành động chủ động của user (giống không tự tải model lớn khi chưa được yêu cầu).
+    #[serde(default)]
+    pub use_gpu: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -81,6 +85,7 @@ impl Default for AppSettings {
             region_mode: default_region_mode(),
             region: None,
             glossary: default_glossary(),
+            use_gpu: false,
         }
     }
 }

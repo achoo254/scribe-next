@@ -6,21 +6,40 @@ import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { ask } from "@tauri-apps/plugin-dialog";
 import {
   ViCard, ViButton, ViIcon, ViList, ViListItem, ViSelect,
-  ViTextarea, ViProgressLinear, ViAlert, ViButtonToggle,
+  ViTextarea, ViProgressLinear, ViAlert, ViButtonToggle, ViSwitch,
 } from "../design-system/vi-ui";
 import TranscriptPlayer from "../components/TranscriptPlayer.vue";
 import { useTranscribe, isVideoPath } from "../composables/use-transcribe";
 import { useAsrModels, useModelManager, formatBytes, type ModelSize } from "../composables/asr-models";
 import { useGlossary } from "../composables/use-glossary";
+import { useGpuSetting, useCudaRuntime } from "../composables/use-gpu";
 
 const tr = useTranscribe();
 const gloss = useGlossary();
 const mm = useModelManager();
-onMounted(() => {
+const gpu = useGpuSetting();
+const cudaRt = useCudaRuntime();
+onMounted(async () => {
   tr.init();
   gloss.load();
   mm.refresh();
+  await gpu.load(); // chờ nạp use_gpu trước khi áp default (dưới) — mở lại app đã bật GPU cũng đúng
+  applyGpuDefault();
+  cudaRt.init();
 });
+
+// GPU đang bật + user chưa đổi khỏi mặc định "medium" → chọn turbo (nhanh trên GPU + hợp nội dung
+// Việt-Anh lẫn). Tôn trọng lựa chọn khác nếu user đã tự chọn size. Áp cả lúc mở app lẫn lúc bật toggle
+// (selectedSize không persist → reset "medium" mỗi lần mount, nên phải áp lại mỗi session).
+function applyGpuDefault() {
+  if (gpu.useGpu.value && tr.selectedSize.value === "medium") {
+    tr.selectedSize.value = "large-v3-turbo";
+  }
+}
+function onToggleGpu() {
+  gpu.save();
+  applyGpuDefault();
+}
 // keep-alive: quay lại tab → re-sync trạng thái model (có thể đã tải xong từ tab Ghi âm) + model list.
 onActivated(() => {
   tr.refreshModel();
@@ -68,6 +87,41 @@ async function removeModel(size: ModelSize) {
         :disabled="tr.transcribing.value || tr.downloading.value"
         hide-details
       />
+
+      <!-- Toggle GPU (CUDA) — chỉ hiện khi máy có GPU NVIDIA; tải runtime ~1.3GB lần đầu -->
+      <template v-if="cudaRt.cudaSupported.value">
+        <ViSwitch
+          v-model="gpu.useGpu.value"
+          label="Dùng GPU (CUDA) — nhanh hơn nhiều, cần tải runtime lần đầu"
+          hide-details
+          @update:model-value="onToggleGpu"
+        />
+        <template v-if="gpu.useGpu.value">
+          <ViAlert v-if="cudaRt.ready.value" type="success" variant="tonal" density="compact">
+            CUDA runtime sẵn sàng.
+          </ViAlert>
+          <template v-else>
+            <ViAlert type="warning" variant="tonal" density="compact">
+              Chưa tải CUDA runtime (~1.3GB) — cần tải 1 lần, sau đó dùng offline. Chưa tải thì transcribe vẫn chạy (CPU, chậm hơn).
+            </ViAlert>
+            <div class="os-row">
+              <ViButton color="secondary" :disabled="cudaRt.downloading.value" @click="cudaRt.ensure()">
+                <ViIcon icon="IconDownload" start />Tải CUDA runtime
+              </ViButton>
+              <span v-if="cudaRt.downloading.value" class="os-muted">{{ cudaRt.downloadPct.value }}%</span>
+            </div>
+            <ViProgressLinear
+              v-if="cudaRt.downloading.value"
+              :model-value="cudaRt.downloadPct.value"
+              :indeterminate="cudaRt.downloadPct.value === 0"
+              color="secondary"
+              height="6"
+              rounded
+            />
+          </template>
+          <ViAlert v-if="cudaRt.error.value" type="error" density="compact" closable>{{ cudaRt.error.value }}</ViAlert>
+        </template>
+      </template>
 
       <!-- Glossary: bias model đúng tên riêng/thuật ngữ (dùng chung Mode A + C) -->
       <ViTextarea

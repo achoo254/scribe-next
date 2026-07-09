@@ -15,6 +15,7 @@ fn total_bytes(size: &str) -> f64 {
     match size {
         "small" => 490_000_000.0,
         "medium" => 1_540_000_000.0,
+        "large-v3-turbo" => 1_622_000_000.0,
         _ => 3_088_000_000.0, // large
     }
 }
@@ -27,7 +28,8 @@ const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 #[derive(Default)]
 pub struct Transcriber {
     inner: Mutex<Option<Proc>>,
-    download_active: Arc<AtomicBool>,
+    download_active: Arc<AtomicBool>,          // poller tải MODEL — KHÔNG dùng chung với cuda dưới
+    cuda_download_active: Arc<AtomicBool>,     // poller tải CUDA runtime (tài nguyên khác model)
 }
 
 struct Proc {
@@ -117,7 +119,7 @@ pub fn model_present(app: &AppHandle, size: &str) -> bool {
 }
 
 /// Danh sách size model app hỗ trợ (khớp catalog sidecar model_paths.MODELS).
-const ALL_SIZES: [&str; 4] = ["small", "medium", "large", "large-v3-mlx"];
+const ALL_SIZES: [&str; 5] = ["small", "medium", "large", "large-v3-turbo", "large-v3-mlx"];
 
 /// Thông tin 1 model cho UI quản lý: đã tải chưa + dung lượng đĩa (byte).
 #[derive(serde::Serialize)]
@@ -235,12 +237,21 @@ impl Transcriber {
 
         let app2 = app.clone();
         let dl = self.download_active.clone();
+        let cuda_dl = self.cuda_download_active.clone();
         thread::spawn(move || {
             let reader = BufReader::new(stdout);
             for line in reader.lines().map_while(Result::ok) {
                 if let Ok(v) = serde_json::from_str::<serde_json::Value>(&line) {
+                    // Tắt đúng cờ poller của tài nguyên đó. "error" tắt CẢ 2 — lỗi có thể đến từ
+                    // download model HOẶC cuda; không rõ nguồn nên dừng cả 2 poller (không thì
+                    // poller cuda loop mãi vì marker không bao giờ xuất hiện khi tải lỗi).
                     match v.get("type").and_then(|x| x.as_str()).unwrap_or("") {
-                        "model_ready" | "error" => dl.store(false, Ordering::SeqCst),
+                        "model_ready" => dl.store(false, Ordering::SeqCst),
+                        "cuda_ready" => cuda_dl.store(false, Ordering::SeqCst),
+                        "error" => {
+                            dl.store(false, Ordering::SeqCst);
+                            cuda_dl.store(false, Ordering::SeqCst);
+                        }
                         _ => {}
                     }
                     let _ = app2.emit("transcribe_msg", v);
@@ -288,6 +299,35 @@ impl Transcriber {
         )
     }
 
+    /// Tải CUDA runtime (cuBLAS + cuDNN) on-demand qua sidecar. Progress qua event
+    /// transcribe_msg type=cuda_download (poll dung lượng cuda_dir / tổng ~1.29GB).
+    pub fn ensure_cuda_runtime(&self, app: &AppHandle) -> Result<(), String> {
+        self.ensure_spawned(app)?;
+        let dir = crate::cuda::cuda_dir(app);
+        std::fs::create_dir_all(&dir).ok();
+        self.cuda_download_active.store(true, Ordering::SeqCst);
+        let app2 = app.clone();
+        let active = self.cuda_download_active.clone();
+        let poll_dir = dir.clone();
+        thread::spawn(move || {
+            while active.load(Ordering::SeqCst) {
+                thread::sleep(Duration::from_millis(1500));
+                if !active.load(Ordering::SeqCst) {
+                    break;
+                }
+                let pct = ((dir_size(&poll_dir) as f64 / crate::cuda::CUDA_TOTAL_BYTES) * 100.0)
+                    .min(99.0) as u32;
+                let _ = app2.emit("transcribe_msg", serde_json::json!({ "type": "cuda_download", "pct": pct }));
+                if crate::cuda::cuda_runtime_present(&app2) {
+                    break;
+                }
+            }
+        });
+        self.send(
+            serde_json::json!({ "cmd": "ensure_cuda", "cuda_dir": dir.to_string_lossy() }).to_string(),
+        )
+    }
+
     pub fn transcribe(
         &self,
         app: &AppHandle,
@@ -300,11 +340,19 @@ impl Transcriber {
         }
         self.ensure_spawned(app)?;
         let dir = model_dir(app, size).to_string_lossy().to_string();
-        // Glossary (initial_prompt) dùng chung Mode A + C — đọc 1 lần từ settings, rỗng → không kèm.
-        let prompt = crate::settings::load(app)
-            .ok()
-            .and_then(|s| s.glossary)
+        // Đọc settings 1 lần: glossary (initial_prompt) + use_gpu — cả 2 dùng chung Mode A + C.
+        let settings = crate::settings::load(app).ok();
+        let prompt = settings
+            .as_ref()
+            .and_then(|s| s.glossary.clone())
             .filter(|g| !g.trim().is_empty());
+        let use_gpu = settings.as_ref().map(|s| s.use_gpu).unwrap_or(false);
+        // cuda_dir chỉ gửi khi bật GPU (sidecar dùng để add_dll_directory + check marker); else null.
+        let cuda_dir_str = if use_gpu {
+            Some(crate::cuda::cuda_dir(app).to_string_lossy().to_string())
+        } else {
+            None
+        };
         for file in paths {
             let out_dir = Path::new(&file)
                 .parent()
@@ -314,6 +362,7 @@ impl Transcriber {
                 serde_json::json!({
                     "cmd": "transcribe", "file": file, "out_dir": out_dir,
                     "outputs": outputs, "model_dir": dir, "size": size, "prompt": prompt,
+                    "use_gpu": use_gpu, "cuda_dir": cuda_dir_str,
                 })
                 .to_string(),
             )?;
