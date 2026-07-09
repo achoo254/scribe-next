@@ -1,7 +1,7 @@
 ---
 phase: 5
 title: "Packaging and cross-platform release"
-status: pending
+status: "in-progress — Windows NSIS installer BUILT (2026-07-09); macOS + QA máy sạch còn lại"
 priority: P2
 effort: "2-3d"
 dependencies: [2, 3, 4]
@@ -49,12 +49,19 @@ dependencies: [2, 3, 4]
 
 - [ ] ffmpeg sidecar macOS (intel+arm)
 - [ ] transcriber PyInstaller macOS
-- [ ] tauri.conf.json bundle targets + externalBin per-target
+- [x] tauri.conf.json bundle targets + externalBin per-target — Windows `nsis` + 3 externalBin OK (macOS `dmg` để sau)
 - [ ] macOS plist + entitlements + ký + notarize
-- [ ] Windows installer + test máy sạch
+- [~] Windows installer — **BUILT** `OneScribe_0.1.0_x64-setup.exe` (~174 MB, verify plumbing OK); **test máy sạch chờ QA**
 - [ ] QA success criteria cả 2 OS + offline model
 - [ ] (tùy chọn) CI workflow
-- [ ] README + deployment-guide
+- [x] README + deployment-guide — `docs/deployment-guide.md` (Windows); README đã có env + sidecar
+
+## Build Log — Windows installer (2026-07-09)
+
+- **Prereq fix**: `transcriber-x86_64-pc-windows-msvc.exe` cũ (build 2026-06-15) trong khi `main.py` đổi lớn 2026-07-08 (glossary/word_timestamps/export VTT-JSON/model mgmt) → **build lại** qua `build_pyinstaller.ps1` (PyInstaller 6.21, Python 3.14.3). Smoke test onefile: `{"cmd":"shutdown"}` → `{"type":"ready"}` exit 0.
+- **Build**: `npm run tauri build` → Rust release 1m00s + makensis → `src-tauri/target/release/bundle/nsis/OneScribe_0.1.0_x64-setup.exe` (182,467,244 B).
+- **Verify plumbing**: 3 sidecar staged cạnh `onescribe.exe` trong `target/release/` (`ffmpeg.exe`, `ffprobe.exe`, `transcriber.exe` @20:49 = bản mới). `resolve()` (`transcribe.rs:182`) khớp tên trần `transcriber.exe`; ffmpeg/ffprobe qua `app.shell().sidecar()`. Model KHÔNG nhúng (size 174MB xác nhận).
+- **Còn lại**: test cài trên máy sạch (không dev tools) — vai QA của user; checklist ở `docs/deployment-guide.md`.
 
 ## Success Criteria
 

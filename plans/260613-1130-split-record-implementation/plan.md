@@ -38,7 +38,7 @@ Design doc nguồn (đã chốt): [`docs/split-record-design.md`](../../docs/spl
 | 2 | [Mode A - Record and split live](./phase-02-mode-a-record-and-split-live.md) | 🟡 Implemented (2026-06-13) — chờ test ghi âm thủ công |
 | 3 | [Mode B - Split existing files](./phase-03-mode-b-split-existing-files.md) | 🟡 Implemented (2026-06-13) — chờ test cắt file thủ công |
 | 4 | [Mode C - Transcription sidecar](./phase-04-mode-c-transcription-sidecar.md) | ✅ Done (2026-06-15) — PyInstaller build + transcribe thật OK + picker đa-model (small/medium/large) + batching |
-| 5 | [Packaging and cross-platform release](./phase-05-packaging-and-cross-platform-release.md) | Pending |
+| 5 | [Packaging and cross-platform release](./phase-05-packaging-and-cross-platform-release.md) | 🟡 Windows NSIS installer BUILT (2026-07-09) — macOS + QA máy sạch còn lại |
 
 ## Dependency graph (nội bộ plan)
 
