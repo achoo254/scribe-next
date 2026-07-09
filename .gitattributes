@@ -1,0 +1,16 @@
+# Chuẩn hoá line-ending toàn repo.
+# Mọi file text lưu trong repo + checkout dạng LF trên MỌI OS (kể cả Windows),
+# triệt churn CRLF/LF do core.autocrlf khác nhau giữa các máy.
+* text=auto eol=lf
+
+# Asset nhị phân — không bao giờ convert line-ending, không diff dạng text.
+*.png   binary
+*.ico   binary
+*.icns  binary
+*.svg   text eol=lf
+*.exe   binary
+*.dll   binary
+*.wav   binary
+*.mp3   binary
+*.mp4   binary
+*.m4a   binary
