@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- macOS bắt buộc phải có chuỗi này để hiện dialog xin quyền micro; thiếu → app crash khi cpal
+       mở thiết bị thu. Tauri v2 tự merge file này vào Info.plist của .app khi build macOS. -->
+  <key>NSMicrophoneUsageDescription</key>
+  <string>OneScribe cần quyền micro để ghi âm và chuyển giọng nói thành văn bản.</string>
+</dict>
+</plist>

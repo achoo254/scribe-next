@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- Quyền micro cho cpal/CoreAudio ghi âm (Mode A). -->
+  <key>com.apple.security.device.audio-input</key>
+  <true/>
+  <!-- Sidecar (ffmpeg/transcriber) + dylib ctranslate2/mlx không cùng chữ ký với app →
+       cho phép nạp thư viện khác chữ ký. Bắt buộc để PyInstaller onefile + Metal dylib chạy. -->
+  <key>com.apple.security.cs.disable-library-validation</key>
+  <true/>
+  <!-- PyInstaller/Python cấp phát vùng nhớ thực thi (bootloader onefile) → cần khi bật hardened
+       runtime lúc notarize sau này; ad-hoc không ép nhưng khai sẵn để không phải sửa lại. -->
+  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+  <true/>
+</dict>
+</plist>

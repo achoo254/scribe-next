@@ -1,7 +1,7 @@
 ---
 phase: 5
 title: "Packaging and cross-platform release"
-status: "in-progress — Windows NSIS installer BUILT (2026-07-09); macOS + QA máy sạch còn lại"
+status: "in-progress — Windows NSIS (2026-07-09) + macOS arm64 DMG ad-hoc (2026-07-10) BUILT; QA máy sạch + (tùy chọn) Intel/notarize còn lại"
 priority: P2
 effort: "2-3d"
 dependencies: [2, 3, 4]
@@ -47,14 +47,15 @@ dependencies: [2, 3, 4]
 
 ## Todo List
 
-- [ ] ffmpeg sidecar macOS (intel+arm)
-- [ ] transcriber PyInstaller macOS
-- [x] tauri.conf.json bundle targets + externalBin per-target — Windows `nsis` + 3 externalBin OK (macOS `dmg` để sau)
-- [ ] macOS plist + entitlements + ký + notarize
+- [x] ffmpeg sidecar macOS — **arm64** (`ffmpeg/ffprobe-aarch64-apple-darwin`) OK; Intel để sau (cần máy Intel)
+- [x] transcriber PyInstaller macOS — **arm64** (`transcriber-aarch64-apple-darwin`, gồm mlx, ~190 MB)
+- [x] tauri.conf.json bundle targets + externalBin per-target — Windows `nsis` + macOS `app`/`dmg` (qua `tauri.macos.conf.json`) + 3 externalBin OK
+- [x] macOS plist + entitlements + ký — `Info.plist` (mic) + `entitlements.plist` + **ad-hoc sign** (`signingIdentity:"-"`). Notarize KHÔNG làm (tool nội bộ, quyết định 2026-07-10)
 - [~] Windows installer — **BUILT** `OneScribe_0.1.0_x64-setup.exe` (~174 MB, verify plumbing OK); **test máy sạch chờ QA**
+- [~] macOS installer — **BUILT** `OneScribe_0.1.0_aarch64.dmg` (~185 MB); verify chữ ký/plist/sidecar OK; **test máy sạch chờ QA**
 - [ ] QA success criteria cả 2 OS + offline model
 - [ ] (tùy chọn) CI workflow
-- [x] README + deployment-guide — `docs/deployment-guide.md` (Windows); README đã có env + sidecar
+- [x] README + deployment-guide — `docs/deployment-guide.md` (Windows + macOS); README đã có env + sidecar
 
 ## Build Log — Windows installer (2026-07-09)
 
@@ -62,6 +63,15 @@ dependencies: [2, 3, 4]
 - **Build**: `npm run tauri build` → Rust release 1m00s + makensis → `src-tauri/target/release/bundle/nsis/OneScribe_0.1.0_x64-setup.exe` (182,467,244 B).
 - **Verify plumbing**: 3 sidecar staged cạnh `onescribe.exe` trong `target/release/` (`ffmpeg.exe`, `ffprobe.exe`, `transcriber.exe` @20:49 = bản mới). `resolve()` (`transcribe.rs:182`) khớp tên trần `transcriber.exe`; ffmpeg/ffprobe qua `app.shell().sidecar()`. Model KHÔNG nhúng (size 174MB xác nhận).
 - **Còn lại**: test cài trên máy sạch (không dev tools) — vai QA của user; checklist ở `docs/deployment-guide.md`.
+
+## Build Log — macOS DMG arm64 (2026-07-10)
+
+- **Quyết định scope** (user, 2026-07-10): chỉ **arm64** (Apple Silicon) + **ad-hoc sign** (không notarize) cho phân phối nội bộ. Intel + Developer ID notarize để backlog (máy hiện có 0 signing identity; PyInstaller không cross-build).
+- **Prereq**: `transcriber-aarch64-apple-darwin` cũ (2026-07-08) < `main.py` (commit c9f0286 GPU CUDA, 2026-07-10) → **build lại** qua `build_pyinstaller.sh` (PyInstaller 6.21, Python 3.14.6, gồm mlx 0.32/mlx-whisper 0.4.3, loại torch). Smoke onefile: `{"cmd":"shutdown"}` → `{"type":"ready"}`.
+- **Config mới**: `src-tauri/tauri.macos.conf.json` (targets `app`+`dmg`, `minimumSystemVersion 11.0`, `signingIdentity "-"`, `entitlements`), `src-tauri/entitlements.plist` (audio-input + disable-library-validation + allow-unsigned-executable-memory), `src-tauri/Info.plist` (`NSMicrophoneUsageDescription`).
+- **Build**: `npm run tauri build` → Rust release 34s → bundle `.app` (ad-hoc sign 4 binary + .app) + `bundle_dmg.sh`. Output: `OneScribe.app` (195 MB) + `OneScribe_0.1.0_aarch64.dmg` (185 MB).
+- **Verify**: `codesign --verify --deep --strict` → "valid on disk" + "satisfies Designated Requirement"; Info.plist có mic + id `vn.inet.onescribe` + min 11.0; entitlements đủ 3 key; bundled transcriber → `{"type":"ready"}`, ffmpeg 8.1.2 chạy; `spctl` = rejected (đúng với ad-hoc → cần bỏ chặn Gatekeeper lần đầu, đã ghi hướng dẫn trong deployment-guide).
+- **Còn lại**: QA máy sạch (vai user); (backlog) Intel build + notarize nếu cần phân phối rộng.
 
 ## Success Criteria
 
