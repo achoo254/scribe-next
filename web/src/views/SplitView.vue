@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { onUnmounted, ref } from "vue";
 import { useRouter } from "vue-router";
-import { useAuth } from "../composables/use-auth";
+import { ViCard, ViButton, ViSelect, ViInput, ViProgressLinear, ViAlert } from "@hobui/viui";
 import { useUpload } from "../composables/use-upload";
 import { useSplitter, type JobCriterion } from "../composables/use-splitter";
+import AppTopBar from "../components/AppTopBar.vue";
 
-const { user, logout } = useAuth();
 const router = useRouter();
 
 const {
@@ -19,7 +19,6 @@ const {
 const {
   jobId,
   status: jobStatus,
-  progress: jobProgress,
   segments,
   error: jobError,
   creating,
@@ -28,21 +27,21 @@ const {
   stopPolling,
 } = useSplitter();
 
+const fileInput = ref<HTMLInputElement | null>(null);
 const fileName = ref("");
 const criterion = ref<JobCriterion>("minutes");
 const value = ref(10);
 
-const criterionOptions: { value: JobCriterion; label: string }[] = [
-  { value: "minutes", label: "Phút / đoạn" },
-  { value: "megabytes", label: "MB / đoạn" },
-  { value: "parts", label: "Số phần" },
+const criterionOptions: { value: JobCriterion; title: string }[] = [
+  { value: "minutes", title: "Phút / đoạn" },
+  { value: "megabytes", title: "MB / đoạn" },
+  { value: "parts", title: "Số phần" },
 ];
 
 const jobBusy = (): boolean => jobStatus.value === "queued" || jobStatus.value === "running";
 
-async function onLogout(): Promise<void> {
-  await logout();
-  await router.push({ name: "login" });
+function pickFile(): void {
+  fileInput.value?.click();
 }
 
 async function onFileChange(e: Event): Promise<void> {
@@ -78,175 +77,132 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="app">
-    <header class="topbar">
-      <strong>OneScribe</strong>
-      <div class="right">
-        <span v-if="user" class="email">{{ user.email }}</span>
-        <button @click="onLogout">Đăng xuất</button>
-      </div>
-    </header>
+  <div>
+    <AppTopBar />
     <main class="content">
-      <router-link class="back" to="/">&larr; Về trang chủ</router-link>
-      <h1>Cắt file</h1>
+      <ViButton
+        variant="text"
+        color="primary"
+        size="small"
+        label="← Về trang chủ"
+        class="mb-2"
+        @click="router.push({ name: 'home' })"
+      />
+      <h1 class="text-h5 font-weight-bold mb-4">Cắt file</h1>
 
-      <section class="card">
-        <label class="file-picker">
-          <span>Chọn file audio/video</span>
-          <input type="file" accept="audio/*,video/*" :disabled="uploading" @change="onFileChange" />
-        </label>
-
-        <p v-if="fileName" class="file-name">Tệp: {{ fileName }}</p>
-
-        <div v-if="uploading" class="progress">
-          <div class="bar"><div class="fill" :style="{ width: uploadProgress + '%' }" /></div>
-          <span>Đang tải lên… {{ uploadProgress }}%</span>
-        </div>
-
-        <p v-if="uploadError" class="err">{{ uploadError }}</p>
-
-        <p v-if="uploadResult" class="ok">
-          Đã tải lên xong — thời lượng {{ formatDuration(uploadResult.durationS) }}
+      <!-- Bước 1: chọn + upload file -->
+      <ViCard rounded="lg" class="mb-4 section">
+        <input
+          ref="fileInput"
+          type="file"
+          accept="audio/*,video/*"
+          class="d-none"
+          @change="onFileChange"
+        />
+        <ViButton
+          color="primary"
+          variant="outlined"
+          :disabled="uploading"
+          label="Chọn file audio/video"
+          @click="pickFile"
+        />
+        <p v-if="fileName" class="text-body-2 mt-3 mb-0">Tệp: <strong>{{ fileName }}</strong></p>
+        <ViProgressLinear
+          v-if="uploading"
+          :model-value="uploadProgress"
+          color="primary"
+          height="8"
+          rounded
+          class="mt-3"
+        />
+        <p v-if="uploading" class="text-caption text-medium-emphasis mt-1 mb-0">
+          Đang tải lên… {{ uploadProgress }}%
         </p>
-      </section>
+        <ViAlert
+          v-if="uploadError"
+          type="error"
+          variant="tonal"
+          density="compact"
+          class="mt-3"
+          :text="uploadError"
+        />
+        <ViAlert
+          v-if="uploadResult"
+          type="success"
+          variant="tonal"
+          density="compact"
+          class="mt-3"
+          :text="`Đã tải lên — thời lượng ${formatDuration(uploadResult.durationS)}`"
+        />
+      </ViCard>
 
-      <section v-if="uploadResult" class="card">
-        <h2>Tiêu chí cắt</h2>
-        <div class="criteria">
-          <label v-for="opt in criterionOptions" :key="opt.value" class="radio">
-            <input v-model="criterion" type="radio" name="criterion" :value="opt.value" />
-            {{ opt.label }}
-          </label>
-        </div>
-        <label class="value-input">
-          Giá trị
-          <input v-model.number="value" type="number" min="1" />
-        </label>
-        <button class="split-btn" :disabled="uploading || creating || jobBusy()" @click="onSplit">
-          {{ creating || jobBusy() ? "Đang cắt…" : "Cắt" }}
-        </button>
+      <!-- Bước 2: tiêu chí + cắt -->
+      <ViCard v-if="uploadResult" rounded="lg" class="mb-4 section">
+        <h2 class="text-subtitle-1 font-weight-bold mb-3">Tiêu chí cắt</h2>
+        <ViSelect
+          v-model="criterion"
+          :items="criterionOptions"
+          item-title="title"
+          item-value="value"
+          label="Cắt theo"
+          density="comfortable"
+        />
+        <ViInput
+          v-model.number="value"
+          type="number"
+          min="1"
+          label="Giá trị"
+          density="comfortable"
+          class="mt-2"
+        />
+        <ViButton
+          color="primary"
+          variant="flat"
+          :loading="creating || jobBusy()"
+          :disabled="uploading"
+          label="Cắt"
+          class="mt-2"
+          @click="onSplit"
+        />
+        <ViProgressLinear v-if="jobBusy()" indeterminate color="primary" height="8" rounded class="mt-3" />
+        <p v-if="jobBusy()" class="text-caption text-medium-emphasis mt-1 mb-0">Đang xử lý…</p>
+        <ViAlert
+          v-if="jobError"
+          type="error"
+          variant="tonal"
+          density="compact"
+          class="mt-3"
+          :text="jobError"
+        />
+      </ViCard>
 
-        <div v-if="jobBusy()" class="progress">
-          <div class="bar"><div class="fill" :style="{ width: jobProgress + '%' }" /></div>
-          <span>Đang xử lý… {{ jobProgress }}%</span>
-        </div>
-
-        <p v-if="jobError" class="err">{{ jobError }}</p>
-      </section>
-
-      <section v-if="jobStatus === 'done'" class="card">
-        <h2>Kết quả</h2>
+      <!-- Bước 3: kết quả -->
+      <ViCard v-if="jobStatus === 'done'" rounded="lg" class="section">
+        <h2 class="text-subtitle-1 font-weight-bold mb-3">Kết quả ({{ segments.length }} đoạn)</h2>
         <ul class="segments">
           <li v-for="seg in segments" :key="seg.fileId">{{ seg.name }}</li>
         </ul>
-        <button @click="onDownload">Tải zip</button>
-      </section>
+        <ViButton color="primary" variant="flat" label="Tải zip" class="mt-3" @click="onDownload" />
+      </ViCard>
     </main>
   </div>
 </template>
 
 <style scoped>
-.topbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0.75rem 1.25rem;
-  border-bottom: 1px solid #e5e7eb;
-}
-.right {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-}
-.email {
-  color: #6b7280;
-}
 .content {
-  padding: 2rem 1.25rem;
   max-width: 640px;
   margin: 0 auto;
+  padding: var(--space-8pt-4) var(--space-8pt-3);
 }
-.back {
-  display: inline-block;
-  margin-bottom: 1rem;
-  color: #6b7280;
-  text-decoration: none;
-}
-.card {
-  border: 1px solid #e5e7eb;
-  border-radius: 12px;
-  padding: 1.25rem;
-  margin-bottom: 1.25rem;
-}
-.file-picker {
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
-}
-.file-name {
-  margin-top: 0.75rem;
-  color: #374151;
-}
-.progress {
-  margin-top: 0.75rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
-}
-.bar {
-  height: 8px;
-  border-radius: 4px;
-  background: #e5e7eb;
-  overflow: hidden;
-}
-.fill {
-  height: 100%;
-  background: #2563eb;
-  transition: width 0.2s ease;
-}
-.criteria {
-  display: flex;
-  gap: 1rem;
-  margin: 0.75rem 0;
-  flex-wrap: wrap;
-}
-.radio {
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-}
-.value-input {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin-bottom: 1rem;
-}
-.value-input input {
-  width: 100px;
-  padding: 0.4rem;
-}
-.split-btn {
-  padding: 0.6rem 1.25rem;
-  border: 1px solid #d1d5db;
-  border-radius: 8px;
-  background: #2563eb;
-  color: #fff;
-  cursor: pointer;
-}
-.split-btn:disabled {
-  opacity: 0.6;
-  cursor: default;
+.section {
+  padding: var(--space-8pt-3);
 }
 .segments {
-  margin: 0 0 1rem;
-  padding-left: 1.25rem;
+  margin: 0;
+  padding-left: var(--space-8pt-3);
+  color: var(--bsg-nl-700, #37474f);
 }
-.err {
-  color: #dc2626;
-  margin-top: 0.75rem;
-}
-.ok {
-  color: #16a34a;
-  margin-top: 0.75rem;
+.segments li {
+  margin-bottom: var(--space-8pt-1);
 }
 </style>

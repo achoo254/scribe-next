@@ -1,59 +1,37 @@
 <script setup lang="ts">
 import { useRouter } from "vue-router";
-import { useAuth } from "../composables/use-auth";
+import { ViCard, ViButton } from "@hobui/viui";
+import AppTopBar from "../components/AppTopBar.vue";
 
-const { user, logout } = useAuth();
 const router = useRouter();
 
-async function onLogout(): Promise<void> {
-  await logout();
-  await router.push({ name: "login" });
+function goSplit(): void {
+  void router.push({ name: "split" });
 }
 </script>
 
 <template>
-  <div class="app">
-    <header class="topbar">
-      <strong>OneScribe</strong>
-      <div class="right">
-        <span v-if="user" class="email">{{ user.email }}</span>
-        <button @click="onLogout">Đăng xuất</button>
-      </div>
-    </header>
+  <div>
+    <AppTopBar />
     <main class="content">
-      <p>Đăng nhập thành công. Chức năng ghi media sẽ bổ sung ở các phase sau.</p>
-      <router-link class="action" to="/split">Cắt file</router-link>
+      <ViCard rounded="lg" class="hero">
+        <h1 class="text-h5 font-weight-bold mb-2">Chào mừng đến OneScribe</h1>
+        <p class="text-body-2 text-medium-emphasis mb-6">
+          Ghi &amp; cắt media. Chức năng ghi sẽ bổ sung ở các phase sau.
+        </p>
+        <ViButton color="primary" variant="flat" size="large" label="Cắt file" @click="goSplit" />
+      </ViCard>
     </main>
   </div>
 </template>
 
 <style scoped>
-.topbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0.75rem 1.25rem;
-  border-bottom: 1px solid #e5e7eb;
-}
-.right {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-}
-.email {
-  color: #6b7280;
-}
 .content {
-  padding: 2rem 1.25rem;
+  max-width: 640px;
+  margin: 0 auto;
+  padding: var(--space-8pt-4) var(--space-8pt-3);
 }
-.action {
-  display: inline-block;
-  margin-top: 1rem;
-  padding: 0.6rem 1.25rem;
-  border: 1px solid #d1d5db;
-  border-radius: 8px;
-  background: #2563eb;
-  color: #fff;
-  text-decoration: none;
+.hero {
+  padding: var(--space-8pt-4);
 }
 </style>
