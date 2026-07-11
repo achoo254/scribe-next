@@ -1,11 +1,13 @@
 ---
 phase: 2
 title: "Auth Google (Firebase Authentication)"
-status: in-progress
+status: done
 priority: P1
 effort: "1.5d"
 dependencies: [1]
 ---
+
+> **✅ DONE & VERIFIED LIVE 2026-07-11:** login Google thật thành công trên scribe.inetdev.io.vn — user `quocdat254@gmail.com` upsert vào Mongo (`firebaseUid` + name + createdAt), `/api/me` trả email, audit-log ghi login. Toàn bộ Success Criteria pass.
 
 # Phase 2: Auth Google qua Firebase Authentication
 

@@ -1,7 +1,7 @@
 ---
 phase: 1
 title: "Foundation & deploy gate"
-status: in-progress
+status: done
 priority: P1
 effort: "2-3d"
 dependencies: []
