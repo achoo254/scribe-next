@@ -21,7 +21,8 @@ async function onLogout(): Promise<void> {
       </div>
     </header>
     <main class="content">
-      <p>Đăng nhập thành công. Chức năng ghi &amp; cắt media sẽ bổ sung ở các phase sau.</p>
+      <p>Đăng nhập thành công. Chức năng ghi media sẽ bổ sung ở các phase sau.</p>
+      <router-link class="action" to="/split">Cắt file</router-link>
     </main>
   </div>
 </template>
@@ -44,5 +45,15 @@ async function onLogout(): Promise<void> {
 }
 .content {
   padding: 2rem 1.25rem;
+}
+.action {
+  display: inline-block;
+  margin-top: 1rem;
+  padding: 0.6rem 1.25rem;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: #2563eb;
+  color: #fff;
+  text-decoration: none;
 }
 </style>

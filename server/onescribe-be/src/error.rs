@@ -9,9 +9,10 @@ use serde_json::json;
 pub enum AppError {
     Unauthorized(String),
     Forbidden(String),
-    /// Dùng ở Phase 3 (validate upload) — giữ sẵn cho contract lỗi 4xx.
-    #[allow(dead_code)]
     BadRequest(String),
+    NotFound(String),
+    /// 413 — vượt size cap / quota (red-team #3/#14).
+    TooLarge(String),
     Internal(String),
 }
 
@@ -21,6 +22,8 @@ impl AppError {
             AppError::Unauthorized(m) => (StatusCode::UNAUTHORIZED, m),
             AppError::Forbidden(m) => (StatusCode::FORBIDDEN, m),
             AppError::BadRequest(m) => (StatusCode::BAD_REQUEST, m),
+            AppError::NotFound(m) => (StatusCode::NOT_FOUND, m),
+            AppError::TooLarge(m) => (StatusCode::PAYLOAD_TOO_LARGE, m),
             AppError::Internal(m) => (StatusCode::INTERNAL_SERVER_ERROR, m),
         }
     }

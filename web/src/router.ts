@@ -2,12 +2,14 @@ import { createRouter, createWebHistory } from "vue-router";
 import { useAuth } from "./composables/use-auth";
 import HomeView from "./views/HomeView.vue";
 import LoginView from "./views/LoginView.vue";
+import SplitView from "./views/SplitView.vue";
 
 export const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: "/", name: "home", component: HomeView, meta: { requiresAuth: true } },
     { path: "/login", name: "login", component: LoginView },
+    { path: "/split", name: "split", component: SplitView, meta: { requiresAuth: true } },
   ],
 });
 

@@ -4,7 +4,12 @@ use crate::probe::{probe_file, size_cut_times};
 use crate::{compute_segment_time, new_command, stem_of, MediaInfo, OutFile, SplitProgress};
 use std::path::Path;
 use std::process::Stdio;
+use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
+
+/// Timeout ffmpeg — kill nếu treo (input hỏng/ác ý) để không kẹt queue concurrency=1 (red-team #15).
+/// 15' dư cho `-c copy` (chỉ I/O, không encode) kể cả file 2GB.
+const FFMPEG_TIMEOUT_SECS: u64 = 900;
 
 /// Tiêu chí cắt. Serde `lowercase` khớp giá trị FE/desktop cũ ("minutes"/"megabytes"/"parts").
 #[derive(serde::Serialize, serde::Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
@@ -109,6 +114,7 @@ async fn run_ffmpeg(
         .args(args)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
+        .kill_on_drop(true) // timeout → future drop → child drop → SIGKILL (không để ffmpeg treo).
         .spawn()
         .map_err(|e| format!("không chạy được ffmpeg ({ffmpeg_path}): {e}"))?;
 
@@ -122,19 +128,26 @@ async fn run_ffmpeg(
     });
 
     let dur = info.duration_s.max(0.001);
-    let mut lines = BufReader::new(stdout).lines();
-    while let Ok(Some(line)) = lines.next_line().await {
-        if let Some(us) = line
-            .trim()
-            .strip_prefix("out_time_us=")
-            .and_then(|v| v.trim().parse::<f64>().ok())
-        {
-            let file_pct = ((us / 1e6) / dur * 100.0).clamp(0.0, 100.0);
-            on_progress(SplitProgress { file_pct });
+    // Bọc đọc-progress + wait trong timeout; quá hạn → drop `work` → kill ffmpeg (kill_on_drop).
+    let work = async {
+        let mut lines = BufReader::new(stdout).lines();
+        while let Ok(Some(line)) = lines.next_line().await {
+            if let Some(us) = line
+                .trim()
+                .strip_prefix("out_time_us=")
+                .and_then(|v| v.trim().parse::<f64>().ok())
+            {
+                let file_pct = ((us / 1e6) / dur * 100.0).clamp(0.0, 100.0);
+                on_progress(SplitProgress { file_pct });
+            }
         }
-    }
-
-    let status = child.wait().await.map_err(|e| e.to_string())?;
+        child.wait().await
+    };
+    let status = match tokio::time::timeout(Duration::from_secs(FFMPEG_TIMEOUT_SECS), work).await {
+        Ok(Ok(s)) => s,
+        Ok(Err(e)) => return Err(format!("ffmpeg wait: {e}")),
+        Err(_) => return Err("ffmpeg timeout — input treo hoặc hỏng".to_string()),
+    };
     let stderr_buf = stderr_task.await.unwrap_or_default();
     if !status.success() {
         let msg = stderr_buf.trim();

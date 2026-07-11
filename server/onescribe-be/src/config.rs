@@ -15,6 +15,11 @@ pub fn firebase_issuer() -> String {
 pub const FIREBASE_JWKS_URL: &str =
     "https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com";
 
+/// Size cap mỗi file (2GB — chốt validate 2026-07-11, ~40% quota 5GB). Red-team #14.
+pub const MAX_FILE_SIZE_BYTES: u64 = 2 * 1024 * 1024 * 1024;
+/// Quota mỗi user (5GB — chốt validate). Red-team #3.
+pub const QUOTA_BYTES: u64 = 5 * 1024 * 1024 * 1024;
+
 #[derive(Clone, Debug)]
 pub struct Config {
     pub port: u16,
@@ -27,6 +32,11 @@ pub struct Config {
     pub session_ttl_secs: i64,
     /// File lưu session signing key (tự sinh runtime, KHÔNG bake).
     pub session_key_path: String,
+    /// Thư mục lưu upload/output ({data_dir}/{userId}/...).
+    pub data_dir: String,
+    /// Path ffmpeg/ffprobe (đọc từ config, KHÔNG hard-code — red-team #5). Mặc định PATH.
+    pub ffmpeg_path: String,
+    pub ffprobe_path: String,
 }
 
 impl Config {
@@ -42,6 +52,9 @@ impl Config {
             session_key_path: option_env!("SESSION_KEY_PATH")
                 .unwrap_or(default_session_key_path())
                 .to_string(),
+            data_dir: option_env!("DATA_DIR").unwrap_or(default_data_dir()).to_string(),
+            ffmpeg_path: option_env!("FFMPEG_PATH").unwrap_or("ffmpeg").to_string(),
+            ffprobe_path: option_env!("FFPROBE_PATH").unwrap_or("ffprobe").to_string(),
         }
     }
 
@@ -80,5 +93,16 @@ const fn default_session_key_path() -> &'static str {
     #[cfg(not(unix))]
     {
         ".session-key"
+    }
+}
+
+const fn default_data_dir() -> &'static str {
+    #[cfg(unix)]
+    {
+        "/opt/onescribe-be/data"
+    }
+    #[cfg(not(unix))]
+    {
+        "./data"
     }
 }

@@ -4,11 +4,14 @@ mod auth;
 mod config;
 mod db;
 mod error;
+mod jobs;
 mod jwks;
 mod models;
 mod routes;
 mod session;
 mod state;
+mod upload;
+mod worker;
 
 use config::Config;
 use jwks::JwksCache;
@@ -41,6 +44,12 @@ async fn main() {
             if let Err(e) = models::user::ensure_indexes(&db).await {
                 tracing::warn!("tạo index users thất bại (chống-trùng yếu đi nếu Mongo lỗi): {e}");
             }
+            if let Err(e) = models::file::ensure_indexes(&db).await {
+                tracing::warn!("tạo index files thất bại: {e}");
+            }
+            if let Err(e) = models::job::ensure_indexes(&db).await {
+                tracing::warn!("tạo index jobs thất bại: {e}");
+            }
         });
     }
 
@@ -52,6 +61,14 @@ async fn main() {
         jwks: Arc::new(JwksCache::new()),
         session_key: Arc::new(session_key),
     };
+
+    // Hồi phục job kẹt "running" sau crash/restart (red-team) + khởi worker queue nền.
+    match models::job::reset_running_to_queued(&state.db).await {
+        Ok(n) if n > 0 => tracing::info!("reset {n} job running→queued sau restart"),
+        Ok(_) => {}
+        Err(e) => tracing::warn!("reset running jobs lỗi: {e:?}"),
+    }
+    jobs::start_worker(state.clone());
 
     let app = routes::build_router(state);
     let addr = SocketAddr::from(([127, 0, 0, 1], port)); // localhost-only; nginx proxy /api.
