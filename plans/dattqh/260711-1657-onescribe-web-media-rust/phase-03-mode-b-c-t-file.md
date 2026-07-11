@@ -1,13 +1,15 @@
 ---
 phase: 3
 title: "Mode B — Cắt file"
-status: in-progress
+status: done
 priority: P1
 effort: "2-3d"
 dependencies: [2]
 ---
 
 # Phase 3: Mode B — Cắt file
+
+> **✅ DONE (code+deploy+review-fix) 2026-07-11:** BE (upload chunked + job queue + SplitWorker) + FE (SplitView + upload/split) code XONG, deployed live scribe.inetdev.io.vn. Code-review: 1 Critical (quota in-flight bypass) + 2 High (ffmpeg timeout poison-pill, worker panic-isolation) + Medium (index, poll retry) — **ĐÃ FIX HẾT + redeploy**. FE restyled sang **iNET ViUI** (Vuetify3 + Vi* + theme #024799 + iconset tabler tự chủ) — verify live: form ViSelect/ViInput/ViAlert + icon render đúng qua browser. **CÒN LẠI (user QA):** bấm "Cắt" với **file media thật** để nghiệm thu success-path (upload→job→segments→zip) — tôi mới verify UI + error-path, chưa drive success với file hợp lệ. Hardening sweep/rate-limit → Phase 5.
 
 > **Progress 2026-07-11:** Code XONG + DEPLOYED LIVE. BE: `upload.rs` (chunked append-disk, sessionId UUID server-gen + bind user + validate UUID chống traversal, resumable stateless theo .part, size cap 2GB + quota tăng dần), `jobs.rs` (queue + claim atomic + worker loop + reset running→queued khi start + download zip), `worker/{mod,split_worker}.rs` (trait Worker + SplitWorker gọi core-split + TranscribeWorker stub), `models/{file,job}.rs` (ownership + user_usage_bytes). FE: SplitView + use-upload (resume) + use-splitter (poll) + route /split. `cargo check` + `vue-tsc` XANH; rebuild musl + redeploy .65 OK (BE restart active, health 200, /api/me 401). **CÒN LẠI:** code-review (đang chạy) + manual QA cắt file thật (user). Progress job coarse (queued→running→done) vì -c copy nhanh — progress mịn để dành Phase 4.
 

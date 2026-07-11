@@ -40,7 +40,7 @@ Web hóa OneScribe: **ghi + cắt media, BỎ hoàn toàn AI transcribe** (box .
 |-------|------|--------|
 | 1 | [Foundation & deploy gate](./phase-01-foundation-deploy-gate.md) — workspace + core-split + axum skeleton + **musl static binary chạy trên .65** (GATE) + FE scaffold | ✅ **DONE** — GATE passed (`scribe.inetdev.io.vn/api/health` 200 qua CF). Còn: desktop rewire core-split (slice riêng) |
 | 2 | [Auth Google (Firebase)](./phase-02-auth-google-oauth.md) — Firebase Auth `signInWithPopup` + Rust verify Firebase ID token (`securetoken` JWKS) + session cookie httpOnly + MongoDB users + FE login/guard | ✅ **DONE** — login Google thật OK (user upsert Mongo, /api/me trả email, audit-log) |
-| 3 | [Mode B — Cắt file](./phase-03-mode-b-c-t-file.md) — upload resumable + job queue + SplitWorker (core-split) + tải zip + FE Cắt | Pending |
+| 3 | [Mode B — Cắt file](./phase-03-mode-b-c-t-file.md) — upload resumable + job queue + SplitWorker (core-split) + tải zip + FE Cắt | ✅ **DONE** (code+deploy+review-fix) — live; FE iNET ViUI; **chờ user QA cắt file thật** (success-path) |
 | 4 | [Mode A — Ghi](./phase-04-mode-a-ghi.md) — getUserMedia/getDisplayMedia + MediaRecorder + upload + ghi liền→server cắt + lịch sử + player | Pending |
 | 5 | [Retention & hardening](./phase-05-retention-hardening.md) — cron purge + quota + rate-limit + size cap + magic-byte + allowlist + security pass | Pending |
 
@@ -70,7 +70,7 @@ Web hóa OneScribe: **ghi + cắt media, BỎ hoàn toàn AI transcribe** (box .
 - **Verify:** `cargo check --workspace` ✅ · `cargo test -p core-split` 9/9 ✅ · `vue-tsc --noEmit` ✅ · `vite build` ✅. Desktop `src-tauri` KHÔNG đụng (0 regression).
 - **Code-review (code-reviewer):** 0 Critical, 2 High + 1 Medium — **đã fix hết**: H1 unique index `firebaseUid` + retry dup-key (chống user trùng/lách quota); H2 cooldown refetch JWKS 30s (chống DoS amplification endpoint public); M1 gitignore `.session-key` + `/target`. Report: `reports/from-code-reviewer-to-cook-onescribe-web-auth-foundation-review.md`.
 - **HOÃN (ngoài scope round):** desktop rewire dùng core-split (cần regression test runtime Mode B); deploy gate musl/.65/nginx/systemd (chờ WSL musl + SSH); live E2E auth (chờ Mongo URI .65 + Firebase login thật). ViUI FE chưa cài (dùng Vue thuần tạm — quyết định design-system hoãn tới Phase 3/4).
-- **Deviation ghi nhận:** (a) red-team #13 đạt bằng `option_env!` fallback thay `default-members` (verify `cargo check` không cần secret OK); (b) FE dùng Vue thuần thay ViUI (`@hobui/*` không có registry ở máy dev).
+- **Deviation ghi nhận:** (a) red-team #13 đạt bằng `option_env!` fallback thay `default-members` (verify `cargo check` không cần secret OK); (b) ~~FE Vue thuần thay ViUI~~ → **ĐÃ tích hợp iNET ViUI 2026-07-11 (tối)**: `@hobui/viui` + `@hobui/tokens` + Vuetify3 cài từ npm public (không cần registry riêng như tưởng), theme màu iNET từ `inet-viui` MCP; `.mcp.json` project trỏ `inet-viui` (gitignore). Commit `96d8d62` (ViUI) + `9ed2784` (fix iconset).
 
 **Câu hỏi validate — ĐÃ CHỐT:** (1) domain `scribe.inetdev.io.vn`; (2) allowlist MỞ mọi tài khoản Google (audit-only); (3) retention 14 ngày; (4) quota 5GB/user + size cap 2GB/file; (5) cắt webm = remux+copy (verify ở gate Phase 4).
 
