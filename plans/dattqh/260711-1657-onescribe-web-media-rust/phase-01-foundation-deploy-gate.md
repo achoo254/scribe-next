@@ -9,7 +9,11 @@ dependencies: []
 
 # Phase 1: Foundation & deploy gate
 
-> **Progress 2026-07-11:** Foundation local XONG — Cargo workspace (`exclude src-tauri`), `crates/core-split` (extract từ splitter.rs + 9 unit test), `server/onescribe-be` axum skeleton (`/api/health`), `web/` Vue3/Vite scaffold. `cargo check --workspace` + `cargo test` + `vite build` pass. **CÒN LẠI (HOÃN):** musl static binary build (WSL), deploy .65 (nginx :80 + systemd + firewall CF), cài ffmpeg/ffprobe .65, GATE `https://scribe.inetdev.io.vn/api/health`. Desktop rewire core-split tách slice riêng. FE dùng Vue thuần (ViUI hoãn — chưa có registry `@hobui/*`).
+> **Progress 2026-07-11:** Foundation local XONG — Cargo workspace (`exclude src-tauri`), `crates/core-split` (extract từ splitter.rs + 9 unit test), `server/onescribe-be` axum skeleton (`/api/health`), `web/` Vue3/Vite scaffold. `cargo check --workspace` + `cargo test` + `vite build` pass.
+>
+> **✅ GATE PASSED 2026-07-11:** musl static binary build XONG (Docker `rust-musl-cross` trong WSL; rustls dùng `ring` KHÔNG aws-lc → `ELF static-pie linked`). Deploy .65 (CentOS Stream 9): user `onescribe` + systemd (`active`, 17MB, CPUQuota/MemoryMax) + nginx vhost `:80` (`nginx -t` OK → reload) + CF proxied. **`https://scribe.inetdev.io.vn/api/health` → 200** qua Cloudflare. ffmpeg/ffprobe đã sẵn trên .65 (khỏi cài — red-team #5 thỏa).
+>
+> **Deviation ghi nhận:** (a) SELinux DISABLED trên .65 → không cần context/boolean. (b) nginx SHARED (15 vhost) → CHỈ thêm 1 server block, KHÔNG firewall :80 chỉ-cho-CF (sẽ chặn vhost khác) → red-team #2 firewall-part BỎ, chỉ `set_real_ip_from`. (c) FE static `/var/www/onescribe/dist` (khớp convention box). (d) Desktop rewire core-split tách slice riêng (chưa đụng src-tauri). (e) FE Vue thuần (ViUI hoãn — không có registry `@hobui/*`).
 
 ## Overview
 

@@ -1,0 +1,34 @@
+# systemd unit cho OneScribe BE (static musl binary). Cài: /etc/systemd/system/onescribe-be.service
+# Deploy: tạo user `onescribe`, đặt binary /opt/onescribe-be/onescribe-be (chmod 700, chứa secret bake),
+# systemctl daemon-reload && enable --now onescribe-be.
+[Unit]
+Description=OneScribe Web backend (axum, static musl)
+After=network-online.target mongod.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=onescribe
+Group=onescribe
+WorkingDirectory=/opt/onescribe-be
+ExecStart=/opt/onescribe-be/onescribe-be
+Restart=on-failure
+RestartSec=3
+
+# Resource cap — box .65 SHARED (~15 service + MongoDB, chỉ ~3Gi RAM free). Chừa tài nguyên (red-team #10).
+CPUQuota=200%
+MemoryMax=1G
+
+# Hardening. ProtectSystem=full để /usr,/etc,/boot read-only; /opt vẫn ghi được (session key + WorkingDir).
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/opt/onescribe-be
+
+# Log ra journald.
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

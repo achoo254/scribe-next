@@ -9,7 +9,9 @@ dependencies: [1]
 
 # Phase 2: Auth Google qua Firebase Authentication
 
-> **Progress 2026-07-11:** Code XONG (chưa test live). BE: `auth.rs` (POST `/api/auth/session` verify Firebase ID token → session cookie), `jwks.rs` (securetoken JWKS + cache + cooldown), `session.rs` (HS256 key runtime), `models/user.rs` (upsert + unique index `firebaseUid`), middleware guard `/api/me`. FE: `firebase.ts`, `use-auth.ts` (signInWithPopup→session), `router.ts` guard, LoginView/HomeView. `cargo check` + `vue-tsc` + `vite build` pass. Code-review 2 High đã fix (unique index race, JWKS DoS cooldown). **HOÃN:** live E2E (cần Mongo URI .65 + login Google thật).
+> **Progress 2026-07-11:** Code XONG + **DEPLOYED LIVE**. BE: `auth.rs` (POST `/api/auth/session` verify Firebase ID token → session cookie), `jwks.rs` (securetoken JWKS + cache + cooldown), `session.rs` (HS256 key runtime), `models/user.rs` (upsert + unique index `firebaseUid`), middleware guard `/api/me`. FE: `firebase.ts`, `use-auth.ts` (signInWithPopup→session), `router.ts` guard, LoginView/HomeView. Code-review 2 High đã fix.
+>
+> **Live verify trên .65 (`scribe.inetdev.io.vn`):** Mongo user `onescribe` connect OK (authSource=onescribe), unique index `firebaseUid_1` tạo thật. `/api/me` chưa login → **401** (guard đúng). FE served. **CÒN LẠI = login Google thật (manual QA của user)** — cần verify authorized domain Firebase gồm `scribe.inetdev.io.vn` (nếu popup báo `auth/unauthorized-domain` → thêm ở Console Authentication → Settings → Authorized domains).
 
 ## Overview
 
