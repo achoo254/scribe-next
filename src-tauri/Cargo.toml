@@ -1,6 +1,6 @@
 [package]
 name = "onescribe"
-version = "0.1.0"
+version = "0.2.0"
 description = "OneScribe — ghi âm + cắt file + transcribe offline tiếng Việt"
 authors = ["iNET"]
 edition = "2021"
