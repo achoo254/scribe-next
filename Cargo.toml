@@ -1,0 +1,17 @@
+# Workspace gốc cho phần WEB (server BE + crate cắt thuần).
+# CỐ Ý exclude src-tauri: desktop app giữ build độc lập (target/lock riêng) để KHÔNG chịu ảnh
+# hưởng khi restructure — desktop sẽ được đưa vào workspace + dùng chung core-split ở slice sau,
+# khi có thể chạy regression test Mode B trên app thật.
+[workspace]
+resolver = "2"
+members = ["crates/core-split", "server/onescribe-be"]
+exclude = ["src-tauri"]
+
+[workspace.package]
+edition = "2021"
+version = "0.1.0"
+
+[workspace.dependencies]
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

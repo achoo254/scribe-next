@@ -1,0 +1,32 @@
+[package]
+name = "onescribe-be"
+edition.workspace = true
+version.workspace = true
+description = "OneScribe Web backend (axum) — 1 static musl binary, self-hosted."
+
+[[bin]]
+name = "onescribe-be"
+path = "src/main.rs"
+
+[dependencies]
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+core-split = { path = "../../crates/core-split" }
+
+axum = "0.8"
+axum-extra = { version = "0.10", features = ["cookie"] }
+tower-http = { version = "0.6", features = ["limit", "trace"] }
+
+# TLS out-bound = rustls (tránh OpenSSL/native-tls C lib → giữ musl static sạch).
+# reqwest: fetch JWKS securetoken. mongodb 3.x mặc định dùng rustls.
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+mongodb = "3"
+
+jsonwebtoken = "9"
+chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
+rand = "0.8"
+time = "0.3"
+
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

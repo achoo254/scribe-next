@@ -1,0 +1,10 @@
+[package]
+name = "core-split"
+edition.workspace = true
+version.workspace = true
+description = "Thuật toán cắt media thuần (ffmpeg -c copy), độc lập Tauri — dùng chung desktop + server."
+
+[dependencies]
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }

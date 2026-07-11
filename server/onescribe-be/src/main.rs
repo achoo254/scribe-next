@@ -1,0 +1,89 @@
+//! OneScribe Web backend — axum, bind 127.0.0.1 (nginx `/api` proxy), graceful shutdown SIGTERM.
+
+mod auth;
+mod config;
+mod db;
+mod error;
+mod jwks;
+mod models;
+mod routes;
+mod session;
+mod state;
+
+use config::Config;
+use jwks::JwksCache;
+use state::AppState;
+use std::net::SocketAddr;
+use std::sync::Arc;
+use tokio::net::TcpListener;
+use tracing_subscriber::EnvFilter;
+
+#[tokio::main]
+async fn main() {
+    tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
+        .init();
+
+    let config = Config::from_env();
+    let session_key = session::load_or_create_key(&config.session_key_path)
+        .unwrap_or_else(|e| panic!("không tạo được session key ({}): {e}", config.session_key_path));
+    let db = db::connect(&config.mongo_uri)
+        .await
+        .unwrap_or_else(|e| panic!("{e}"));
+    let http = reqwest::Client::builder()
+        .build()
+        .expect("dựng reqwest client");
+
+    // Tạo unique index users (non-blocking) — chặn user trùng firebaseUid khi 2 upsert đua nhau.
+    {
+        let db = db.clone();
+        tokio::spawn(async move {
+            if let Err(e) = models::user::ensure_indexes(&db).await {
+                tracing::warn!("tạo index users thất bại (chống-trùng yếu đi nếu Mongo lỗi): {e}");
+            }
+        });
+    }
+
+    let port = config.port;
+    let state = AppState {
+        config: Arc::new(config),
+        db,
+        http,
+        jwks: Arc::new(JwksCache::new()),
+        session_key: Arc::new(session_key),
+    };
+
+    let app = routes::build_router(state);
+    let addr = SocketAddr::from(([127, 0, 0, 1], port)); // localhost-only; nginx proxy /api.
+    let listener = TcpListener::bind(addr)
+        .await
+        .unwrap_or_else(|e| panic!("bind {addr}: {e}"));
+    tracing::info!("onescribe-be listening on {addr}");
+
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal())
+        .await
+        .expect("server error");
+}
+
+/// Chờ Ctrl-C hoặc SIGTERM (systemd gửi khi stop/restart).
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        tokio::signal::ctrl_c().await.ok();
+    };
+    #[cfg(unix)]
+    let terminate = async {
+        if let Ok(mut sig) = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+        {
+            sig.recv().await;
+        }
+    };
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {},
+        _ = terminate => {},
+    }
+    tracing::info!("shutdown signal — dừng nhận request mới");
+}

@@ -1,63 +1,87 @@
 ---
 phase: 2
-title: "Auth Google OAuth"
-status: pending
+title: "Auth Google (Firebase Authentication)"
+status: in-progress
 priority: P1
-effort: "2d"
+effort: "1.5d"
 dependencies: [1]
 ---
 
-# Phase 2: Auth Google OAuth
+# Phase 2: Auth Google qua Firebase Authentication
+
+> **Progress 2026-07-11:** Code XONG (chưa test live). BE: `auth.rs` (POST `/api/auth/session` verify Firebase ID token → session cookie), `jwks.rs` (securetoken JWKS + cache + cooldown), `session.rs` (HS256 key runtime), `models/user.rs` (upsert + unique index `firebaseUid`), middleware guard `/api/me`. FE: `firebase.ts`, `use-auth.ts` (signInWithPopup→session), `router.ts` guard, LoginView/HomeView. `cargo check` + `vue-tsc` + `vite build` pass. Code-review 2 High đã fix (unique index race, JWKS DoS cooldown). **HOÃN:** live E2E (cần Mongo URI .65 + login Google thật).
 
 ## Overview
 
-Xác thực **Google Sign-In (OAuth2 auth-code flow)** ở BE: verify `id_token` qua Google JWKS, upsert user vào MongoDB, cấp session cookie (JWT httpOnly SameSite). Middleware guard mọi `/api/*` (trừ auth). FE có trang login + guard route. Allowlist domain/email (compile-time, optional) chống lạm dụng.
+Xác thực **Google Sign-In qua Firebase Authentication**. FE dùng Firebase JS SDK (`signInWithPopup` + `GoogleAuthProvider`) → nhận **Firebase ID token**. FE gửi token lên BE → BE (Rust) **verify Firebase ID token** (RS256 qua Google `securetoken` JWKS), upsert user vào MongoDB, cấp **session cookie riêng của BE** (JWT httpOnly HS256, key runtime) — vì Firebase token nằm trong JS (không httpOnly), đổi ngay lấy cookie httpOnly để giữ chống-XSS. Middleware guard mọi `/api/*` (trừ auth). FE có trang login + guard route. Allowlist domain/email (optional) chống lạm dụng.
+
+**Đổi hướng — 2026-07-11:** thay OAuth2 auth-code flow tự làm trong Rust (`oauth2` crate) bằng **Firebase Auth** (user chốt). Hệ quả tích cực: **bỏ `oauth2` crate** (red-team #11 → moot), bỏ `/api/auth/login`+`/callback` redirect + state/CSRF, **bỏ luôn 2 secret compile-time `GOOGLE_CLIENT_ID/SECRET`** (Firebase tự quản OAuth client). Giữ nguyên: MongoDB users, JWT session HS256 key runtime (red-team #4), check `email_verified` (red-team #9), httpOnly cookie, middleware guard, allowlist option.
+
+## Firebase project (ĐÃ provision — 2026-07-11)
+
+- Project ID: `onescribe-inet` · Project number: `600080952715` · Owner: quocdat254@gmail.com
+- Web App: "OneScribe Web" — App ID `1:600080952715:web:41d846fba6732899d3538e`
+- Web SDK config (public, KHÔNG phải secret): `authDomain=onescribe-inet.firebaseapp.com`, `projectId=onescribe-inet`, `messagingSenderId=600080952715`, `storageBucket=onescribe-inet.firebasestorage.app`. **`apiKey` không lưu ở đây** — lấy qua MCP `firebase_get_sdk_config` hoặc đặt trong `web/.env` (`VITE_FIREBASE_API_KEY`).
+- Google sign-in provider: **ĐÃ BẬT** (`firebase deploy --only auth`); authorized domains: `scribe.inetdev.io.vn` + `localhost` (default). Support email consent: quocdat254@gmail.com.
 
 ## Requirements
 
-- **Functional:** `/api/auth/login` → redirect Google; `/api/auth/callback` → verify → set cookie → redirect FE; `/api/me` trả user; logout xoá cookie. FE chưa login → về trang login.
-- **Non-functional:** verify đủ `aud`/`iss`/`exp` + RS256 + `kid` match; cookie `HttpOnly`+`Secure`+`SameSite=Lax`; JWKS cache (TTL theo Cache-Control Google); allowlist enforce nếu cấu hình.
+- **Functional:** FE nút "Đăng nhập Google" → Firebase popup → nhận ID token → `POST /api/auth/session {idToken}` → BE verify + set cookie → redirect FE; `/api/me` trả user; logout xoá cookie BE + `signOut()` FE. Chưa login → trang login.
+- **Non-functional:** verify Firebase ID token đủ `aud`==`onescribe-inet` + `iss`==`https://securetoken.google.com/onescribe-inet` + `exp` + RS256 + `kid` match (securetoken JWKS) + **`email_verified==true`**; session key tự sinh runtime (không bake) + token TTL ngắn; cookie `HttpOnly`+`Secure`+`SameSite=Lax`; JWKS cache (TTL theo Cache-Control); allowlist enforce nếu cấu hình (chỉ sau `email_verified`).
 
 ## Architecture
 
-**BE crates (research):** `oauth2` (auth-code flow), `jsonwebtoken` (RS256 verify), `reqwest` (rustls, fetch JWKS). Secret (`GOOGLE_CLIENT_ID/SECRET`) nhúng compile-time (`env!`).
+**FE (`web/`):** `firebase` JS SDK (`firebase/app`, `firebase/auth`). `initializeApp(config)` từ `VITE_FIREBASE_*` env (public). `signInWithPopup(auth, new GoogleAuthProvider())` → `user.getIdToken()` → POST BE. Router guard gọi `/api/me` (401 → login). Cùng origin (nginx) → cookie same-site, không CORS.
+
+**BE crates:** `jsonwebtoken` (RS256 verify), `reqwest` (rustls, fetch JWKS `securetoken`), `serde`. **KHÔNG cần `oauth2` crate. KHÔNG bake `GOOGLE_CLIENT_ID/SECRET`** (Firebase quản OAuth client).
+
+**Verify Firebase ID token (khác Google id_token OAuth thường ở JWKS + aud + iss):**
+- JWKS/certs `securetoken`: x509 (canonical theo Firebase docs) `https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com`; nếu muốn JWK `{kid,n,e}` cho `DecodingKey::from_rsa_components` → endpoint JWK `securetoken` — **verify endpoint chính xác + format ở cook**. Cache theo `Cache-Control`/`max-age`.
+- `Validation` RS256 + `set_audience(["onescribe-inet"])` + `set_issuer(["https://securetoken.google.com/onescribe-inet"])` + leeway 60s. Claims: `sub` (Firebase UID), `email`, `email_verified`, `name`, `firebase.sign_in_provider`.
+- **[Red-team #9] BẮT BUỘC check `claims.email_verified == true`** trước khi dùng email cho allowlist/phân quyền — reject nếu false.
+
+**[Red-team #4] JWT session signing key — KHÔNG bake compile-time (GIỮ NGUYÊN):** BE tự sinh key ngẫu nhiên first-run ghi file runtime `chmod 600` (VD `/opt/onescribe-be/.session-key`, ngoài web root). Session token HS256 TTL ngắn + refresh. Không cần secret ngoài cho session → vẫn đúng "server sạch, không env".
 
 **Flow:**
-1. FE bấm "Đăng nhập Google" → `GET /api/auth/login` → BE tạo authorize_url (state chống CSRF, lưu state ngắn hạn) → 302 tới Google.
-2. Google → `GET /api/auth/callback?code&state` → verify state → exchange code → nhận `id_token`.
-3. Verify `id_token`: `decode_header` lấy `kid` → fetch JWKS `https://www.googleapis.com/oauth2/v3/certs` (cache) → `DecodingKey::from_rsa_components(n,e)` → `Validation` RS256 + set_audience(client_id) + set_issuer(accounts.google.com) + leeway 60s.
-4. **Allowlist** (nếu cấu hình `ALLOWED_DOMAINS`/`ALLOWED_EMAILS` compile-time): reject nếu email/domain không khớp → trang "không có quyền".
-5. Upsert `users{googleSub, email, createdAt}` (Mongo). Cấp JWT session (sub=userId) → set cookie → 302 về FE.
-6. Middleware `auth`: đọc cookie JWT → verify (HS256, JWT_SECRET compile-time) → gắn `userId` vào request extension. Thiếu/sai → 401. Áp cho mọi `/api/*` trừ `/api/auth/*` + `/api/health`.
-
-**FE (`web/`):** trang login (ViUI, nút Google) + router guard (gọi `/api/me`, 401 → login). Store user. Cùng origin (nginx) → cookie same-site, không CORS.
+1. FE `signInWithPopup(GoogleAuthProvider)` → Firebase trả user + ID token (Firebase quản popup + OAuth client).
+2. FE `POST /api/auth/session` body `{idToken}`.
+3. BE verify Firebase ID token (securetoken JWKS cache, aud/iss/exp/kid, RS256) + `email_verified`.
+4. **Allowlist** (nếu cấu hình `ALLOWED_DOMAINS`/`ALLOWED_EMAILS`): reject nếu không khớp → 403. Chỉ so khớp SAU `email_verified`.
+5. Upsert `users{firebaseUid, email, name, createdAt}` (Mongo) — key theo `firebaseUid` (claim `sub`).
+6. Cấp JWT session (sub=userId, HS256 key runtime) → set httpOnly cookie → 200.
+7. Middleware `auth`: đọc cookie JWT → verify HS256 → gắn `userId` vào request extension. Thiếu/sai → 401. Áp mọi `/api/*` trừ `/api/auth/*` + `/api/health`.
+8. Logout: BE xoá cookie + FE `signOut()`.
 
 ## Related Code Files
 
-- Create: `server/onescribe-be/src/auth.rs` (oauth + jwks verify + middleware), `server/onescribe-be/src/models/user.rs`, `web/src/views/LoginView.vue`, `web/src/router.ts` (guard), `web/src/composables/use-auth.ts`
-- Modify: `server/onescribe-be/src/routes.rs` (mount auth routes + guard), `server/onescribe-be/src/config.rs` (thêm OAuth + JWT + allowlist), `server/onescribe-be/build.rs` (bake vars), `web/src/App.vue`
+- Create: `server/onescribe-be/src/auth.rs` (verify firebase token + session issue + middleware), `server/onescribe-be/src/models/user.rs`, `web/src/lib/firebase.ts` (init SDK), `web/src/views/LoginView.vue`, `web/src/router.ts` (guard), `web/src/composables/use-auth.ts`, `web/.env` (VITE_FIREBASE_* public config)
+- Modify: `server/onescribe-be/src/routes.rs` (mount auth routes + guard), `server/onescribe-be/src/config.rs` (bỏ GOOGLE_CLIENT_ID/SECRET; thêm `FIREBASE_PROJECT_ID` const + allowlist option), `server/onescribe-be/build.rs` (bỏ bake OAuth secret), `web/src/App.vue`, `web/package.json` (thêm `firebase`)
 
 ## Implementation Steps
 
-1. `config.rs`: `env!` cho `GOOGLE_CLIENT_ID/SECRET`, `JWT_SECRET`, `OAUTH_REDIRECT_URL`, `option_env!` cho `ALLOWED_DOMAINS/EMAILS`.
-2. `auth.rs`: oauth2 client + `/api/auth/login` (authorize_url + state store) + `/api/auth/callback` (exchange + verify id_token + JWKS cache + allowlist + upsert user + set cookie).
-3. JWKS: struct JwksResponse{keys[{kid,n,e,alg}]}; fetch reqwest rustls; cache in-process (TTL theo header); verify RS256 đủ aud/iss/exp/kid.
-4. Middleware guard + `/api/me` + `/api/auth/logout` (clear cookie).
-5. FE: LoginView + router guard + use-auth (fetch /api/me).
-6. E2E: login thật bằng 1 tài khoản Google → cookie set → /api/me trả email; xoá cookie → 401; allowlist chặn email ngoài (nếu bật).
+1. FE: `npm i firebase`; `web/src/lib/firebase.ts` = `initializeApp(config)` (config từ `VITE_FIREBASE_*`) + `getAuth`. `web/.env`: `VITE_FIREBASE_API_KEY`/`AUTH_DOMAIN`/`PROJECT_ID` (public — commit được, không phải secret).
+2. FE: `LoginView` nút Google → `signInWithPopup` → `getIdToken()` → `POST /api/auth/session`; router guard gọi `/api/me` (401 → login); `use-auth` store user.
+3. BE `config.rs`: `FIREBASE_PROJECT_ID = "onescribe-inet"` (const/compile-time, KHÔNG secret). `option_env!` cho `ALLOWED_DOMAINS/EMAILS`. `JWT_SECRET` KHÔNG bake — sinh runtime (#4). **Bỏ `GOOGLE_CLIENT_ID/SECRET` + `OAUTH_REDIRECT_URL`.**
+   **[Validate #2] Allowlist MẶC ĐỊNH TẮT** (user chốt mở mọi tài khoản Google) → để trống = cho phép mọi email đã `email_verified`; **audit-log mọi email đăng nhập**. Giữ code allowlist để bật nhanh nếu bị abuse (đổi = rebuild).
+4. BE `auth.rs`: `POST /api/auth/session` (verify Firebase ID token + securetoken JWKS cache + email_verified + allowlist + upsert user + set cookie). Middleware guard + `/api/me` + `/api/auth/logout` (clear cookie).
+5. JWKS: struct keys `{kid,n,e}` (hoặc parse x509); fetch reqwest rustls; cache in-process (TTL theo header); verify RS256 đủ aud/iss/exp/kid.
+6. E2E: login thật 1 tài khoản Google (popup) → cookie httpOnly set → `/api/me` trả email; xoá cookie → 401; token sai/hết hạn → reject; `email_verified==false` → reject; allowlist chặn email ngoài (nếu bật).
 
 ## Success Criteria
 
-- [ ] Login Google thật → cookie httpOnly set → `/api/me` trả `{email}`.
-- [ ] Middleware chặn `/api/*` khi chưa auth (401); logout → 401.
-- [ ] id_token verify đủ aud/iss/exp/kid + RS256; sai/hết hạn → reject.
+- [ ] FE `signInWithPopup` Google → BE verify Firebase ID token → cookie httpOnly set → `/api/me` trả `{email}`.
+- [ ] Middleware chặn `/api/*` khi chưa auth (401); logout → 401 + Firebase `signOut()`.
+- [ ] Firebase ID token verify đủ `aud`(onescribe-inet)/`iss`(securetoken)/`exp`/`kid` + RS256; sai/hết hạn → reject.
+- [ ] `email_verified==false` → reject.
 - [ ] Allowlist (nếu bật) chặn email/domain ngoài danh sách.
-- [ ] User upsert đúng vào Mongo `users` (không tạo trùng theo googleSub).
+- [ ] User upsert đúng Mongo `users` (không trùng theo `firebaseUid`).
 
 ## Risk Assessment
 
-- **JWKS key rotation → kid mismatch:** luôn cho phép refetch JWKS khi kid không thấy trong cache (không hard-fail).
-- **state CSRF/replay:** state ngẫu nhiên + TTL ngắn + one-time.
+- **Firebase ID token trong JS (không httpOnly):** đổi ngay lấy session cookie httpOnly của BE sau sign-in; Firebase token TTL ~1h, chỉ dùng 1 lần để lập session BE → giảm bề mặt token lộ qua XSS.
+- **JWKS `securetoken` rotation → kid mismatch:** luôn cho refetch JWKS khi kid không thấy trong cache (không hard-fail).
+- **aud/iss sai project:** hardcode đúng `onescribe-inet` + issuer securetoken; test reject token của project khác.
+- **Phụ thuộc hosted Firebase/GCP:** auth phụ thuộc Firebase uptime (đánh đổi đã chấp nhận khi user chọn Firebase). Allowlist compile-time giữ như "công tắc khẩn".
+- **"Mọi tài khoản Google" → lạm dụng (user chốt MỞ):** allowlist mặc định TẮT → phòng thủ abuse dồn sang quota 5GB + size cap 2GB + quota tăng dần + rate-limit (firewall CF #2) + ffmpeg timeout/version-pin + audit-log (Phase 5).
 - **Cookie qua CF proxied:** `Secure` cookie cần HTTPS (CF cấp) — verify set-cookie tới browser qua CF không bị strip.
-- **"Mọi tài khoản Google" → lạm dụng:** allowlist compile-time là hàng rào chính; ràng buộc quota ở Phase 5. Đổi allowlist = rebuild (hệ quả env compile-time).
-- **oauth2 crate API đổi theo version:** chốt version + verify API thật lúc cook (research snippet có thể lệch minor).
+- **[Red-team #11 → MOOT]** oauth2 crate v5 typestate: không còn liên quan (đã bỏ `oauth2` crate).

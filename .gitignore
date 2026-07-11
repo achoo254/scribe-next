@@ -27,6 +27,13 @@ dist-ssr
 # Rust / Cargo (Tauri backend)
 src-tauri/target/
 
+# Rust / Cargo (web workspace: server BE + core-split)
+/target/
+
+# Session signing key BE (tự sinh runtime — KHÔNG commit)
+.session-key
+**/.session-key
+
 # Tauri generated schemas
 src-tauri/gen/schemas/
 
