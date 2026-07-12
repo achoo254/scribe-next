@@ -103,6 +103,50 @@ pub async fn split_file(
     Ok(outputs)
 }
 
+/// Remux (fix cues/timestamps) input sang Matroska `-c copy` — KHÔNG re-encode.
+///
+/// Dùng cho recording MediaRecorder: webm streaming thiếu seekable cues + duration chuẩn →
+/// `ffmpeg -f segment -c copy` cắt sai mốc. Remux `-c copy -f matroska` dựng lại cues/timestamps
+/// đúng → segment sau đó cắt bám keyframe đúng kỳ vọng (sai số ≤ 1 keyframe interval, chấp nhận cho
+/// cắt theo phút). Nhẹ CPU (chỉ copy stream, không encode). Caller lo disk-free ≥ 2× + dọn `out_mkv`.
+pub async fn remux_copy_to_mkv(ffmpeg_path: &str, input: &str, out_mkv: &str) -> Result<(), String> {
+    let args = [
+        "-v", "error",
+        "-i", input,
+        "-c", "copy",
+        "-f", "matroska",
+        "-y", out_mkv,
+    ];
+    let mut child = new_command(ffmpeg_path)
+        .args(args)
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
+        .map_err(|e| format!("không chạy được ffmpeg remux ({ffmpeg_path}): {e}"))?;
+    let mut stderr = child.stderr.take().ok_or("không mở được stderr ffmpeg")?;
+    let stderr_task = tokio::spawn(async move {
+        let mut buf = String::new();
+        let _ = stderr.read_to_string(&mut buf).await;
+        buf
+    });
+    let status = match tokio::time::timeout(Duration::from_secs(FFMPEG_TIMEOUT_SECS), child.wait()).await {
+        Ok(Ok(s)) => s,
+        Ok(Err(e)) => return Err(format!("ffmpeg remux wait: {e}")),
+        Err(_) => return Err("ffmpeg remux timeout — input treo hoặc hỏng".to_string()),
+    };
+    let stderr_buf = stderr_task.await.unwrap_or_default();
+    if !status.success() {
+        let msg = stderr_buf.trim();
+        return Err(if msg.is_empty() {
+            "ffmpeg remux thất bại (không rõ lỗi)".to_string()
+        } else {
+            format!("ffmpeg remux: {msg}")
+        });
+    }
+    Ok(())
+}
+
 /// Spawn ffmpeg, đọc `-progress pipe:1` (stdout) báo tiến độ, gom stderr để báo lỗi rõ.
 async fn run_ffmpeg(
     ffmpeg_path: &str,

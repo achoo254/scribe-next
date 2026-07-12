@@ -16,7 +16,7 @@ import {
   IconMinus, IconCalendar, IconCheck, IconCircleDot,
   // app icons (khớp desktop src/plugins/tabler-iconset.ts)
   IconMicrophone, IconScissors, IconFileText, IconFolder, IconDownload,
-  IconLogout, IconBrandGoogle,
+  IconLogout, IconBrandGoogle, IconPlayerStop,
 } from "@tabler/icons-vue";
 import "@hobui/viui/style.css"; // tokens --bsg-* + style Vi*
 
@@ -40,7 +40,7 @@ const TABLER: Record<string, unknown> = {
   // app icons (tabs / logout / google / split)
   microphone: IconMicrophone, scissors: IconScissors, "file-text": IconFileText,
   folder: IconFolder, download: IconDownload, logout: IconLogout,
-  "brand-google": IconBrandGoogle,
+  "brand-google": IconBrandGoogle, "player-stop": IconPlayerStop,
 };
 const tablerSet: IconSet = {
   component: (props: IconProps) =>

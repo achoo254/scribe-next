@@ -11,7 +11,7 @@ mod probe;
 mod split;
 
 pub use probe::{probe_file, size_cut_times};
-pub use split::{split_file, SplitCriterion};
+pub use split::{remux_copy_to_mkv, split_file, SplitCriterion};
 
 use std::path::Path;
 

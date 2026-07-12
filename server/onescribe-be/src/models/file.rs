@@ -23,10 +23,16 @@ pub struct FileDoc {
     pub id: Option<ObjectId>,
     #[serde(rename = "userId")]
     pub user_id: String,
-    pub kind: String, // "upload" | "output"
+    pub kind: String, // "upload" | "output" | "recording"
     pub name: String,
     pub path: String,
     pub size: i64,
+    /// Thời lượng (giây) — set cho recording/upload đã probe; None với đoạn output.
+    #[serde(rename = "durationS", skip_serializing_if = "Option::is_none")]
+    pub duration_s: Option<f64>,
+    /// Có video stream không (recording): true = màn hình (player <video>), false = mic (<audio>).
+    #[serde(rename = "hasVideo", skip_serializing_if = "Option::is_none")]
+    pub has_video: Option<bool>,
     #[serde(rename = "jobId", skip_serializing_if = "Option::is_none")]
     pub job_id: Option<String>,
     #[serde(rename = "createdAt")]
@@ -42,6 +48,31 @@ impl FileDoc {
             name: name.into(),
             path: path.into(),
             size,
+            duration_s: None,
+            has_video: None,
+            job_id: None,
+            created_at: DateTime::now(),
+        }
+    }
+    /// File ghi (Mode A) — kind "recording", có thời lượng + cờ video đã probe. Phát qua `/api/files/:id`.
+    pub fn new_recording(
+        user_id: &str,
+        name: &str,
+        path: &str,
+        size: i64,
+        duration_s: f64,
+        has_video: bool,
+        id: ObjectId,
+    ) -> Self {
+        FileDoc {
+            id: Some(id),
+            user_id: user_id.into(),
+            kind: "recording".into(),
+            name: name.into(),
+            path: path.into(),
+            size,
+            duration_s: Some(duration_s),
+            has_video: Some(has_video),
             job_id: None,
             created_at: DateTime::now(),
         }
@@ -54,6 +85,8 @@ impl FileDoc {
             name: name.into(),
             path: path.into(),
             size,
+            duration_s: None,
+            has_video: None,
             job_id: Some(job_id.into()),
             created_at: DateTime::now(),
         }
@@ -101,6 +134,21 @@ pub async fn list_outputs_for_job(
     let mut out = Vec::new();
     while let Some(r) = cur.next().await {
         out.push(r.map_err(|e| AppError::Internal(format!("đọc output: {e}")))?);
+    }
+    Ok(out)
+}
+
+/// Lịch sử ghi của user (kind=recording), mới nhất trước.
+pub async fn list_recordings(db: &Database, user_id: &str) -> Result<Vec<FileDoc>, AppError> {
+    let mut cur = db
+        .collection::<FileDoc>(COLL)
+        .find(doc! { "userId": user_id, "kind": "recording" })
+        .sort(doc! { "createdAt": -1 })
+        .await
+        .map_err(|e| AppError::Internal(format!("find recordings: {e}")))?;
+    let mut out = Vec::new();
+    while let Some(r) = cur.next().await {
+        out.push(r.map_err(|e| AppError::Internal(format!("đọc recording: {e}")))?);
     }
     Ok(out)
 }

@@ -41,7 +41,7 @@ Web hóa OneScribe: **ghi + cắt media, BỎ hoàn toàn AI transcribe** (box .
 | 1 | [Foundation & deploy gate](./phase-01-foundation-deploy-gate.md) — workspace + core-split + axum skeleton + **musl static binary chạy trên .65** (GATE) + FE scaffold | ✅ **DONE** — GATE passed (`scribe.inetdev.io.vn/api/health` 200 qua CF). Còn: desktop rewire core-split (slice riêng) |
 | 2 | [Auth Google (Firebase)](./phase-02-auth-google-oauth.md) — Firebase Auth `signInWithPopup` + Rust verify Firebase ID token (`securetoken` JWKS) + session cookie httpOnly + MongoDB users + FE login/guard | ✅ **DONE** — login Google thật OK (user upsert Mongo, /api/me trả email, audit-log) |
 | 3 | [Mode B — Cắt file](./phase-03-mode-b-c-t-file.md) — upload resumable + job queue + SplitWorker (core-split) + tải zip + FE Cắt | ✅ **DONE** (code+deploy+review-fix) — live; FE iNET ViUI; **chờ user QA cắt file thật** (success-path) |
-| 4 | [Mode A — Ghi](./phase-04-mode-a-ghi.md) — getUserMedia/getDisplayMedia + MediaRecorder + upload + ghi liền→server cắt + lịch sử + player | Pending |
+| 4 | [Mode A — Ghi](./phase-04-mode-a-ghi.md) — getUserMedia/getDisplayMedia + MediaRecorder + upload + ghi liền→server cắt + lịch sử + player | ✅ **DONE** (code+review-fix+deploy+E2E live) — streaming append + files stream/Range + webm remux+copy verified trên .65; chờ user QA mic/màn hình thật |
 | 5 | [Retention & hardening](./phase-05-retention-hardening.md) — cron purge + quota + rate-limit + size cap + magic-byte + allowlist + security pass | Pending |
 
 ## Thứ tự & phụ thuộc

@@ -1,7 +1,7 @@
 //! Lắp router: public (health/auth) + protected (guard middleware + upload/jobs).
 
 use crate::state::AppState;
-use crate::{auth, jobs, upload};
+use crate::{auth, files, jobs, recordings, upload};
 use axum::extract::DefaultBodyLimit;
 use axum::routing::{get, post};
 use axum::{Json, Router};
@@ -15,6 +15,12 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/upload/chunk", post(upload::chunk))
         .route("/api/upload/status", get(upload::status))
         .route("/api/upload/finalize", post(upload::finalize))
+        // Mode A — ghi (streaming append open-ended) + phát lại (stream + Range).
+        .route("/api/recordings/init", post(recordings::init))
+        .route("/api/recordings/chunk", post(recordings::chunk))
+        .route("/api/recordings/finalize", post(recordings::finalize))
+        .route("/api/files", get(files::list))
+        .route("/api/files/{id}", get(files::stream))
         .route("/api/jobs", post(jobs::create))
         .route("/api/jobs/{id}", get(jobs::get))
         .route("/api/jobs/{id}/download", get(jobs::download))

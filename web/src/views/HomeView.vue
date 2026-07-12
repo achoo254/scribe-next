@@ -1,16 +1,17 @@
 <script setup lang="ts">
 // Shell OneScribe (web) — khớp desktop App.vue: header brand + 3 tab (Ghi âm / Cắt file / Transcript).
-// Web hiện chỉ có Cắt file; Ghi âm + Transcript khoá kèm nhãn "Sắp có" để bám sát layout desktop.
+// Ghi âm + Cắt file đã có; Transcript khoá kèm nhãn "Sắp có" để bám sát layout desktop.
 import { ref, watch } from "vue";
 import { ViTabs, ViTab, ViIcon } from "@hobui/viui";
 import AppTopBar from "../components/AppTopBar.vue";
+import RecordView from "./RecordView.vue";
 import SplitView from "./SplitView.vue";
 
-const tab = ref("split");
+const tab = ref("record");
 
-// Chốt tab luôn ở "split" — 2 tab kia mới là placeholder (disabled), tránh nội dung trống nếu bị chọn.
+// Chặn chọn tab placeholder (transcript) — snap về record. Record/split đều hoạt động.
 watch(tab, (v) => {
-  if (v !== "split") tab.value = "split";
+  if (v === "transcript") tab.value = "record";
 });
 </script>
 
@@ -19,10 +20,7 @@ watch(tab, (v) => {
     <AppTopBar />
 
     <ViTabs v-model="tab" color="primary" class="os-tabs">
-      <ViTab value="record" disabled>
-        <ViIcon icon="microphone" start />Ghi âm
-        <span class="os-soon">Sắp có</span>
-      </ViTab>
+      <ViTab value="record"><ViIcon icon="microphone" start />Ghi âm</ViTab>
       <ViTab value="split"><ViIcon icon="scissors" start />Cắt file</ViTab>
       <ViTab value="transcript" disabled>
         <ViIcon icon="file-text" start />Transcript
@@ -30,8 +28,12 @@ watch(tab, (v) => {
       </ViTab>
     </ViTabs>
 
+    <!-- keep-alive: giữ state khi đổi tab (đang ghi / job cắt đang chạy) — giống desktop App.vue. -->
     <div class="os-view">
-      <SplitView />
+      <keep-alive>
+        <RecordView v-if="tab === 'record'" />
+        <SplitView v-else-if="tab === 'split'" />
+      </keep-alive>
     </div>
   </div>
 </template>
