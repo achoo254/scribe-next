@@ -108,5 +108,16 @@ export function useSplitter() {
     window.location.href = `/api/jobs/${id}/download`;
   }
 
-  return { jobId, status, progress, segments, error, creating, createJob, download, stopPolling };
+  // Dừng poll + xoá sạch state job — gọi khi user chọn file mới để không giữ kết quả/link tải của file cũ.
+  function reset(): void {
+    stopPolling();
+    jobId.value = null;
+    status.value = null;
+    progress.value = 0;
+    segments.value = [];
+    error.value = "";
+    creating.value = false;
+  }
+
+  return { jobId, status, progress, segments, error, creating, createJob, download, stopPolling, reset };
 }

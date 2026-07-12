@@ -1,12 +1,10 @@
 <script setup lang="ts">
-import { onUnmounted, ref } from "vue";
-import { useRouter } from "vue-router";
-import { ViCard, ViButton, ViSelect, ViInput, ViProgressLinear, ViAlert } from "@hobui/viui";
+// Tab "Cắt file" (web) — gộp 1 ViCard giống desktop SplitView: chọn+upload → tiêu chí → cắt → kết quả.
+// Web upload async lên server (khác desktop chọn file local), nhưng trình bày trong cùng 1 card.
+import { onUnmounted, ref, computed } from "vue";
+import { ViCard, ViButton, ViIcon, ViRadioGroup, ViInput, ViProgressLinear, ViAlert } from "@hobui/viui";
 import { useUpload } from "../composables/use-upload";
 import { useSplitter, type JobCriterion } from "../composables/use-splitter";
-import AppTopBar from "../components/AppTopBar.vue";
-
-const router = useRouter();
 
 const {
   uploading,
@@ -25,6 +23,7 @@ const {
   createJob,
   download,
   stopPolling,
+  reset: resetJob,
 } = useSplitter();
 
 const fileInput = ref<HTMLInputElement | null>(null);
@@ -32,11 +31,19 @@ const fileName = ref("");
 const criterion = ref<JobCriterion>("minutes");
 const value = ref(10);
 
-const criterionOptions: { value: JobCriterion; title: string }[] = [
-  { value: "minutes", title: "Phút / đoạn" },
-  { value: "megabytes", title: "MB / đoạn" },
-  { value: "parts", title: "Số phần" },
+const criterionOptions: { title: string; value: JobCriterion }[] = [
+  { title: "Phút", value: "minutes" },
+  { title: "MB", value: "megabytes" },
+  { title: "Số phần", value: "parts" },
 ];
+
+const valueLabel = computed(() =>
+  criterion.value === "minutes"
+    ? "Số phút mỗi đoạn"
+    : criterion.value === "megabytes"
+      ? "MB mỗi đoạn"
+      : "Chia thành (số đoạn)",
+);
 
 const jobBusy = (): boolean => jobStatus.value === "queued" || jobStatus.value === "running";
 
@@ -49,7 +56,7 @@ async function onFileChange(e: Event): Promise<void> {
   const file = input.files?.[0];
   if (!file) return;
   fileName.value = file.name;
-  stopPolling();
+  resetJob(); // xoá kết quả/link tải của file trước, tránh tải nhầm zip khi cắt nhiều file cùng phiên
   await upload(file);
 }
 
@@ -77,21 +84,10 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div>
-    <AppTopBar />
-    <main class="content">
-      <ViButton
-        variant="text"
-        color="primary"
-        size="small"
-        label="← Về trang chủ"
-        class="mb-2"
-        @click="router.push({ name: 'home' })"
-      />
-      <h1 class="text-h5 font-weight-bold mb-4">Cắt file</h1>
-
+  <ViCard title="Cắt file" class="os-split-card">
+    <div class="os-form">
       <!-- Bước 1: chọn + upload file -->
-      <ViCard rounded="lg" class="mb-4 section">
+      <div class="os-row">
         <input
           ref="fileInput"
           type="file"
@@ -99,110 +95,124 @@ onUnmounted(() => {
           class="d-none"
           @change="onFileChange"
         />
-        <ViButton
-          color="primary"
-          variant="outlined"
-          :disabled="uploading"
-          label="Chọn file audio/video"
-          @click="pickFile"
-        />
-        <p v-if="fileName" class="text-body-2 mt-3 mb-0">Tệp: <strong>{{ fileName }}</strong></p>
-        <ViProgressLinear
-          v-if="uploading"
-          :model-value="uploadProgress"
-          color="primary"
-          height="8"
-          rounded
-          class="mt-3"
-        />
-        <p v-if="uploading" class="text-caption text-medium-emphasis mt-1 mb-0">
-          Đang tải lên… {{ uploadProgress }}%
-        </p>
-        <ViAlert
-          v-if="uploadError"
-          type="error"
-          variant="tonal"
-          density="compact"
-          class="mt-3"
-          :text="uploadError"
-        />
-        <ViAlert
-          v-if="uploadResult"
-          type="success"
-          variant="tonal"
-          density="compact"
-          class="mt-3"
-          :text="`Đã tải lên — thời lượng ${formatDuration(uploadResult.durationS)}`"
-        />
-      </ViCard>
+        <ViButton variant="outlined" :disabled="uploading" @click="pickFile">
+          <ViIcon icon="folder" start />Chọn file audio/video
+        </ViButton>
+        <span v-if="fileName" class="os-muted">{{ fileName }}</span>
+      </div>
+      <ViProgressLinear
+        v-if="uploading"
+        :model-value="uploadProgress"
+        color="primary"
+        height="8"
+        rounded
+      />
+      <p v-if="uploading" class="os-muted">Đang tải lên… {{ uploadProgress }}%</p>
+      <ViAlert
+        v-if="uploadError"
+        type="error"
+        variant="tonal"
+        density="compact"
+        :text="uploadError"
+      />
+      <ViAlert
+        v-if="uploadResult"
+        type="success"
+        variant="tonal"
+        density="compact"
+        :text="`Đã tải lên — thời lượng ${formatDuration(uploadResult.durationS)}`"
+      />
 
       <!-- Bước 2: tiêu chí + cắt -->
-      <ViCard v-if="uploadResult" rounded="lg" class="mb-4 section">
-        <h2 class="text-subtitle-1 font-weight-bold mb-3">Tiêu chí cắt</h2>
-        <ViSelect
+      <template v-if="uploadResult">
+        <ViRadioGroup
           v-model="criterion"
+          inline
+          label="Tiêu chí"
           :items="criterionOptions"
-          item-title="title"
-          item-value="value"
-          label="Cắt theo"
-          density="comfortable"
+          :disabled="jobBusy()"
         />
         <ViInput
           v-model.number="value"
           type="number"
           min="1"
-          label="Giá trị"
+          :label="valueLabel"
           density="comfortable"
-          class="mt-2"
+          class="os-num"
         />
         <ViButton
           color="primary"
-          variant="flat"
+          size="large"
           :loading="creating || jobBusy()"
           :disabled="uploading"
-          label="Cắt"
-          class="mt-2"
           @click="onSplit"
-        />
-        <ViProgressLinear v-if="jobBusy()" indeterminate color="primary" height="8" rounded class="mt-3" />
-        <p v-if="jobBusy()" class="text-caption text-medium-emphasis mt-1 mb-0">Đang xử lý…</p>
+        >
+          <ViIcon icon="scissors" start />Cắt
+        </ViButton>
+        <ViProgressLinear v-if="jobBusy()" indeterminate color="primary" height="8" rounded />
+        <p v-if="jobBusy()" class="os-muted">Đang xử lý…</p>
         <ViAlert
           v-if="jobError"
           type="error"
           variant="tonal"
           density="compact"
-          class="mt-3"
           :text="jobError"
         />
-      </ViCard>
+      </template>
 
       <!-- Bước 3: kết quả -->
-      <ViCard v-if="jobStatus === 'done'" rounded="lg" class="section">
-        <h2 class="text-subtitle-1 font-weight-bold mb-3">Kết quả ({{ segments.length }} đoạn)</h2>
-        <ul class="segments">
+      <template v-if="jobStatus === 'done'">
+        <h3 class="os-result-title">Kết quả ({{ segments.length }} đoạn)</h3>
+        <ul class="os-segments">
           <li v-for="seg in segments" :key="seg.fileId">{{ seg.name }}</li>
         </ul>
-        <ViButton color="primary" variant="flat" label="Tải zip" class="mt-3" @click="onDownload" />
-      </ViCard>
-    </main>
-  </div>
+        <ViButton color="primary" variant="flat" @click="onDownload">
+          <ViIcon icon="download" start />Tải zip
+        </ViButton>
+      </template>
+    </div>
+  </ViCard>
 </template>
 
 <style scoped>
-.content {
-  max-width: 640px;
-  margin: 0 auto;
-  padding: var(--space-8pt-4) var(--space-8pt-3);
+.os-split-card {
+  padding: 1rem;
 }
-.section {
-  padding: var(--space-8pt-3);
+.os-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
 }
-.segments {
+.os-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.os-muted {
+  font-size: 0.875rem;
+  color: rgb(var(--v-theme-on-surface));
+  opacity: 0.75;
   margin: 0;
-  padding-left: var(--space-8pt-3);
-  color: var(--bsg-nl-700, #37474f);
 }
-.segments li {
-  margin-bottom: var(--space-8pt-1);
+.os-num {
+  max-width: 240px;
+}
+.os-result-title {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0;
+  color: rgb(var(--v-theme-on-surface));
+}
+.os-segments {
+  margin: 0;
+  padding-left: 1.25rem;
+  color: rgb(var(--v-theme-on-surface));
+  opacity: 0.85;
+  max-height: 220px;
+  overflow-y: auto;
+}
+.os-segments li {
+  margin-bottom: 0.25rem;
 }
 </style>

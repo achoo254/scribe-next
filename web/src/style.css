@@ -1,14 +1,21 @@
+/* OneScribe Web — global styles. Màu nền/chữ do Vuetify theme inetOneDark quản (v-application). */
 :root {
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  color: #111827;
+  font-family: "Be Vietnam Pro", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 
 * {
   box-sizing: border-box;
 }
 
-body {
+html,
+body,
+#app {
   margin: 0;
+  min-height: 100vh;
+}
+
+body {
+  background: #0d0d0d; /* khớp theme.background — chống nháy trắng trước khi mount */
 }
 
 button {

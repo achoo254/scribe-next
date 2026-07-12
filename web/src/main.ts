@@ -13,7 +13,10 @@ import {
   IconInfoCircle, IconAlertTriangle, IconAlertCircle, IconSquare, IconSquareCheck,
   IconSquareMinus, IconCircle, IconCircleFilled, IconArrowUp, IconArrowDown,
   IconMenu2, IconSelector, IconPencil, IconLoader2, IconPaperclip, IconPlus,
-  IconMinus, IconCalendar, IconCheck,
+  IconMinus, IconCalendar, IconCheck, IconCircleDot,
+  // app icons (khớp desktop src/plugins/tabler-iconset.ts)
+  IconMicrophone, IconScissors, IconFileText, IconFolder, IconDownload,
+  IconLogout, IconBrandGoogle,
 } from "@tabler/icons-vue";
 import "@hobui/viui/style.css"; // tokens --bsg-* + style Vi*
 
@@ -29,10 +32,15 @@ const TABLER: Record<string, unknown> = {
   "info-circle": IconInfoCircle, "alert-triangle": IconAlertTriangle,
   "alert-circle": IconAlertCircle, square: IconSquare, "square-check": IconSquareCheck,
   "square-minus": IconSquareMinus, circle: IconCircle, "circle-filled": IconCircleFilled,
+  "circle-dot": IconCircleDot,
   "arrow-up": IconArrowUp, "arrow-down": IconArrowDown, "menu-2": IconMenu2,
   selector: IconSelector, pencil: IconPencil, "loader-2": IconLoader2,
   paperclip: IconPaperclip, plus: IconPlus, minus: IconMinus,
   calendar: IconCalendar, check: IconCheck,
+  // app icons (tabs / logout / google / split)
+  microphone: IconMicrophone, scissors: IconScissors, "file-text": IconFileText,
+  folder: IconFolder, download: IconDownload, logout: IconLogout,
+  "brand-google": IconBrandGoogle,
 };
 const tablerSet: IconSet = {
   component: (props: IconProps) =>
@@ -70,7 +78,7 @@ const vuetify = createVuetify({
       menu: "menu-2",
       subgroup: "chevron-down",
       dropdown: "chevron-down",
-      radioOn: "circle-check",
+      radioOn: "circle-dot",
       radioOff: "circle",
       edit: "pencil",
       loading: "loader-2",
@@ -84,21 +92,36 @@ const vuetify = createVuetify({
       collapse: "chevron-up",
     },
   },
+  // Theme One Series dark (khớp desktop src/plugins/vuetify.ts + src/tokens/one-series.ts).
+  // Giá trị = token One Series (vendored ViUI MCP): primary xanh lá, accent cam, nền tối.
   theme: {
-    defaultTheme: "light",
+    defaultTheme: "inetOneDark",
     themes: {
-      light: {
+      inetOneDark: {
+        dark: true,
         colors: {
-          primary: "#024799", // --bsg-primary (8.88:1 on white)
-          secondary: "#4A6278", // --bsg-nl-600
-          accent: "#cc0e0e", // --bsg-accent (logo/destructive)
-          error: "#B91C1C",
-          success: "#0E9F6E",
-          warning: "#D47B0A",
-          info: "#024799",
+          background: "#0d0d0d", // products-one-bg
+          surface: "#1a1a1a", // products-one-bg-card
+          "surface-bright": "#2e2e2e", // products-one-bg-border
+          "surface-variant": "#2e2e2e",
+          primary: "#49c98d", // products-one-green
+          secondary: "#f7ad30", // products-one-orange
+          accent: "#f7ad30", // products-one-orange
+          error: "#f87171",
+          info: "#619ee9",
+          success: "#34d399",
+          warning: "#fbbf24",
+          "on-background": "#e0e0e0",
+          "on-surface": "#e0e0e0",
+          "on-primary": "#0d0d0d",
+          "on-secondary": "#0d0d0d",
         },
       },
     },
+  },
+  // Font khớp desktop (Be Vietnam Pro — load qua Google Fonts ở index.html).
+  defaults: {
+    global: { style: "font-family: 'Be Vietnam Pro', sans-serif" },
   },
 });
 

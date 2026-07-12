@@ -1,49 +1,59 @@
 <script setup lang="ts">
-import { useRouter } from "vue-router";
-import { ViButton } from "@hobui/viui";
+// Header shell OneScribe (web) — khớp desktop os-header: BrandMark + tên brand (primary).
+// Web thêm email + Đăng xuất bên phải (desktop không có auth).
+import { ViButton, ViIcon } from "@hobui/viui";
 import { useAuth } from "../composables/use-auth";
+import BrandMark from "./BrandMark.vue";
 
 const { user, logout } = useAuth();
-const router = useRouter();
 
 async function onLogout(): Promise<void> {
   await logout();
-  await router.push({ name: "login" });
+  // Guard router sẽ đẩy về /login khi user=null ở lần điều hướng kế; ép reload về gốc cho chắc.
+  window.location.assign("/login");
 }
 </script>
 
 <template>
-  <header class="topbar">
-    <router-link to="/" class="brand">OneScribe</router-link>
-    <div class="right">
-      <span v-if="user" class="email">{{ user.email }}</span>
-      <ViButton variant="text" color="primary" size="small" label="Đăng xuất" @click="onLogout" />
+  <header class="os-header">
+    <div class="os-brand">
+      <BrandMark :size="28" />
+      <span class="os-brand-name">OneScribe</span>
+    </div>
+    <div class="os-header-right">
+      <span v-if="user" class="os-email">{{ user.email }}</span>
+      <ViButton variant="text" color="primary" size="small" @click="onLogout">
+        <ViIcon icon="logout" start />Đăng xuất
+      </ViButton>
     </div>
   </header>
 </template>
 
 <style scoped>
-.topbar {
+.os-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--space-8pt-2) var(--space-8pt-3);
-  background: #fff;
-  border-bottom: 1px solid var(--bsg-nl-200, #e5e7eb);
+  gap: 0.5rem;
 }
-.brand {
-  color: var(--bsg-primary);
-  text-decoration: none;
-  font-weight: 700;
-  font-size: 1.125rem;
-}
-.right {
+.os-brand {
   display: flex;
   align-items: center;
-  gap: var(--space-8pt-2);
+  gap: 0.5rem;
 }
-.email {
-  color: var(--bsg-nl-600, #4a6278);
+.os-brand-name {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: rgb(var(--v-theme-primary));
+}
+.os-header-right {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.os-email {
+  color: rgb(var(--v-theme-on-surface));
+  opacity: 0.7;
   font-size: 0.875rem;
 }
 </style>
