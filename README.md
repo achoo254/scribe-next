@@ -65,3 +65,10 @@ src-tauri/
   binaries/               # ffmpeg, ffprobe, transcriber
 docs/ plans/              # thiết kế + kế hoạch triển khai
 ```
+
+## Tài liệu
+
+- [docs/codebase-summary.md](./docs/codebase-summary.md) — tổng quan kiến trúc (desktop + web), module BE/FE, API, MongoDB, storage
+- [docs/project-roadmap.md](./docs/project-roadmap.md) — lộ trình + trạng thái phase (OneScribe Web 5/5 DONE) + backlog
+- [docs/deployment-guide.md](./docs/deployment-guide.md) — build musl + deploy .65 (nginx/systemd/CF)
+- [docs/split-record-design.md](./docs/split-record-design.md) — thiết kế cắt/ghi media
