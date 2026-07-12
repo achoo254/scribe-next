@@ -2,6 +2,7 @@
 
 use crate::config::Config;
 use crate::jwks::JwksCache;
+use crate::rate_limit::RateLimiter;
 use mongodb::Database;
 use std::sync::Arc;
 
@@ -13,4 +14,6 @@ pub struct AppState {
     pub jwks: Arc<JwksCache>,
     /// Session signing key (HS256) — sinh runtime, KHÔNG bake (red-team #4).
     pub session_key: Arc<Vec<u8>>,
+    /// Rate-limit theo IP (in-memory, red-team #2).
+    pub rate: Arc<RateLimiter>,
 }

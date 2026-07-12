@@ -1,14 +1,16 @@
 <script setup lang="ts">
 // Tab "Ghi âm" (Mode A) — chọn nguồn (mic / màn hình+system) → Ghi/Dừng → upload streaming →
 // lịch sử + nghe lại. Tùy chọn cắt theo phút sau khi ghi (tái dùng job queue = useSplitter).
-import { ref, computed, onBeforeUnmount } from "vue";
+import { ref, computed, watch, onBeforeUnmount } from "vue";
 import { ViCard, ViButton, ViIcon, ViRadioGroup, ViInput, ViSwitch, ViAlert, ViProgressLinear } from "@hobui/viui";
 import { useRecorder, supportsScreenCapture, type RecordSource } from "../composables/use-recorder";
 import { useSplitter } from "../composables/use-splitter";
+import { useUsage } from "../composables/use-usage";
 import RecordingHistory from "../components/RecordingHistory.vue";
 
 const rec = useRecorder();
 const sp = useSplitter();
+const usage = useUsage();
 
 const source = ref<RecordSource>("mic");
 const splitEnabled = ref(false);
@@ -36,6 +38,7 @@ async function toggle(): Promise<void> {
     const result = await rec.stop();
     if (result) {
       await historyRef.value?.refresh();
+      void usage.refresh(); // dung lượng tăng sau khi lưu bản ghi
       if (splitEnabled.value) {
         await sp.createJob(result.fileId, "minutes", splitMinutes.value);
       }
@@ -49,6 +52,9 @@ async function toggle(): Promise<void> {
 function onDownload(): void {
   if (sp.jobId.value) sp.download(sp.jobId.value);
 }
+
+// Đoạn cắt tính vào quota → refresh khi job cắt XONG (createJob resolve lúc queued, chưa có output).
+watch(() => sp.status.value, (s) => { if (s === "done") void usage.refresh(); });
 
 // Dọn mic/màn hình + timer nếu component bị huỷ giữa lúc đang ghi (phòng thủ; keep-alive chỉ deactivate).
 onBeforeUnmount(() => rec.dispose());

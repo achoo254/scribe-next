@@ -119,6 +119,10 @@ pub async fn chunk(
 #[derive(Deserialize)]
 pub struct FinalizeReq {
     session: String,
+    /// Thời lượng client đo bằng timer (webm MediaRecorder thường thiếu duration trong container →
+    /// probe ra 0). Dùng làm fallback khi probe không có duration.
+    #[serde(rename = "durationS", default)]
+    duration_s: Option<f64>,
 }
 #[derive(Serialize)]
 pub struct FinalizeResp {
@@ -168,7 +172,9 @@ pub async fn finalize(
     let info = core_split::probe_file(&state.config.ffprobe_path, &final_path)
         .await
         .ok();
-    let duration_s = info.as_ref().map(|i| i.duration_s).unwrap_or(0.0);
+    let probed = info.as_ref().map(|i| i.duration_s).unwrap_or(0.0);
+    // Probe webm MediaRecorder thường = 0 (thiếu duration metadata) → fallback timer client.
+    let duration_s = if probed > 0.0 { probed } else { req.duration_s.unwrap_or(0.0).max(0.0) };
     let has_video = info.as_ref().map(|i| !i.vcodec.is_empty()).unwrap_or(false);
 
     let name = session.get_str("name").unwrap_or("Bản ghi").to_string();

@@ -4,6 +4,7 @@
 import { ref, watch } from "vue";
 import { ViTabs, ViTab, ViIcon } from "@hobui/viui";
 import AppTopBar from "../components/AppTopBar.vue";
+import QuotaBar from "../components/QuotaBar.vue";
 import RecordView from "./RecordView.vue";
 import SplitView from "./SplitView.vue";
 
@@ -27,6 +28,8 @@ watch(tab, (v) => {
         <span class="os-soon">Sắp có</span>
       </ViTab>
     </ViTabs>
+
+    <QuotaBar />
 
     <!-- keep-alive: giữ state khi đổi tab (đang ghi / job cắt đang chạy) — giống desktop App.vue. -->
     <div class="os-view">

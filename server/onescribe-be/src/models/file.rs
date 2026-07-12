@@ -1,5 +1,6 @@
 //! `files` collection: upload gốc + output đoạn cắt. Ownership theo `userId`.
 
+use crate::config::RETENTION_DAYS;
 use crate::error::AppError;
 use futures_util::StreamExt;
 use mongodb::bson::{doc, oid::ObjectId, DateTime, Document};
@@ -8,12 +9,30 @@ use serde::{Deserialize, Serialize};
 
 const COLL: &str = "files";
 
-/// Index `userId` — tăng tốc ownership lookup + aggregate quota.
+/// `expiresAt` = now + RETENTION_DAYS. Sweep retention (retention.rs) là tiến trình DUY NHẤT xoá.
+fn expiry() -> DateTime {
+    DateTime::from_millis(DateTime::now().timestamp_millis() + RETENTION_DAYS * 86_400_000)
+}
+
+/// Index `userId` (ownership+quota) + `expiresAt` THƯỜNG (sweep quét quá hạn — KHÔNG `expire_after`
+/// TTL native, red-team #1: tránh Mongo xoá doc out-of-band làm mồ côi file disk).
 pub async fn ensure_indexes(db: &Database) -> Result<(), String> {
-    db.collection::<FileDoc>(COLL)
-        .create_index(IndexModel::builder().keys(doc! { "userId": 1 }).build())
+    let coll = db.collection::<FileDoc>(COLL);
+    coll.create_index(IndexModel::builder().keys(doc! { "userId": 1 }).build())
         .await
         .map_err(|e| format!("index files.userId: {e}"))?;
+    coll.create_index(IndexModel::builder().keys(doc! { "expiresAt": 1 }).build())
+        .await
+        .map_err(|e| format!("index files.expiresAt: {e}"))?;
+    // Backfill doc cũ (Phase 3/4) chưa có expiresAt → tính từ createdAt (đúng chính sách N-ngày-từ-tạo,
+    // không phải deploy-time). Pipeline update `$add`. Idempotent (chỉ chạm doc thiếu field).
+    let _ = db
+        .collection::<Document>(COLL)
+        .update_many(
+            doc! { "expiresAt": { "$exists": false } },
+            vec![doc! { "$set": { "expiresAt": { "$add": ["$createdAt", RETENTION_DAYS * 86_400_000i64] } } }],
+        )
+        .await;
     Ok(())
 }
 
@@ -37,6 +56,10 @@ pub struct FileDoc {
     pub job_id: Option<String>,
     #[serde(rename = "createdAt")]
     pub created_at: DateTime,
+    /// Mốc hết hạn — sweep retention xoá file (disk trước, doc sau) khi `expiresAt < now`.
+    /// `default`: doc cũ (Phase 3/4) chưa có field → deserialize không vỡ (gán now+retention).
+    #[serde(rename = "expiresAt", default = "expiry")]
+    pub expires_at: DateTime,
 }
 
 impl FileDoc {
@@ -52,6 +75,7 @@ impl FileDoc {
             has_video: None,
             job_id: None,
             created_at: DateTime::now(),
+            expires_at: expiry(),
         }
     }
     /// File ghi (Mode A) — kind "recording", có thời lượng + cờ video đã probe. Phát qua `/api/files/:id`.
@@ -75,6 +99,7 @@ impl FileDoc {
             has_video: Some(has_video),
             job_id: None,
             created_at: DateTime::now(),
+            expires_at: expiry(),
         }
     }
     pub fn new_output(user_id: &str, job_id: &str, name: &str, path: &str, size: i64) -> Self {
@@ -89,6 +114,7 @@ impl FileDoc {
             has_video: None,
             job_id: Some(job_id.into()),
             created_at: DateTime::now(),
+            expires_at: expiry(),
         }
     }
 }
@@ -151,6 +177,29 @@ pub async fn list_recordings(db: &Database, user_id: &str) -> Result<Vec<FileDoc
         out.push(r.map_err(|e| AppError::Internal(format!("đọc recording: {e}")))?);
     }
     Ok(out)
+}
+
+/// Các file đã quá hạn (`expiresAt < now`) — sweep retention xoá.
+pub async fn find_expired(db: &Database) -> Result<Vec<FileDoc>, AppError> {
+    let mut cur = db
+        .collection::<FileDoc>(COLL)
+        .find(doc! { "expiresAt": { "$lt": DateTime::now() } })
+        .await
+        .map_err(|e| AppError::Internal(format!("find expired: {e}")))?;
+    let mut out = Vec::new();
+    while let Some(r) = cur.next().await {
+        out.push(r.map_err(|e| AppError::Internal(format!("đọc expired: {e}")))?);
+    }
+    Ok(out)
+}
+
+/// Xoá 1 file doc theo id (gọi SAU khi đã xoá file disk — thứ tự cố định, red-team #1).
+pub async fn delete_doc(db: &Database, id: ObjectId) -> Result<(), AppError> {
+    db.collection::<FileDoc>(COLL)
+        .delete_one(doc! { "_id": id })
+        .await
+        .map_err(|e| AppError::Internal(format!("xoá file doc: {e}")))?;
+    Ok(())
 }
 
 /// Tổng byte đã dùng của user (quota — red-team #3).

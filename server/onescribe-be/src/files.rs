@@ -1,6 +1,7 @@
 //! Files: lịch sử ghi (list) + phát lại (stream + HTTP Range cho player tua). Ownership mọi route.
 
 use crate::auth::UserId;
+use crate::config::QUOTA_BYTES;
 use crate::error::AppError;
 use crate::models::file;
 use crate::state::AppState;
@@ -35,6 +36,15 @@ pub async fn list(
         })
         .collect();
     Ok(Json(json!({ "items": items })))
+}
+
+/// `GET /api/me/usage` — dung lượng đã dùng + quota của user (FE QuotaBar).
+pub async fn usage(
+    State(state): State<AppState>,
+    Extension(user): Extension<UserId>,
+) -> Result<Json<Value>, AppError> {
+    let used = file::user_usage_bytes(&state.db, &user.0).await?;
+    Ok(Json(json!({ "usageBytes": used, "quotaBytes": QUOTA_BYTES })))
 }
 
 /// `GET /api/files/:id` — stream file cho player; hỗ trợ HTTP Range (tua). Ownership bắt buộc.

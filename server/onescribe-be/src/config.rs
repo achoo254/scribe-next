@@ -19,6 +19,9 @@ pub const FIREBASE_JWKS_URL: &str =
 pub const MAX_FILE_SIZE_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 /// Quota mỗi user (5GB — chốt validate). Red-team #3.
 pub const QUOTA_BYTES: u64 = 5 * 1024 * 1024 * 1024;
+/// Retention: file tự xoá sau N ngày (14 — chốt validate). Red-team #1: sweep là nguồn xoá DUY NHẤT
+/// (KHÔNG dùng TTL index native → tránh Mongo xoá doc out-of-band làm mồ côi file disk).
+pub const RETENTION_DAYS: i64 = 14;
 
 #[derive(Clone, Debug)]
 pub struct Config {

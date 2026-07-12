@@ -13,6 +13,8 @@ pub enum AppError {
     NotFound(String),
     /// 413 — vượt size cap / quota (red-team #3/#14).
     TooLarge(String),
+    /// 429 — rate-limit theo IP (red-team #2).
+    TooManyRequests(String),
     Internal(String),
 }
 
@@ -24,6 +26,7 @@ impl AppError {
             AppError::BadRequest(m) => (StatusCode::BAD_REQUEST, m),
             AppError::NotFound(m) => (StatusCode::NOT_FOUND, m),
             AppError::TooLarge(m) => (StatusCode::PAYLOAD_TOO_LARGE, m),
+            AppError::TooManyRequests(m) => (StatusCode::TOO_MANY_REQUESTS, m),
             AppError::Internal(m) => (StatusCode::INTERNAL_SERVER_ERROR, m),
         }
     }

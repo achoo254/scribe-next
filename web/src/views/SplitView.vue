@@ -1,10 +1,11 @@
 <script setup lang="ts">
 // Tab "Cắt file" (web) — gộp 1 ViCard giống desktop SplitView: chọn+upload → tiêu chí → cắt → kết quả.
 // Web upload async lên server (khác desktop chọn file local), nhưng trình bày trong cùng 1 card.
-import { onUnmounted, ref, computed } from "vue";
+import { onUnmounted, ref, computed, watch } from "vue";
 import { ViCard, ViButton, ViIcon, ViRadioGroup, ViInput, ViProgressLinear, ViAlert } from "@hobui/viui";
 import { useUpload } from "../composables/use-upload";
 import { useSplitter, type JobCriterion } from "../composables/use-splitter";
+import { useUsage } from "../composables/use-usage";
 
 const {
   uploading,
@@ -26,10 +27,16 @@ const {
   reset: resetJob,
 } = useSplitter();
 
+const usage = useUsage();
+
 const fileInput = ref<HTMLInputElement | null>(null);
 const fileName = ref("");
 const criterion = ref<JobCriterion>("minutes");
 const value = ref(10);
+
+// Upload + đoạn cắt đều tính vào quota → cập nhật QuotaBar khi xong.
+watch(uploadResult, (r) => { if (r) void usage.refresh(); });
+watch(jobStatus, (s) => { if (s === "done") void usage.refresh(); });
 
 const criterionOptions: { title: string; value: JobCriterion }[] = [
   { title: "Phút", value: "minutes" },

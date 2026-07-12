@@ -1,7 +1,7 @@
 ---
 title: "OneScribe Web — media ghi+cắt (BE Rust/axum, bỏ AI)"
 description: "Web hóa OneScribe làm ghi+cắt media (bỏ AI transcribe); BE Rust/axum → 1 static musl binary env-compile-time, FE Vue3/Vite+ViUI, MongoDB, deploy box .65 qua nginx (:80, CF proxied lo TLS) + systemd; frontend nền tảng chừa chỗ cắm transcribe sau"
-status: pending
+status: done
 priority: P2
 branch: "main"
 tags: [web, rust, axum, vue, mongodb, ffmpeg, oauth, no-ai, self-contained-musl]
@@ -42,7 +42,7 @@ Web hóa OneScribe: **ghi + cắt media, BỎ hoàn toàn AI transcribe** (box .
 | 2 | [Auth Google (Firebase)](./phase-02-auth-google-oauth.md) — Firebase Auth `signInWithPopup` + Rust verify Firebase ID token (`securetoken` JWKS) + session cookie httpOnly + MongoDB users + FE login/guard | ✅ **DONE** — login Google thật OK (user upsert Mongo, /api/me trả email, audit-log) |
 | 3 | [Mode B — Cắt file](./phase-03-mode-b-c-t-file.md) — upload resumable + job queue + SplitWorker (core-split) + tải zip + FE Cắt | ✅ **DONE** (code+deploy+review-fix) — live; FE iNET ViUI; **chờ user QA cắt file thật** (success-path) |
 | 4 | [Mode A — Ghi](./phase-04-mode-a-ghi.md) — getUserMedia/getDisplayMedia + MediaRecorder + upload + ghi liền→server cắt + lịch sử + player | ✅ **DONE** (code+review-fix+deploy+E2E live) — streaming append + files stream/Range + webm remux+copy verified trên .65; chờ user QA mic/màn hình thật |
-| 5 | [Retention & hardening](./phase-05-retention-hardening.md) — cron purge + quota + rate-limit + size cap + magic-byte + allowlist + security pass | Pending |
+| 5 | [Retention & hardening](./phase-05-retention-hardening.md) — cron purge + quota + rate-limit + size cap + magic-byte + allowlist + security pass | ✅ **DONE** (code+review-fix+deploy) — sweep retention 14d (disk→doc, dọn orphan+job cũ) + rate-limit real-IP + /api/me/usage + QuotaBar |
 
 ## Thứ tự & phụ thuộc
 

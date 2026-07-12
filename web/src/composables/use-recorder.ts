@@ -191,7 +191,11 @@ export function useRecorder() {
       await uploadChain; // drain hàng đợi chunk
       if (!sessionId) throw new Error("Phiên ghi không hợp lệ");
       // Best-effort: dù có chunk lỗi giữa chừng, vẫn finalize phần đã tải để KHÔNG mất cả bản ghi.
-      const result = await postJson<RecordResult>("/api/recordings/finalize", { session: sessionId });
+      // Gửi kèm durationS (timer client) vì webm MediaRecorder thường thiếu duration metadata.
+      const result = await postJson<RecordResult>("/api/recordings/finalize", {
+        session: sessionId,
+        durationS: elapsedS.value,
+      });
       if (chainError) {
         error.value = "Một số đoạn bị lỗi mạng — đã lưu phần tải được (bản ghi có thể bị cắt ngắn).";
       }

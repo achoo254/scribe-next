@@ -8,7 +8,9 @@ mod files;
 mod jobs;
 mod jwks;
 mod models;
+mod rate_limit;
 mod recordings;
+mod retention;
 mod routes;
 mod session;
 mod state;
@@ -17,6 +19,7 @@ mod worker;
 
 use config::Config;
 use jwks::JwksCache;
+use rate_limit::RateLimiter;
 use state::AppState;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -62,6 +65,7 @@ async fn main() {
         http,
         jwks: Arc::new(JwksCache::new()),
         session_key: Arc::new(session_key),
+        rate: Arc::new(RateLimiter::new()),
     };
 
     // Hồi phục job kẹt "running" sau crash/restart (red-team) + khởi worker queue nền.
@@ -71,6 +75,7 @@ async fn main() {
         Err(e) => tracing::warn!("reset running jobs lỗi: {e:?}"),
     }
     jobs::start_worker(state.clone());
+    retention::start_sweeper(state.clone()); // sweep purge quá hạn + orphan (red-team #1)
 
     let app = routes::build_router(state);
     let addr = SocketAddr::from(([127, 0, 0, 1], port)); // localhost-only; nginx proxy /api.
