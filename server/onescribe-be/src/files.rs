@@ -47,6 +47,27 @@ pub async fn usage(
     Ok(Json(json!({ "usageBytes": used, "quotaBytes": QUOTA_BYTES })))
 }
 
+/// `DELETE /api/files/:id` — xoá file của user (recording). Ownership bắt buộc; xoá disk TRƯỚC → doc
+/// (giống retention sweep — lỗi disk non-NotFound → 500, giữ doc để không mồ côi).
+pub async fn delete(
+    State(state): State<AppState>,
+    Extension(user): Extension<UserId>,
+    Path(id): Path<String>,
+) -> Result<Json<Value>, AppError> {
+    let f = file::get_owned(&state.db, &id, &user.0)
+        .await?
+        .ok_or_else(|| AppError::NotFound("file không tồn tại".into()))?;
+    match tokio::fs::remove_file(&f.path).await {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(AppError::Internal(format!("xoá file disk: {e}"))),
+    }
+    if let Some(oid) = f.id {
+        file::delete_doc(&state.db, oid).await?;
+    }
+    Ok(Json(json!({ "ok": true })))
+}
+
 /// `GET /api/files/:id` — stream file cho player; hỗ trợ HTTP Range (tua). Ownership bắt buộc.
 pub async fn stream(
     State(state): State<AppState>,

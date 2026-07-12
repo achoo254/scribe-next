@@ -61,6 +61,7 @@ Bảo vệ disk box .65 + chống lạm dụng: **auto-purge N ngày + quota/use
 - **Code-review:** 1 High (sweep nuốt lỗi disk vẫn xoá doc → mồ côi) + High (rate-limit chặn nhầm chunk upload lớn) + Medium (dọn jobs cũ; refresh quota sau job done; panic-isolation; backfill từ createdAt) — **fix hết**.
 - **Rủi ro chấp nhận (RT plan "loại trừ file có job running"):** KHÔNG implement exclude — với N=14 ngày ≫ ffmpeg timeout 900s + worker concurrency=1, không thể có file quá hạn còn job chạy; nếu xảy ra thì fail graceful ("input file không tồn tại"), không crash/corrupt. Ghi nhận thay vì thêm join phức tạp (YAGNI).
 - **Verify:** cargo check + cargo test (musl container) pass; FE typecheck+build pass. Deploy .65 + E2E.
+- **Bổ sung (2026-07-12):** `DELETE /api/files/:id` xoá recording thủ công (ownership + disk-trước→doc) + nút Xoá (xác nhận inline) ở lịch sử + refresh QuotaBar. E2E live: DELETE 200 → list rỗng + usage giảm đúng size; DELETE id không sở hữu → 404.
 
 ## Risk Assessment
 

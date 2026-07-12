@@ -22,7 +22,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/recordings/chunk", post(recordings::chunk))
         .route("/api/recordings/finalize", post(recordings::finalize))
         .route("/api/files", get(files::list))
-        .route("/api/files/{id}", get(files::stream))
+        .route("/api/files/{id}", get(files::stream).delete(files::delete))
         .route("/api/jobs", post(jobs::create))
         .route("/api/jobs/{id}", get(jobs::get))
         .route("/api/jobs/{id}/download", get(jobs::download))

@@ -4,9 +4,24 @@ import { onMounted, ref } from "vue";
 import { ViCard, ViButton, ViAlert } from "@hobui/viui";
 import MediaPlayer from "./MediaPlayer.vue";
 import { useRecordings } from "../composables/use-recordings";
+import { useUsage } from "../composables/use-usage";
 
-const { items, loading, error, refresh } = useRecordings();
+const { items, loading, error, refresh, remove } = useRecordings();
+const usage = useUsage();
 const playingId = ref<string | null>(null);
+const confirmId = ref<string | null>(null); // bản ghi đang chờ xác nhận xoá
+const busyId = ref<string | null>(null);
+
+async function onDelete(id: string): Promise<void> {
+  busyId.value = id;
+  const ok = await remove(id);
+  busyId.value = null;
+  confirmId.value = null;
+  if (ok) {
+    if (playingId.value === id) playingId.value = null;
+    void usage.refresh(); // dung lượng giảm sau khi xoá
+  }
+}
 
 function fmtDur(s?: number): string {
   if (!s || s <= 0) return "—";
@@ -45,13 +60,35 @@ defineExpose({ refresh });
               {{ fmtDur(it.durationS) }} · {{ fmtSize(it.size) }} · {{ fmtDate(it.createdAt) }}
             </div>
           </div>
-          <ViButton
-            variant="text"
-            color="primary"
-            size="small"
-            :label="playingId === it.id ? 'Ẩn' : 'Nghe lại'"
-            @click="playingId = playingId === it.id ? null : it.id"
-          />
+          <div class="os-item-actions">
+            <ViButton
+              variant="text"
+              color="primary"
+              size="small"
+              :label="playingId === it.id ? 'Ẩn' : 'Nghe lại'"
+              @click="playingId = playingId === it.id ? null : it.id"
+            />
+            <template v-if="confirmId === it.id">
+              <span class="os-confirm-q">Xoá?</span>
+              <ViButton
+                variant="text"
+                color="error"
+                size="small"
+                :loading="busyId === it.id"
+                label="Xoá"
+                @click="onDelete(it.id)"
+              />
+              <ViButton variant="text" size="small" label="Huỷ" @click="confirmId = null" />
+            </template>
+            <ViButton
+              v-else
+              variant="text"
+              color="error"
+              size="small"
+              label="Xoá"
+              @click="confirmId = it.id"
+            />
+          </div>
         </div>
         <MediaPlayer
           v-if="playingId === it.id"
@@ -115,6 +152,16 @@ defineExpose({ refresh });
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.os-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex: none;
+}
+.os-confirm-q {
+  font-size: 0.8rem;
+  color: rgb(var(--v-theme-error));
 }
 .os-player {
   margin-top: 0.5rem;

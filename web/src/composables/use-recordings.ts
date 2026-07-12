@@ -30,5 +30,17 @@ export function useRecordings() {
     }
   }
 
-  return { items, loading, error, refresh };
+  /** Xoá 1 bản ghi (DELETE /api/files/:id) → bỏ khỏi list nếu thành công. */
+  async function remove(id: string): Promise<boolean> {
+    try {
+      const res = await fetch(`/api/files/${id}`, { method: "DELETE", credentials: "include" });
+      if (!res.ok) return false;
+      items.value = items.value.filter((x) => x.id !== id);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  return { items, loading, error, refresh, remove };
 }
