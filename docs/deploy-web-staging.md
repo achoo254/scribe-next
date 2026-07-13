@@ -93,6 +93,10 @@ Build chạy mọi nhánh/MR để bắt lỗi sớm; deploy chỉ `main` (trán
 
 Dùng Harbor pull-through mirror `harbor.000nethost.com/docker-hub/...` cho image Docker Hub (né rate-limit). BE build dùng `ghcr.io/rust-cross/rust-musl-cross:x86_64-musl` — nếu runner không reach ghcr.io → mirror image này vào Harbor rồi đổi `image:` trong `be:build`.
 
+### FE build env — Firebase config (staging)
+
+FE đọc `VITE_FIREBASE_API_KEY/AUTH_DOMAIN/PROJECT_ID` **lúc build** (`web/src/lib/firebase.ts`). Sản phẩm **chỉ chạy staging** → `web/package.json` build = `vite build --mode staging` → Vite load `web/.env.staging` (committed; config Firebase web là **public**, KHÔNG phải secret). Thiếu 3 biến lúc build → `auth/invalid-api-key` → FE **trắng trang**. KHÔNG dùng `.env.production` / `--mode production` (không có môi trường production).
+
 ## Setup 1 lần trên `.65` (bootstrap — trước lần deploy CI đầu)
 
 CI **giả định** đã có sẵn: user `onescribe`, systemd unit, nginx vhost, MongoDB, thư mục. Làm 1 lần (SSH root@.65):
