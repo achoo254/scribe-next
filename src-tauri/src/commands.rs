@@ -107,8 +107,8 @@ pub async fn stop_recording(recorder: State<'_, Recorder>) -> Result<(), String>
 
 /// Mode B: lấy metadata file (duration/bitrate/codec) để UI hiển thị trước khi cắt.
 #[tauri::command]
-pub async fn probe_file(app: AppHandle, path: String) -> Result<MediaInfo, String> {
-    splitter::probe_file(&app, &path).await
+pub async fn probe_file(path: String) -> Result<MediaInfo, String> {
+    splitter::probe_file(&path).await
 }
 
 /// Mode B: cắt batch file theo tiêu chí (minutes|megabytes|parts). Emit tiến độ qua event.

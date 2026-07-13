@@ -38,6 +38,23 @@ pub async fn split_file(
     criterion: SplitCriterion,
     value: f64,
     out_dir: &str,
+    on_progress: impl FnMut(SplitProgress),
+) -> Result<Vec<OutFile>, String> {
+    let sub = stem_of(input);
+    split_file_into(ffmpeg_path, ffprobe_path, input, criterion, value, out_dir, &sub, on_progress).await
+}
+
+/// Như [`split_file`] nhưng ghi đoạn vào subdir `sub` do caller chỉ định (không suy từ tên file).
+/// Desktop batch dùng để né trùng khi nhiều file nguồn cùng tên stem (khác thư mục nguồn).
+#[allow(clippy::too_many_arguments)]
+pub async fn split_file_into(
+    ffmpeg_path: &str,
+    ffprobe_path: &str,
+    input: &str,
+    criterion: SplitCriterion,
+    value: f64,
+    out_dir: &str,
+    sub: &str,
     mut on_progress: impl FnMut(SplitProgress),
 ) -> Result<Vec<OutFile>, String> {
     let info = probe_file(ffprobe_path, input).await?;
@@ -59,10 +76,9 @@ pub async fn split_file(
         SegmentArg::Time(compute_segment_time(criterion, value, &info)?)
     };
 
-    let sub = stem_of(input);
-    let subdir = Path::new(out_dir).join(&sub);
+    let subdir = Path::new(out_dir).join(sub);
     std::fs::create_dir_all(&subdir).map_err(|e| e.to_string())?;
-    cleanup_segments(&subdir, &sub, &info.ext); // xoá đoạn cũ cùng pattern (tránh lẫn lần trước)
+    cleanup_segments(&subdir, sub, &info.ext); // xoá đoạn cũ cùng pattern (tránh lẫn lần trước)
     let pattern = subdir
         .join(format!("{sub}_%03d.{}", info.ext))
         .to_string_lossy()
@@ -96,7 +112,7 @@ pub async fn split_file(
 
     run_ffmpeg(ffmpeg_path, &args, &info, &mut on_progress).await?;
 
-    let outputs = list_outputs(&subdir, &sub, &info.ext);
+    let outputs = list_outputs(&subdir, sub, &info.ext);
     if outputs.is_empty() {
         return Err("ffmpeg không tạo được đoạn nào".to_string());
     }

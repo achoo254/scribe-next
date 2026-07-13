@@ -8,3 +8,6 @@ description = "Thuật toán cắt media thuần (ffmpeg -c copy), độc lập 
 tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true } # #[tokio::test] cho integration test cắt file thật

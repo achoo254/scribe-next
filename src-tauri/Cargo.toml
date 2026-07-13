@@ -29,6 +29,8 @@ tauri-plugin-store = "2"
 tauri-plugin-fs = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# Thuật toán cắt media dùng chung với server BE (Mode B). Path dep vì src-tauri exclude khỏi workspace.
+core-split = { path = "../crates/core-split" }
 cpal = "0.15"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 
