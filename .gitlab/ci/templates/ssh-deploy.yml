@@ -1,0 +1,38 @@
+# Template: SSH + rsync deploy vào staging .65
+# Yêu cầu biến CI/CD (project-level): SSH_PRIVATE_KEY, SERVER_IP, SERVER_PORT, SSH_USER
+# Cách dùng: job `extends: .ssh_deploy_base`
+#
+# Mirror pattern đã chạy được của cloud-panel-application (cùng box .65, cùng runner).
+# .65 chặn SSH theo source-IP allowlist (iptables chain CP_SSH_ACL trên SERVER_PORT) →
+# IP egress runner PHẢI nằm trong allowlist, nếu không ssh-keyscan treo tới timeout rồi fail.
+
+.ssh_deploy_base:
+  image: harbor.000nethost.com/docker-hub/alpine:latest
+  interruptible: false
+  before_script:
+    - set -euo pipefail
+    - apk add --no-cache openssh-client rsync
+    - eval "$(ssh-agent -s)"
+    # Hỗ trợ cả File-type variable (chứa path) lẫn string variable (chứa nội dung key PEM).
+    - |
+      if [ -f "$SSH_PRIVATE_KEY" ]; then
+        tr -d '\r' < "$SSH_PRIVATE_KEY" | ssh-add -
+      else
+        echo "$SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add -
+      fi
+    - mkdir -p ~/.ssh && chmod 700 ~/.ssh
+    # ssh-keyscan cũng là phép thử reachability đầu tiên. KHÔNG nuốt stderr: nếu deploy host
+    # firewall chặn IP runner (SSH allowlist theo source IP), keyscan treo tới timeout rồi fail —
+    # surface lỗi rõ + in egress IP runner để whitelist, thay vì chết với "exit code 1" cụt lủn.
+    - |
+      echo "Scanning host key for $SERVER_IP:$SERVER_PORT ..."
+      if ! ssh-keyscan -T 15 -p "$SERVER_PORT" -H "$SERVER_IP" >> ~/.ssh/known_hosts 2>keyscan.err; then
+        RUNNER_IP="$(wget -qO- -T 5 https://ifconfig.me 2>/dev/null || echo 'unknown')"
+        echo "ERROR: không kết nối được $SERVER_IP:$SERVER_PORT từ runner này (egress IP: $RUNNER_IP)."
+        echo "       Nhiều khả năng deploy host firewall SSH theo source IP — thêm IP runner vào allowlist CP_SSH_ACL."
+        echo "--- ssh-keyscan stderr ---"; cat keyscan.err 2>/dev/null || true
+        exit 1
+      fi
+    - chmod 600 ~/.ssh/known_hosts
+    - echo "Testing SSH connection..."
+    - ssh -o BatchMode=yes -o ConnectTimeout=10 -p "$SERVER_PORT" "$SSH_USER@$SERVER_IP" "echo SSH_OK"
