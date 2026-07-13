@@ -2,3 +2,6 @@ node_modules
 dist
 .env
 *.local
+
+# Firebase web config public — committed cố ý (xem .env.example)
+!.env.production
