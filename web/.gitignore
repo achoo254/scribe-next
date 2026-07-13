@@ -4,4 +4,4 @@ dist
 *.local
 
 # Firebase web config public — committed cố ý (xem .env.example)
-!.env.production
+!.env.staging
