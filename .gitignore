@@ -55,6 +55,7 @@ __pycache__/
 .env
 .env.*
 !.env.example
+!.env.staging
 
 # Local agent memory / tooling
 .claude/agent-memory/
