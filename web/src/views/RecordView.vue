@@ -24,12 +24,63 @@ const sourceOptions = [
 
 const historyRef = ref<InstanceType<typeof RecordingHistory> | null>(null);
 
+// Giám sát realtime khi đang ghi: preview màn hình + mức âm + thông tin nguồn.
+const previewEl = ref<HTMLVideoElement | null>(null);
+const sourceInfo = ref("");
+
 const elapsedLabel = computed(() => {
   const t = rec.elapsedS.value;
   const m = Math.floor(t / 60);
   const s = String(t % 60).padStart(2, "0");
   return `${m}:${s}`;
 });
+
+// RMS thường thấp (0.05–0.3) → khuếch đại ×250 cho bar dễ đọc, chặn trần 100%.
+const meterPct = computed(() => Math.min(100, Math.round(rec.audioLevel.value * 250)));
+const meterColor = computed(() => {
+  const p = meterPct.value;
+  if (p >= 90) return "rgb(var(--v-theme-error))"; // gần clip
+  if (p >= 70) return "rgb(var(--v-theme-secondary))"; // cam cảnh báo
+  return "rgb(var(--v-theme-primary))"; // xanh bình thường
+});
+
+function surfaceLabel(s: string | undefined): string {
+  switch (s) {
+    case "monitor":
+      return "Toàn màn hình";
+    case "window":
+      return "Cửa sổ";
+    case "browser":
+      return "Tab trình duyệt";
+    default:
+      return "";
+  }
+}
+
+// Gắn stream vào <video> preview + đọc thông tin nguồn khi bắt đầu/kết thúc ghi.
+// flush:post → khối .os-live (v-if) đã mount xong nên previewEl có giá trị khi callback chạy.
+watch(
+  () => rec.previewStream.value,
+  (s) => {
+    if (previewEl.value) previewEl.value.srcObject = s;
+    if (!s) {
+      sourceInfo.value = "";
+      return;
+    }
+    const st = s.getVideoTracks()[0]?.getSettings() as
+      | (MediaTrackSettings & { displaySurface?: string })
+      | undefined;
+    if (!st) {
+      sourceInfo.value = "";
+      return;
+    }
+    const parts = [surfaceLabel(st.displaySurface)];
+    if (st.width && st.height) parts.push(`${st.width}×${st.height}`);
+    if (st.frameRate) parts.push(`${Math.round(st.frameRate)}fps`);
+    sourceInfo.value = parts.filter(Boolean).join(" · ");
+  },
+  { flush: "post" },
+);
 
 const jobBusy = (): boolean => sp.status.value === "queued" || sp.status.value === "running";
 
@@ -104,6 +155,25 @@ onBeforeUnmount(() => rec.dispose());
           <span class="os-dot" /> Đang ghi — {{ elapsedLabel }}
         </div>
 
+        <!-- Giám sát realtime: preview (chỉ màn hình) + mức âm thanh + thông tin nguồn -->
+        <div v-if="rec.recording.value" class="os-live">
+          <video
+            v-show="source === 'screen'"
+            ref="previewEl"
+            class="os-live-video"
+            muted
+            autoplay
+            playsinline
+          ></video>
+          <div class="os-meter">
+            <ViIcon icon="microphone" />
+            <div class="os-meter-track">
+              <div class="os-meter-fill" :style="{ width: meterPct + '%', background: meterColor }" />
+            </div>
+          </div>
+          <p v-if="sourceInfo" class="os-muted os-live-info">{{ sourceInfo }}</p>
+        </div>
+
         <!-- Nút Ghi/Dừng -->
         <ViButton
           :color="rec.recording.value ? 'error' : 'primary'"
@@ -173,6 +243,42 @@ onBeforeUnmount(() => rec.dispose());
   gap: 0.5rem;
   font-weight: 600;
   color: rgb(var(--v-theme-error));
+}
+.os-live {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  border: 1px solid rgb(var(--v-theme-surface-bright));
+  border-radius: 8px;
+  background: rgba(var(--v-theme-surface), 0.5);
+}
+.os-live-video {
+  width: 100%;
+  max-height: 280px;
+  object-fit: contain;
+  background: #000;
+  border-radius: 6px;
+}
+.os-meter {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.os-meter-track {
+  flex: 1;
+  height: 10px;
+  border-radius: 999px;
+  background: rgb(var(--v-theme-surface-bright));
+  overflow: hidden;
+}
+.os-meter-fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 80ms linear;
+}
+.os-live-info {
+  margin: 0;
 }
 .os-dot {
   width: 10px;

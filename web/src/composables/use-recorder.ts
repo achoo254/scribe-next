@@ -43,11 +43,15 @@ export function useRecorder() {
   const starting = ref(false);
   const finalizing = ref(false);
   const elapsedS = ref(0);
+  const audioLevel = ref(0); // RMS âm thanh 0..1, cập nhật realtime cho level meter
+  const previewStream = ref<MediaStream | null>(null); // stream để <video> preview gắn srcObject
   const error = ref("");
 
   let recorder: MediaRecorder | null = null;
   let stream: MediaStream | null = null;
   let audioCtx: AudioContext | null = null;
+  let analyser: AnalyserNode | null = null;
+  let meterRaf: number | null = null;
   let timer: number | null = null;
   let sessionId: string | null = null;
   let offset = 0;
@@ -55,10 +59,39 @@ export function useRecorder() {
   let chainError: string | null = null;
   let recordName = "";
 
+  /**
+   * Gắn AnalyserNode đọc RMS âm thanh realtime cho level meter. Dùng chung audioCtx với bước mix;
+   * KHÔNG nối analyser ra loa (ctx.destination) nên không phát tiếng, chỉ đo mức.
+   */
+  function attachMeter(tracks: MediaStreamTrack[]): void {
+    if (tracks.length === 0) return;
+    audioCtx ??= new AudioContext();
+    analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 512;
+    for (const t of tracks) {
+      audioCtx.createMediaStreamSource(new MediaStream([t])).connect(analyser);
+    }
+    const buf = new Uint8Array(analyser.fftSize);
+    const tick = (): void => {
+      if (!analyser) return;
+      analyser.getByteTimeDomainData(buf);
+      let sum = 0;
+      for (let i = 0; i < buf.length; i++) {
+        const v = (buf[i] - 128) / 128;
+        sum += v * v;
+      }
+      audioLevel.value = Math.sqrt(sum / buf.length); // RMS 0..1
+      meterRaf = requestAnimationFrame(tick);
+    };
+    tick();
+  }
+
   /** Lấy stream theo nguồn; screen = video (≤30fps) + mix (system audio nếu có) + mic. */
   async function acquireStream(source: RecordSource): Promise<MediaStream> {
     if (source === "mic") {
-      return navigator.mediaDevices.getUserMedia({ audio: true });
+      const micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      attachMeter(micStream.getAudioTracks());
+      return micStream;
     }
     const display = await navigator.mediaDevices.getDisplayMedia({
       video: { frameRate: { ideal: 30, max: 30 } },
@@ -74,18 +107,21 @@ export function useRecorder() {
     const videoTrack = display.getVideoTracks()[0];
     // Dừng ghi khi user bấm "Stop sharing" của browser.
     videoTrack?.addEventListener("ended", () => void stop());
+    // Meter đọc từ các track gốc → đúng mức dù có mix hay không.
+    attachMeter(audioTracks);
+    const videoOnly = videoTrack ? [videoTrack] : [];
 
     if (audioTracks.length <= 1) {
-      return new MediaStream(videoTrack ? [videoTrack, ...audioTracks] : audioTracks);
+      return new MediaStream([...videoOnly, ...audioTracks]);
     }
-    // ≥2 nguồn audio (system + mic) → mix qua Web Audio thành 1 track.
-    audioCtx = new AudioContext();
-    const dest = audioCtx.createMediaStreamDestination();
+    // ≥2 nguồn audio (system + mic) → mix qua Web Audio thành 1 track (tái dùng audioCtx của meter).
+    const ctx = (audioCtx ??= new AudioContext());
+    const dest = ctx.createMediaStreamDestination();
     for (const t of audioTracks) {
-      audioCtx.createMediaStreamSource(new MediaStream([t])).connect(dest);
+      ctx.createMediaStreamSource(new MediaStream([t])).connect(dest);
     }
     const mixed = dest.stream.getAudioTracks()[0];
-    return new MediaStream([videoTrack, mixed].filter(Boolean) as MediaStreamTrack[]);
+    return new MediaStream([...videoOnly, mixed]);
   }
 
   async function postJson<T>(url: string, body: unknown): Promise<T> {
@@ -147,6 +183,7 @@ export function useRecorder() {
       sessionId = init.sessionId;
       const sid = init.sessionId;
       stream = await acquireStream(source);
+      previewStream.value = stream;
       const options: MediaRecorderOptions = { mimeType: pickMime(source), audioBitsPerSecond: AUDIO_BPS };
       if (source === "screen") options.videoBitsPerSecond = SCREEN_VIDEO_BPS;
       recorder = new MediaRecorder(stream, options);
@@ -211,6 +248,13 @@ export function useRecorder() {
   }
 
   function cleanupStream(): void {
+    if (meterRaf !== null) {
+      cancelAnimationFrame(meterRaf);
+      meterRaf = null;
+    }
+    analyser = null;
+    audioLevel.value = 0;
+    previewStream.value = null;
     stream?.getTracks().forEach((t) => t.stop());
     stream = null;
     if (audioCtx) {
@@ -234,5 +278,5 @@ export function useRecorder() {
     cleanup();
   }
 
-  return { recording, starting, finalizing, elapsedS, error, start, stop, dispose };
+  return { recording, starting, finalizing, elapsedS, audioLevel, previewStream, error, start, stop, dispose };
 }
