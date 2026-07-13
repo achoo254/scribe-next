@@ -168,9 +168,14 @@ curl -s  https://scribe.inetdev.io.vn/api/health  # liveness
 - [ ] FE load, đăng nhập Google được (allowlist mở → mọi email verified).
 - [ ] Ghi/cắt file → upload + phát lại (Range) hoạt động.
 
-## Unresolved questions
+## Trạng thái đã xác minh (pipeline 6892 + dò `.65`, 2026-07-13)
 
-1. **`.65` đã bootstrap OneScribe chưa?** (user `onescribe` + systemd unit + nginx vhost + mongod db). Nếu chưa → chạy mục "Setup 1 lần" trước lần CI deploy đầu, nếu không `deploy:staging` fail ở `systemctl restart`.
-2. **Cloudflare SSL mode** cho zone `inetdev.io.vn`: Flexible (CF↔origin HTTP, block :80 đủ) hay Full (cần origin cert + block :443)? Xác nhận trước deploy — ảnh hưởng nginx vhost.
-3. **MongoDB auth trên `.65`:** mongod co-located có bật auth không? Nếu có → `MONGO_URI` cần user/pass; nếu không → `mongodb://127.0.0.1:27017` đủ.
-4. **Runner reach `ghcr.io`?** Nếu không → mirror `rust-musl-cross` vào Harbor.
+- **Bootstrap `.65`: XONG** — user `onescribe`, systemd unit active, nginx vhost, mongod đều có sẵn. CI deploy = redeploy (idempotent).
+- **Cloudflare: OK** — `https://scribe.inetdev.io.vn/api/health` → `{"status":"ok"}` với nginx block `listen 80` hiện tại (CF lo TLS edge). index.html serve `DYNAMIC` (CF không cache), asset hashed cache 4h.
+- **Runner reach `ghcr.io`: OK** — `be:build` pull `rust-musl-cross` thành công (263s).
+- **MongoDB `.65`:** auth ENABLED; `MONGO_URI` dùng cred `onescribe` (db + authSource = `onescribe`). **DB dùng chung cho team theo chủ đích** → cổng `27017` mở ra ngoài + mật khẩu chia sẻ là **cố ý**, KHÔNG firewall về localhost / KHÔNG rotate (team cần kết nối trực tiếp).
+
+## Ghi chú vận hành
+
+- **Mọi push lên `main` đều rebuild musl (~4.5') + redeploy** (chưa có `changes:` filter). Push chỉ đổi docs/config → dùng `git push -o ci.skip` để bỏ qua. Có thể thêm rule `changes: [web/**, server/**, crates/**, .gitlab-ci.yml]` nếu muốn tự lọc.
+- Feature **preview/level meter khi ghi** chỉ hiện lúc đang ghi (`v-if="rec.recording.value"` trong `RecordView.vue`) — reload trang idle không thấy; phải bấm Bắt đầu ghi.
