@@ -2,8 +2,8 @@
 // Tab "Ghi âm" (Mode A) — chọn nguồn (mic / màn hình+system) → Ghi/Dừng → upload streaming →
 // lịch sử + nghe lại. Tùy chọn cắt theo phút sau khi ghi (tái dùng job queue = useSplitter).
 import { ref, computed, watch, onBeforeUnmount } from "vue";
-import { ViCard, ViButton, ViIcon, ViRadioGroup, ViInput, ViSwitch, ViAlert, ViProgressLinear } from "@hobui/viui";
-import { useRecorder, supportsScreenCapture, type RecordSource } from "../composables/use-recorder";
+import { ViCard, ViButton, ViIcon, ViInput, ViSwitch, ViAlert, ViProgressLinear } from "@hobui/viui";
+import { useRecorder, supportsScreenCapture } from "../composables/use-recorder";
 import { useSplitter } from "../composables/use-splitter";
 import { useUsage } from "../composables/use-usage";
 import RecordingHistory from "../components/RecordingHistory.vue";
@@ -12,15 +12,19 @@ const rec = useRecorder();
 const sp = useSplitter();
 const usage = useUsage();
 
-const source = ref<RecordSource>("mic");
+// 3 nguồn ghi bật/tắt độc lập (giống desktop tách mic / tiếng hệ thống / màn hình). Mặc định mic.
+const micEnabled = ref(true);
+const systemAudioEnabled = ref(false);
+const screenEnabled = ref(false);
 const splitEnabled = ref(false);
 const splitMinutes = ref(10);
 const canScreen = supportsScreenCapture();
 
-const sourceOptions = [
-  { title: "Mic", value: "mic" },
-  { title: "Màn hình + tiếng hệ thống", value: "screen" },
-];
+// Khoá đổi nguồn khi đang ghi/lưu; ≥1 nguồn phải bật; tiếng hệ thống & màn hình cần getDisplayMedia.
+const locked = computed(() => rec.recording.value || rec.finalizing.value);
+const noSource = computed(() => !micEnabled.value && !systemAudioEnabled.value && !screenEnabled.value);
+const needsScreen = computed(() => systemAudioEnabled.value || screenEnabled.value);
+const startDisabled = computed(() => noSource.value || (needsScreen.value && !canScreen));
 
 const historyRef = ref<InstanceType<typeof RecordingHistory> | null>(null);
 
@@ -96,7 +100,11 @@ async function toggle(): Promise<void> {
     }
   } else {
     sp.reset(); // xoá job/segments của lần cắt trước để UI không hiện kết quả cũ khi đang ghi mới
-    await rec.start(source.value); // lỗi đã set rec.error (start không throw)
+    await rec.start({
+      mic: micEnabled.value,
+      systemAudio: systemAudioEnabled.value,
+      screen: screenEnabled.value,
+    }); // lỗi đã set rec.error (start không throw)
   }
 }
 
@@ -115,19 +123,23 @@ onBeforeUnmount(() => rec.dispose());
   <div class="os-record">
     <ViCard title="Ghi âm" class="os-rec-card">
       <div class="os-form">
-        <!-- Nguồn ghi (khóa khi đang ghi) -->
-        <ViRadioGroup
-          v-model="source"
-          inline
-          label="Nguồn"
-          :items="sourceOptions"
-          :disabled="rec.recording.value || rec.finalizing.value"
-        />
+        <!-- Nguồn ghi — 3 toggle độc lập (khóa khi đang ghi); chọn nhiều → trộn chung 1 bản ghi -->
+        <div class="os-sources">
+          <span class="os-sources-label">Nguồn</span>
+          <ViSwitch v-model="micEnabled" label="Micro" :disabled="locked" hide-details />
+          <ViSwitch v-model="systemAudioEnabled" label="Tiếng hệ thống" :disabled="locked" hide-details />
+          <ViSwitch v-model="screenEnabled" label="Ghi kèm màn hình (video)" :disabled="locked" hide-details />
+        </div>
+
+        <ViAlert v-if="noSource" type="warning" variant="tonal" density="compact">
+          Hãy bật ít nhất một nguồn ghi.
+        </ViAlert>
 
         <ViAlert type="info" variant="tonal" density="compact">
-          Ghi màn hình + tiếng hệ thống hoạt động tốt nhất trên <strong>Chrome/Edge</strong> — chọn
-          “Toàn màn hình” để có tiếng hệ thống. Firefox/Safari chỉ ghi mic.
-          <template v-if="!canScreen"><br />Trình duyệt này không hỗ trợ ghi màn hình.</template>
+          Tiếng hệ thống và ghi màn hình cần chia sẻ màn hình — tốt nhất trên <strong>Chrome/Edge</strong>:
+          chọn “Toàn màn hình” và bật “Chia sẻ âm thanh” để có tiếng hệ thống. Firefox/Safari có thể
+          không hỗ trợ tiếng hệ thống. Chọn nhiều nguồn → trộn chung vào 1 bản ghi.
+          <template v-if="!canScreen"><br />Trình duyệt này không hỗ trợ chia sẻ màn hình (chỉ ghi được mic).</template>
         </ViAlert>
 
         <!-- Cắt theo phút (tùy chọn) -->
@@ -158,7 +170,7 @@ onBeforeUnmount(() => rec.dispose());
         <!-- Giám sát realtime: preview (chỉ màn hình) + mức âm thanh + thông tin nguồn -->
         <div v-if="rec.recording.value" class="os-live">
           <video
-            v-show="source === 'screen'"
+            v-show="screenEnabled"
             ref="previewEl"
             class="os-live-video"
             muted
@@ -179,7 +191,7 @@ onBeforeUnmount(() => rec.dispose());
           :color="rec.recording.value ? 'error' : 'primary'"
           size="large"
           :loading="rec.finalizing.value || rec.starting.value"
-          :disabled="!rec.recording.value && source === 'screen' && !canScreen"
+          :disabled="!rec.recording.value && startDisabled"
           @click="toggle"
         >
           <ViIcon :icon="rec.recording.value ? 'player-stop' : 'microphone'" start />
@@ -227,6 +239,16 @@ onBeforeUnmount(() => rec.dispose());
   align-items: center;
   gap: 1rem;
   flex-wrap: wrap;
+}
+.os-sources {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.os-sources-label {
+  font-size: 0.875rem;
+  color: rgb(var(--v-theme-on-surface));
+  opacity: 0.75;
 }
 .os-num {
   max-width: 200px;

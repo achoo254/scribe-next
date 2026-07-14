@@ -1,12 +1,21 @@
-// Mode A — Ghi trong browser: getUserMedia (mic) / getDisplayMedia (màn hình + system audio) →
-// MediaRecorder timeslice 1s → upload chunk nền (streaming append, không mất khi dừng đột ngột) →
-// finalize → files{kind:recording}. Track thời gian bằng timer riêng (KHÔNG đếm chunk).
+// Mode A — Ghi trong browser: 3 nguồn độc lập bật/tắt riêng — mic (getUserMedia), tiếng hệ thống +
+// màn hình (getDisplayMedia). Nhiều nguồn audio → trộn qua Web Audio thành 1 track. Có video track
+// (bật ghi màn hình) → xuất video/webm, ngược lại audio/webm. MediaRecorder timeslice 1s → upload
+// chunk nền (streaming append, không mất khi dừng đột ngột) → finalize → files{kind:recording}.
+// Track thời gian bằng timer riêng (KHÔNG đếm chunk).
 //
-// Capture hẹp hơn desktop: system audio chỉ Chrome/Edge + chỉ khi user chọn "Toàn màn hình"; không
-// có chọn vùng. Firefox/Safari → không system audio (fallback mic). Disclosure ở RecordView.
+// Ràng buộc web: KHÔNG lấy được tiếng hệ thống mà không chia sẻ màn hình — getDisplayMedia luôn kèm
+// video track + hộp chọn của browser (không có loopback thuần như desktop). Chọn "tiếng hệ thống" mà
+// tắt "ghi màn hình" → bỏ video track, chỉ lưu audio. System audio tốt nhất trên Chrome/Edge; nếu
+// browser không cấp thì nguồn đó rỗng. Disclosure ở RecordView.
 import { ref } from "vue";
 
-export type RecordSource = "mic" | "screen";
+/** Các nguồn ghi bật/tắt độc lập; ≥1 nguồn phải bật (RecordView chặn khi rỗng). */
+export interface RecordSources {
+  mic: boolean;
+  systemAudio: boolean;
+  screen: boolean;
+}
 
 export interface RecordResult {
   fileId: string;
@@ -26,16 +35,15 @@ export function supportsScreenCapture(): boolean {
   return typeof navigator !== "undefined" && !!navigator.mediaDevices?.getDisplayMedia;
 }
 
-/** Chọn mimeType webm tốt nhất browser hỗ trợ cho nguồn. */
-function pickMime(source: RecordSource): string {
-  const candidates =
-    source === "mic"
-      ? ["audio/webm;codecs=opus", "audio/webm"]
-      : ["video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm"];
+/** Chọn mimeType webm tốt nhất browser hỗ trợ (video khi có màn hình, ngược lại audio). */
+function pickMime(hasVideo: boolean): string {
+  const candidates = hasVideo
+    ? ["video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm"]
+    : ["audio/webm;codecs=opus", "audio/webm"];
   for (const c of candidates) {
     if (MediaRecorder.isTypeSupported(c)) return c;
   }
-  return source === "mic" ? "audio/webm" : "video/webm";
+  return hasVideo ? "video/webm" : "audio/webm";
 }
 
 export function useRecorder() {
@@ -86,27 +94,44 @@ export function useRecorder() {
     tick();
   }
 
-  /** Lấy stream theo nguồn; screen = video (≤30fps) + mix (system audio nếu có) + mic. */
-  async function acquireStream(source: RecordSource): Promise<MediaStream> {
-    if (source === "mic") {
-      const micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      attachMeter(micStream.getAudioTracks());
-      return micStream;
+  /**
+   * Lấy stream theo các nguồn bật/tắt độc lập. getDisplayMedia gọi trước (nhạy user-activation hơn)
+   * phục vụ cả tiếng hệ thống lẫn video màn hình; nếu chỉ cần audio thì bỏ video track. Nhiều nguồn
+   * audio → trộn qua Web Audio thành 1 track. Trả stream rỗng nếu không nguồn nào cấp được (caller báo lỗi).
+   */
+  async function acquireStream(src: RecordSources): Promise<MediaStream> {
+    const audioTracks: MediaStreamTrack[] = [];
+    let videoTrack: MediaStreamTrack | null = null;
+
+    if (src.systemAudio || src.screen) {
+      const display = await navigator.mediaDevices.getDisplayMedia({
+        video: { frameRate: { ideal: 30, max: 30 } },
+        audio: src.systemAudio, // chỉ xin audio khi thực sự cần tiếng hệ thống
+      });
+      const vt = display.getVideoTracks()[0] ?? null;
+      if (src.screen && vt) {
+        videoTrack = vt;
+        vt.addEventListener("ended", () => void stop()); // user bấm "Stop sharing" của browser
+      } else {
+        vt?.stop(); // chỉ cần tiếng hệ thống → bỏ video track
+      }
+      const sysTracks = src.systemAudio ? display.getAudioTracks() : [];
+      audioTracks.push(...sysTracks);
+      // Không giữ video → theo dõi audio track để bắt "Stop sharing".
+      if (src.systemAudio && !src.screen) sysTracks[0]?.addEventListener("ended", () => void stop());
+      if (!src.systemAudio) display.getAudioTracks().forEach((t) => t.stop());
     }
-    const display = await navigator.mediaDevices.getDisplayMedia({
-      video: { frameRate: { ideal: 30, max: 30 } },
-      audio: true,
-    });
-    let mic: MediaStream | null = null;
-    try {
-      mic = await navigator.mediaDevices.getUserMedia({ audio: true });
-    } catch {
-      mic = null; // không có mic / bị từ chối → chỉ system audio
+
+    if (src.mic) {
+      try {
+        const micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        audioTracks.push(...micStream.getAudioTracks());
+      } catch (e) {
+        // Mic bị từ chối: nếu là nguồn duy nhất → báo lỗi; còn nguồn khác → bỏ qua mic.
+        if (audioTracks.length === 0 && !videoTrack) throw e;
+      }
     }
-    const audioTracks = [...display.getAudioTracks(), ...(mic?.getAudioTracks() ?? [])];
-    const videoTrack = display.getVideoTracks()[0];
-    // Dừng ghi khi user bấm "Stop sharing" của browser.
-    videoTrack?.addEventListener("ended", () => void stop());
+
     // Meter đọc từ các track gốc → đúng mức dù có mix hay không.
     attachMeter(audioTracks);
     const videoOnly = videoTrack ? [videoTrack] : [];
@@ -169,7 +194,7 @@ export function useRecorder() {
     }
   }
 
-  async function start(source: RecordSource): Promise<void> {
+  async function start(src: RecordSources): Promise<void> {
     // Reentrancy guard: chặn start khi đang ghi / đang khởi động / đang finalize phiên trước.
     if (recording.value || starting.value || finalizing.value) return;
     starting.value = true;
@@ -182,10 +207,14 @@ export function useRecorder() {
       const init = await postJson<{ sessionId: string }>("/api/recordings/init", { name: recordName });
       sessionId = init.sessionId;
       const sid = init.sessionId;
-      stream = await acquireStream(source);
+      stream = await acquireStream(src);
+      if (stream.getTracks().length === 0) {
+        throw new Error("Không lấy được nguồn ghi nào — kiểm tra quyền mic / chia sẻ màn hình.");
+      }
       previewStream.value = stream;
-      const options: MediaRecorderOptions = { mimeType: pickMime(source), audioBitsPerSecond: AUDIO_BPS };
-      if (source === "screen") options.videoBitsPerSecond = SCREEN_VIDEO_BPS;
+      const hasVideo = stream.getVideoTracks().length > 0;
+      const options: MediaRecorderOptions = { mimeType: pickMime(hasVideo), audioBitsPerSecond: AUDIO_BPS };
+      if (hasVideo) options.videoBitsPerSecond = SCREEN_VIDEO_BPS;
       recorder = new MediaRecorder(stream, options);
       recorder.ondataavailable = (e) => {
         if (e.data && e.data.size > 0) {
