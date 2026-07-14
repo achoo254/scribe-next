@@ -147,6 +147,7 @@ defineExpose({ refresh });
               v-if="playingId === it.id"
               :file-id="it.id"
               :video="it.hasVideo"
+              :duration-s="it.durationS"
               class="os-player"
             />
           </li>

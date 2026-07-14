@@ -5,12 +5,14 @@
 import { ref, computed } from "vue";
 import { ViIcon } from "@hobui/viui";
 
-const props = defineProps<{ fileId: string; video?: boolean }>();
+// durationS: thời lượng đã probe từ server (webm MediaRecorder thường THIẾU duration trong container →
+// audio.duration = Infinity → tổng hiện "—"). Dùng làm tổng ngay, chỉ ghi đè khi audio báo giá trị hợp lệ.
+const props = defineProps<{ fileId: string; video?: boolean; durationS?: number }>();
 
 const audioEl = ref<HTMLAudioElement | null>(null);
 const playing = ref(false);
 const currentTime = ref(0);
-const duration = ref(0);
+const duration = ref(props.durationS && props.durationS > 0 ? props.durationS : 0);
 const volume = ref(1);
 const muted = ref(false);
 
@@ -32,7 +34,8 @@ function togglePlay(): void {
 }
 function onLoaded(): void {
   const el = audioEl.value;
-  if (el) duration.value = el.duration;
+  // Chỉ nhận duration của audio khi hợp lệ; webm thiếu metadata → Infinity → giữ durationS từ server.
+  if (el && Number.isFinite(el.duration) && el.duration > 0) duration.value = el.duration;
 }
 function onTime(): void {
   const el = audioEl.value;
