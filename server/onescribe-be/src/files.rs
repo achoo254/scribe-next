@@ -1,7 +1,7 @@
 //! Files: lịch sử ghi (list) + phát lại (stream + HTTP Range cho player tua). Ownership mọi route.
 
 use crate::auth::UserId;
-use crate::config::QUOTA_BYTES;
+use crate::config::{QUOTA_BYTES, RETENTION_DAYS};
 use crate::error::AppError;
 use crate::models::file;
 use crate::state::AppState;
@@ -38,7 +38,8 @@ pub async fn list(
             })
         })
         .collect();
-    Ok(Json(json!({ "items": items })))
+    // retentionDays: FE tính hạn tự-xoá từng file = createdAt + retentionDays (khớp chính sách sweep).
+    Ok(Json(json!({ "items": items, "retentionDays": RETENTION_DAYS })))
 }
 
 /// `GET /api/me/usage` — dung lượng đã dùng + quota của user (FE QuotaBar).

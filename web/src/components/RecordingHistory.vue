@@ -7,7 +7,8 @@ import MediaPlayer from "./MediaPlayer.vue";
 import { useRecordings, type RecordingItem } from "../composables/use-recordings";
 import { useUsage } from "../composables/use-usage";
 
-const { items, loading, error, refresh, remove, download, downloadAll, downloadRange } = useRecordings();
+const { items, loading, error, retentionDays, refresh, remove, download, downloadAll, downloadRange } =
+  useRecordings();
 const usage = useUsage();
 const playingId = ref<string | null>(null);
 const confirmId = ref<string | null>(null); // bản ghi đang chờ xác nhận xoá (mở modal)
@@ -52,6 +53,27 @@ function fmtDate(iso?: string): string {
   if (!iso) return "";
   const d = new Date(iso);
   return Number.isNaN(d.getTime()) ? "" : d.toLocaleString("vi-VN");
+}
+
+// Hạn tự-xoá = createdAt + retentionDays (khớp chính sách sweep BE). Trả số ngày còn lại (làm tròn lên).
+function daysUntilExpiry(createdAt?: string): number | null {
+  if (!createdAt || retentionDays.value <= 0) return null;
+  const created = new Date(createdAt).getTime();
+  if (Number.isNaN(created)) return null;
+  const expiry = created + retentionDays.value * 86_400_000;
+  return Math.ceil((expiry - Date.now()) / 86_400_000);
+}
+function expiryLabel(createdAt?: string): string {
+  const d = daysUntilExpiry(createdAt);
+  if (d === null) return "";
+  if (d <= 0) return "sắp tự xoá";
+  if (d === 1) return "tự xoá sau 1 ngày";
+  return `tự xoá sau ${d} ngày`;
+}
+// Cảnh báo (màu) khi sắp hết hạn (≤ 3 ngày) để user kịp tải về.
+function expirySoon(createdAt?: string): boolean {
+  const d = daysUntilExpiry(createdAt);
+  return d !== null && d <= 3;
 }
 
 interface DateGroup {
@@ -99,6 +121,12 @@ defineExpose({ refresh });
     <p v-else-if="loading" class="os-muted">Đang tải…</p>
     <p v-else-if="!items.length" class="os-muted">Chưa có bản ghi nào.</p>
     <template v-else>
+      <!-- Thông báo chính sách tự-xoá (retention) — nhắc user tải về nếu muốn giữ. -->
+      <ViAlert v-if="retentionDays > 0" type="info" variant="tonal" density="compact" class="os-retention">
+        Bản ghi được <strong>tự động xoá sau {{ retentionDays }} ngày</strong> kể từ khi tạo. Hãy tải về
+        nếu muốn lưu giữ lâu dài.
+      </ViAlert>
+
       <!-- Tải tất cả bản ghi (1 zip). -->
       <div class="os-toolbar">
         <ViButton variant="tonal" color="primary" size="small" @click="downloadAll">
@@ -122,6 +150,13 @@ defineExpose({ refresh });
                 <div class="os-item-name">{{ it.name }}</div>
                 <div class="os-muted">
                   {{ fmtDur(it.durationS) }} · {{ fmtSize(it.size) }} · {{ fmtDate(it.createdAt) }}
+                  <span
+                    v-if="expiryLabel(it.createdAt)"
+                    class="os-expiry"
+                    :class="{ 'os-expiry-soon': expirySoon(it.createdAt) }"
+                  >
+                    · {{ expiryLabel(it.createdAt) }}
+                  </span>
                 </div>
               </div>
               <div class="os-item-actions">
@@ -184,6 +219,17 @@ defineExpose({ refresh });
   color: rgb(var(--v-theme-on-surface));
   opacity: 0.7;
   margin: 0;
+}
+.os-retention {
+  margin-bottom: 0.75rem;
+}
+.os-expiry {
+  opacity: 0.9;
+}
+.os-expiry-soon {
+  color: rgb(var(--v-theme-secondary));
+  opacity: 1;
+  font-weight: 600;
 }
 .os-toolbar {
   display: flex;

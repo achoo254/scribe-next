@@ -14,6 +14,7 @@ export function useRecordings() {
   const items = ref<RecordingItem[]>([]);
   const loading = ref(false);
   const error = ref("");
+  const retentionDays = ref(0); // BE trả về; 0 = chưa biết → FE ẩn thông báo tự-xoá
 
   async function refresh(): Promise<void> {
     loading.value = true;
@@ -21,8 +22,9 @@ export function useRecordings() {
     try {
       const res = await fetch("/api/files", { credentials: "include" });
       if (!res.ok) throw new Error("Không tải được lịch sử ghi");
-      const body = (await res.json()) as { items: RecordingItem[] };
+      const body = (await res.json()) as { items: RecordingItem[]; retentionDays?: number };
       items.value = body.items ?? [];
+      if (typeof body.retentionDays === "number") retentionDays.value = body.retentionDays;
     } catch (e) {
       error.value = e instanceof Error ? e.message : "Lỗi tải lịch sử";
     } finally {
@@ -55,5 +57,5 @@ export function useRecordings() {
     window.location.href = `/api/files/archive?from=${from}&to=${to}`;
   }
 
-  return { items, loading, error, refresh, remove, download, downloadAll, downloadRange };
+  return { items, loading, error, retentionDays, refresh, remove, download, downloadAll, downloadRange };
 }
