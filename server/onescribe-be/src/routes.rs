@@ -22,8 +22,9 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/recordings/chunk", post(recordings::chunk))
         .route("/api/recordings/finalize", post(recordings::finalize))
         .route("/api/files", get(files::list))
-        // Đặt TRƯỚC "/api/files/{id}" cho rõ (matchit ưu tiên segment tĩnh nên không nhầm "archive" là id).
+        // Đặt TRƯỚC "/api/files/{id}" cho rõ (matchit ưu tiên segment tĩnh nên không nhầm với id).
         .route("/api/files/archive", get(files::archive))
+        .route("/api/files/manage", get(files::manage_list))
         .route("/api/files/{id}", get(files::stream).delete(files::delete))
         .route("/api/jobs", post(jobs::create))
         .route("/api/jobs/{id}", get(jobs::get))

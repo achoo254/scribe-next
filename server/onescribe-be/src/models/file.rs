@@ -179,6 +179,22 @@ pub async fn list_recordings(db: &Database, user_id: &str) -> Result<Vec<FileDoc
     Ok(out)
 }
 
+/// File KHÔNG phải bản ghi (upload nguồn Cắt file + đoạn output), mới nhất trước — để UI quản lý
+/// dung lượng (những file này tính quota nhưng không hiện ở "Lịch sử ghi").
+pub async fn list_non_recordings(db: &Database, user_id: &str) -> Result<Vec<FileDoc>, AppError> {
+    let mut cur = db
+        .collection::<FileDoc>(COLL)
+        .find(doc! { "userId": user_id, "kind": { "$in": ["upload", "output"] } })
+        .sort(doc! { "createdAt": -1 })
+        .await
+        .map_err(|e| AppError::Internal(format!("find non-recordings: {e}")))?;
+    let mut out = Vec::new();
+    while let Some(r) = cur.next().await {
+        out.push(r.map_err(|e| AppError::Internal(format!("đọc file: {e}")))?);
+    }
+    Ok(out)
+}
+
 /// Các file đã quá hạn (`expiresAt < now`) — sweep retention xoá.
 pub async fn find_expired(db: &Database) -> Result<Vec<FileDoc>, AppError> {
     let mut cur = db

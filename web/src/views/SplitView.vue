@@ -1,11 +1,12 @@
 <script setup lang="ts">
 // Tab "Cắt file" (web) — gộp 1 ViCard giống desktop SplitView: chọn+upload → tiêu chí → cắt → kết quả.
 // Web upload async lên server (khác desktop chọn file local), nhưng trình bày trong cùng 1 card.
-import { onUnmounted, ref, computed, watch } from "vue";
+import { onUnmounted, onActivated, ref, computed, watch } from "vue";
 import { ViCard, ViButton, ViIcon, ViRadioGroup, ViInput, ViProgressLinear, ViAlert } from "@hobui/viui";
 import { useUpload } from "../composables/use-upload";
 import { useSplitter, type JobCriterion } from "../composables/use-splitter";
 import { useUsage } from "../composables/use-usage";
+import { useManagedFiles } from "../composables/use-managed-files";
 
 const {
   uploading,
@@ -28,15 +29,56 @@ const {
 } = useSplitter();
 
 const usage = useUsage();
+const mf = useManagedFiles();
 
 const fileInput = ref<HTMLInputElement | null>(null);
 const fileName = ref("");
 const criterion = ref<JobCriterion>("minutes");
 const value = ref(10);
 
-// Upload + đoạn cắt đều tính vào quota → cập nhật QuotaBar khi xong.
-watch(uploadResult, (r) => { if (r) void usage.refresh(); });
-watch(jobStatus, (s) => { if (s === "done") void usage.refresh(); });
+// Upload + đoạn cắt đều tính vào quota → cập nhật QuotaBar + danh sách tệp khi xong.
+watch(uploadResult, (r) => { if (r) { void usage.refresh(); void mf.refresh(); } });
+watch(jobStatus, (s) => { if (s === "done") { void usage.refresh(); void mf.refresh(); } });
+
+// Nhóm tệp: upload (file nguồn) và output gộp theo lần cắt (jobId).
+interface OutputGroup { jobId: string; count: number; bytes: number; createdAt?: string; ids: string[] }
+const uploads = computed(() => mf.items.value.filter((f) => f.kind === "upload"));
+const outputGroups = computed<OutputGroup[]>(() => {
+  const map = new Map<string, OutputGroup>();
+  for (const f of mf.items.value) {
+    if (f.kind !== "output") continue;
+    const key = f.jobId ?? "—";
+    let g = map.get(key);
+    if (!g) {
+      g = { jobId: key, count: 0, bytes: 0, createdAt: f.createdAt, ids: [] };
+      map.set(key, g);
+    }
+    g.count += 1;
+    g.bytes += f.size;
+    g.ids.push(f.id);
+  }
+  return [...map.values()];
+});
+
+function fmtSize(bytes: number): string {
+  if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+}
+function fmtDate(iso?: string): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? "" : d.toLocaleString("vi-VN");
+}
+
+async function onDeleteFile(id: string): Promise<void> {
+  if (await mf.remove(id)) void usage.refresh();
+}
+async function onDeleteGroup(ids: string[]): Promise<void> {
+  if ((await mf.removeMany(ids)) > 0) void usage.refresh();
+}
+
+// keep-alive: refresh mỗi lần mở tab (bắt cả lần mount đầu) để phản ánh đúng dung lượng đang chiếm.
+onActivated(() => void mf.refresh());
 
 const criterionOptions: { title: string; value: JobCriterion }[] = [
   { title: "Phút", value: "minutes" },
@@ -179,6 +221,45 @@ onUnmounted(() => {
       </template>
     </div>
   </ViCard>
+
+  <!-- Quản lý tệp Cắt file (upload + đoạn cắt) — chiếm quota nhưng không hiện ở Lịch sử ghi. -->
+  <ViCard v-if="mf.items.value.length" title="Tệp trên hệ thống" class="os-manage-card">
+    <p class="os-muted os-manage-hint">
+      Tệp bạn tải lên để cắt và các đoạn đã cắt vẫn tính vào dung lượng. Xoá bớt để giải phóng
+      (tự động xoá sau 14 ngày nếu không xoá tay).
+    </p>
+
+    <template v-if="uploads.length">
+      <h3 class="os-manage-sub">Tệp đã tải lên</h3>
+      <ul class="os-manage-list">
+        <li v-for="f in uploads" :key="f.id" class="os-manage-item">
+          <div class="os-manage-info">
+            <div class="os-manage-name">{{ f.name }}</div>
+            <div class="os-muted">{{ fmtSize(f.size) }} · {{ fmtDate(f.createdAt) }}</div>
+          </div>
+          <div class="os-manage-actions">
+            <ViButton variant="text" color="primary" size="small" label="Tải" @click="mf.download(f.id)" />
+            <ViButton variant="text" color="error" size="small" label="Xoá" @click="onDeleteFile(f.id)" />
+          </div>
+        </li>
+      </ul>
+    </template>
+
+    <template v-if="outputGroups.length">
+      <h3 class="os-manage-sub">Đoạn đã cắt</h3>
+      <ul class="os-manage-list">
+        <li v-for="g in outputGroups" :key="g.jobId" class="os-manage-item">
+          <div class="os-manage-info">
+            <div class="os-manage-name">{{ g.count }} đoạn</div>
+            <div class="os-muted">{{ fmtSize(g.bytes) }} · {{ fmtDate(g.createdAt) }}</div>
+          </div>
+          <div class="os-manage-actions">
+            <ViButton variant="text" color="error" size="small" label="Xoá tất cả" @click="onDeleteGroup(g.ids)" />
+          </div>
+        </li>
+      </ul>
+    </template>
+  </ViCard>
 </template>
 
 <style scoped>
@@ -221,5 +302,53 @@ onUnmounted(() => {
 }
 .os-segments li {
   margin-bottom: 0.25rem;
+}
+.os-manage-card {
+  padding: 1rem;
+  margin-top: 1rem;
+}
+.os-manage-hint {
+  margin-bottom: 1rem;
+}
+.os-manage-sub {
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin: 0.75rem 0 0.5rem;
+  color: rgb(var(--v-theme-on-surface));
+}
+.os-manage-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.os-manage-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0;
+  border-top: 1px solid rgb(var(--v-theme-surface-bright));
+}
+.os-manage-item:first-child {
+  border-top: none;
+}
+.os-manage-info {
+  flex: 1;
+  min-width: 0;
+}
+.os-manage-name {
+  font-weight: 600;
+  color: rgb(var(--v-theme-on-surface));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.os-manage-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex: none;
 }
 </style>

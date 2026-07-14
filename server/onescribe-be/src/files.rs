@@ -42,6 +42,29 @@ pub async fn list(
     Ok(Json(json!({ "items": items, "retentionDays": RETENTION_DAYS })))
 }
 
+/// `GET /api/files/manage` — file KHÔNG phải bản ghi (upload Cắt file + đoạn output) để UI quản lý
+/// dung lượng. Xoá dùng chung `DELETE /api/files/:id`. Ownership qua list_non_recordings.
+pub async fn manage_list(
+    State(state): State<AppState>,
+    Extension(user): Extension<UserId>,
+) -> Result<Json<Value>, AppError> {
+    let files = file::list_non_recordings(&state.db, &user.0).await?;
+    let items: Vec<Value> = files
+        .iter()
+        .map(|f| {
+            json!({
+                "id": f.id.map(|o| o.to_hex()),
+                "name": f.name,
+                "kind": f.kind,
+                "size": f.size,
+                "jobId": f.job_id,
+                "createdAt": f.created_at.try_to_rfc3339_string().ok(),
+            })
+        })
+        .collect();
+    Ok(Json(json!({ "items": items, "retentionDays": RETENTION_DAYS })))
+}
+
 /// `GET /api/me/usage` — dung lượng đã dùng + quota của user (FE QuotaBar).
 pub async fn usage(
     State(state): State<AppState>,
