@@ -42,5 +42,18 @@ export function useRecordings() {
     }
   }
 
-  return { items, loading, error, refresh, remove };
+  /** Tải 1 bản ghi (Content-Disposition attachment → giữ tên + đuôi đúng). */
+  function download(id: string): void {
+    window.location.href = `/api/files/${id}?download=1`;
+  }
+  /** Tải TẤT CẢ bản ghi dưới dạng 1 zip. */
+  function downloadAll(): void {
+    window.location.href = "/api/files/archive";
+  }
+  /** Tải các bản ghi trong khoảng [from, to) ms (dùng cho "tải theo ngày" — mốc tính theo giờ cục bộ). */
+  function downloadRange(from: number, to: number): void {
+    window.location.href = `/api/files/archive?from=${from}&to=${to}`;
+  }
+
+  return { items, loading, error, refresh, remove, download, downloadAll, downloadRange };
 }

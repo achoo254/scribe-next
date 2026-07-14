@@ -1,12 +1,13 @@
 <script setup lang="ts">
-// Lịch sử ghi — list từ /api/files + phát lại inline (MediaPlayer). Expose refresh() cho RecordView.
-import { onMounted, ref } from "vue";
-import { ViCard, ViButton, ViAlert } from "@hobui/viui";
+// Lịch sử ghi — list từ /api/files + phát lại inline (MediaPlayer) + tải (từng bản / theo ngày / tất cả).
+// Expose refresh() cho RecordView.
+import { onMounted, ref, computed } from "vue";
+import { ViCard, ViButton, ViIcon, ViAlert } from "@hobui/viui";
 import MediaPlayer from "./MediaPlayer.vue";
-import { useRecordings } from "../composables/use-recordings";
+import { useRecordings, type RecordingItem } from "../composables/use-recordings";
 import { useUsage } from "../composables/use-usage";
 
-const { items, loading, error, refresh, remove } = useRecordings();
+const { items, loading, error, refresh, remove, download, downloadAll, downloadRange } = useRecordings();
 const usage = useUsage();
 const playingId = ref<string | null>(null);
 const confirmId = ref<string | null>(null); // bản ghi đang chờ xác nhận xoá
@@ -41,6 +42,41 @@ function fmtDate(iso?: string): string {
   return Number.isNaN(d.getTime()) ? "" : d.toLocaleString("vi-VN");
 }
 
+interface DateGroup {
+  key: string;
+  label: string;
+  from: number; // ms mốc 00:00 ngày đó (giờ cục bộ)
+  to: number; // ms 00:00 ngày kế → khoảng [from, to)
+  items: RecordingItem[];
+}
+
+// Nhóm bản ghi theo NGÀY (giờ cục bộ). items đã sort mới→cũ từ BE nên Map giữ đúng thứ tự.
+const groups = computed<DateGroup[]>(() => {
+  const map = new Map<string, DateGroup>();
+  for (const it of items.value) {
+    const parsed = it.createdAt ? new Date(it.createdAt) : null;
+    const d = parsed && !Number.isNaN(parsed.getTime()) ? parsed : new Date(0);
+    const y = d.getFullYear();
+    const m = d.getMonth();
+    const day = d.getDate();
+    const key = `${y}-${m}-${day}`;
+    let g = map.get(key);
+    if (!g) {
+      const from = new Date(y, m, day, 0, 0, 0, 0).getTime();
+      g = {
+        key,
+        label: d.toLocaleDateString("vi-VN", { weekday: "long", day: "2-digit", month: "2-digit", year: "numeric" }),
+        from,
+        to: from + 86_400_000,
+        items: [],
+      };
+      map.set(key, g);
+    }
+    g.items.push(it);
+  }
+  return [...map.values()];
+});
+
 onMounted(refresh);
 defineExpose({ refresh });
 </script>
@@ -50,54 +86,73 @@ defineExpose({ refresh });
     <ViAlert v-if="error" type="error" variant="tonal" density="compact" :text="error" />
     <p v-else-if="loading" class="os-muted">Đang tải…</p>
     <p v-else-if="!items.length" class="os-muted">Chưa có bản ghi nào.</p>
-    <ul v-else class="os-list">
-      <li v-for="it in items" :key="it.id" class="os-item">
-        <div class="os-item-row">
-          <span class="os-tag">{{ it.hasVideo ? "Màn hình" : "Mic" }}</span>
-          <div class="os-item-info">
-            <div class="os-item-name">{{ it.name }}</div>
-            <div class="os-muted">
-              {{ fmtDur(it.durationS) }} · {{ fmtSize(it.size) }} · {{ fmtDate(it.createdAt) }}
-            </div>
-          </div>
-          <div class="os-item-actions">
-            <ViButton
-              variant="text"
-              color="primary"
-              size="small"
-              :label="playingId === it.id ? 'Ẩn' : 'Nghe lại'"
-              @click="playingId = playingId === it.id ? null : it.id"
-            />
-            <template v-if="confirmId === it.id">
-              <span class="os-confirm-q">Xoá?</span>
-              <ViButton
-                variant="text"
-                color="error"
-                size="small"
-                :loading="busyId === it.id"
-                label="Xoá"
-                @click="onDelete(it.id)"
-              />
-              <ViButton variant="text" size="small" label="Huỷ" @click="confirmId = null" />
-            </template>
-            <ViButton
-              v-else
-              variant="text"
-              color="error"
-              size="small"
-              label="Xoá"
-              @click="confirmId = it.id"
-            />
-          </div>
+    <template v-else>
+      <!-- Tải tất cả bản ghi (1 zip). -->
+      <div class="os-toolbar">
+        <ViButton variant="tonal" color="primary" size="small" @click="downloadAll">
+          <ViIcon icon="download" start />Tải tất cả
+        </ViButton>
+      </div>
+
+      <div v-for="g in groups" :key="g.key" class="os-group">
+        <div class="os-group-head">
+          <span class="os-group-date">{{ g.label }}</span>
+          <ViButton variant="text" color="primary" size="small" @click="downloadRange(g.from, g.to)">
+            <ViIcon icon="download" start />Tải ngày ({{ g.items.length }})
+          </ViButton>
         </div>
-        <MediaPlayer
-          v-if="playingId === it.id"
-          :file-id="it.id"
-          :video="it.hasVideo"
-          class="os-player"
-        />
-      </li>
-    </ul>
+
+        <ul class="os-list">
+          <li v-for="it in g.items" :key="it.id" class="os-item">
+            <div class="os-item-row">
+              <span class="os-tag">{{ it.hasVideo ? "Màn hình" : "Mic" }}</span>
+              <div class="os-item-info">
+                <div class="os-item-name">{{ it.name }}</div>
+                <div class="os-muted">
+                  {{ fmtDur(it.durationS) }} · {{ fmtSize(it.size) }} · {{ fmtDate(it.createdAt) }}
+                </div>
+              </div>
+              <div class="os-item-actions">
+                <ViButton
+                  variant="text"
+                  color="primary"
+                  size="small"
+                  :label="playingId === it.id ? 'Ẩn' : 'Nghe lại'"
+                  @click="playingId = playingId === it.id ? null : it.id"
+                />
+                <ViButton variant="text" color="primary" size="small" label="Tải" @click="download(it.id)" />
+                <template v-if="confirmId === it.id">
+                  <span class="os-confirm-q">Xoá?</span>
+                  <ViButton
+                    variant="text"
+                    color="error"
+                    size="small"
+                    :loading="busyId === it.id"
+                    label="Xoá"
+                    @click="onDelete(it.id)"
+                  />
+                  <ViButton variant="text" size="small" label="Huỷ" @click="confirmId = null" />
+                </template>
+                <ViButton
+                  v-else
+                  variant="text"
+                  color="error"
+                  size="small"
+                  label="Xoá"
+                  @click="confirmId = it.id"
+                />
+              </div>
+            </div>
+            <MediaPlayer
+              v-if="playingId === it.id"
+              :file-id="it.id"
+              :video="it.hasVideo"
+              class="os-player"
+            />
+          </li>
+        </ul>
+      </div>
+    </template>
   </ViCard>
 </template>
 
@@ -110,6 +165,30 @@ defineExpose({ refresh });
   color: rgb(var(--v-theme-on-surface));
   opacity: 0.7;
   margin: 0;
+}
+.os-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 0.75rem;
+}
+.os-group + .os-group {
+  margin-top: 1.25rem;
+}
+.os-group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding-bottom: 0.5rem;
+  margin-bottom: 0.5rem;
+  border-bottom: 1px solid rgb(var(--v-theme-surface-bright));
+}
+.os-group-date {
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: capitalize;
+  color: rgb(var(--v-theme-on-surface));
+  opacity: 0.85;
 }
 .os-list {
   list-style: none;
