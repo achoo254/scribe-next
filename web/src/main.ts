@@ -17,6 +17,8 @@ import {
   // app icons (khớp desktop src/plugins/tabler-iconset.ts)
   IconMicrophone, IconScissors, IconFileText, IconFolder, IconDownload,
   IconLogout, IconBrandGoogle, IconPlayerStop,
+  // media player (audio tùy biến — Lịch sử ghi)
+  IconPlayerPlayFilled, IconPlayerPauseFilled, IconVolume, IconVolumeOff,
 } from "@tabler/icons-vue";
 import "@hobui/viui/style.css"; // tokens --bsg-* + style Vi*
 
@@ -41,6 +43,9 @@ const TABLER: Record<string, unknown> = {
   microphone: IconMicrophone, scissors: IconScissors, "file-text": IconFileText,
   folder: IconFolder, download: IconDownload, logout: IconLogout,
   "brand-google": IconBrandGoogle, "player-stop": IconPlayerStop,
+  // media player audio tùy biến
+  "player-play": IconPlayerPlayFilled, "player-pause": IconPlayerPauseFilled,
+  volume: IconVolume, "volume-off": IconVolumeOff,
 };
 const tablerSet: IconSet = {
   component: (props: IconProps) =>
