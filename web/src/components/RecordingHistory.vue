@@ -10,8 +10,17 @@ import { useUsage } from "../composables/use-usage";
 const { items, loading, error, refresh, remove, download, downloadAll, downloadRange } = useRecordings();
 const usage = useUsage();
 const playingId = ref<string | null>(null);
-const confirmId = ref<string | null>(null); // bản ghi đang chờ xác nhận xoá
+const confirmId = ref<string | null>(null); // bản ghi đang chờ xác nhận xoá (mở modal)
 const busyId = ref<string | null>(null);
+
+// Modal xác nhận xoá: mở khi có confirmId; đóng → reset. Chặn đóng khi đang xoá.
+const confirmItem = computed(() => items.value.find((x) => x.id === confirmId.value) ?? null);
+const confirmOpen = computed({
+  get: () => confirmId.value !== null,
+  set: (v: boolean) => {
+    if (!v && busyId.value === null) confirmId.value = null;
+  },
+});
 
 async function onDelete(id: string): Promise<void> {
   busyId.value = id;
@@ -22,6 +31,9 @@ async function onDelete(id: string): Promise<void> {
     if (playingId.value === id) playingId.value = null;
     void usage.refresh(); // dung lượng giảm sau khi xoá
   }
+}
+function onConfirmDelete(): void {
+  if (confirmId.value) void onDelete(confirmId.value);
 }
 
 function fmtDur(s?: number): string {
@@ -121,20 +133,7 @@ defineExpose({ refresh });
                   @click="playingId = playingId === it.id ? null : it.id"
                 />
                 <ViButton variant="text" color="primary" size="small" label="Tải" @click="download(it.id)" />
-                <template v-if="confirmId === it.id">
-                  <span class="os-confirm-q">Xoá?</span>
-                  <ViButton
-                    variant="text"
-                    color="error"
-                    size="small"
-                    :loading="busyId === it.id"
-                    label="Xoá"
-                    @click="onDelete(it.id)"
-                  />
-                  <ViButton variant="text" size="small" label="Huỷ" @click="confirmId = null" />
-                </template>
                 <ViButton
-                  v-else
                   variant="text"
                   color="error"
                   size="small"
@@ -154,6 +153,25 @@ defineExpose({ refresh });
         </ul>
       </div>
     </template>
+
+    <!-- Modal xác nhận xoá (thay confirm inline). v-dialog teleport ra overlay của v-app. -->
+    <v-dialog v-model="confirmOpen" max-width="440">
+      <ViCard title="Xoá bản ghi?" class="os-confirm-card">
+        <p class="os-confirm-text">
+          Xoá “{{ confirmItem?.name }}”? Hành động này không thể hoàn tác.
+        </p>
+        <div class="os-confirm-actions">
+          <ViButton variant="text" label="Huỷ" :disabled="busyId !== null" @click="confirmId = null" />
+          <ViButton
+            color="error"
+            variant="flat"
+            label="Xoá"
+            :loading="busyId !== null"
+            @click="onConfirmDelete"
+          />
+        </div>
+      </ViCard>
+    </v-dialog>
   </ViCard>
 </template>
 
@@ -239,9 +257,17 @@ defineExpose({ refresh });
   gap: 0.25rem;
   flex: none;
 }
-.os-confirm-q {
-  font-size: 0.8rem;
-  color: rgb(var(--v-theme-error));
+.os-confirm-card {
+  padding: 1.25rem;
+}
+.os-confirm-text {
+  margin: 0 0 1.25rem;
+  color: rgb(var(--v-theme-on-surface));
+}
+.os-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
 }
 .os-player {
   margin-top: 0.5rem;
