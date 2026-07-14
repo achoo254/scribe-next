@@ -189,9 +189,11 @@ defineExpose({ refresh });
       </div>
     </template>
 
-    <!-- Modal xác nhận xoá (thay confirm inline). v-dialog teleport ra overlay của v-app. -->
-    <v-dialog v-model="confirmOpen" max-width="440">
-      <ViCard title="Xoá bản ghi?" class="os-confirm-card">
+    <!-- Modal xác nhận xoá. Dùng div nền solid (KHÔNG ViCard) vì ViCard bị teleport ra overlay của
+         v-dialog thì mất nền. scrim tường minh để có backdrop tối rõ. -->
+    <v-dialog v-model="confirmOpen" max-width="440" scrim="#000000">
+      <div class="os-confirm-modal">
+        <h3 class="os-confirm-title">Xoá bản ghi?</h3>
         <p class="os-confirm-text">
           Xoá “{{ confirmItem?.name }}”? Hành động này không thể hoàn tác.
         </p>
@@ -205,7 +207,7 @@ defineExpose({ refresh });
             @click="onConfirmDelete"
           />
         </div>
-      </ViCard>
+      </div>
     </v-dialog>
   </ViCard>
 </template>
@@ -303,12 +305,25 @@ defineExpose({ refresh });
   gap: 0.25rem;
   flex: none;
 }
-.os-confirm-card {
-  padding: 1.25rem;
+.os-confirm-modal {
+  /* Fallback tối trước, rồi theme var (đã xác nhận resolve trong overlay qua màu nút). */
+  background: #1a1a1a;
+  background: rgb(var(--v-theme-surface));
+  border: 1px solid rgb(var(--v-theme-surface-bright, 46 46 46));
+  border-radius: 12px;
+  padding: 1.5rem;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+}
+.os-confirm-title {
+  margin: 0 0 0.75rem;
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: rgb(var(--v-theme-on-surface, 224 224 224));
 }
 .os-confirm-text {
-  margin: 0 0 1.25rem;
-  color: rgb(var(--v-theme-on-surface));
+  margin: 0 0 1.5rem;
+  color: rgb(var(--v-theme-on-surface, 224 224 224));
+  opacity: 0.85;
 }
 .os-confirm-actions {
   display: flex;
