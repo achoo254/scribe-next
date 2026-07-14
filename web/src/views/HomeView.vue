@@ -47,6 +47,10 @@ watch(tab, (v) => {
   flex-direction: column;
   gap: 1rem;
   padding: 1.5rem;
+  /* width:100% để container có width xác định — nếu không, auto-margin trục cross vô hiệu hóa
+     align-items:stretch của flex cha (v-application__wrap) khiến shell co theo nội dung, làm 2 tab
+     rộng khác nhau. Có width:100% → luôn = min(100%, 920px), margin auto căn giữa, đồng bộ mọi tab. */
+  width: 100%;
   max-width: 920px;
   margin-inline: auto;
 }
