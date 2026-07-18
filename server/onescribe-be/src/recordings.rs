@@ -164,10 +164,38 @@ pub async fn finalize(
         .await
         .map_err(|e| AppError::Internal(format!("tạo recordings dir: {e}")))?;
     let id = ObjectId::new();
-    let final_path = format!("{}/{}.{}", rec_dir, id.to_hex(), detected.extension());
-    tokio::fs::rename(&part, &final_path)
-        .await
-        .map_err(|e| AppError::Internal(format!("rename recording: {e}")))?;
+    // Recording MediaRecorder = webm streaming: thiếu Cues (SeekHead) + Duration → player KHÔNG tua
+    // được + probe duration 0. Remux `-c copy -f webm` ghi output là FILE seekable → ffmpeg dựng lại
+    // Cues + Duration (không re-encode) → tua được + probe đúng. Chỉ EBML (webm/mkv) mới remux; định
+    // dạng khác (mp4 Safari, hiếm) giữ nguyên. Remux lỗi (hết đĩa/input hỏng) → fallback rename để
+    // KHÔNG mất bản ghi (chỉ mất khả năng tua).
+    let is_ebml = matches!(detected.extension(), "webm" | "mkv");
+    let final_path = if is_ebml {
+        let webm_path = format!("{}/{}.webm", rec_dir, id.to_hex());
+        match core_split::remux_copy_to_webm(&state.config.ffmpeg_path, &part, &webm_path).await {
+            Ok(()) => {
+                let _ = tokio::fs::remove_file(&part).await; // remux tạo bản mới → dọn .part gốc
+                webm_path
+            }
+            Err(e) => {
+                tracing::warn!("remux recording webm lỗi ({e}) — giữ nguyên (bản ghi không tua được)");
+                let _ = tokio::fs::remove_file(&webm_path).await; // dọn bản remux dở
+                // Fallback giữ container gốc (ext theo magic-byte) — KHÔNG ép .webm để tránh gán sai
+                // Content-Type nếu input thực sự là mkv (chỉ qua upload thủ công; MediaRecorder = webm).
+                let orig_path = format!("{}/{}.{}", rec_dir, id.to_hex(), detected.extension());
+                tokio::fs::rename(&part, &orig_path)
+                    .await
+                    .map_err(|e| AppError::Internal(format!("rename recording: {e}")))?;
+                orig_path
+            }
+        }
+    } else {
+        let fp = format!("{}/{}.{}", rec_dir, id.to_hex(), detected.extension());
+        tokio::fs::rename(&part, &fp)
+            .await
+            .map_err(|e| AppError::Internal(format!("rename recording: {e}")))?;
+        fp
+    };
 
     let info = core_split::probe_file(&state.config.ffprobe_path, &final_path)
         .await

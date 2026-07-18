@@ -28,8 +28,11 @@ impl Worker for SplitWorker {
         std::fs::create_dir_all(&out_dir).map_err(|e| format!("tạo out dir: {e}"))?;
 
         // Recording webm → remux fix cues trước khi segment (webm MediaRecorder thiếu cues).
+        // Ngoại lệ: cắt bản ghi (Mode A) — recording đã remux seekable (Cues+Duration) khi finalize
+        // → segment THẲNG webm→webm giữ container để browser phát + tua từng đoạn (không remux mkv:
+        // thừa + đổi ext .mkv browser khó phát). Mode B (upload webm streaming) vẫn remux mkv như cũ.
         let is_webm = input.path.to_ascii_lowercase().ends_with(".webm");
-        let (split_input, remuxed) = if is_webm {
+        let (split_input, remuxed) = if is_webm && !job.recording_split {
             let in_size = std::fs::metadata(&input.path).map(|m| m.len()).unwrap_or(0);
             // Remux = bản sao đầy đủ → cần đĩa trống ≥ 2× (fixed.mkv + đoạn output). Best-effort:
             // không xác định được free (non-unix/df lỗi) → bỏ qua, để ffmpeg tự báo nếu hết đĩa.
@@ -75,7 +78,17 @@ impl Worker for SplitWorker {
         let mut segs = Vec::with_capacity(outs.len());
         for o in outs {
             let size = std::fs::metadata(&o.path).map(|m| m.len()).unwrap_or(0);
-            segs.push(OutputSeg { name: o.name, path: o.path, size });
+            // Cắt bản ghi → probe đoạn lấy duration + cờ video để lưu `kind:recording` (hiển thị +
+            // phát lại). Mode B bỏ qua (đoạn output tải zip không cần metadata).
+            let (duration_s, has_video) = if job.recording_split {
+                match core_split::probe_file(&state.config.ffprobe_path, &o.path).await {
+                    Ok(mi) => (Some(mi.duration_s), !mi.vcodec.is_empty()),
+                    Err(_) => (Some(0.0), false),
+                }
+            } else {
+                (None, false)
+            };
+            segs.push(OutputSeg { name: o.name, path: o.path, size, duration_s, has_video });
         }
         Ok(segs)
     }
