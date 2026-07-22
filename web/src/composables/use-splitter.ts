@@ -75,7 +75,12 @@ export function useSplitter() {
     }
   }
 
-  async function createJob(inputFileId: string, criterion: JobCriterion, value: number): Promise<void> {
+  async function createJob(
+    inputFileId: string,
+    criterion: JobCriterion,
+    value: number,
+    recordingSplit = false, // true = cắt bản ghi (Mode A): đoạn vào Lịch sử ghi + xoá gốc
+  ): Promise<void> {
     stopPolling();
     creating.value = true;
     error.value = "";
@@ -88,7 +93,7 @@ export function useSplitter() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ inputFileId, criterion, value }),
+        body: JSON.stringify({ inputFileId, criterion, value, recordingSplit }),
       });
       if (!res.ok) {
         throw new Error(await readErrorMessage(res, "Không thể tạo công việc cắt file"));

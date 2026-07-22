@@ -38,9 +38,9 @@ Rust/axum → **1 static musl binary**, bind `127.0.0.1:8787`, secret nhúng com
 - `auth.rs` — Firebase ID token → verify (JWKS securetoken + email_verified + allowlist) → session cookie HttpOnly+Secure+SameSite=Lax; audit-log; middleware `require_auth`.
 - `jwks.rs`, `session.rs` — verify token + issue/verify session (jsonwebtoken).
 - `upload.rs` — chunked upload (init/chunk/status/finalize) append-disk, quota tăng dần, magic-byte (`infer`).
-- `recordings.rs` — **Mode A streaming**: init/chunk/finalize open-ended cho MediaRecorder (mirror upload, coll `recording_sessions` riêng) → `files{kind:recording}`.
+- `recordings.rs` — **Mode A streaming**: init/chunk/finalize open-ended cho MediaRecorder (mirror upload, coll `recording_sessions` riêng) → `files{kind:recording}`. Finalize **remux `-c copy -f webm`** để dựng Cues+Duration (webm MediaRecorder streaming thiếu → không tua được); remux lỗi → fallback rename giữ container gốc.
 - `files.rs` — `GET /api/files` (lịch sử ghi) · `GET /api/files/:id` (stream + **HTTP Range** cho player tua) · `DELETE /api/files/:id` (xoá thủ công, ownership) · `GET /api/me/usage` (quota).
-- `jobs.rs` + `worker/split_worker.rs` — job queue cắt (claim atomic, concurrency=1); nhánh webm: disk-free ≥2× → remux `-c copy -f matroska` → segment → dọn `fixed.mkv`.
+- `jobs.rs` + `worker/split_worker.rs` — job queue cắt (claim atomic, concurrency=1). Mode B (upload webm): disk-free ≥2× → remux `-c copy -f matroska` → segment → dọn `fixed.mkv` → đoạn `kind:output` (tải zip). **Mode A (`recordingSplit`)**: input recording đã seekable → segment thẳng webm→webm + probe mỗi đoạn → đoạn `kind:recording` (vào Lịch sử ghi, phát/tua riêng) + **xoá bản ghi gốc**.
 - `rate_limit.rs` — limiter in-memory theo real IP (`X-Real-IP` nginx-set): auth 20/60s, protected 300/60s (miễn `/chunk`).
 - `retention.rs` — sweep 1h: xoá file quá hạn 14 ngày (**disk TRƯỚC → doc**, KHÔNG TTL native), dọn orphan `.part`/session/job cũ, panic-isolation.
 - `models/{file,job,user}.rs`, `state.rs`, `error.rs`, `db.rs`, `routes.rs`.
@@ -77,7 +77,7 @@ Build musl qua Docker (`scripts/build-musl.sh`, WSL) → binary `/opt/onescribe-
 ## Tính năng mới (session 2026-07-12)
 
 - **Refactor UI web bám 100% desktop**: theme dark One Series + BrandMark + Be Vietnam Pro + shell 3 tab (thay giao diện trắng/xanh dương cũ).
-- **Mode A — Ghi (web)**: mic + màn hình/system audio (Chrome/Edge) → MediaRecorder streaming upload → lịch sử + player (stream/Range); tùy chọn cắt theo phút (webm remux+copy).
+- **Mode A — Ghi (web)**: mic + màn hình/system audio (Chrome/Edge) → MediaRecorder streaming upload → finalize remux webm seekable (tua được) → lịch sử + player (stream/Range); tùy chọn cắt theo phút → đoạn thành các bản ghi riêng trong Lịch sử ghi (thay bản ghi gốc), phát/tua từng đoạn.
 - **Retention & hardening**: auto-purge 14 ngày (sweep), rate-limit real-IP, `/api/me/usage` + QuotaBar, quota 5GB + size cap 2GB.
 - **Xoá recording thủ công**: `DELETE /api/files/:id` + nút Xoá (xác nhận inline).
 

@@ -38,6 +38,11 @@ pub struct Job {
     pub input_file_id: String,
     pub criterion: SplitCriterion,
     pub value: f64,
+    /// true = cắt bản ghi (Mode A): đoạn lưu thành `kind:recording` (hiện Lịch sử ghi, phát/tua
+    /// từng đoạn) + xoá bản ghi gốc. false = Mode B (Cắt file): đoạn `kind:output` → tải zip.
+    /// `default` cho job cũ (trước tính năng) → false (giữ hành vi cũ).
+    #[serde(rename = "recordingSplit", default)]
+    pub recording_split: bool,
     pub status: String, // queued | running | done | failed
     pub progress: f64,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -61,6 +66,7 @@ pub async fn create_split(
     input_file_id: &str,
     criterion: SplitCriterion,
     value: f64,
+    recording_split: bool,
 ) -> Result<String, AppError> {
     let job = Job {
         id: None,
@@ -69,6 +75,7 @@ pub async fn create_split(
         input_file_id: input_file_id.into(),
         criterion,
         value,
+        recording_split,
         status: "queued".into(),
         progress: 0.0,
         segments: None,

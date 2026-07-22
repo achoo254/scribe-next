@@ -92,10 +92,13 @@ async function toggle(): Promise<void> {
   if (rec.recording.value) {
     const result = await rec.stop();
     if (result) {
-      await historyRef.value?.refresh();
       void usage.refresh(); // dung lượng tăng sau khi lưu bản ghi
       if (splitEnabled.value) {
-        await sp.createJob(result.fileId, "minutes", splitMinutes.value);
+        // Cắt-thành-bản-ghi: đoạn sẽ thành các bản ghi trong Lịch sử ghi + xoá gốc. KHÔNG refresh
+        // history ngay (tránh nháy bản ghi gốc rồi biến mất) — chờ job "done" (watch dưới) mới refresh.
+        await sp.createJob(result.fileId, "minutes", splitMinutes.value, true);
+      } else {
+        await historyRef.value?.refresh();
       }
     }
   } else {
@@ -108,12 +111,14 @@ async function toggle(): Promise<void> {
   }
 }
 
-function onDownload(): void {
-  if (sp.jobId.value) sp.download(sp.jobId.value);
-}
-
-// Đoạn cắt tính vào quota → refresh khi job cắt XONG (createJob resolve lúc queued, chưa có output).
-watch(() => sp.status.value, (s) => { if (s === "done") void usage.refresh(); });
+// Job cắt kết thúc → refresh Lịch sử ghi + quota. done: hiện các đoạn (gốc đã xoá). failed: bản ghi
+// gốc còn nguyên (chưa xoá) → refresh để nó xuất hiện, user tải/nghe lại được thay vì tưởng mất.
+watch(() => sp.status.value, (s) => {
+  if (s === "done" || s === "failed") {
+    void usage.refresh();
+    void historyRef.value?.refresh();
+  }
+});
 
 // Dọn mic/màn hình + timer nếu component bị huỷ giữa lúc đang ghi (phòng thủ; keep-alive chỉ deactivate).
 onBeforeUnmount(() => rec.dispose());
@@ -201,17 +206,14 @@ onBeforeUnmount(() => rec.dispose());
         <p v-if="rec.finalizing.value" class="os-muted">Đang lưu bản ghi…</p>
         <ViAlert v-if="rec.error.value" type="error" variant="tonal" density="compact" :text="rec.error.value" />
 
-        <!-- Tiến độ/kết quả cắt (nếu bật) -->
+        <!-- Tiến độ/kết quả cắt (nếu bật) — đoạn cắt vào thẳng Lịch sử ghi bên dưới -->
         <template v-if="splitEnabled">
           <ViProgressLinear v-if="jobBusy()" indeterminate color="primary" height="8" rounded />
-          <p v-if="jobBusy()" class="os-muted">Đang cắt bản ghi…</p>
+          <p v-if="jobBusy()" class="os-muted">Đang cắt bản ghi thành các đoạn…</p>
           <ViAlert v-if="sp.error.value" type="error" variant="tonal" density="compact" :text="sp.error.value" />
-          <template v-if="sp.status.value === 'done'">
-            <p class="os-muted">Đã cắt {{ sp.segments.value.length }} đoạn.</p>
-            <ViButton color="primary" variant="flat" @click="onDownload">
-              <ViIcon icon="download" start />Tải zip
-            </ViButton>
-          </template>
+          <ViAlert v-if="sp.status.value === 'done'" type="success" variant="tonal" density="compact">
+            Đã cắt thành {{ sp.segments.value.length }} đoạn — xem trong <strong>Lịch sử ghi</strong> bên dưới.
+          </ViAlert>
         </template>
       </div>
     </ViCard>

@@ -126,12 +126,27 @@ pub async fn split_file_into(
 /// đúng → segment sau đó cắt bám keyframe đúng kỳ vọng (sai số ≤ 1 keyframe interval, chấp nhận cho
 /// cắt theo phút). Nhẹ CPU (chỉ copy stream, không encode). Caller lo disk-free ≥ 2× + dọn `out_mkv`.
 pub async fn remux_copy_to_mkv(ffmpeg_path: &str, input: &str, out_mkv: &str) -> Result<(), String> {
+    remux_copy(ffmpeg_path, input, out_mkv, "matroska").await
+}
+
+/// Remux input sang WebM seekable `-c copy` — KHÔNG re-encode.
+///
+/// Dùng cho recording MediaRecorder khi finalize: webm streaming thiếu Cues (SeekHead index) +
+/// Duration → player browser không tua được + probe ra duration 0. Remux `-c copy -f webm` ghi lại
+/// output là FILE seekable → ffmpeg viết Cues + Duration chuẩn → tua được + probe đúng. Giữ container
+/// webm (opus/vp9) để browser phát trực tiếp. Caller lo disk + dọn `out_webm` khi lỗi.
+pub async fn remux_copy_to_webm(ffmpeg_path: &str, input: &str, out_webm: &str) -> Result<(), String> {
+    remux_copy(ffmpeg_path, input, out_webm, "webm").await
+}
+
+/// Remux `-c copy` input sang container `fmt` (matroska/webm). Dùng chung cho 2 wrapper trên.
+async fn remux_copy(ffmpeg_path: &str, input: &str, out: &str, fmt: &str) -> Result<(), String> {
     let args = [
         "-v", "error",
         "-i", input,
         "-c", "copy",
-        "-f", "matroska",
-        "-y", out_mkv,
+        "-f", fmt,
+        "-y", out,
     ];
     let mut child = new_command(ffmpeg_path)
         .args(args)

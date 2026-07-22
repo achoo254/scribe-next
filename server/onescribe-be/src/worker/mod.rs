@@ -13,6 +13,11 @@ pub struct OutputSeg {
     pub name: String,
     pub path: String,
     pub size: u64,
+    /// Thời lượng đoạn (giây) — set khi cắt bản ghi (`recording_split`) để lưu `kind:recording`
+    /// hiển thị + phát lại. None cho Mode B (đoạn output không cần duration).
+    pub duration_s: Option<f64>,
+    /// Đoạn có video stream (ghi màn hình) → player dùng `<video>`. false cho audio-only / Mode B.
+    pub has_video: bool,
 }
 
 #[allow(async_fn_in_trait)] // dùng nội bộ, dispatch tĩnh — không cần Send bound của async-trait.
