@@ -46,6 +46,34 @@ function pickMime(hasVideo: boolean): string {
   return hasVideo ? "video/webm" : "audio/webm";
 }
 
+/**
+ * Đổi lỗi khi bắt đầu ghi sang thông báo tiếng Việt actionable. getUserMedia/getDisplayMedia reject
+ * bằng DOMException có tên chuẩn — riêng NotAllowedError (quyền bị từ chối / dialog bị huỷ) là ca hay
+ * gặp trên WebKit iOS nên hướng dẫn cấp quyền cụ thể. Lỗi khác (BE init, mạng) giữ nguyên message gốc.
+ */
+function startErrorMessage(e: unknown, src: RecordSources): string {
+  if (e instanceof DOMException) {
+    switch (e.name) {
+      case "NotAllowedError":
+        return src.screen || src.systemAudio
+          ? "Chưa được cấp quyền chia sẻ màn hình / micro — hãy chọn nguồn chia sẻ và cho phép truy cập, rồi thử lại."
+          : "Trình duyệt chưa được cấp quyền Micro. Trên iPhone/iPad: mở Cài đặt trình duyệt (hoặc iOS Settings → tên trình duyệt) → bật Micro, rồi bấm Bắt đầu ghi lại.";
+      case "NotFoundError":
+      case "OverconstrainedError":
+        return "Không tìm thấy thiết bị micro phù hợp.";
+      case "NotReadableError":
+        return "Micro đang được ứng dụng khác sử dụng — hãy đóng ứng dụng đó rồi thử lại.";
+      case "AbortError":
+        return "Không truy cập được micro (thiết bị bận hoặc bị gián đoạn) — thử lại.";
+      case "SecurityError":
+        return "Ghi âm cần kết nối bảo mật (HTTPS).";
+      default:
+        return e.message || "Không bắt đầu ghi được.";
+    }
+  }
+  return e instanceof Error ? e.message : "Không bắt đầu ghi được (quyền truy cập bị từ chối?)";
+}
+
 export function useRecorder() {
   const recording = ref(false);
   const starting = ref(false);
@@ -204,13 +232,17 @@ export function useRecorder() {
     elapsedS.value = 0;
     recordName = `Bản ghi ${new Date().toLocaleString("vi-VN")}`;
     try {
-      const init = await postJson<{ sessionId: string }>("/api/recordings/init", { name: recordName });
-      sessionId = init.sessionId;
-      const sid = init.sessionId;
+      // Lấy stream NGAY trong transient user-activation của cú bấm: getUserMedia/getDisplayMedia trên
+      // WebKit (Safari/Edge/Chrome iOS) chỉ được cấp quyền khi gọi trước mọi await khác — một await fetch
+      // xen giữa sẽ mất activation → NotAllowedError. Init session BE sau (cũng tránh tạo phiên rác khi
+      // quyền bị từ chối).
       stream = await acquireStream(src);
       if (stream.getTracks().length === 0) {
         throw new Error("Không lấy được nguồn ghi nào — kiểm tra quyền mic / chia sẻ màn hình.");
       }
+      const init = await postJson<{ sessionId: string }>("/api/recordings/init", { name: recordName });
+      sessionId = init.sessionId;
+      const sid = init.sessionId;
       previewStream.value = stream;
       const hasVideo = stream.getVideoTracks().length > 0;
       const options: MediaRecorderOptions = { mimeType: pickMime(hasVideo), audioBitsPerSecond: AUDIO_BPS };
@@ -229,7 +261,7 @@ export function useRecorder() {
       recording.value = true;
       timer = window.setInterval(() => (elapsedS.value += 1), 1000);
     } catch (e) {
-      error.value = e instanceof Error ? e.message : "Không bắt đầu ghi được (quyền truy cập bị từ chối?)";
+      error.value = startErrorMessage(e, src);
       cleanup();
       sessionId = null;
     } finally {
