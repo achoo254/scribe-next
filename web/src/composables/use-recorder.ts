@@ -112,6 +112,8 @@ export function useRecorder() {
   let uploadChain: Promise<void> = Promise.resolve();
   let chainError: string | null = null;
   let recordName = "";
+  let wakeLock: WakeLockSentinel | null = null;
+  let interruptNote: string | null = null; // lý do dừng bất thường (khóa màn hình…) → hiển thị sau finalize
 
   /**
    * Gắn AnalyserNode đọc RMS âm thanh realtime cho level meter. Dùng chung audioCtx với bước mix;
@@ -171,7 +173,14 @@ export function useRecorder() {
     if (src.mic) {
       try {
         const micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        audioTracks.push(...micStream.getAudioTracks());
+        const micTracks = micStream.getAudioTracks();
+        // Mic track "ended" bất ngờ = mất nguồn (iOS thu hồi khi khóa màn hình, rút thiết bị) → dừng & lưu.
+        for (const t of micTracks) {
+          t.addEventListener("ended", () =>
+            handleInterrupt("Bản ghi đã dừng (mất micro — có thể do màn hình bị khóa) — đã lưu phần ghi được."),
+          );
+        }
+        audioTracks.push(...micTracks);
       } catch (e) {
         // Mic bị từ chối: nếu là nguồn duy nhất → báo lỗi; còn nguồn khác → bỏ qua mic.
         if (audioTracks.length === 0 && !videoTrack) throw e;
@@ -240,11 +249,54 @@ export function useRecorder() {
     }
   }
 
+  /**
+   * Screen Wake Lock giữ màn hình không tự tắt khi đang ghi (iOS 16.4+, Chrome/Edge). Chỉ chống
+   * auto-lock — KHÔNG chống user chủ động bấm nút khóa máy. Không hỗ trợ → bỏ qua (ghi vẫn chạy).
+   * Wake lock tự nhả khi trang ẩn nên onVisibility xin lại khi trang hiện lại (nếu còn đang ghi).
+   */
+  async function acquireWakeLock(): Promise<void> {
+    try {
+      if ("wakeLock" in navigator) wakeLock = await navigator.wakeLock.request("screen");
+    } catch {
+      wakeLock = null; // trình duyệt từ chối (vd trang không hiển thị) — không sao
+    }
+  }
+
+  async function releaseWakeLock(): Promise<void> {
+    try {
+      await wakeLock?.release();
+    } catch {
+      /* đã nhả / không hỗ trợ */
+    }
+    wakeLock = null;
+  }
+
+  /** Nguồn ghi mất giữa chừng (mic ended do iOS suspend, rút thiết bị) → dừng & lưu phần đã ghi, báo rõ. */
+  function handleInterrupt(note: string): void {
+    if (!recording.value) return;
+    interruptNote = note;
+    void stop();
+  }
+
+  /**
+   * Trang quay lại tiền cảnh. iOS đình chỉ trang khi khóa màn hình / đổi app → thu hồi mic. Nếu mọi
+   * audio track đã "ended" trong lúc ẩn → dừng & lưu (event "ended" có thể không kịp fire lúc suspend).
+   * Track còn "live" (desktop chỉ đổi tab) → chỉ xin lại wake lock, ghi tiếp — KHÔNG dừng nhầm.
+   */
+  function onVisibility(): void {
+    if (document.visibilityState !== "visible" || !recording.value || !stream) return;
+    const audio = stream.getAudioTracks();
+    const dead = audio.length > 0 && audio.every((t) => t.readyState === "ended");
+    if (dead) handleInterrupt("Bản ghi đã dừng khi màn hình bị khóa / chuyển ứng dụng — đã lưu phần ghi được.");
+    else void acquireWakeLock();
+  }
+
   async function start(src: RecordSources): Promise<void> {
     // Reentrancy guard: chặn start khi đang ghi / đang khởi động / đang finalize phiên trước.
     if (recording.value || starting.value || finalizing.value) return;
     starting.value = true;
     error.value = "";
+    interruptNote = null;
     chainError = null;
     offset = 0;
     elapsedS.value = 0;
@@ -278,6 +330,8 @@ export function useRecorder() {
       recorder.start(1000); // timeslice 1s — upload nền
       recording.value = true;
       timer = window.setInterval(() => (elapsedS.value += 1), 1000);
+      void acquireWakeLock(); // giữ màn hình sáng khi ghi (chống auto-lock)
+      document.addEventListener("visibilitychange", onVisibility); // bắt suspend khi khóa/đổi app
     } catch (e) {
       error.value = startErrorMessage(e, src);
       cleanup();
@@ -312,7 +366,10 @@ export function useRecorder() {
         session: sessionId,
         durationS: elapsedS.value,
       });
-      if (chainError) {
+      // Gián đoạn (khóa màn hình…) ưu tiên báo lý do dừng; nếu không thì cảnh báo lỗi mạng chunk (nếu có).
+      if (interruptNote) {
+        error.value = interruptNote;
+      } else if (chainError) {
         error.value = "Một số đoạn bị lỗi mạng — đã lưu phần tải được (bản ghi có thể bị cắt ngắn).";
       }
       return result;
@@ -323,10 +380,13 @@ export function useRecorder() {
       finalizing.value = false;
       sessionId = null;
       recorder = null;
+      interruptNote = null;
     }
   }
 
   function cleanupStream(): void {
+    document.removeEventListener("visibilitychange", onVisibility); // idempotent
+    void releaseWakeLock();
     if (meterRaf !== null) {
       cancelAnimationFrame(meterRaf);
       meterRaf = null;
