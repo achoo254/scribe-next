@@ -47,6 +47,24 @@ function pickMime(hasVideo: boolean): string {
 }
 
 /**
+ * Chỉ đường cấp quyền Micro đúng nơi theo trình duyệt (nhận diện qua UA). Web KHÔNG mở được Cài đặt
+ * hệ thống → chỉ hướng dẫn được. Edge/Chrome/Firefox iOS quản lý quyền mic ở cấp iOS Settings của app;
+ * Safari iOS ở "aA" → Cài đặt Trang web; desktop/Android ở biểu tượng quyền trên thanh địa chỉ.
+ */
+function micPermissionHint(): string {
+  const nav = typeof navigator !== "undefined" ? navigator : undefined;
+  const ua = nav?.userAgent ?? "";
+  const isIOS = /iPad|iPhone|iPod/.test(ua) || (ua.includes("Macintosh") && (nav?.maxTouchPoints ?? 0) > 1);
+  if (isIOS) {
+    if (ua.includes("EdgiOS")) return "Vào Cài đặt iOS → Edge → Micro → bật, rồi tải lại trang và thử lại.";
+    if (ua.includes("CriOS")) return "Vào Cài đặt iOS → Chrome → Micro → bật, rồi tải lại trang và thử lại.";
+    if (ua.includes("FxiOS")) return "Vào Cài đặt iOS → Firefox → Micro → bật, rồi tải lại trang và thử lại.";
+    return "Bấm nút “aA” bên trái thanh địa chỉ → Cài đặt Trang web → Micro → Cho phép (hoặc Cài đặt iOS → Safari → Micro), rồi tải lại trang.";
+  }
+  return "Bấm biểu tượng khoá/quyền bên trái thanh địa chỉ → cho phép Micro, rồi tải lại trang và thử lại.";
+}
+
+/**
  * Đổi lỗi khi bắt đầu ghi sang thông báo tiếng Việt actionable. getUserMedia/getDisplayMedia reject
  * bằng DOMException có tên chuẩn — riêng NotAllowedError (quyền bị từ chối / dialog bị huỷ) là ca hay
  * gặp trên WebKit iOS nên hướng dẫn cấp quyền cụ thể. Lỗi khác (BE init, mạng) giữ nguyên message gốc.
@@ -57,7 +75,7 @@ function startErrorMessage(e: unknown, src: RecordSources): string {
       case "NotAllowedError":
         return src.screen || src.systemAudio
           ? "Chưa được cấp quyền chia sẻ màn hình / micro — hãy chọn nguồn chia sẻ và cho phép truy cập, rồi thử lại."
-          : "Trình duyệt chưa được cấp quyền Micro. Trên iPhone/iPad: mở Cài đặt trình duyệt (hoặc iOS Settings → tên trình duyệt) → bật Micro, rồi bấm Bắt đầu ghi lại.";
+          : `Trình duyệt chưa được cấp quyền Micro. ${micPermissionHint()}`;
       case "NotFoundError":
       case "OverconstrainedError":
         return "Không tìm thấy thiết bị micro phù hợp.";
