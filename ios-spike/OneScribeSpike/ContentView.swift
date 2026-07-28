@@ -85,6 +85,7 @@ struct ContentView: View {
             row("Engine dựng lại", "\(rec.engineRestarts)")
             row("Lỗi ghi file", "\(rec.writeErrors)", warn: rec.writeErrors > 0)
             row("Pin đầu → hiện tại", Self.battery(rec.batteryStart, rec.batteryNow))
+            row("Nguồn", rec.powerState, warn: rec.powerState != "KHÔNG-sạc")
             row("Trạng thái nhiệt", rec.thermal, warn: rec.thermal == "serious" || rec.thermal == "critical")
         }
     }
@@ -167,7 +168,6 @@ struct ContentView: View {
 
     private static func battery(_ start: Float, _ now: Float) -> String {
         guard start >= 0, now >= 0 else { return "n/a" }
-        let delta = Int((start - now) * 100)
-        return "\(Int(start * 100))% → \(Int(now * 100))%  (−\(delta)%)"
+        return String(format: "%.2f%% → %.2f%%  (−%.2f%%)", start * 100, now * 100, (start - now) * 100)
     }
 }

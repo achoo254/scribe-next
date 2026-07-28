@@ -46,6 +46,8 @@ final class Recorder: ObservableObject {
     @Published private(set) var batteryStart: Float = -1
     @Published private(set) var batteryNow: Float = -1
     @Published private(set) var thermal = "—"
+    /// Sạc hay không — bắt buộc phải biết, nếu không thì con số pin vô nghĩa.
+    @Published private(set) var powerState = "—"
     @Published private(set) var lastError = ""
     /// Độ dài mỗi đoạn (phút). 1 phút để test nhanh, 5–10 phút cho phiên 30 phút thật.
     @Published var segmentMinutes: Double = 5
@@ -483,8 +485,23 @@ final class Recorder: ObservableObject {
     private func sampleStats() {
         batteryNow = UIDevice.current.batteryLevel
         thermal = Self.thermalName(ProcessInfo.processInfo.thermalState)
-        let pct = batteryNow < 0 ? "n/a" : "\(Int(batteryNow * 100))%"
-        log.log("STATS pin=\(pct) nhiệt=\(thermal) elapsed=\(Int(elapsed))s đoạn=\(segments.count) engineRunning=\(engine.isRunning)")
+        powerState = Self.powerName(UIDevice.current.batteryState)
+        // In 2 chữ số thập phân: batteryLevel thường chỉ có độ phân giải 1%, nhưng ghi âm nền tốn
+        // dưới 1%/giờ nên cần thấy được mọi bước nhảy nhỏ nhất mà API cấp.
+        let pct = batteryNow < 0 ? "n/a" : String(format: "%.2f%%", batteryNow * 100)
+        let lowPower = ProcessInfo.processInfo.isLowPowerModeEnabled ? " tiếtKiệmPin=BẬT" : ""
+        log.log("STATS pin=\(pct) nguồn=\(powerState)\(lowPower) nhiệt=\(thermal) "
+                + "elapsed=\(Int(elapsed))s đoạn=\(segments.count) engineRunning=\(engine.isRunning)")
+    }
+
+    private static func powerName(_ s: UIDevice.BatteryState) -> String {
+        switch s {
+        case .unplugged: return "KHÔNG-sạc"
+        case .charging: return "ĐANG-SẠC"
+        case .full: return "SẠC-đầy"
+        case .unknown: return "?"
+        @unknown default: return "?"
+        }
     }
 
     /// Sau khi dừng: đọc lại từng file bằng AVAudioFile (parse container thật) và đối chiếu thời lượng
