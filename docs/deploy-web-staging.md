@@ -10,9 +10,12 @@ Hướng dẫn build + deploy **OneScribe Web** (BE axum musl + FE Vue) lên sta
 |---|---|---|---|---|
 | **Staging single-box `.65`** | `103.72.98.65` | `24700` | `scribe.inetdev.io.vn` — BE axum `:8787` + FE static + MongoDB **co-located** | Box SHARED (~15 vhost + MongoDB, chỉ ~3Gi RAM free). Cùng box với cloud-panel staging. |
 
-**Credentials SSH (root@.65):** nằm trong `all-in-one-staging-dev.json` (biến `ALL_IN_ONE_STAGING_DEV` — xem `cloud-panel-application/docs/server-scripts/README.md` để biết path per-OS), nhóm **`"SERVER STAGING .65"`**:
-- `SSH_KEY_SERVER_STAGING_CONTENT` — **nội dung PEM private key inline** (`-----BEGIN ...`). Auth thực tế = key-based. Cách dùng: ghi content ra file tạm + `chmod 600` → `ssh -i <tmp.pem> -p 24700 root@103.72.98.65`.
-- `SSH_SERVER_STAGING` — lệnh `sshpass` (password có thể không auth được vì server key-only; ưu tiên key trên).
+**Credentials SSH (root@.65):** nằm trong `all-in-one-staging-dev.json` (biến `ALL_IN_ONE_STAGING_DEV` — xem `cloud-panel-application/docs/server-scripts/README.md` để biết path per-OS). **Từ 2026-08-13 file dùng schema structured** `{_meta, servers[]}` — entry `name = "SSH_SERVER_STAGING"` (group `"SERVER STAGING .65"`, `auth: "key+password"`):
+- `private_key` — **nội dung PEM inline** (`-----BEGIN ...`), thay cho key cũ `SSH_KEY_SERVER_STAGING_CONTENT`. Auth thực tế = key-based. Cách dùng: ghi ra file tạm + `chmod 600` → `ssh -i <tmp.pem> -p 24700 root@103.72.98.65`:
+  ```bash
+  jq -r '.servers[]|select(.name=="SSH_SERVER_STAGING")|.private_key' "$ALL_IN_ONE_STAGING_DEV" > /tmp/staging.pem && chmod 600 /tmp/staging.pem
+  ```
+- `password` — dự phòng (server key-only nên thường không auth được; ưu tiên key trên).
 
 ## Deploy topology
 
@@ -66,7 +69,7 @@ Build chạy mọi nhánh/MR để bắt lỗi sớm; deploy chỉ `main` (trán
 
 | Key | Giá trị / nguồn | Protected | Masked | Dùng ở |
 |---|---|---|---|---|
-| `SSH_PRIVATE_KEY` | `SSH_KEY_SERVER_STAGING_CONTENT` từ `all-in-one-staging-dev.json` (PEM inline) | ✅ | ❌ (multiline) | deploy |
+| `SSH_PRIVATE_KEY` | `private_key` của entry `SSH_SERVER_STAGING` trong `all-in-one-staging-dev.json` (PEM inline) | ✅ | ❌ (multiline) | deploy |
 | `SERVER_IP` | `103.72.98.65` | ✅ | ❌ | deploy |
 | `SERVER_PORT` | `24700` | ✅ | ❌ | deploy |
 | `SSH_USER` | `root` | ✅ | ❌ | deploy |
@@ -138,7 +141,7 @@ cd web && npm ci && npm run build && cd ..   # → web/dist
 
 # 3) Ghi SSH key ra file tạm (từ all-in-one-staging-dev.json) rồi rsync
 KEY=$(mktemp); chmod 600 "$KEY"
-#   (lấy SSH_KEY_SERVER_STAGING_CONTENT ghi vào $KEY)
+#   jq -r '.servers[]|select(.name=="SSH_SERVER_STAGING")|.private_key' "$ALL_IN_ONE_STAGING_DEV" > "$KEY"
 rsync -avz -e "ssh -i $KEY -p 24700" target/x86_64-unknown-linux-musl/release/onescribe-be root@103.72.98.65:/tmp/onescribe-be.new
 rsync -avz --delete -e "ssh -i $KEY -p 24700" web/dist/ root@103.72.98.65:/tmp/onescribe-fe/
 ssh -i "$KEY" -p 24700 root@103.72.98.65 '
