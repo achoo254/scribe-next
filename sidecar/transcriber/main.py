@@ -192,10 +192,16 @@ def _transcribe_mlx(file: str, model_dir: str, size: str, prompt):
     # Apple Silicon Metal GPU. Lazy import: sidecar Windows/Intel không cài mlx → không chạm nhánh này.
     # mlx_whisper tự cache model (ModelHolder); không dùng get_model warm-pool của ct2.
     import mlx_whisper
+    from mlx_whisper.audio import SAMPLE_RATE
+
+    # Decode bằng PyAV (faster_whisper.audio, đã bundle) thay vì để mlx_whisper tự gọi CLI `ffmpeg`
+    # từ PATH: app bundle mở từ Finder có PATH tối thiểu (không /opt/homebrew/bin) → Errno 2.
+    from faster_whisper.audio import decode_audio
 
     send({"type": "info", "message": f"Đang dùng MLX (Metal GPU) — model {size}"})
+    audio = decode_audio(file, sampling_rate=SAMPLE_RATE)
     result = mlx_whisper.transcribe(
-        file, path_or_hf_repo=resolve_model_path(model_dir, size),
+        audio, path_or_hf_repo=resolve_model_path(model_dir, size),
         language="vi", word_timestamps=True, initial_prompt=prompt or None,
     )
     norm = []
