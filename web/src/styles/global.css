@@ -1,0 +1,272 @@
+/* Global stylesheet: Tailwind + design tokens (same system as localman-next)
+   + base rules. No colour literal or raw spacing px lives here — everything
+   resolves to a custom property from ./tokens.css (enforced by check:tokens). */
+@import "tailwindcss";
+@import "./tokens.css";
+
+/* Self-hosted fonts (latin, latin-ext, vietnamese), declared by hand so
+   Vietnamese pages do not also download the latin-ext files. See the
+   comment at the top of each file. */
+@import "./fonts-inter.css";
+@import "./fonts-jetbrains-mono.css";
+
+/* Map design tokens into Tailwind. `inline` makes utilities reference the
+   token custom property directly (e.g. `.bg-surface{background:var(--c-surface)}`),
+   so switching `data-theme` re-themes every utility without a rebuild.
+   `reference` stops Tailwind from re-emitting these names as theme variables:
+   tokens.css already defines them, and a re-emitted `--radius-md: var(--radius-md)`
+   would be a self-reference. Default palettes are cleared so only token
+   colours exist. */
+@theme inline reference {
+	--color-*: initial;
+	--color-bg: var(--c-bg);
+	--color-grid: var(--c-grid);
+	--color-surface: var(--c-surface);
+	--color-surface-subtle: var(--c-surface-subtle);
+	--color-fg: var(--c-text);
+	--color-muted: var(--c-text-muted);
+	--color-icon-muted: var(--c-icon-muted);
+	--color-border: var(--c-border);
+	--color-border-strong: var(--c-border-strong);
+	--color-border-subtle: var(--c-border-subtle);
+	--color-bar-track: var(--c-bar-track);
+	--color-primary: var(--c-primary);
+	--color-primary-solid: var(--c-primary-solid);
+	--color-primary-solid-hover: var(--c-primary-solid-hover);
+	--color-on-primary: var(--c-on-primary);
+	--color-accent: var(--c-accent);
+	--color-info: var(--c-info);
+	--color-success: var(--c-success);
+	--color-warning: var(--c-warning);
+	--color-error: var(--c-error);
+	--color-on-tone: var(--c-on-tone);
+	--color-info-text: var(--c-info-text);
+	--color-success-text: var(--c-success-text);
+	--color-warning-text: var(--c-warning-text);
+	--color-error-text: var(--c-error-text);
+	--color-backdrop: var(--c-backdrop);
+	--color-viz-green: var(--c-viz-green);
+	--color-viz-amber: var(--c-viz-amber);
+	--color-viz-blue: var(--c-viz-blue);
+	--color-viz-violet: var(--c-viz-violet);
+	--color-viz-red: var(--c-viz-red);
+	--color-viz-grey: var(--c-viz-grey);
+	--color-viz-cyan: var(--c-viz-cyan);
+	--color-viz-green-text: var(--c-viz-green-text);
+	--color-viz-amber-text: var(--c-viz-amber-text);
+	--color-viz-blue-text: var(--c-viz-blue-text);
+	--color-viz-violet-text: var(--c-viz-violet-text);
+	--color-viz-red-text: var(--c-viz-red-text);
+	--color-viz-grey-text: var(--c-viz-grey-text);
+	--color-viz-cyan-text: var(--c-viz-cyan-text);
+
+	/* Numeric spacing (p-4, gap-3…) multiplies the 4px token step, so the
+	   Tailwind scale and --space-* share one source. */
+	--spacing: var(--space-1);
+	--spacing-gutter: var(--gutter);
+	--container-page: var(--container);
+
+	--radius-*: initial;
+	--radius-xs: var(--radius-xs);
+	--radius-sm: var(--radius-sm);
+	--radius-md: var(--radius-md);
+	--radius-lg: var(--radius-lg);
+	--radius-xl: var(--radius-xl);
+	--radius-full: var(--radius-full);
+
+	--shadow-*: initial;
+	--shadow-sm: var(--shadow-sm);
+	--shadow-md: var(--shadow-md);
+	--shadow-lg: var(--shadow-lg);
+	--shadow-glow-primary: var(--shadow-glow-primary);
+	--shadow-glow-error: var(--shadow-glow-error);
+	--shadow-focus-primary: var(--shadow-focus-primary);
+	--shadow-focus-error: var(--shadow-focus-error);
+
+	/* Small text keeps the body rhythm (1.55) instead of Tailwind's tighter
+	   defaults, matching the prototype's 13–14px copy. */
+	--text-sm--line-height: 1.55;
+	--text-xs--line-height: 1.55;
+
+	--font-*: initial;
+	--font-sans: var(--font-sans);
+	--font-mono: var(--font-mono);
+
+	--ease-*: initial;
+	--ease-standard: var(--ease-standard);
+	--ease-decelerate: var(--ease-decelerate);
+	--ease-accelerate: var(--ease-accelerate);
+
+	--default-transition-duration: var(--dur-fast);
+	--default-transition-timing-function: var(--ease-standard);
+
+	--animate-modal-in: modal-in var(--dur-base) var(--ease-decelerate) both;
+	--animate-modal-out: modal-out var(--dur-base) var(--ease-accelerate) both;
+	--animate-fade-in: fade-in var(--dur-base) var(--ease-standard) both;
+	--animate-fade-out: fade-out var(--dur-base) var(--ease-standard) both;
+	--animate-pop-in: pop-in var(--dur-base) var(--ease-decelerate) both;
+	--animate-toast-in: toast-in var(--dur-base) var(--ease-decelerate) both;
+	/* Indeterminate progress bar (PanelProgress): a third-wide
+	   segment sweeping across its track. */
+	--animate-progress-sweep: progress-sweep 1.2s var(--ease-standard) infinite;
+
+	@keyframes progress-sweep {
+		from {
+			transform: translateX(-100%);
+		}
+		to {
+			transform: translateX(300%);
+		}
+	}
+
+	@keyframes modal-in {
+		from {
+			opacity: 0;
+			transform: translateY(var(--motion-modal-offset));
+		}
+		to {
+			opacity: 1;
+			transform: none;
+		}
+	}
+	@keyframes modal-out {
+		from {
+			opacity: 1;
+			transform: none;
+		}
+		to {
+			opacity: 0;
+			transform: translateY(var(--motion-modal-offset));
+		}
+	}
+	@keyframes fade-in {
+		from {
+			opacity: 0;
+		}
+		to {
+			opacity: 1;
+		}
+	}
+	@keyframes fade-out {
+		from {
+			opacity: 1;
+		}
+		to {
+			opacity: 0;
+		}
+	}
+	@keyframes pop-in {
+		from {
+			opacity: 0;
+			transform: translateY(calc(var(--space-1) * -1));
+		}
+		to {
+			opacity: 1;
+			transform: none;
+		}
+	}
+	@keyframes toast-in {
+		from {
+			opacity: 0;
+			transform: translateY(var(--space-2));
+		}
+		to {
+			opacity: 1;
+			transform: none;
+		}
+	}
+}
+
+/* Soft tinted surface for badges, alerts and chips. Set `--tone` (hue) and
+   optionally `--tone-border-mix` (default 30%) on the element. */
+@utility tint-soft {
+	background-color: color-mix(in srgb, var(--tone) 8%, var(--c-surface));
+	border-color: color-mix(
+		in srgb,
+		var(--tone) var(--tone-border-mix, 30%),
+		var(--c-surface)
+	);
+}
+
+/* Skeleton placeholder (components/ui/skeleton.tsx): a static muted block
+   that reads on both themes. `skeleton-shimmer` adds the moving highlight;
+   components apply it as `motion-safe:skeleton-shimmer`, so reduced motion
+   keeps the plain block. */
+@utility skeleton {
+	background-color: color-mix(in srgb, var(--c-text) 9%, var(--c-surface));
+}
+
+@utility skeleton-shimmer {
+	background-image: linear-gradient(
+		90deg,
+		transparent 0%,
+		color-mix(in srgb, var(--c-text) 7%, transparent) 50%,
+		transparent 100%
+	);
+	background-size: 200% 100%;
+	background-repeat: no-repeat;
+	animation: skeleton-shimmer 1.6s var(--ease-standard) infinite;
+}
+
+@keyframes skeleton-shimmer {
+	from {
+		background-position: 150% 0;
+	}
+	to {
+		background-position: -50% 0;
+	}
+}
+
+@layer base {
+	html {
+		-webkit-text-size-adjust: 100%;
+		scroll-padding-top: calc(var(--topbar-h) + var(--space-4));
+	}
+
+	body {
+		min-height: 100dvh;
+		font-family: var(--font-sans);
+		font-size: 1rem;
+		line-height: 1.55;
+		color: var(--c-text);
+		background-color: var(--c-bg);
+		-webkit-font-smoothing: antialiased;
+	}
+
+	#app {
+		overflow-x: clip;
+	}
+
+	a {
+		color: var(--c-primary);
+	}
+
+	/* Overrides the stroke-width attribute on every Tabler icon. */
+	svg.tabler-icon {
+		stroke-width: var(--icon-stroke);
+		flex-shrink: 0;
+	}
+
+	code,
+	kbd,
+	pre {
+		font-family: var(--font-mono);
+	}
+
+	:focus-visible {
+		outline: 2px solid var(--c-primary);
+		outline-offset: 2px;
+	}
+}
+
+/* Reduced motion: tokens.css already collapses --dur-* to 1ms; this also
+   catches animations/transitions that do not read the tokens. */
+@media (prefers-reduced-motion: reduce) {
+	*,
+	*::before,
+	*::after {
+		animation-duration: 1ms !important;
+		animation-iteration-count: 1 !important;
+		transition-duration: 1ms !important;
+	}
+}

@@ -1,29 +1,25 @@
 <!doctype html>
 <html lang="vi">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#0d0d0d" />
-    <title>OneScribe</title>
-    <!-- Font khớp desktop app: Be Vietnam Pro -->
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap"
-      rel="stylesheet"
-    />
-    <!-- Nền tối sẵn để không nháy trắng trước khi Vuetify theme mount -->
-    <style>
-      html,
-      body {
-        margin: 0;
-        background: #0d0d0d;
-      }
-    </style>
-  </head>
-  <body>
-    <div id="app"></div>
-    <script type="module" src="/src/main.ts"></script>
-  </body>
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+		<!-- The browser paints its default canvas in the OS scheme until the
+		     stylesheet loads, so a dark OS never flashes white. theme-color is
+		     set from the --c-bg token by src/lib/theme.ts. -->
+		<meta name="color-scheme" content="light dark" />
+		<meta name="theme-color" content="" />
+		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+		<title>OneScribe · Ghi và cắt media</title>
+		<script>
+			// Apply the saved theme before first paint (key: THEME_STORAGE_KEY in src/lib/theme.ts).
+			try {
+				var theme = localStorage.getItem("onescribe-theme");
+				if (theme === "light" || theme === "dark") document.documentElement.dataset.theme = theme;
+			} catch (error) {}
+		</script>
+	</head>
+	<body>
+		<div id="app"></div>
+		<script type="module" src="/src/main.tsx"></script>
+	</body>
 </html>

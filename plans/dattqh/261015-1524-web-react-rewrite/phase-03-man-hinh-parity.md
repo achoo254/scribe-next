@@ -1,7 +1,7 @@
 ---
 phase: 3
 title: "Màn hình và parity tính năng"
-status: pending
+status: in-progress
 priority: P1
 effort: L
 dependencies: [2]
@@ -49,5 +49,9 @@ Route giữ nguyên: `/` (cần đăng nhập), `/login`, mọi đường khác 
 
 ## Success Criteria
 
-- [ ] Mọi dòng trong bảng parity đạt trên staging.
+- [ ] Mọi dòng trong bảng parity đạt ở dev local (backend thật chạy local).
 - [ ] `lint`, `typecheck`, `test`, `check:tokens`, `build` EXIT 0.
+
+## Môi trường kiểm chứng lab (dựng rồi gỡ 2026-10-15)
+
+Đã dựng thử `onescribe-react.tunnel.hoandat.com` trên .65 (pm2 + tunelo client + key riêng) rồi gỡ cùng ngày khi chủ sở hữu chốt chỉ còn dev local và prod: pm2 đã xoá, `/opt/onescribe-react-lab` đã xoá, key `onescribe-react-lab` đã `revoked`. Bài học còn giá trị: `create-access-token.mjs` của tunelo tạo key thiếu `tenantId` nên server từ chối (`TUNELO_AUTH_001`) cho tới khi gán `tenantId: "primary"`.

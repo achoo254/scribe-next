@@ -3,6 +3,6 @@ dist
 .env
 *.local
 
-# .env.staging giữ cục bộ, không commit (root .gitignore đã chặn .env.*)
+# .env giữ cục bộ, không commit (dev local và build prod dùng chung)
 .env.*
 !.env.example

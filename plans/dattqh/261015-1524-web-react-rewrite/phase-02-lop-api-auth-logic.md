@@ -1,7 +1,7 @@
 ---
 phase: 2
 title: "Lớp API, auth và logic nghiệp vụ"
-status: pending
+status: done
 priority: P1
 effort: M
 dependencies: [1]

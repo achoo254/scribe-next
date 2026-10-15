@@ -1,7 +1,7 @@
 ---
 phase: 1
 title: "Khung dự án, token và primitive UI"
-status: pending
+status: done
 priority: P1
 effort: M
 dependencies: []
@@ -27,8 +27,8 @@ Thay khung `web/` bằng đúng stack và design system của `localman-next`, c
 ## Requirements
 
 - React 19, Vite 7, Tailwind 4 (`@tailwindcss/vite`), React Router 7, TanStack Query 5, Radix primitives cần cho các primitive đã chọn, `@tabler/icons-react`. Version ghim theo `localman-next/apps/web/package.json` lúc thực hiện.
-- npm (giữ như `web/` hiện tại và `docs/deploy-web-staging.md`), có `package-lock.json`.
-- Scripts: `dev`, `build` (`tsc -b && vite build --mode staging`), `lint` (biome), `typecheck`, `test` (vitest), `check:tokens`.
+- npm (giữ như `web/` hiện tại và `docs/deploy-web-production.md`), có `package-lock.json`.
+- Scripts: `dev`, `build` (`tsc --noEmit && vite build`), `lint` (biome), `typecheck`, `test` (vitest), `check:tokens`.
 - Vite dev proxy `/api` → `127.0.0.1:8787` như `web/vite.config.ts`.
 - Sáng/tối theo `prefers-color-scheme`, có nút chuyển `data-theme` như `localman-next` (`theme-toggle`).
 - Wordmark `OneScribe`: JetBrains Mono đậm, chữ "One" màu `--c-primary` (cùng quy ước wordmark Localman).
