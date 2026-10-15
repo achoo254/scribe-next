@@ -17,7 +17,7 @@ export function TabsList({
 	return (
 		<RadixTabs.List
 			className={cn(
-				"flex overflow-x-auto border-border-subtle border-b px-4 pt-2",
+				"flex overflow-x-auto overflow-y-hidden border-border-subtle border-b px-4 pt-2",
 				className,
 			)}
 			{...rest}

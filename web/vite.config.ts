@@ -57,7 +57,12 @@ export default defineConfig(({ command, mode }) => {
 			// Same origin as production behind nginx: FE and BE share the
 			// session cookie without CORS.
 			proxy: {
-				"/api": { target: "http://127.0.0.1:8787", changeOrigin: true },
+				// xfwd: BE reads the client IP from X-Forwarded-For, as behind nginx.
+				"/api": {
+					target: "http://127.0.0.1:8787",
+					changeOrigin: true,
+					xfwd: true,
+				},
 			},
 		},
 		build: {
