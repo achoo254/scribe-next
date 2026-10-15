@@ -1,6 +1,6 @@
-# OneScribe Web — CI/CD build + deploy lên staging .65 (scribe.inetdev.io.vn)
+# OneScribe Web — CI/CD build + deploy lên prod .65 (scribe.inetdev.io.vn)
 #
-# Biến cần cấu hình ở GitLab > Settings > CI/CD > Variables (chi tiết: docs/deploy-web-staging.md):
+# Biến cần cấu hình ở GitLab > Settings > CI/CD > Variables (chi tiết: docs/deploy-web-production.md):
 #
 #   [SSH deploy — .65]
 #   SSH_PRIVATE_KEY   — nội dung PEM private key vào root@103.72.98.65 (protected; KHÔNG mask được vì multiline)
@@ -9,9 +9,9 @@
 #   SSH_USER          — root
 #
 #   [Bake compile-time vào BE binary — build.rs đọc lúc build]
-#   MONGO_URI         — Mongo URI staging (từ .65, thường mongodb://127.0.0.1:27017; protected + masked)
+#   MONGO_URI         — Mongo URI prod (từ .65, thường mongodb://127.0.0.1:27017; protected + masked)
 #   PORT              — 8787 (khớp systemd + nginx proxy)
-#   # ALLOWED_DOMAINS / ALLOWED_EMAILS: KHÔNG set → fallback open (mọi email Google verified) — quyết định staging.
+#   # ALLOWED_DOMAINS / ALLOWED_EMAILS: KHÔNG set → fallback open (mọi email Google verified) — quyết định hiện tại.
 #
 # LƯU Ý .65 chặn SSH theo source-IP allowlist (iptables CP_SSH_ACL). Runner online: 103.57.222.245 (id=15).
 # Deploy chỉ chạy trên `main`; build chạy mọi nhánh + MR để bắt lỗi sớm.
@@ -93,7 +93,7 @@ fe:build:
 # DEPLOY — rsync binary + FE dist sang .65, thay binary (atomic rename) rồi restart systemd.
 # CHỈ main. KHÔNG đụng nginx/systemd unit (setup 1 lần thủ công — xem docs).
 # =========================================================================
-deploy:staging:
+deploy:production:
   extends: .ssh_deploy_base
   stage: deploy
   needs: ['be:build', 'fe:build']

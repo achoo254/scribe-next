@@ -51,8 +51,8 @@ sidecar/transcriber/*.spec
 __pycache__/
 *.pyc
 
-# Secrets — dotenv (KHÔNG commit; chỉ .env.example là template an toàn). .env.staging cũng không
-# commit: đã gỡ khỏi lịch sử khi chuyển repo sang GitHub, mỗi máy tự giữ bản của mình.
+# Secrets — dotenv (KHÔNG commit; chỉ .env.example là template an toàn). .env.production (biến
+# build BE cho prod .65) và web/.env cũng không commit: mỗi máy tự giữ bản của mình.
 .env
 .env.*
 !.env.example

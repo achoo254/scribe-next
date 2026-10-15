@@ -1,19 +1,42 @@
-# Deploy Guide — OneScribe Web (staging .65)
+# Deploy Guide — OneScribe Web (prod .65)
 
-Hướng dẫn build + deploy **OneScribe Web** (BE axum musl + FE Vue) lên staging box `.65` tại `scribe.inetdev.io.vn`, qua **GitLab CI/CD** (runner sẵn có) + fallback deploy thủ công. Mục đích: AI Agent / dev có full context deploy mà không cần dò lại hạ tầng.
+Hướng dẫn build + deploy **OneScribe Web** (BE axum musl + FE Vue) lên box prod `.65` tại `scribe.inetdev.io.vn`, qua **GitLab CI/CD** (runner sẵn có) + fallback deploy thủ công. Mục đích: AI Agent / dev có full context deploy mà không cần dò lại hạ tầng.
 
 > Deploy **installer desktop** (Windows/macOS) là tài liệu khác: [deployment-guide.md](./deployment-guide.md). File này CHỈ cho bản Web.
+
+## Môi trường
+
+OneScribe web có đúng **hai** môi trường (chốt 2026-10-15; khái niệm staging đã bỏ):
+
+| Môi trường | Ở đâu | Dùng để |
+|---|---|---|
+| **Dev local** | Máy dev: BE `127.0.0.1:8787` + `cd web && npm run dev` (`:5173`, proxy `/api` → BE) | Phát triển và kiểm chứng trước khi đẩy prod |
+| **Prod** | Box `.65`, `https://scribe.inetdev.io.vn` | Người dùng thật — mọi deploy hay đổi cấu hình ở đây là thay đổi prod |
+
+Không dựng thêm môi trường xem trước (tunnel, preview) trên `.65`.
+
+### Chạy dev local
+
+- **Mongo dev:** database `onescribe` trên mongod lab **176** (`192.168.122.176:27017`, cần VPN lab), user `onescribe_dev` chỉ có `readWrite` trên đúng database đó (`authSource=onescribe`). Tên database là `onescribe` vì BE gắn cứng tên này (`server/onescribe-be/src/db.rs`); 176 là máy khác với prod nên không đụng dữ liệu thật. Tạo ngày 2026-10-15; đã kiểm cách ly: user này không thấy database nào khác và đọc `server_tools_v2_staging_db` bị `Unauthorized`.
+- **Biến BE dev** nằm trong `.env.development` ở gốc repo (không có trong git, mỗi máy tự giữ): `MONGO_URI`, `PORT`, `SESSION_KEY_PATH`, `DATA_DIR` (hai đường dẫn sau trỏ ra `~/.onescribe-dev/`, vì mặc định `/opt/onescribe-be` không ghi được trên macOS). BE đọc biến **lúc build** (`option_env!`), nên nạp env rồi mới build/chạy:
+
+  ```bash
+  set -a; . ./.env.development; set +a
+  cargo run -p onescribe-be          # → 127.0.0.1:8787, kiểm: curl 127.0.0.1:8787/api/health
+  cd web && npm run dev              # → http://localhost:5173
+  ```
+- **Đăng nhập Google ở dev:** `localhost` đã được thêm vào Firebase authorizedDomains của project `onescribe-inet` ngày 2026-10-15 (trước đó chỉ có `onescribe-inet.firebaseapp.com`, `onescribe-inet.web.app`, `scribe.inetdev.io.vn`). Gỡ: PATCH `identitytoolkit.googleapis.com/admin/v2/projects/onescribe-inet/config?updateMask=authorizedDomains` với danh sách cũ.
 
 ## Server
 
 | Server | IP | SSH port | Vai trò | Ghi chú |
 |---|---|---|---|---|
-| **Staging single-box `.65`** | `103.72.98.65` | `24700` | `scribe.inetdev.io.vn` — BE axum `:8787` + FE static + MongoDB **co-located** | Box SHARED (~15 vhost + MongoDB, chỉ ~3Gi RAM free). Cùng box với cloud-panel staging. |
+| **Prod single-box `.65`** | `103.72.98.65` | `24700` | `scribe.inetdev.io.vn` — BE axum `:8787` + FE static + MongoDB **co-located** | Box SHARED (~15 vhost + MongoDB, chỉ ~3Gi RAM free). Cùng box với cloud-panel staging. |
 
 **Credentials SSH (root@.65):** nằm trong `all-in-one-staging-dev.json` (biến `ALL_IN_ONE_STAGING_DEV` — xem `cloud-panel-application/docs/server-scripts/README.md` để biết path per-OS). **Từ 2026-08-13 file dùng schema structured** `{_meta, servers[]}` — entry `name = "SSH_SERVER_STAGING"` (group `"SERVER STAGING .65"`, `auth: "key+password"`):
 - `private_key` — **nội dung PEM inline** (`-----BEGIN ...`), thay cho key cũ `SSH_KEY_SERVER_STAGING_CONTENT`. Auth thực tế = key-based. Cách dùng: ghi ra file tạm + `chmod 600` → `ssh -i <tmp.pem> -p 24700 root@103.72.98.65`:
   ```bash
-  jq -r '.servers[]|select(.name=="SSH_SERVER_STAGING")|.private_key' "$ALL_IN_ONE_STAGING_DEV" > /tmp/staging.pem && chmod 600 /tmp/staging.pem
+  jq -r '.servers[]|select(.name=="SSH_SERVER_STAGING")|.private_key' "$ALL_IN_ONE_STAGING_DEV" > /tmp/onescribe-65.pem && chmod 600 /tmp/onescribe-65.pem
   ```
 - `password` — dự phòng (server key-only nên thường không auth được; ưu tiên key trên).
 
@@ -61,9 +84,9 @@ Pipeline: `.gitlab-ci.yml` (root) + template `.gitlab/ci/templates/ssh-deploy.ym
 |---|---|---|---|
 | `be:build` | build | mọi nhánh + MR | Build static musl binary trong image `rust-musl-cross` (bake `MONGO_URI`/`PORT`). Artifact = binary. |
 | `fe:build` | build | mọi nhánh + MR | `cd web && npm ci && npm run build` (vue-tsc + vite). Artifact = `web/dist`. |
-| `deploy:staging` | deploy | **chỉ `main`** | rsync binary + dist sang `.65`, thay binary bằng **atomic rename** rồi `systemctl restart onescribe-be`. |
+| `deploy:production` | deploy | **chỉ `main`** | rsync binary + dist sang `.65`, thay binary bằng **atomic rename** rồi `systemctl restart onescribe-be`. |
 
-Build chạy mọi nhánh/MR để bắt lỗi sớm; deploy chỉ `main` (tránh nhánh phụ đẩy lên staging shared).
+Build chạy mọi nhánh/MR để bắt lỗi sớm; deploy chỉ `main` (tránh nhánh phụ đẩy lên prod trên box shared).
 
 ### CI/CD Variables (Settings → CI/CD → Variables)
 
@@ -73,15 +96,15 @@ Build chạy mọi nhánh/MR để bắt lỗi sớm; deploy chỉ `main` (trán
 | `SERVER_IP` | `103.72.98.65` | ✅ | ❌ | deploy |
 | `SERVER_PORT` | `24700` | ✅ | ❌ | deploy |
 | `SSH_USER` | `root` | ✅ | ❌ | deploy |
-| `MONGO_URI` | Mongo URI staging trên `.65` (co-located; thường `mongodb://127.0.0.1:27017`) | ✅ | ✅ | be:build (bake) |
+| `MONGO_URI` | Mongo URI prod trên `.65` (co-located; thường `mongodb://127.0.0.1:27017`) | ✅ | ✅ | be:build (bake) |
 | `PORT` | `8787` (khớp systemd + nginx proxy) | ✅ | ❌ | be:build (bake) |
 
-- `ALLOWED_DOMAINS` / `ALLOWED_EMAILS`: **KHÔNG set** → fallback rỗng = mở cho mọi email Google verified (quyết định staging). Muốn siết → thêm biến `ALLOWED_DOMAINS=inet.vn` rồi build lại.
+- `ALLOWED_DOMAINS` / `ALLOWED_EMAILS`: **KHÔNG set** → fallback rỗng = mở cho mọi email Google verified (quyết định hiện tại). Muốn siết → thêm biến `ALLOWED_DOMAINS=inet.vn` rồi build lại.
 - **Protected** = chỉ inject trên protected branch/tag. `main` phải là **protected branch** (mặc định GitLab) để job `main` nhận được biến. Nhánh phụ không nhận protected var → build dùng fallback (vô hại vì không deploy).
 
 ### SSH source-IP allowlist (BẮT BUỘC)
 
-`.65` chặn SSH port `24700` theo iptables chain **`CP_SSH_ACL`** (allowlist source IP). **IP egress runner chạy `deploy:staging` PHẢI nằm trong allowlist**, nếu không `ssh-keyscan` trong template treo tới timeout rồi fail (template in rõ egress IP để whitelist).
+`.65` chặn SSH port `24700` theo iptables chain **`CP_SSH_ACL`** (allowlist source IP). **IP egress runner chạy `deploy:production` PHẢI nằm trong allowlist**, nếu không `ssh-keyscan` trong template treo tới timeout rồi fail (template in rõ egress IP để whitelist).
 
 - Runner online: **`103.57.222.245`** (id=15, đang dùng) · `202.92.5.105` (id=5, Shared-Runner đang paused).
 - Thêm runner mới / CI fail ở keyscan → SSH vào `.65` thêm rule (idempotent) rồi persist:
@@ -96,9 +119,11 @@ Build chạy mọi nhánh/MR để bắt lỗi sớm; deploy chỉ `main` (trán
 
 Dùng Harbor pull-through mirror `harbor.000nethost.com/docker-hub/...` cho image Docker Hub (né rate-limit). BE build dùng `ghcr.io/rust-cross/rust-musl-cross:x86_64-musl` — nếu runner không reach ghcr.io → mirror image này vào Harbor rồi đổi `image:` trong `be:build`.
 
-### FE build env — Firebase config (staging)
+### FE build env — Firebase config
 
-FE đọc `VITE_FIREBASE_API_KEY/AUTH_DOMAIN/PROJECT_ID` **lúc build** (`web/src/lib/firebase.ts`). Sản phẩm **chỉ chạy staging** → `web/package.json` build = `vite build --mode staging` → Vite load `web/.env.staging` (committed; config Firebase web là **public**, KHÔNG phải secret). Thiếu 3 biến lúc build → `auth/invalid-api-key` → FE **trắng trang**. KHÔNG dùng `.env.production` / `--mode production` (không có môi trường production).
+FE đọc `VITE_FIREBASE_API_KEY/AUTH_DOMAIN/PROJECT_ID` **lúc build** (`web/src/lib/firebase.ts`). Dev local và prod dùng chung một Firebase project, nên cả `npm run dev` lẫn `npm run build` (mode production mặc định của Vite) đọc cùng tệp `web/.env`. Tệp này **không có trong git**: máy build phải tự có (mẫu ở `web/.env.example`; config Firebase web là public, không phải secret). Thiếu biến nào thì `vite build` dừng và báo tên biến, thay vì ra bản build trắng trang (`auth/invalid-api-key`).
+
+Biến build của BE cho prod (`MONGO_URI`, `PORT`, `ALLOWED_DOMAINS`, `ALLOWED_EMAILS`) giữ cục bộ trong `.env.production` ở gốc repo (không có trong git), nạp vào shell trước khi build: `set -a; . ./.env.production; set +a`.
 
 ## Setup 1 lần trên `.65` (bootstrap — trước lần deploy CI đầu)
 
@@ -139,7 +164,7 @@ MONGO_URI="mongodb://127.0.0.1:27017" PORT=8787 ./scripts/build-musl.sh
 # 2) Build FE
 cd web && npm ci && npm run build && cd ..   # → web/dist
 
-# 3) Ghi SSH key ra file tạm (từ all-in-one-staging-dev.json) rồi rsync
+# 3) Ghi SSH key ra file tạm (từ all-in-one-staging-dev.json — tên tệp credential, không phải tên môi trường) rồi rsync
 KEY=$(mktemp); chmod 600 "$KEY"
 #   jq -r '.servers[]|select(.name=="SSH_SERVER_STAGING")|.private_key' "$ALL_IN_ONE_STAGING_DEV" > "$KEY"
 rsync -avz -e "ssh -i $KEY -p 24700" target/x86_64-unknown-linux-musl/release/onescribe-be root@103.72.98.65:/tmp/onescribe-be.new

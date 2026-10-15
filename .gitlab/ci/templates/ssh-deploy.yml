@@ -1,4 +1,4 @@
-# Template: SSH + rsync deploy vào staging .65
+# Template: SSH + rsync deploy vào prod .65
 # Yêu cầu biến CI/CD (project-level): SSH_PRIVATE_KEY, SERVER_IP, SERVER_PORT, SSH_USER
 # Cách dùng: job `extends: .ssh_deploy_base`
 #
