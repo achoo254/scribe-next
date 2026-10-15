@@ -76,6 +76,15 @@ pub fn compute_segment_time(
     Ok(secs)
 }
 
+/// Mốc cắt cho tiêu chí "Số phần": đúng K−1 mốc `duration·i/K`.
+///
+/// Không dùng `-segment_time duration/K`: ffmpeg cắt ở MỌI bội số của nó, và sai số làm tròn đặt
+/// bội thứ K ngay trước cuối tệp → thêm một đoạn cuối gần rỗng (đã gặp: đoạn 880 byte hỏng).
+pub fn parts_cut_times(duration_s: f64, parts: f64) -> Vec<f64> {
+    let k = parts.round() as u32;
+    (1..k).map(|i| duration_s * f64::from(i) / f64::from(k)).collect()
+}
+
 pub(crate) fn stem_of(path: &str) -> String {
     Path::new(path)
         .file_stem()

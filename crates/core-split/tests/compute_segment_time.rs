@@ -62,3 +62,13 @@ fn parts_less_than_one_errs() {
     let i = info(600.0, 128_000);
     assert!(compute_segment_time(SplitCriterion::Parts, 0.4, &i).is_err());
 }
+
+#[test]
+fn parts_cut_times_gives_k_minus_one_cuts() {
+    assert_eq!(core_split::parts_cut_times(12.0, 4.0), vec![3.0, 6.0, 9.0]);
+    assert!(core_split::parts_cut_times(12.0, 1.0).is_empty());
+    // Thời lượng không chia hết: vẫn K−1 mốc, mốc cuối trước cuối tệp một phần.
+    let cuts = core_split::parts_cut_times(10.007, 3.0);
+    assert_eq!(cuts.len(), 2);
+    assert!(10.007 - cuts[1] > 3.3);
+}

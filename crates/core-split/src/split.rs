@@ -1,7 +1,7 @@
 //! Cắt 1 file → nhiều đoạn (ffmpeg segment muxer + `-c copy`). Tiến độ qua callback.
 
 use crate::probe::{probe_file, size_cut_times};
-use crate::{compute_segment_time, new_command, stem_of, MediaInfo, OutFile, SplitProgress};
+use crate::{compute_segment_time, new_command, parts_cut_times, stem_of, MediaInfo, OutFile, SplitProgress};
 use std::path::Path;
 use std::process::Stdio;
 use std::time::Duration;
@@ -69,6 +69,15 @@ pub async fn split_file_into(
         };
         if times.is_empty() {
             SegmentArg::Time(compute_segment_time(criterion, value, &info)?)
+        } else {
+            SegmentArg::Times(times)
+        }
+    } else if criterion == SplitCriterion::Parts {
+        compute_segment_time(criterion, value, &info)?; // cùng kiểm tra đầu vào (K ≥ 1, đoạn ≥ 1 giây)
+        let times = parts_cut_times(info.duration_s, value);
+        if times.is_empty() {
+            // K = 1: một đoạn duy nhất, mốc cắt nằm ngoài tệp.
+            SegmentArg::Time(info.duration_s + 1.0)
         } else {
             SegmentArg::Times(times)
         }

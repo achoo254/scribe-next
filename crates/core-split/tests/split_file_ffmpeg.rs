@@ -71,11 +71,11 @@ async fn split_parts_creates_expected_segments() {
     let dir = temp_dir("parts");
     let input = gen_wav(&dir, "song.wav", 12);
     let out = dir.join("out");
-    // 12s chia 4 phần → segment_time 3s → ~4 đoạn (dung sai ±1 do căn theo packet).
+    // 12s chia 4 phần → mốc 3/6/9s → đúng 4 đoạn (trước đây có thể ra đoạn thứ 5 gần rỗng).
     let segs = split_file(FFMPEG, FFPROBE, &input, SplitCriterion::Parts, 4.0, out.to_str().unwrap(), |_| {})
         .await
         .expect("split_file");
-    assert!((3..=5).contains(&segs.len()), "số đoạn {} ngoài [3,5]", segs.len());
+    assert_eq!(segs.len(), 4, "số đoạn");
     // Đoạn vào out/song/, tên song_000.wav... (list_outputs sort tăng dần).
     assert_eq!(segs[0].name, "song_000.wav");
     assert!(Path::new(&segs[0].path).starts_with(out.join("song")));
