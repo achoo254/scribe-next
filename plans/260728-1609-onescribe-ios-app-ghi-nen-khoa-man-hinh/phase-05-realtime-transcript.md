@@ -38,6 +38,21 @@ Chất lượng bản realtime kém bản chép cả file khoảng 5 điểm kh�
 
 Gate fail mà không có lối lui khả thi thì dừng và báo chủ sở hữu, không viết tiếp.
 
+### Kết quả Gate 0 bước 1 (đo từ Mac, 2026-10-15)
+
+Tạo token qua `POST /v1/realtime/client_secrets` với `session.type = "transcription"`, mở `wss://api.openai.com/v1/realtime` bằng token đó, stream PCM 24 kHz ở tốc độ thật.
+
+| Câu hỏi | Kết quả |
+|---|---|
+| Tạo được token tạm cho phiên transcription không | Được |
+| Token sống bao lâu | Mặc định 600 giây; đặt được tới 7.200 giây qua `expires_after` (7.201 bị từ chối, HTTP 400) |
+| Token hết hạn khi phiên đang mở | Phiên vẫn chạy (token 10 giây, phiên chạy tiếp 2 phút, chép 15 câu) |
+| Token hết hạn có mở phiên mới được không | Không: lỗi `Ephemeral token expired`, đóng mã 3000 |
+| Một token còn hạn mở nhiều phiên | Được (2 phiên liên tiếp) |
+| Phiên dài nhất | Một lần đo: 39,3 phút, 320 câu, rồi đóng mã 1006 (đứt không có khung đóng, không có sự kiện lỗi). Chưa phân biệt được trần phía OpenAI hay mạng phía máy đo |
+
+Hệ quả thiết kế: phiên 80 phút trở lên phải **tự nối lại liên tục** (mở phiên mới, nối câu theo mốc đồng hồ phiên ghi). Theo T1/T3 của Phase 6, app giữ key của người dùng trong Keychain nên tự xin token mới khi cần, không phụ thuộc backend; xin token TTL ngắn (600 giây) mỗi lần nối lại. Bước 2 (WebSocket khi khoá màn hình) vẫn cần iPhone.
+
 ## Requirements
 
 **Chức năng**
