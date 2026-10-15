@@ -1,7 +1,7 @@
 ---
 title: "OneScribe iOS — app ghi âm nền khi khoá màn hình"
 description: "App iOS hybrid (Capacitor + plugin Swift) tái dùng UI React (web/) và backend hiện tại; ghi âm sống sót khoá màn hình, cuộc gọi đến, chuyển app."
-status: pending
+status: in-progress
 priority: P1
 branch: "main"
 tags: [ios, capacitor, swift, avfoundation, mobile]
@@ -181,10 +181,10 @@ Bốn hành vi đã verify, phải hiện diện trong thiết kế client:
 
 | # | Phase | Tier | Trạng thái |
 |---|-------|------|-----------|
-| 1 | [Vỏ Capacitor + transport + auth + parity không-ghi](./phase-01-vo-capacitor-va-auth.md) | **L** | Pending |
-| 2 | [Recorder + upload](./phase-02-recorder-va-upload.md) | **L** | Pending |
-| 3 | [UI parity tab Ghi âm](./phase-03-ui-parity-tab-ghi-am.md) | **M** | Pending |
-| 4 | [Deploy, vận hành, lộ trình App Store](./phase-04-deploy-va-van-hanh.md) | **S** | Pending |
+| 1 | [Vỏ Capacitor + transport + auth + parity không-ghi](./phase-01-vo-capacitor-va-auth.md) | **L** | Code xong; Gate 0 đạt trên máy; Gate 1–2 chờ iPhone |
+| 2 | [Recorder + upload](./phase-02-recorder-va-upload.md) | **L** | Code xong + self-test Simulator; checkpoint engine chờ iPhone |
+| 3 | [UI parity tab Ghi âm](./phase-03-ui-parity-tab-ghi-am.md) | **M** | Thẻ ghi native + gom phiên trong Lịch sử ghi xong; QA chờ iPhone |
+| 4 | [Deploy, vận hành, lộ trình App Store](./phase-04-deploy-va-van-hanh.md) | **S** | `npm run ios:device` + `docs/ios-app.md` xong; còn lộ trình App Store |
 | 5 | [Realtime transcript](./phase-05-realtime-transcript.md) | **L** | Pending |
 | 6 | [Bản transcript hoàn chỉnh sau buổi ghi](./phase-06-ban-hoan-chinh-sau-buoi-ghi.md) | **M** | Pending |
 

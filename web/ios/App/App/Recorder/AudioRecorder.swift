@@ -269,7 +269,14 @@ final class AudioRecorder {
         let segment = SegmentStore.Segment(index: index, file: url.lastPathComponent, durationS: seconds,
                                            bytes: SegmentStore.fileSize(url))
         log.info("segment \(index) closed (\(reason, privacy: .public)): \(seconds, format: .fixed(precision: 1))s")
-        onEvent?(.segmentClosed(sessionId: sessionId, segment: segment, url: url))
+        // Rotation runs on the audio render thread: deliver on main, where
+        // the plugin keeps its state.
+        let event = Event.segmentClosed(sessionId: sessionId, segment: segment, url: url)
+        if Thread.isMainThread {
+            onEvent?(event)
+        } else {
+            DispatchQueue.main.async { self.onEvent?(event) }
+        }
     }
 
     /// The backend recognises the upload by magic bytes; `infer` registers
