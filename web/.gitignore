@@ -3,5 +3,6 @@ dist
 .env
 *.local
 
-# Firebase web config public — committed cố ý (xem .env.example)
-!.env.staging
+# .env.staging giữ cục bộ, không commit (root .gitignore đã chặn .env.*)
+.env.*
+!.env.example

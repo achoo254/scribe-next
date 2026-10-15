@@ -51,11 +51,11 @@ sidecar/transcriber/*.spec
 __pycache__/
 *.pyc
 
-# Secrets — dotenv (KHÔNG commit; chỉ .env.example là template an toàn)
+# Secrets — dotenv (KHÔNG commit; chỉ .env.example là template an toàn). .env.staging cũng không
+# commit: đã gỡ khỏi lịch sử khi chuyển repo sang GitHub, mỗi máy tự giữ bản của mình.
 .env
 .env.*
 !.env.example
-!.env.staging
 
 # Local agent memory / tooling
 .claude/agent-memory/
