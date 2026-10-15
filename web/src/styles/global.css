@@ -235,6 +235,10 @@
 
 	#app {
 		overflow-x: clip;
+		/* viewport-fit=cover (index.html): keep content clear of the notch,
+		   status bar and home indicator in the iOS app and on iPhone Safari. */
+		padding: env(safe-area-inset-top) env(safe-area-inset-right)
+			env(safe-area-inset-bottom) env(safe-area-inset-left);
 	}
 
 	a {

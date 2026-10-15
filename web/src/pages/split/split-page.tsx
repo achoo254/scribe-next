@@ -15,7 +15,7 @@ import { refreshStorage } from "../../features/files/file-queries";
 import { type JobCriterion, isJobBusy } from "../../features/split/split-job";
 import { useSplitJob } from "../../features/split/use-split-job";
 import { useChunkedUpload } from "../../features/upload/use-chunked-upload";
-import { download, downloadPaths } from "../../lib/download";
+import { downloadPaths, useDownload } from "../../lib/download";
 import { formatDuration } from "../../lib/format";
 import { ManagedFilesCard } from "./managed-files-card";
 import { SplitCriteria, parseSplitValue } from "./split-criteria";
@@ -26,6 +26,7 @@ import { SplitCriteria, parseSplitValue } from "./split-criteria";
  */
 export function SplitPage({ active }: { active: boolean }) {
 	const queryClient = useQueryClient();
+	const download = useDownload();
 	const upload = useChunkedUpload();
 	const job = useSplitJob();
 	const input = useRef<HTMLInputElement>(null);

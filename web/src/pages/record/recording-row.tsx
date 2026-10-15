@@ -7,8 +7,9 @@ import {
 	expiresSoon,
 	expiryLabel,
 } from "../../features/files/recording-groups";
+import { isNativeShell } from "../../lib/api";
 import { cn } from "../../lib/cn";
-import { download, downloadPaths } from "../../lib/download";
+import { downloadPaths, useDownload } from "../../lib/download";
 import { formatDateTime, formatDuration, formatSize } from "../../lib/format";
 
 export interface RecordingRowProps {
@@ -27,6 +28,7 @@ export function RecordingRow({
 	onTogglePlay,
 	onDelete,
 }: RecordingRowProps) {
+	const download = useDownload();
 	const days = daysUntilExpiry(item.createdAt, retentionDays);
 	const expiry = expiryLabel(days);
 	const id = `history-item-${item.id}`;
@@ -74,7 +76,7 @@ export function RecordingRow({
 						data-id={`${id}-download`}
 						onClick={() => download(downloadPaths.file(item.id))}
 					>
-						Tải
+						{isNativeShell() ? "Lưu vào Tệp" : "Tải"}
 					</Button>
 					<Button
 						size="sm"

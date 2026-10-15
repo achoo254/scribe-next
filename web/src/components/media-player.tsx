@@ -5,7 +5,7 @@ import {
 	IconVolumeOff,
 } from "@tabler/icons-react";
 import { useRef, useState } from "react";
-import { mediaUrl } from "../lib/download";
+import { useMediaSource } from "../lib/download";
 import { formatClock } from "../lib/format";
 import { IconButton } from "./ui/icon-button";
 
@@ -23,9 +23,9 @@ export interface MediaPlayerProps {
 }
 
 /**
- * Plays a stored file from `/api/files/:id` (HTTP Range, so seeking
- * works). Audio gets a compact bar whose volume slider pops up above the
- * speaker button instead of covering the seek bar.
+ * Plays a stored file from `/api/files/:id` (HTTP Range on the web; a
+ * cached local copy in the iOS app). Audio gets a compact bar whose volume
+ * slider pops up above the speaker button instead of covering the seek bar.
  */
 export function MediaPlayer({
 	fileId,
@@ -33,26 +33,43 @@ export function MediaPlayer({
 	durationS,
 	"data-id": dataId,
 }: MediaPlayerProps) {
+	const { src, error } = useMediaSource(fileId);
+	if (error) {
+		return (
+			<p data-id={dataId} role="alert" className="m-0 text-error text-sm">
+				Không phát được: {error}
+			</p>
+		);
+	}
+	if (!src) {
+		return (
+			<p data-id={dataId} aria-live="polite" className="m-0 text-muted text-sm">
+				Đang tải bản ghi để phát…
+			</p>
+		);
+	}
 	if (video) {
 		return (
 			// biome-ignore lint/a11y/useMediaCaption: user recordings have no captions
 			<video
 				data-id={dataId}
-				src={mediaUrl(fileId)}
+				src={src}
 				controls
 				preload="metadata"
 				className="block max-h-90 w-full rounded-md bg-surface-subtle"
 			/>
 		);
 	}
-	return <AudioPlayer fileId={fileId} durationS={durationS} data-id={dataId} />;
+	return <AudioPlayer src={src} durationS={durationS} data-id={dataId} />;
 }
 
-function AudioPlayer({
-	fileId,
-	durationS,
-	"data-id": dataId,
-}: Omit<MediaPlayerProps, "video">) {
+interface AudioPlayerProps {
+	src: string;
+	durationS?: number;
+	"data-id"?: string;
+}
+
+function AudioPlayer({ src, durationS, "data-id": dataId }: AudioPlayerProps) {
 	const audio = useRef<HTMLAudioElement>(null);
 	const [playing, setPlaying] = useState(false);
 	const [currentTime, setCurrentTime] = useState(0);
@@ -85,7 +102,7 @@ function AudioPlayer({
 			{/* biome-ignore lint/a11y/useMediaCaption: user recordings have no captions */}
 			<audio
 				ref={audio}
-				src={mediaUrl(fileId)}
+				src={src}
 				preload="metadata"
 				onLoadedMetadata={readDuration}
 				onDurationChange={readDuration}

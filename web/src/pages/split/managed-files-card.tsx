@@ -9,7 +9,7 @@ import {
 	useManagedFilesQuery,
 } from "../../features/files/file-queries";
 import { groupOutputsByJob } from "../../features/files/recording-groups";
-import { download, downloadPaths } from "../../lib/download";
+import { downloadPaths, useDownload } from "../../lib/download";
 import { formatDateTime, formatSize } from "../../lib/format";
 
 interface PendingDelete {
@@ -27,6 +27,7 @@ const ROW =
  */
 export function ManagedFilesCard({ active }: { active: boolean }) {
 	const query = useManagedFilesQuery();
+	const download = useDownload();
 	const remove = useDeleteFiles();
 	const [pending, setPending] = useState<PendingDelete | null>(null);
 	const files = query.data ?? [];

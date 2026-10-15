@@ -13,12 +13,13 @@ import {
 } from "../../features/files/file-queries";
 import type { RecordingItem } from "../../features/files/files-api";
 import { groupByDay } from "../../features/files/recording-groups";
-import { download, downloadPaths } from "../../lib/download";
+import { downloadPaths, useDownload } from "../../lib/download";
 import { RecordingRow } from "./recording-row";
 
 /** "Lịch sử ghi": recordings by day, playback, downloads, delete. */
 export function RecordingHistory() {
 	const query = useRecordingsQuery();
+	const download = useDownload();
 	const remove = useDeleteFiles();
 	const [playingId, setPlayingId] = useState<string | null>(null);
 	const [pending, setPending] = useState<RecordingItem | null>(null);

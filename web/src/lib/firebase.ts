@@ -3,6 +3,10 @@
  * backend trades for its own httpOnly session cookie (POST
  * /api/auth/session). The config is public, read from VITE_FIREBASE_* at
  * build time (vite.config.ts fails the build when one is missing).
+ *
+ * In the iOS app the popup cannot run (origin capacitor://localhost); the
+ * native GoogleAuth plugin returns the Firebase ID token instead and no
+ * Firebase session exists in the WebView.
  */
 import {
 	type FirebaseApp,
@@ -16,6 +20,8 @@ import {
 	signInWithPopup,
 	signOut,
 } from "firebase/auth";
+import { isNativeShell } from "./api";
+import { GoogleAuth } from "./native";
 
 let auth: Auth | null = null;
 
@@ -36,6 +42,10 @@ function firebaseAuth(): Auth {
 
 /** Opens the Google popup and returns the Firebase ID token. */
 export async function googleIdToken(): Promise<string> {
+	if (isNativeShell()) {
+		const { idToken } = await GoogleAuth.signIn();
+		return idToken;
+	}
 	const credential = await signInWithPopup(
 		firebaseAuth(),
 		new GoogleAuthProvider(),
@@ -48,5 +58,6 @@ export async function googleIdToken(): Promise<string> {
  * matter, the backend cookie is what keeps the user signed in.
  */
 export async function firebaseSignOut(): Promise<void> {
+	if (isNativeShell()) return;
 	await signOut(firebaseAuth()).catch(() => undefined);
 }

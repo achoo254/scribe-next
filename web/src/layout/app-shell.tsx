@@ -1,5 +1,6 @@
 import {
 	IconFileText,
+	IconHistory,
 	IconMicrophone,
 	IconScissors,
 } from "@tabler/icons-react";
@@ -12,6 +13,7 @@ import {
 	TabsList,
 	TabsTrigger,
 } from "../components/ui/tabs";
+import { isNativeShell } from "../lib/api";
 import { RecordPage } from "../pages/record/record-page";
 import { SplitPage } from "../pages/split/split-page";
 import { AppTopBar } from "./app-top-bar";
@@ -45,8 +47,12 @@ export function AppShell() {
 			>
 				<TabsList className="px-0" aria-label="Chức năng">
 					<TabsTrigger value="record" data-id="tab-record" className="gap-2">
-						<IconMicrophone size={18} aria-hidden="true" />
-						Ghi âm
+						{isNativeShell() ? (
+							<IconHistory size={18} aria-hidden="true" />
+						) : (
+							<IconMicrophone size={18} aria-hidden="true" />
+						)}
+						{isNativeShell() ? "Lịch sử ghi" : "Ghi âm"}
 					</TabsTrigger>
 					<TabsTrigger value="split" data-id="tab-split" className="gap-2">
 						<IconScissors size={18} aria-hidden="true" />

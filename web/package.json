@@ -18,6 +18,8 @@
 		"check:tokens": "tsx scripts/check-tokens.ts"
 	},
 	"dependencies": {
+		"@capacitor/core": "8.5.3",
+		"@capacitor/ios": "8.5.3",
 		"@fontsource/inter": "^5.2.0",
 		"@fontsource/jetbrains-mono": "^5.2.0",
 		"@radix-ui/react-dialog": "^1.1.14",
@@ -33,6 +35,7 @@
 	},
 	"devDependencies": {
 		"@biomejs/biome": "1.9.4",
+		"@capacitor/cli": "8.5.3",
 		"@tailwindcss/vite": "^4.1.0",
 		"@testing-library/jest-dom": "^6.6.0",
 		"@testing-library/react": "^16.3.0",

@@ -11,6 +11,7 @@ import type { RecordSources } from "../../features/recorder/recorder-messages";
 import { useRecorder } from "../../features/recorder/use-recorder";
 import { isJobBusy } from "../../features/split/split-job";
 import { useSplitJob } from "../../features/split/use-split-job";
+import { isNativeShell } from "../../lib/api";
 import { formatClock, parsePositiveNumber } from "../../lib/format";
 import { LiveMonitor } from "./live-monitor";
 import { RecordSourcesField } from "./record-sources";
@@ -19,8 +20,23 @@ import { SplitAfterRecording } from "./split-after-recording";
 
 const canScreen = supportsScreenCapture();
 
-/** "Ghi âm" tab (Mode A): sources → record/stop → history and playback. */
+/**
+ * "Ghi âm" tab (Mode A): sources → record/stop → history and playback.
+ * In the iOS app the browser recorder is not offered (native recording
+ * comes with the Swift recorder), so only the history shows.
+ */
 export function RecordPage() {
+	if (isNativeShell()) {
+		return (
+			<div data-id="record" className="grid gap-4">
+				<RecordingHistory />
+			</div>
+		);
+	}
+	return <BrowserRecordPage />;
+}
+
+function BrowserRecordPage() {
 	const queryClient = useQueryClient();
 	const rec = useRecorder();
 	const split = useSplitJob();
