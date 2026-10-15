@@ -18,6 +18,7 @@ docker run --rm \
   -e PORT \
   -e ALLOWED_DOMAINS \
   -e ALLOWED_EMAILS \
+  -e TRANSCRIBE_EMAILS \
   -e SESSION_KEY_PATH \
   "$IMAGE" \
   cargo build --release --target "$TARGET" -p onescribe-be
