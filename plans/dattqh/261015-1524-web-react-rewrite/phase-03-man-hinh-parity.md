@@ -55,3 +55,15 @@ Route giữ nguyên: `/` (cần đăng nhập), `/login`, mọi đường khác 
 ## Môi trường kiểm chứng lab (dựng rồi gỡ 2026-10-15)
 
 Đã dựng thử `onescribe-react.tunnel.hoandat.com` trên .65 (pm2 + tunelo client + key riêng) rồi gỡ cùng ngày khi chủ sở hữu chốt chỉ còn dev local và prod: pm2 đã xoá, `/opt/onescribe-react-lab` đã xoá, key `onescribe-react-lab` đã `revoked`. Bài học còn giá trị: `create-access-token.mjs` của tunelo tạo key thiếu `tenantId` nên server từ chối (`TUNELO_AUTH_001`) cho tới khi gán `tenantId: "primary"`.
+
+## Kết quả kiểm parity ở dev local (2026-10-15, Chrome desktop, BE local + Mongo dev 176)
+
+| Tính năng | Kết quả |
+|---|---|
+| Đăng nhập Google, guard `/` | Đạt (chủ sở hữu đăng nhập; `/` khi chưa đăng nhập → `/login`) |
+| Ghi mic ≥ 10 phút | Đạt: 11:07, 10,3 MB webm/opus, ffprobe 667 s, giải mã tại 10:00; chuyển tab trong lúc ghi không ngắt |
+| Cắt bản ghi thành nhiều bản ghi | Đạt: 0,1 phút → 6 phần thay bản gốc trong Lịch sử ghi |
+| Cắt file: upload 3 MB và 123 MB, phút/MB/số phần, tải zip | Đạt; **lỗi BE có sẵn**: "Số phần = 2" ra thêm đoạn thứ 3 hỏng 880 byte (`core-split` dùng `-segment_time` = thời lượng/K; sửa bằng `-segment_times` K−1 mốc) |
+| Lịch sử ghi: phát, tua, tải đơn, tải theo ngày, tải tất cả | Đạt (tải đơn: header attachment + tên UTF-8 đúng; lượt tải tự động bị Chrome chặn vì tải nhiều file liên tiếp — không phải lỗi app) |
+| Quản lý file, xoá, quota giảm | Đạt: xoá upload 123 MB → quota 0,24 → 0,12 GB |
+| Chưa kiểm | Ghi kèm màn hình/tiếng hệ thống (cần chọn màn hình thủ công), ngắt mạng giữa chừng rồi tải tiếp (đã có test đơn vị), Safari iOS, đăng xuất |

@@ -77,7 +77,7 @@ Tham số đã biết chắc từ phiên setup thực tế:
 
 ### Chặn thật, và nó không phải việc của iOS
 
-- BE chạy môi trường **staging** trên box `.65` dùng chung; nginx `listen 80` với Cloudflare Flexible → **chặng CF↔origin là HTTP cleartext**, và origin vẫn reachable trực tiếp (không firewall được vì box dùng chung — `docs/project-roadmap.md` P3 backlog).
+- BE chạy môi trường **prod** trên box `.65` dùng chung; nginx `listen 80` với Cloudflare Flexible → **chặng CF↔origin là HTTP cleartext**, và origin vẫn reachable trực tiếp (không firewall được vì box dùng chung — `docs/project-roadmap.md` P3 backlog).
 - **Allowlist đang mở** (`config.rs:68` trả `true` khi cả hai danh sách rỗng) — chủ sở hữu chọn giữ nguyên cho giai đoạn dùng nội bộ (Validation Log V4). Đây là chặn cứng nếu nộp App Store: không thể công khai một API mà bất kỳ tài khoản Google nào cũng tạo được 5GB storage. Phải khoá trước khi nộp. <!-- Updated: Validation Session 1 - V4 -->
 - Session là **JWT stateless không revocation** (`session.rs:60-70`). Mất máy = không de-authorize được trong 12 giờ. Với app giữ audio cuộc họp, đây là vấn đề ship-blocker, không phải mục giấy tờ.
 - Chưa có chính sách riêng tư công khai, chưa có điều khoản dịch vụ.

@@ -76,7 +76,7 @@ Cookie chỉ tồn tại ở **một** kho (`HTTPCookieStorage`) vì mọi reque
 - Modify: `web/src/views/HomeView.vue` — ẩn tab Ghi âm khi `isNative`
 - Modify: `web/src/composables/use-auth.ts` — nhánh `isNative`; **lưu ý 3 consumer**: `router.ts:18` (navigation guard), `AppTopBar.vue:5,8`, `LoginView.vue:5,8`
 - Modify: `web/package.json`, `web/.gitignore`
-- **Commit** `web/ios/App/App/GoogleService-Info.plist` — nhất quán với cách repo đã xử lý config Firebase web (`web/.env.staging:1-3` ghi rõ "PUBLIC — KHÔNG phải secret"). Gitignore nó sẽ làm tiêu chí clone-sạch của Phase 4 bất khả thi
+- **Commit** `web/ios/App/App/GoogleService-Info.plist` — nhất quán với cách repo đã xử lý config Firebase web (`web/.env.example` ghi rõ "PUBLIC — không phải secret"). Gitignore nó sẽ làm tiêu chí clone-sạch của Phase 4 bất khả thi
 
 ## Implementation Steps
 
@@ -101,7 +101,7 @@ Cookie chỉ tồn tại ở **một** kho (`HTTPCookieStorage`) vì mọi reque
 - [ ] Tab Ghi âm không xuất hiện trên iOS; không có toggle "Tiếng hệ thống"/"Ghi kèm màn hình"
 - [ ] `git diff --stat server/` trống
 - [ ] `vue-tsc --noEmit` + `vite build` + `xcodebuild build` đều EXIT 0, 0 warning
-- [ ] Web không hồi quy: `npm run dev` trỏ staging → login + cắt file + phát lại trên Chrome desktop vẫn chạy
+- [ ] Web không hồi quy: dev local → login + cắt file + phát lại trên Chrome desktop vẫn chạy
 
 ## Risk Assessment
 

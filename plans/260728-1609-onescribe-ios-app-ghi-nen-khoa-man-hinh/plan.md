@@ -1,11 +1,11 @@
 ---
 title: "OneScribe iOS — app ghi âm nền khi khoá màn hình"
-description: "App iOS hybrid (Capacitor + plugin Swift) tái dùng UI Vue và backend hiện tại; ghi âm sống sót khoá màn hình, cuộc gọi đến, chuyển app."
+description: "App iOS hybrid (Capacitor + plugin Swift) tái dùng UI React (web/) và backend hiện tại; ghi âm sống sót khoá màn hình, cuộc gọi đến, chuyển app."
 status: pending
 priority: P1
 branch: "main"
 tags: [ios, capacitor, swift, avfoundation, mobile]
-blockedBy: [project:261015-1524-web-react-rewrite]  # viết lại web bằng React trước, Phase 1 iOS sửa các file đó
+blockedBy: []  # web React rewrite đã xong phần code (2026-10-15); deploy web lên prod không chặn iOS
 blocks: []
 created: "2026-07-28"
 createdBy: "ak:plan"
@@ -23,6 +23,25 @@ source: skill
 Người dùng: **1 người duy nhất** (chủ sở hữu), cài bằng Apple ID cá nhân (Personal Team `AM5C55N339`, free provisioning), iPhone 15 Pro Max iOS 26.5.2, build trên Mac mini M4 (Xcode 26.6). Nếu chạy ổn thì **sau này có thể đưa lên App Store**.
 
 Phase 0 (spike) **đã xong và gate xanh** — xem `ios-spike/` (commit `be7bf46`).
+
+## Cập nhật 2026-10-15 — web đã viết lại bằng React, môi trường chỉ còn dev local + prod
+
+Tên file Vue trong plan và các phase là **lịch sử**; khi làm, dùng bảng này. Đường dẫn trong `web/src/`:
+
+| Plan nhắc (Vue) | Hiện tại (React) |
+|---|---|
+| 25 lời gọi `fetch` rải rác trong composable | Một hàm `lib/api.ts` → `apiFetch`/`apiJson`; `apiBase()` trả `https://scribe.inetdev.io.vn` khi `Capacitor.isNativePlatform()` (đã có test). Gate 0 vẫn phải đo `CapacitorHttp` vì request đi qua đây |
+| 5 chỗ `window.location.href`, `use-download.ts` mới | `lib/download.ts` → `download(path)`, `mediaUrl(fileId)`, `downloadPaths` — chỉ còn **một** chỗ để thêm nhánh native |
+| `use-auth.ts`, `lib/firebase.ts` | `auth/auth-context.tsx` (`useAuth`), `auth/auth-api.ts`, `lib/firebase.ts` (khởi tạo lười) |
+| `use-recorder.ts` / `use-recorder-native.ts` | `features/recorder/recorder.ts` (class thuần, `getState/subscribe`) + `use-recorder.ts`; bản native thay `Recorder` bằng cài đặt gọi plugin Swift cùng giao diện |
+| `use-upload.ts`, `use-splitter.ts` | `features/upload/chunked-upload.ts`, `features/split/split-job.ts` |
+| `use-recordings.ts`, `use-managed-files.ts`, `use-usage.ts` | `features/files/files-api.ts` + `file-queries.ts` (TanStack Query) |
+| `RecordView.vue`, `RecordingHistory.vue`, `MediaPlayer.vue` | `pages/record/record-page.tsx`, `pages/record/recording-history.tsx` + `recording-row.tsx`, `components/media-player.tsx` |
+| `SplitView.vue`, `AppTopBar.vue`, `LoginView.vue` | `pages/split/split-page.tsx`, `layout/app-top-bar.tsx`, `pages/login-page.tsx` |
+| `vue-tsc` | `npm run typecheck` (`tsc --noEmit`) |
+| "staging" `.65` | **prod** `.65` (`scribe.inetdev.io.vn`); dev = máy local, xem `docs/deploy-web-production.md` |
+
+Backend prod hiện chưa có access log/audit (commit `fa810f1` mới ở repo, chưa deploy); không chặn iOS.
 
 ## Nền tảng đã chứng minh (Phase 0)
 
@@ -185,8 +204,8 @@ Thứ tự bắt buộc: **1 → 2 → 3 → 4 → 5 → 6**. Phase 5 và 6 thê
 - [ ] Đoạn cùng một phiên **gom thành một dòng gấp/mở** trong Lịch sử ghi — họp 2 tiếng không đẻ ra 120 dòng rời (V3)
 - [ ] Đăng xuất → hàng đợi upload dừng, cookie sạch ở cả hai kho, đoạn tồn không upload vào tài khoản cũ
 - [ ] `git diff --stat server/` **trống** — hoặc, nếu Gate 0 fail, diff chỉ gồm `Cargo.toml` (feature `cors`) + `routes.rs` (`CorsLayer`), và điều đó được nêu rõ trong báo cáo Phase 1 (V1)
-- [ ] `vue-tsc` + `vite build` EXIT 0; `xcodebuild build` EXIT 0, 0 warning
-- [ ] Web **không hồi quy**: `npm run dev` trỏ staging, ghi thử bằng đường cũ trên Chrome desktop vẫn chạy
+- [ ] `npm run lint && npm run typecheck && npm test && npm run build` trong `web/` EXIT 0; `xcodebuild build` EXIT 0, 0 warning
+- [ ] Web **không hồi quy**: dev local (`npm run dev` + BE local, Mongo dev 176) ghi thử trên Chrome desktop vẫn chạy
 - [ ] Một lệnh deploy lại được sau khi profile hết hạn 7 ngày
 
 ## Rủi ro chính
