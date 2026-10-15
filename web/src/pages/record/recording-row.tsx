@@ -14,6 +14,8 @@ import { formatDateTime, formatDuration, formatSize } from "../../lib/format";
 
 export interface RecordingRowProps {
 	item: RecordingItem;
+	/** Shown instead of the stored name (iOS segments: "Phần 01"). */
+	displayName?: string;
 	retentionDays: number;
 	playing: boolean;
 	onTogglePlay: () => void;
@@ -23,6 +25,7 @@ export interface RecordingRowProps {
 /** One recording: kind, name, details, actions; the player opens below. */
 export function RecordingRow({
 	item,
+	displayName,
 	retentionDays,
 	playing,
 	onTogglePlay,
@@ -43,8 +46,11 @@ export function RecordingRow({
 					{item.hasVideo ? "Màn hình" : "Mic"}
 				</Badge>
 				<div className="min-w-0 flex-1 basis-48">
-					<div className="truncate font-semibold" title={item.name}>
-						{item.name}
+					<div
+						className="truncate font-semibold"
+						title={displayName ?? item.name}
+					>
+						{displayName ?? item.name}
 					</div>
 					<div className="text-muted text-sm">
 						{formatDuration(item.durationS)} · {formatSize(item.size)}

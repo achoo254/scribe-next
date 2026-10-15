@@ -12,9 +12,13 @@ import {
 	useRecordingsQuery,
 } from "../../features/files/file-queries";
 import type { RecordingItem } from "../../features/files/files-api";
-import { groupByDay } from "../../features/files/recording-groups";
+import {
+	groupByDay,
+	groupSessions,
+} from "../../features/files/recording-groups";
 import { downloadPaths, useDownload } from "../../lib/download";
 import { RecordingRow } from "./recording-row";
+import { SessionRow } from "./session-row";
 
 /** "Lịch sử ghi": recordings by day, playback, downloads, delete. */
 export function RecordingHistory() {
@@ -22,15 +26,20 @@ export function RecordingHistory() {
 	const download = useDownload();
 	const remove = useDeleteFiles();
 	const [playingId, setPlayingId] = useState<string | null>(null);
-	const [pending, setPending] = useState<RecordingItem | null>(null);
+	const [pending, setPending] = useState<{
+		item: RecordingItem;
+		label: string;
+	} | null>(null);
 	const items = query.data?.items ?? [];
 	const retentionDays = query.data?.retentionDays ?? 0;
 	const groups = useMemo(() => groupByDay(items), [items]);
+	const togglePlay = (id: string) =>
+		setPlayingId((current) => (current === id ? null : id));
 
 	async function confirmDelete(): Promise<void> {
 		if (!pending) return;
-		await remove.mutateAsync([pending.id]);
-		if (playingId === pending.id) setPlayingId(null);
+		await remove.mutateAsync([pending.item.id]);
+		if (playingId === pending.item.id) setPlayingId(null);
 	}
 
 	return (
@@ -102,20 +111,29 @@ export function RecordingHistory() {
 									</Button>
 								</div>
 								<ul className="m-0 grid list-none gap-3 p-0">
-									{group.items.map((item) => (
-										<RecordingRow
-											key={item.id}
-											item={item}
-											retentionDays={retentionDays}
-											playing={playingId === item.id}
-											onTogglePlay={() =>
-												setPlayingId((current) =>
-													current === item.id ? null : item.id,
-												)
-											}
-											onDelete={() => setPending(item)}
-										/>
-									))}
+									{groupSessions(group.items).map((row) =>
+										row.kind === "session" ? (
+											<SessionRow
+												key={row.sessionId}
+												row={row}
+												retentionDays={retentionDays}
+												playingId={playingId}
+												onTogglePlay={togglePlay}
+												onDelete={(item, label) => setPending({ item, label })}
+											/>
+										) : (
+											<RecordingRow
+												key={row.item.id}
+												item={row.item}
+												retentionDays={retentionDays}
+												playing={playingId === row.item.id}
+												onTogglePlay={() => togglePlay(row.item.id)}
+												onDelete={() =>
+													setPending({ item: row.item, label: row.item.name })
+												}
+											/>
+										),
+									)}
 								</ul>
 							</section>
 						))}
@@ -129,7 +147,7 @@ export function RecordingHistory() {
 					if (!open) setPending(null);
 				}}
 				title="Xoá bản ghi"
-				question={`Xoá “${pending?.name ?? ""}”?`}
+				question={`Xoá “${pending?.label ?? ""}”?`}
 				confirmLabel="Xoá"
 				onConfirm={confirmDelete}
 				data-id="history-delete"

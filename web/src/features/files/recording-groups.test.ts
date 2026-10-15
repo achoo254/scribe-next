@@ -6,6 +6,8 @@ import {
 	expiryLabel,
 	groupByDay,
 	groupOutputsByJob,
+	groupSessions,
+	parseSegmentName,
 } from "./recording-groups";
 
 function recording(id: string, createdAt?: string): RecordingItem {
@@ -74,5 +76,47 @@ describe("groupOutputsByJob", () => {
 			},
 			{ jobId: "j2", count: 1, bytes: 5, createdAt: undefined, ids: ["o3"] },
 		]);
+	});
+});
+
+describe("groupSessions", () => {
+	const seg = (session: string, index: number, at: string, duration = 60) => ({
+		id: `${session}-${index}`,
+		name: `${session}#${index}`,
+		hasVideo: false,
+		size: 100,
+		durationS: duration,
+		createdAt: at,
+	});
+
+	it("collapses iOS segments of one session into one row, in recording order", () => {
+		const rows = groupSessions([
+			seg("aaaaaaaa-1111", 2, "2026-10-15T10:03:00Z", 30),
+			{
+				id: "web",
+				name: "Bản ghi 16:31:09",
+				hasVideo: false,
+				size: 5,
+				createdAt: "2026-10-15T09:31:00Z",
+			},
+			seg("aaaaaaaa-1111", 0, "2026-10-15T10:01:00Z"),
+			seg("aaaaaaaa-1111", 1, "2026-10-15T10:02:00Z"),
+		]);
+		expect(rows.map((row) => row.kind)).toEqual(["session", "single"]);
+		const session = rows[0];
+		if (session?.kind !== "session") throw new Error("expected a session row");
+		expect(session.parts.map((part) => part.index)).toEqual([0, 1, 2]);
+		expect(session.durationS).toBe(150);
+		expect(session.size).toBe(300);
+		expect(session.createdAt).toBe("2026-10-15T10:01:00Z");
+	});
+
+	it("keeps names that only look similar as single recordings", () => {
+		expect(parseSegmentName("Bản ghi #3")).toBeNull();
+		expect(parseSegmentName("abc#1")).toBeNull();
+		expect(parseSegmentName("6ad09d56-a5e5#12")).toEqual({
+			sessionId: "6ad09d56-a5e5",
+			index: 12,
+		});
 	});
 });

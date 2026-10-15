@@ -15,7 +15,9 @@
 		"typecheck": "tsc --noEmit && tsc -p scripts/tsconfig.json",
 		"test": "vitest run",
 		"test:watch": "vitest",
-		"check:tokens": "tsx scripts/check-tokens.ts"
+		"check:tokens": "tsx scripts/check-tokens.ts",
+		"ios:device": "scripts/ios-device.sh",
+		"ios:sync": "npm run build && cap sync ios"
 	},
 	"dependencies": {
 		"@capacitor/core": "8.5.3",
