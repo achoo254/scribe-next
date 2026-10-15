@@ -191,7 +191,7 @@ cargo zigbuild --release --target x86_64-unknown-linux-musl -p onescribe-be
 
 Lần đầu dùng cách này: 2026-10-15, chỉ thay BE (commit `cac8497`, có chép lời); FE trên `.65` vẫn là bản Vue. Trước khi thay đã sao lưu DB `onescribe` + binary cũ vào `/root/onescribe-backup-20261015-210141/` trên `.65`. Quay lại: `install -o onescribe -g onescribe -m 700 <thư mục>/onescribe-be.prev /opt/onescribe-be/onescribe-be.new && mv -f /opt/onescribe-be/onescribe-be.new /opt/onescribe-be/onescribe-be && systemctl restart onescribe-be`.
 
-> **CI chưa dùng được cho lần deploy kế tiếp:** `main` trên GitLab (`9fdb393`) đã tách khỏi `main` cục bộ — GitLab còn 4 commit đưa `.env.staging`/`web/.env.staging` vào git mà nhánh cục bộ đã bỏ có chủ đích; và build FE trên CI cần cấu hình Firebase (`web/.env` không có trong git). Cần chốt cách hợp nhánh và biến CI trước khi push.
+> **Repo chính là GitHub** (`origin` = `achoo254/one-scribe`, không có GitHub Actions): push không tự deploy, deploy prod làm tay theo mục này. Remote `gitlabs.inet.vn` và `.gitlab-ci.yml` là cách cũ, dừng từ 2026-08-21.
 
 > **Thay binary đang chạy:** dùng `mv` (atomic rename) — tránh `ETXTBSY` khi ghi đè executable đang chạy. rsync mặc định (không `--inplace`) cũng an toàn.
 
