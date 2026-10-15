@@ -1,6 +1,7 @@
 import AVFoundation
 import Capacitor
 import Foundation
+import UIKit
 
 /// Bridge between the WebView and the native recording stack. Swift is the
 /// source of truth (plan D2): the WebView is suspended while the phone is
@@ -24,8 +25,13 @@ public class RecorderPlugin: CAPPlugin, CAPBridgedPlugin {
     private let recorder = AudioRecorder()
     private let store = SegmentStore.shared
     private let queue = UploadQueue.shared
+    /// Signed-in account (main thread).
     private var userKey: String?
+    /// Account the current recording belongs to: its segments go there even
+    /// if the user signs out meanwhile.
+    private var recordingUserKey: String?
     private var elapsed: Double = 0
+    private var foregroundObserver: NSObjectProtocol?
     private var waiting = 0
     private var failed = 0
     private var lastNotice = ""
@@ -41,6 +47,17 @@ public class RecorderPlugin: CAPPlugin, CAPBridgedPlugin {
                 DispatchQueue.main.async { target.plugin?.handle(event) }
             }
         }
+        // Back on screen: resume uploads (the queue sleeps while suspended).
+        foregroundObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main
+        ) { _ in
+            guard let plugin = target.plugin, let user = plugin.userKey else { return }
+            Task { await plugin.queue.kick(ifUser: user) }
+        }
+    }
+
+    deinit {
+        if let foregroundObserver { NotificationCenter.default.removeObserver(foregroundObserver) }
     }
 
     #if DEBUG
@@ -122,14 +139,15 @@ public class RecorderPlugin: CAPPlugin, CAPBridgedPlugin {
             call.reject("Thiếu thông tin tài khoản.", "NO_USER")
             return
         }
-        guard recorder.state == .idle else {
-            call.reject("Đang ghi rồi.", "BUSY")
-            return
-        }
         let minutes = call.getDouble("segmentMinutes") ?? 1
         let sessionId = UUID().uuidString.lowercased()
-        self.userKey = userKey
         Task { @MainActor in
+            guard recorder.state == .idle else {
+                call.reject("Đang ghi rồi.", "BUSY")
+                return
+            }
+            self.userKey = userKey
+            recordingUserKey = userKey
             do {
                 let dir = try await store.createSession(userKey: userKey, sessionId: sessionId,
                                                         segmentSeconds: minutes * 60)
@@ -161,10 +179,11 @@ public class RecorderPlugin: CAPPlugin, CAPBridgedPlugin {
             call.reject("Thiếu thông tin tài khoản.", "NO_USER")
             return
         }
-        self.userKey = userKey
-        let active = recorder.sessionId
-        Task {
+        Task { @MainActor in
+            self.userKey = userKey
+            let active = recorder.sessionId
             let lost = await store.reconcile(userKey: userKey, activeSessionId: active)
+            await store.clearFailures(userKey: userKey)
             await queue.start(userKey: userKey)
             let lostSeconds = lost.reduce(0) { $0 + $1.approxSeconds }
             call.resolve(["lostSegments": lost.count, "lostSecondsMax": lostSeconds])
@@ -174,8 +193,9 @@ public class RecorderPlugin: CAPPlugin, CAPBridgedPlugin {
     /// Sign-out: stop recording and uploads so nothing reaches the old account.
     @objc func signOut(_ call: CAPPluginCall) {
         DispatchQueue.main.async {
-            self.recorder.stop()
             self.userKey = nil
+            self.recorder.stop()
+            SessionAuth.clear()
             Task {
                 await self.queue.stop()
                 call.resolve()
@@ -202,15 +222,22 @@ public class RecorderPlugin: CAPPlugin, CAPBridgedPlugin {
             notifyListeners("state", data: ["state": state.rawValue])
         case .elapsed(let seconds):
             elapsed = seconds
-            notifyListeners("elapsed", data: ["elapsedS": seconds])
+            // The WebView is suspended off screen; it re-reads getStatus()
+            // when visible, so do not queue thousands of evaluations.
+            if UIApplication.shared.applicationState == .active {
+                notifyListeners("elapsed", data: ["elapsedS": seconds])
+            }
         case .level(let level):
-            notifyListeners("level", data: ["level": level])
+            if UIApplication.shared.applicationState == .active {
+                notifyListeners("level", data: ["level": level])
+            }
         case .segmentClosed(let sessionId, let segment, _):
-            guard let userKey else { return }
+            guard let owner = recordingUserKey else { return }
             notifyListeners("segment", data: ["index": segment.index, "durationS": segment.durationS])
             Task {
-                try? await store.appendSegment(userKey: userKey, sessionId: sessionId, segment: segment)
-                await queue.start(userKey: userKey)
+                try? await store.appendSegment(userKey: owner, sessionId: sessionId, segment: segment)
+                // Only wakes the queue if `owner` is still the signed-in user.
+                await queue.kick(ifUser: owner)
             }
         case .notice(let message):
             lastNotice = message

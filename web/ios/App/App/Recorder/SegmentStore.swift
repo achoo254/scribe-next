@@ -20,6 +20,12 @@ actor SegmentStore {
         var attempts: Int
         /// Last terminal failure (403, unreadable audio); the file is kept.
         var failure: String?
+        /// Server recording session of the upload in progress: a retry
+        /// resends into it from offset 0 instead of leaving a new `.part`.
+        var serverSession: String?
+        /// `finalize` was sent: before any new `init`, look the deterministic
+        /// name up — the server may have committed and only the reply was lost.
+        var finalizeSent: Bool
 
         init(index: Int, file: String, durationS: Double, bytes: Int64) {
             self.index = index
@@ -30,6 +36,8 @@ actor SegmentStore {
             remoteFileId = nil
             attempts = 0
             failure = nil
+            serverSession = nil
+            finalizeSent = false
         }
 
         // Tolerant decoding: missing or unknown keys never make a manifest
@@ -44,6 +52,8 @@ actor SegmentStore {
             remoteFileId = try c.decodeIfPresent(String.self, forKey: .remoteFileId)
             attempts = try c.decodeIfPresent(Int.self, forKey: .attempts) ?? 0
             failure = try c.decodeIfPresent(String.self, forKey: .failure)
+            serverSession = try c.decodeIfPresent(String.self, forKey: .serverSession)
+            finalizeSent = try c.decodeIfPresent(Bool.self, forKey: .finalizeSent) ?? false
         }
     }
 
@@ -129,7 +139,8 @@ actor SegmentStore {
         try write(session, to: dir)
     }
 
-    /// Uploaded: record the remote id and free the phone's disk.
+    /// Uploaded: record the remote id, then free the phone's disk (manifest
+    /// first: a failed write must never leave "not uploaded" with no file).
     func markUploaded(userKey: String, sessionId: String, index: Int, fileId: String) throws {
         let dir = sessionDir(userKey: userKey, sessionId: sessionId)
         var session = try read(dir)
@@ -137,8 +148,32 @@ actor SegmentStore {
         session.segments[i].uploaded = true
         session.segments[i].remoteFileId = fileId
         session.segments[i].failure = nil
-        try? FileManager.default.removeItem(at: dir.appendingPathComponent(session.segments[i].file))
+        session.segments[i].serverSession = nil
+        session.segments[i].finalizeSent = false
         try write(session, to: dir)
+        try? FileManager.default.removeItem(at: dir.appendingPathComponent(session.segments[i].file))
+    }
+
+    /// Progress of the upload in flight (see `serverSession`, `finalizeSent`).
+    func setUploadState(userKey: String, sessionId: String, index: Int,
+                        serverSession: String?, finalizeSent: Bool) throws {
+        let dir = sessionDir(userKey: userKey, sessionId: sessionId)
+        var session = try read(dir)
+        guard let i = session.segments.firstIndex(where: { $0.index == index }) else { return }
+        session.segments[i].serverSession = serverSession
+        session.segments[i].finalizeSent = finalizeSent
+        try write(session, to: dir)
+    }
+
+    /// Gives segments stopped by an error another chance (once per launch).
+    func clearFailures(userKey: String) {
+        for dir in sessionDirs(userKey: userKey) {
+            guard var session = try? read(dir), session.segments.contains(where: { $0.failure != nil }) else {
+                continue
+            }
+            for i in session.segments.indices { session.segments[i].failure = nil }
+            try? write(session, to: dir)
+        }
     }
 
     func markAttempt(userKey: String, sessionId: String, index: Int, failure: String?) throws {
@@ -198,7 +233,7 @@ actor SegmentStore {
                 guard let readable = try? AVAudioFile(forReading: url), readable.processingFormat.sampleRate > 0,
                       readable.length > 0
                 else {
-                    let index = Int(name.dropFirst(4).prefix(3)) ?? -1
+                    let index = Self.segmentIndex(name) ?? -1
                     lost.append(LostSegment(sessionId: sessionId, index: index,
                                             approxSeconds: session.segmentSeconds))
                     try? FileManager.default.removeItem(at: url)
@@ -206,7 +241,7 @@ actor SegmentStore {
                     continue
                 }
                 if !session.segments.contains(where: { $0.file == name }) {
-                    let index = Int(name.dropFirst(4).prefix(3)) ?? session.segments.count
+                    let index = Self.segmentIndex(name) ?? session.segments.count
                     let seconds = Double(readable.length) / readable.processingFormat.sampleRate
                     session.segments.append(Segment(index: index, file: name, durationS: seconds,
                                                     bytes: Self.fileSize(url)))
@@ -231,11 +266,21 @@ actor SegmentStore {
             .appendingPathComponent(sessionId, isDirectory: true)
     }
 
+    /// Sessions oldest first (by creation date; names are UUIDs).
     private func sessionDirs(userKey: String) -> [URL] {
         let userDir = root.appendingPathComponent(userKey, isDirectory: true)
         let dirs = (try? FileManager.default.contentsOfDirectory(
             at: userDir, includingPropertiesForKeys: [.creationDateKey])) ?? []
-        return dirs.filter(\.hasDirectoryPath).sorted { $0.lastPathComponent < $1.lastPathComponent }
+        func created(_ url: URL) -> Date {
+            (try? url.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? .distantPast
+        }
+        return dirs.filter(\.hasDirectoryPath).sorted { created($0) < created($1) }
+    }
+
+    /// `seg-007.m4a` → 7, also past 999 (`seg-1000.m4a`).
+    static func segmentIndex(_ name: String) -> Int? {
+        guard name.hasPrefix("seg-"), name.hasSuffix(".m4a") else { return nil }
+        return Int(name.dropFirst(4).dropLast(4))
     }
 
     private func read(_ dir: URL) throws -> Session {

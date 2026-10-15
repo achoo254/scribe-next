@@ -11,7 +11,7 @@
 import { registerPlugin } from "@capacitor/core";
 import { errorMessage } from "../../lib/api";
 
-type NativeState = "idle" | "recording" | "stopping";
+type NativeState = "idle" | "starting" | "recording" | "stopping";
 
 interface NativeStatus {
 	state: NativeState;
@@ -83,6 +83,16 @@ function textOf(value: unknown): string {
 	return typeof value === "string" ? value : "";
 }
 
+function flagsOf(
+	state: string,
+): Pick<NativeRecorderState, "recording" | "starting" | "finalizing"> {
+	return {
+		recording: state === "recording",
+		starting: state === "starting",
+		finalizing: state === "stopping",
+	};
+}
+
 /** Stable per-account folder name on the phone: SHA-256 of the email. */
 export async function userKeyOf(email: string): Promise<string> {
 	const bytes = new TextEncoder().encode(email.trim().toLowerCase());
@@ -107,6 +117,9 @@ export class NativeRecorder {
 	private readonly listeners = new Set<() => void>();
 	private readonly levelListeners = new Set<() => void>();
 	private readonly removers: Array<() => Promise<void>> = [];
+	/** Bumped by `dispose`: an `attach` still awaiting listeners from an
+	 * earlier mount drops them instead of leaking them. */
+	private generation = 0;
 
 	constructor(
 		private readonly plugin: RecorderNativePlugin = NativeRecorderPlugin,
@@ -128,22 +141,18 @@ export class NativeRecorder {
 
 	/** Starts listening to the plugin and reads the current status. */
 	attach = async (): Promise<void> => {
+		const generation = this.generation;
 		const on = async (
 			event: Parameters<RecorderNativePlugin["addListener"]>[0],
 			handler: (data: Record<string, unknown>) => void,
 		) => {
 			const handle = await this.plugin.addListener(event, handler);
-			this.removers.push(handle.remove);
+			if (generation === this.generation) this.removers.push(handle.remove);
+			else void handle.remove();
 		};
-		await on("state", (data) => {
-			const value = textOf(data.state);
-			this.set({
-				...this.state,
-				recording: value === "recording",
-				finalizing: value === "stopping",
-				starting: false,
-			});
-		});
+		await on("state", (data) =>
+			this.set({ ...this.state, ...flagsOf(textOf(data.state)) }),
+		);
 		await on("elapsed", (data) =>
 			this.set({ ...this.state, elapsedS: numberOf(data.elapsedS) }),
 		);
@@ -171,7 +180,7 @@ export class NativeRecorder {
 		await on("quotaFull", (data) =>
 			this.events.onQuotaFull?.(textOf(data.message)),
 		);
-		await this.refresh();
+		if (generation === this.generation) await this.refresh();
 	};
 
 	/** Re-reads Swift's status (after the WebView was suspended). */
@@ -179,8 +188,7 @@ export class NativeRecorder {
 		const status = await this.plugin.getStatus();
 		this.set({
 			...this.state,
-			recording: status.state === "recording",
-			finalizing: status.state === "stopping",
+			...flagsOf(status.state),
 			elapsedS: numberOf(status.elapsedS),
 			uploadsWaiting: numberOf(status.uploadsWaiting),
 			uploadsFailed: numberOf(status.uploadsFailed),
@@ -221,6 +229,7 @@ export class NativeRecorder {
 	};
 
 	dispose = (): void => {
+		this.generation += 1;
 		for (const remove of this.removers.splice(0)) void remove();
 	};
 

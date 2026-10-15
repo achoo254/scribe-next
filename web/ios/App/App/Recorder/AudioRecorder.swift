@@ -1,6 +1,7 @@
 import AVFoundation
 import Foundation
 import os
+import UIKit
 
 /// Background recording engine, ported from ios-spike (63 minutes measured
 /// on the phone: locked screen, rotation in ~10 ms, 0 broken segments).
@@ -9,9 +10,10 @@ import os
 /// file that can be uploaded at once. A segment still open when iOS kills
 /// the app has no moov atom and is lost; the 1-minute default bounds that.
 ///
-/// Does not import Capacitor: the UI layer subscribes through `onEvent`.
+/// Does not import Capacitor: the UI layer subscribes through `onEvent`
+/// (always delivered on the main queue).
 final class AudioRecorder {
-    enum State: String { case idle, recording, stopping }
+    enum State: String { case idle, starting, recording, stopping }
 
     enum Event {
         case state(State)
@@ -23,35 +25,48 @@ final class AudioRecorder {
         case segmentClosed(sessionId: String, segment: SegmentStore.Segment, url: URL)
         /// The recording keeps going after an interruption or route change.
         case notice(String)
-        /// Recording stopped by itself (permission, engine failure).
+        /// Recording stopped by itself (permission, engine or disk failure).
         case failure(String)
     }
 
     var onEvent: ((Event) -> Void)?
 
     private(set) var state: State = .idle
+    /// Session being recorded (main thread).
     private(set) var sessionId: String?
-    private var sessionDir: URL?
 
-    private let engine = AVAudioEngine()
+    /// Recreated after a media services reset (Apple: every audio object
+    /// must be rebuilt then).
+    private var engine = AVAudioEngine()
     private let log = Logger(subsystem: "vn.inet.onescribe", category: "recorder")
-    /// Guards `file`, `currentFrames` between the audio thread and main.
-    private let fileLock = NSLock()
 
+    /// Guards the fields below up to `recordingFlag`, shared by the audio
+    /// render thread and main.
+    private let fileLock = NSLock()
     private var file: AVAudioFile?
     private var currentIndex = -1
     private var currentFrames: AVAudioFramePosition = 0
     private var currentRate: Double = 0
+    /// Session and folder of this recording, set at start under the lock,
+    /// so the audio thread never reads main-thread state.
+    private var segmentSessionId: String?
+    private var segmentDir: URL?
+    private var checkedBrand = false
+    private var writeErrors = 0
+    private var totalFrames: AVAudioFramePosition = 0
+    private var recordingFlag = false
+
     private var segmentLimitSeconds: Double = 60
     private var tapInstalled = false
-    private var checkedBrand = false
-
     private var timer: Timer?
     private var startedAt: Date?
     private var pausedTotal: TimeInterval = 0
     private var pausedAt: Date?
+    private var lastFrameCheck: AVAudioFramePosition = -1
+    private var stalledTicks = 0
     private var levelTick = 0
     private var observers: [NSObjectProtocol] = []
+    private var engineObserver: NSObjectProtocol?
 
     init() {
         observeSystemEvents()
@@ -59,6 +74,7 @@ final class AudioRecorder {
 
     deinit {
         observers.forEach(NotificationCenter.default.removeObserver)
+        if let engineObserver { NotificationCenter.default.removeObserver(engineObserver) }
     }
 
     // MARK: - Start / stop
@@ -68,12 +84,18 @@ final class AudioRecorder {
     func start(sessionId: String, dir: URL, segmentSeconds: Double) {
         guard state == .idle else { return }
         self.sessionId = sessionId
-        sessionDir = dir
         segmentLimitSeconds = max(10, segmentSeconds)
+        fileLock.lock()
+        segmentSessionId = sessionId
+        segmentDir = dir
         currentIndex = -1
         checkedBrand = false
+        writeErrors = 0
+        totalFrames = 0
+        fileLock.unlock()
+        setState(.starting)
         requestPermission { [weak self] granted in
-            guard let self else { return }
+            guard let self, self.state == .starting else { return }
             if granted {
                 self.attemptStart(attempt: 1)
             } else {
@@ -82,22 +104,29 @@ final class AudioRecorder {
         }
     }
 
+    /// Stops recording; also cancels a start still waiting for permission.
     func stop() {
-        guard state == .recording else { return }
-        setState(.stopping)
-        stopEngineChain()
-        closeSegment(reason: "stop")
-        timer?.invalidate()
-        timer = nil
-        do {
-            try AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
-        } catch {
-            log.warning("deactivate session: \(error.localizedDescription, privacy: .public)")
+        switch state {
+        case .starting:
+            sessionId = nil
+            setState(.idle)
+        case .recording:
+            setState(.stopping)
+            stopEngineChain()
+            closeSegment(reason: "stop")
+            timer?.invalidate()
+            timer = nil
+            do {
+                try AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
+            } catch {
+                log.warning("deactivate session: \(error.localizedDescription, privacy: .public)")
+            }
+            onEvent?(.level(0))
+            sessionId = nil
+            setState(.idle)
+        case .idle, .stopping:
+            break
         }
-        onEvent?(.level(0))
-        sessionId = nil
-        sessionDir = nil
-        setState(.idle)
     }
 
     private func requestPermission(_ done: @escaping (Bool) -> Void) {
@@ -113,6 +142,7 @@ final class AudioRecorder {
     /// right after the session activates, so the input format may not be
     /// stable on the first try: retry once after 0.5 s (spike lesson 3).
     private func attemptStart(attempt: Int) {
+        guard state == .starting else { return }
         do {
             try configureAudioSession()
             try startEngineChain()
@@ -135,9 +165,11 @@ final class AudioRecorder {
         startedAt = Date()
         pausedTotal = 0
         pausedAt = nil
+        lastFrameCheck = -1
+        stalledTicks = 0
         setState(.recording)
         timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-            self?.tickElapsed()
+            self?.tick()
         }
     }
 
@@ -170,9 +202,15 @@ final class AudioRecorder {
         tapInstalled = true
         engine.prepare()
         try engine.start()
+        fileLock.lock()
+        recordingFlag = true
+        fileLock.unlock()
     }
 
     private func stopEngineChain() {
+        fileLock.lock()
+        recordingFlag = false
+        fileLock.unlock()
         if tapInstalled {
             engine.inputNode.removeTap(onBus: 0)
             tapInstalled = false
@@ -180,16 +218,22 @@ final class AudioRecorder {
         if engine.isRunning { engine.stop() }
     }
 
-    /// Rebuilds the chain after an interruption, route change or media
-    /// services reset. Always opens a NEW segment: rate or channels may have
+    /// Rebuilds the chain after an interruption, route or configuration
+    /// change. Always opens a NEW segment: rate or channels may have
     /// changed (AirPods → HFP 16 kHz).
-    private func restartEngineChain(reason: String) {
-        guard state == .recording else { return }
+    private func restartEngineChain(reason: String, newEngine: Bool = false) {
+        guard state == .recording, pausedAt == nil else { return }
         stopEngineChain()
         closeSegment(reason: reason)
+        if newEngine {
+            engine = AVAudioEngine()
+            observeEngineConfiguration()
+        }
         do {
             try configureAudioSession()
             try startEngineChain()
+            lastFrameCheck = -1
+            stalledTicks = 0
             onEvent?(.notice("Ghi tiếp sau gián đoạn (\(reason))."))
         } catch {
             fail("Không ghi tiếp được sau gián đoạn: \(error.localizedDescription)")
@@ -199,8 +243,11 @@ final class AudioRecorder {
     // MARK: - Segments
 
     private func openSegment(format: AVAudioFormat) throws {
-        guard let dir = sessionDir else { throw RecorderError("Chưa có thư mục phiên ghi.") }
+        fileLock.lock()
+        let dir = segmentDir
         let index = currentIndex + 1
+        fileLock.unlock()
+        guard let dir else { throw RecorderError("Chưa có thư mục phiên ghi.") }
         let url = dir.appendingPathComponent(String(format: "seg-%03d.m4a", index))
         let newFile = try makeAACFile(url: url, format: format)
         fileLock.lock()
@@ -240,21 +287,23 @@ final class AudioRecorder {
         return perChannel * Int(max(1, channels))
     }
 
-    /// Releases the file (AVAudioFile writes the moov atom on release) and
-    /// reports the finished segment.
+    /// Releases the file (AVAudioFile writes the moov atom on release; this
+    /// is the only reference) and reports the finished segment on main.
     private func closeSegment(reason: String) {
         fileLock.lock()
         let hadFile = file != nil
         let frames = currentFrames
         let index = currentIndex
         let rate = currentRate
-        // The only reference: releasing it writes the moov atom, so the file
-        // is complete on disk once the lock is released.
+        let dir = segmentDir
+        let session = segmentSessionId
+        let checkBrand = !checkedBrand && hadFile
+        if checkBrand { checkedBrand = true }
         file = nil
         currentFrames = 0
         fileLock.unlock()
 
-        guard index >= 0, hadFile, let dir = sessionDir, let sessionId else { return }
+        guard index >= 0, hadFile, let dir, let session else { return }
         let url = dir.appendingPathComponent(String(format: "seg-%03d.m4a", index))
         let seconds = rate > 0 ? Double(frames) / rate : 0
         guard seconds >= 0.5 else {
@@ -262,26 +311,16 @@ final class AudioRecorder {
             try? FileManager.default.removeItem(at: url)
             return
         }
-        if !checkedBrand {
-            checkedBrand = true
-            checkM4ABrand(url)
-        }
+        if checkBrand { checkM4ABrand(url) }
         let segment = SegmentStore.Segment(index: index, file: url.lastPathComponent, durationS: seconds,
                                            bytes: SegmentStore.fileSize(url))
         log.info("segment \(index) closed (\(reason, privacy: .public)): \(seconds, format: .fixed(precision: 1))s")
-        // Rotation runs on the audio render thread: deliver on main, where
-        // the plugin keeps its state.
-        let event = Event.segmentClosed(sessionId: sessionId, segment: segment, url: url)
-        if Thread.isMainThread {
-            onEvent?(event)
-        } else {
-            DispatchQueue.main.async { self.onEvent?(event) }
-        }
+        emit(.segmentClosed(sessionId: session, segment: segment, url: url))
     }
 
     /// The backend recognises the upload by magic bytes; `infer` registers
     /// video before audio, so a brand other than `M4A ` could be taken for
-    /// mp4. Check the first segment once.
+    /// mp4. Checked once, on the first segment.
     private func checkM4ABrand(_ url: URL) {
         guard let handle = try? FileHandle(forReadingFrom: url) else { return }
         defer { try? handle.close() }
@@ -289,11 +328,16 @@ final class AudioRecorder {
         let brand = header.count >= 12 ? String(decoding: header[8..<12], as: UTF8.self) : ""
         if brand != "M4A " {
             log.error("unexpected ftyp brand '\(brand, privacy: .public)'")
-            onEvent?(.notice("Định dạng tệp ghi bất thường (\(brand)) — máy chủ có thể không nhận."))
+            emit(.notice("Định dạng tệp ghi bất thường (\(brand)) — máy chủ có thể không nhận."))
         }
     }
 
+    /// Called on the audio thread, after the buffer's file reference is gone.
     private func rotate(format: AVAudioFormat, reason: String) {
+        fileLock.lock()
+        let active = recordingFlag
+        fileLock.unlock()
+        guard active else { return }
         closeSegment(reason: reason)
         do {
             try openSegment(format: format)
@@ -307,30 +351,44 @@ final class AudioRecorder {
 
     // MARK: - Audio render thread
 
+    private enum WriteResult { case ok, rotate, formatChanged, failed(String), noFile }
+
     private func process(_ buffer: AVAudioPCMBuffer) {
         updateLevel(buffer)
-        fileLock.lock()
-        guard let target = file else {
-            fileLock.unlock()
-            return
-        }
-        if buffer.format != target.processingFormat {
-            fileLock.unlock()
+        // The file reference lives only inside `write`, so it is released
+        // before a rotation reads the closed file back.
+        switch write(buffer) {
+        case .ok, .noFile:
+            break
+        case .rotate:
+            rotate(format: buffer.format, reason: "rotation")
+        case .formatChanged:
             rotate(format: buffer.format, reason: "format-change")
-            return
+        case .failed(let message):
+            log.error("write: \(message, privacy: .public)")
         }
-        var needRotate = false
+    }
+
+    private func write(_ buffer: AVAudioPCMBuffer) -> WriteResult {
+        fileLock.lock()
+        defer { fileLock.unlock() }
+        guard let target = file else { return .noFile }
+        if buffer.format != target.processingFormat { return .formatChanged }
         do {
             try target.write(from: buffer)
             currentFrames += AVAudioFramePosition(buffer.frameLength)
-            needRotate = currentRate > 0 && Double(currentFrames) / currentRate >= segmentLimitSeconds
+            totalFrames += AVAudioFramePosition(buffer.frameLength)
+            writeErrors = 0
+            let full = currentRate > 0 && Double(currentFrames) / currentRate >= segmentLimitSeconds
+            return full ? .rotate : .ok
         } catch {
-            fileLock.unlock()
-            log.error("write: \(error.localizedDescription, privacy: .public)")
-            return
+            writeErrors += 1
+            if writeErrors == 1 || writeErrors % 50 == 0 {
+                let count = writeErrors
+                DispatchQueue.main.async { self.diskTrouble(count) }
+            }
+            return .failed(error.localizedDescription)
         }
-        fileLock.unlock()
-        if needRotate { rotate(format: buffer.format, reason: "rotation") }
     }
 
     private func updateLevel(_ buffer: AVAudioPCMBuffer) {
@@ -343,8 +401,18 @@ final class AudioRecorder {
             let v = data[0][i]
             sum += v * v
         }
-        let rms = (sum / Float(n)).squareRoot()
-        DispatchQueue.main.async { self.onEvent?(.level(rms)) }
+        emit(.level((sum / Float(n)).squareRoot()))
+    }
+
+    /// Writes failing (disk full): say so at once, and stop after ~100
+    /// failed buffers instead of showing "Đang ghi" while saving nothing.
+    private func diskTrouble(_ count: Int) {
+        guard state == .recording else { return }
+        if count >= 100 {
+            fail("Không ghi được vào bộ nhớ máy (có thể đã đầy) — đã dừng, giữ phần đã ghi.")
+        } else {
+            onEvent?(.notice("Không ghi được vào bộ nhớ máy — kiểm tra dung lượng trống."))
+        }
     }
 
     // MARK: - System events
@@ -361,8 +429,26 @@ final class AudioRecorder {
         })
         observers.append(center.addObserver(forName: AVAudioSession.mediaServicesWereResetNotification,
                                             object: nil, queue: .main) { [weak self] _ in
-            self?.restartEngineChain(reason: "dịch vụ âm thanh khởi động lại")
+            self?.restartEngineChain(reason: "dịch vụ âm thanh khởi động lại", newEngine: true)
         })
+        // An interruption whose "ended" never arrives: try again when the
+        // user is back in the app.
+        observers.append(center.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil,
+                                            queue: .main) { [weak self] _ in
+            self?.resumeIfStillInterrupted()
+        })
+        observeEngineConfiguration()
+    }
+
+    /// The engine stops itself when the hardware format changes; without
+    /// this the UI would keep counting while nothing is recorded.
+    private func observeEngineConfiguration() {
+        if let engineObserver { NotificationCenter.default.removeObserver(engineObserver) }
+        engineObserver = NotificationCenter.default.addObserver(
+            forName: .AVAudioEngineConfigurationChange, object: engine, queue: .main
+        ) { [weak self] _ in
+            self?.restartEngineChain(reason: "đổi cấu hình âm thanh")
+        }
     }
 
     private func handleInterruption(_ note: Notification) {
@@ -371,27 +457,37 @@ final class AudioRecorder {
         else { return }
         switch type {
         case .began:
+            guard pausedAt == nil else { return }
             pausedAt = Date()
             stopEngineChain()
             closeSegment(reason: "interrupt")
             onEvent?(.notice("Tạm dừng: cuộc gọi hoặc ứng dụng khác đang dùng micro."))
         case .ended:
-            if let pausedAt {
-                pausedTotal += Date().timeIntervalSince(pausedAt)
-                self.pausedAt = nil
-            }
-            // Try to rebuild even without .shouldResume; fail clearly if impossible.
-            restartEngineChain(reason: "hết cuộc gọi/gián đoạn")
+            endInterruption()
         @unknown default:
             break
         }
     }
 
+    private func endInterruption() {
+        guard let pausedAt else { return }
+        pausedTotal += Date().timeIntervalSince(pausedAt)
+        self.pausedAt = nil
+        // Try to rebuild even without .shouldResume; fail clearly if impossible.
+        restartEngineChain(reason: "hết cuộc gọi/gián đoạn")
+    }
+
+    private func resumeIfStillInterrupted() {
+        guard state == .recording, pausedAt != nil else { return }
+        endInterruption()
+    }
+
     private func handleRouteChange(_ note: Notification) {
         guard let raw = note.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt,
-              let reason = AVAudioSession.RouteChangeReason(rawValue: raw), state == .recording
+              let reason = AVAudioSession.RouteChangeReason(rawValue: raw),
+              state == .recording,
+              pausedAt == nil // during a call the restart happens when it ends
         else { return }
-        // Only when the input device really changed (AirPods, headset).
         if reason == .oldDeviceUnavailable || reason == .newDeviceAvailable {
             restartEngineChain(reason: "đổi thiết bị âm thanh")
         }
@@ -399,15 +495,40 @@ final class AudioRecorder {
 
     // MARK: - Helpers
 
-    private func tickElapsed() {
+    /// Clock + watchdog: if frames stop growing while not interrupted, the
+    /// engine died silently — rebuild it.
+    private func tick() {
         guard let startedAt else { return }
         let paused = pausedTotal + (pausedAt.map { Date().timeIntervalSince($0) } ?? 0)
-        onEvent?(.elapsed(max(0, Date().timeIntervalSince(startedAt) - paused)))
+        emit(.elapsed(max(0, Date().timeIntervalSince(startedAt) - paused)))
+
+        guard state == .recording, pausedAt == nil else { return }
+        fileLock.lock()
+        let frames = totalFrames
+        fileLock.unlock()
+        if !engine.isRunning || frames == lastFrameCheck {
+            stalledTicks += 1
+        } else {
+            stalledTicks = 0
+        }
+        lastFrameCheck = frames
+        if stalledTicks >= 3 {
+            stalledTicks = 0
+            restartEngineChain(reason: "micro ngừng gửi âm thanh")
+        }
     }
 
     private func setState(_ next: State) {
         state = next
         onEvent?(.state(next))
+    }
+
+    private func emit(_ event: Event) {
+        if Thread.isMainThread {
+            onEvent?(event)
+        } else {
+            DispatchQueue.main.async { self.onEvent?(event) }
+        }
     }
 
     private func fail(_ message: String) {
@@ -416,7 +537,6 @@ final class AudioRecorder {
         timer?.invalidate()
         timer = nil
         sessionId = nil
-        sessionDir = nil
         setState(.idle)
         onEvent?(.failure(message))
     }

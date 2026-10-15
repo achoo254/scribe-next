@@ -10,7 +10,7 @@ type Handler = (data: Record<string, unknown>) => void;
 function fakePlugin(
 	status: Partial<Awaited<ReturnType<RecorderNativePlugin["getStatus"]>>> = {},
 ) {
-	const handlers = new Map<string, Handler>();
+	const handlers = new Map<string, Set<Handler>>();
 	const plugin: RecorderNativePlugin = {
 		start: vi.fn(async () => ({ sessionId: "s1" })),
 		stop: vi.fn(async () => ({
@@ -31,13 +31,18 @@ function fakePlugin(
 		syncUploads: vi.fn(async () => ({ lostSegments: 0, lostSecondsMax: 0 })),
 		signOut: vi.fn(async () => undefined),
 		addListener: vi.fn(async (event: string, handler: Handler) => {
-			handlers.set(event, handler);
-			return { remove: async () => void handlers.delete(event) };
+			const set = handlers.get(event) ?? new Set<Handler>();
+			set.add(handler);
+			handlers.set(event, set);
+			return { remove: async () => void set.delete(handler) };
 		}),
 	};
-	const emit = (event: string, data: Record<string, unknown> = {}) =>
-		handlers.get(event)?.(data);
-	return { plugin, emit, handlers };
+	const emit = (event: string, data: Record<string, unknown> = {}) => {
+		for (const handler of handlers.get(event) ?? []) handler(data);
+	};
+	const listenerCount = () =>
+		[...handlers.values()].reduce((sum, set) => sum + set.size, 0);
+	return { plugin, emit, listenerCount };
 }
 
 describe("NativeRecorder", () => {
@@ -129,13 +134,46 @@ describe("NativeRecorder", () => {
 	});
 
 	it("removes every listener on dispose", async () => {
-		const { plugin, handlers } = fakePlugin();
+		const { plugin, listenerCount } = fakePlugin();
 		const recorder = new NativeRecorder(plugin);
 		await recorder.attach();
-		expect(handlers.size).toBeGreaterThan(0);
+		expect(listenerCount()).toBeGreaterThan(0);
 		recorder.dispose();
 		await Promise.resolve();
-		expect(handlers.size).toBe(0);
+		expect(listenerCount()).toBe(0);
+	});
+
+	it("drops listeners of an attach that a dispose overtook (remount)", async () => {
+		const { plugin, emit, listenerCount } = fakePlugin();
+		const recorder = new NativeRecorder(plugin);
+		const first = recorder.attach();
+		recorder.dispose();
+		await first;
+		await Promise.resolve();
+		expect(listenerCount()).toBe(0);
+
+		await recorder.attach();
+		const perMount = listenerCount();
+		const seen = vi.fn();
+		recorder.subscribe(seen);
+		emit("elapsed", { elapsedS: 5 });
+		expect(seen).toHaveBeenCalledTimes(1);
+		expect(perMount).toBe(vi.mocked(plugin.addListener).mock.calls.length / 2);
+	});
+
+	it("shows the native start-up phase (permission prompt, engine warm-up)", async () => {
+		const { plugin, emit } = fakePlugin({ state: "starting" });
+		const recorder = new NativeRecorder(plugin);
+		await recorder.attach();
+		expect(recorder.getState()).toMatchObject({
+			starting: true,
+			recording: false,
+		});
+		emit("state", { state: "recording" });
+		expect(recorder.getState()).toMatchObject({
+			starting: false,
+			recording: true,
+		});
 	});
 });
 

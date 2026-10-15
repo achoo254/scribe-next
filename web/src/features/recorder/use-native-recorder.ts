@@ -2,6 +2,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useSyncExternalStore } from "react";
 import { useAuth } from "../../auth/auth-context";
 import { useToast } from "../../components/ui/toast";
+import { errorMessage } from "../../lib/api";
 import { refreshStorage } from "../files/file-queries";
 import {
 	NativeRecorder,
@@ -69,20 +70,28 @@ export function useNativeRecorder(): NativeRecorderApi {
 	useEffect(() => {
 		if (!email) return;
 		let cancelled = false;
-		void userKeyOf(email).then(async (key) => {
-			if (cancelled) return;
-			keyRef.current = key;
-			const { lostSegments, lostSecondsMax } =
-				await NativeRecorderPlugin.syncUploads({ userKey: key });
-			if (lostSegments > 0) {
+		userKeyOf(email)
+			.then(async (key) => {
+				if (cancelled) return;
+				keyRef.current = key;
+				const { lostSegments, lostSecondsMax } =
+					await NativeRecorderPlugin.syncUploads({ userKey: key });
+				if (lostSegments > 0) {
+					latest.current.toast.show({
+						tone: "error",
+						title: "Mất phần cuối của một bản ghi",
+						description: `Ứng dụng bị đóng khi đang ghi: mất tối đa ${Math.round(lostSecondsMax)} giây của đoạn đang mở.`,
+						duration: 10_000,
+					});
+				}
+			})
+			.catch((cause: unknown) =>
 				latest.current.toast.show({
 					tone: "error",
-					title: "Mất phần cuối của một bản ghi",
-					description: `Ứng dụng bị đóng khi đang ghi: mất tối đa ${Math.round(lostSecondsMax)} giây của đoạn đang mở.`,
-					duration: 10_000,
-				});
-			}
-		});
+					title: "Chưa đồng bộ được các đoạn ghi trên máy",
+					description: errorMessage(cause, "Mở lại ứng dụng để thử lại."),
+				}),
+			);
 		return () => {
 			cancelled = true;
 		};
