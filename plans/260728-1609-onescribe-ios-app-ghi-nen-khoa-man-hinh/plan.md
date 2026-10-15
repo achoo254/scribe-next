@@ -5,7 +5,7 @@ status: pending
 priority: P1
 branch: "main"
 tags: [ios, capacitor, swift, avfoundation, mobile]
-blockedBy: []
+blockedBy: [project:261015-1524-web-react-rewrite]  # viết lại web bằng React trước, Phase 1 iOS sửa các file đó
 blocks: []
 created: "2026-07-28"
 createdBy: "ak:plan"

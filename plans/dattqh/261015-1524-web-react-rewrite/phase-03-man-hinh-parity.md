@@ -1,0 +1,53 @@
+---
+phase: 3
+title: "Màn hình và parity tính năng"
+status: pending
+priority: P1
+effort: L
+dependencies: [2]
+---
+
+# Phase 3: Màn hình và parity tính năng
+
+## Overview
+
+Dựng lại các màn hình bằng primitive của Phase 1 và logic của Phase 2. Bố cục giữ như bản Vue (shell 3 tab, khớp desktop), giao diện theo token của `localman-next`.
+
+## Bảng chuyển đổi
+
+| Vue (`web/src-vue-legacy/`, số dòng) | React (`web/src/`) |
+|---|---|
+| `views/LoginView.vue` (89) | `pages/login-page.tsx` |
+| `views/HomeView.vue` (73) + `components/AppTopBar.vue` (59) | `layout/app-shell.tsx` + `layout/app-top-bar.tsx` (tabs Ghi âm / Cắt file / Transcript "Sắp có") |
+| `views/RecordView.vue` (319) | `pages/record/record-page.tsx` + các khối con |
+| `views/SplitView.vue` (354) | `pages/split/split-page.tsx` + các khối con |
+| `components/RecordingHistory.vue` (336) | `pages/record/recording-history.tsx` |
+| `components/MediaPlayer.vue` (225) | `components/media-player.tsx` |
+| `components/QuotaBar.vue` (47) | `components/quota-bar.tsx` (dùng `progress-bar`) |
+| `components/BrandMark.vue` (42) | `components/brand/wordmark.tsx` (Phase 1) |
+
+Route giữ nguyên: `/` (cần đăng nhập), `/login`, mọi đường khác về `/`.
+
+## Bảng parity (cổng của Phase 4)
+
+| Tính năng | Kiểm |
+|---|---|
+| Đăng nhập Google, đăng xuất, guard `/` | Chrome + Safari iOS |
+| Ghi mic; ghi mic + màn hình + tiếng hệ thống (Chrome desktop); đồng hồ, meter âm lượng, dừng | Ghi thật ≥ 10 phút, tải về phát được |
+| Cắt bản ghi thành nhiều bản ghi | Có trong Lịch sử ghi |
+| Cắt file: chọn file, upload có tiến độ và resume, tạo job phút/MB/chia đều, tải zip | File ≥ 100 MB, ngắt mạng giữa chừng rồi tiếp |
+| Lịch sử ghi: danh sách, phát, tua, tải, tải theo khoảng ngày, xoá | Dữ liệu tạo từ bản Vue |
+| Quản lý file, xoá nhiều, quota cập nhật sau khi xoá | QuotaBar giảm |
+| Thông báo lỗi tiếng Việt như bản Vue (mic bị chặn, hết quota, mất mạng) | Gây lỗi có chủ đích |
+
+## Yêu cầu UI
+
+- Mọi khối cấp trang, nút, input có `data-id` (tối đa 3 bậc), như quy ước `localman-next`.
+- Trạng thái tải theo mục "Loading states" của `localman-next/docs/design-system.md` (skeleton lần đầu, `Button loading`).
+- Vùng chạm ≥ 44px trên màn cảm ứng; không cuộn ngang ở 375px.
+- WCAG AA: `check:tokens` kiểm cặp màu; focus ring nhìn thấy được.
+
+## Success Criteria
+
+- [ ] Mọi dòng trong bảng parity đạt trên staging.
+- [ ] `lint`, `typecheck`, `test`, `check:tokens`, `build` EXIT 0.
