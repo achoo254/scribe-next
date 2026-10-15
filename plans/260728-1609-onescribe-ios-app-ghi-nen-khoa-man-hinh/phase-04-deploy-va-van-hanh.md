@@ -98,9 +98,9 @@ trả $99 → profile 1 năm → Live Activity → TestFlight vài người th�
 - [ ] Script in ngày hết hạn profile ở cuối
 - [ ] Thất bại có thông báo rõ khi: chưa mở khoá máy, chưa tin cậy profile, sai team
 - [ ] `docs/deployment-guide.md` đủ để dựng lại từ máy chưa cài gì
-- [ ] `docs/codebase-summary.md` phản ánh đúng 3 app
-- [ ] `docs/project-roadmap.md` có mục iOS + lộ trình App Store
-- [ ] Rà xong 4 mục (kết quả ghi vào roadmap): `AudioRecorder` không import Capacitor · không có UDID/Team ID trong mã nguồn app (chỉ trong script) · chuỗi mô tả quyền đủ cụ thể cho 5.1.1 · không dùng API không public
+- [x] `docs/codebase-summary.md` phản ánh đúng 3 app
+- [x] `docs/project-roadmap.md` có mục iOS + lộ trình App Store
+- [x] Rà xong 4 mục (kết quả ghi vào roadmap): `AudioRecorder` không import Capacitor · không có UDID/Team ID trong mã nguồn app (chỉ trong script) · chuỗi mô tả quyền đủ cụ thể cho 5.1.1 · không dùng API không public
 
 ## Risk Assessment
 

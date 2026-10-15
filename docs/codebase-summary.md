@@ -1,13 +1,16 @@
 # Codebase Summary — OneScribe
 
-Tổng quan kiến trúc + module chính. Cập nhật 2026-07-12 (sau Phase 4 Ghi + Phase 5 Retention + xoá thủ công + refactor UI web bám desktop).
+Tổng quan kiến trúc + module chính. Cập nhật 2026-10-15 (web viết lại bằng React, app iPhone, chép lời bằng OpenAI).
 
-OneScribe = sản phẩm **One Series (iNET)** ghi/cắt/transcribe media. Repo có **2 ứng dụng** dùng chung design system iNET ViUI (theme dark `inetOneDark` — primary xanh lá `#49c98d`, accent cam `#f7ad30`, nền tối):
+OneScribe = sản phẩm **One Series (iNET)** ghi/cắt/transcribe media. Repo có **3 ứng dụng**:
 
 | App | Vị trí | Stack | Vai trò |
 |-----|--------|-------|---------|
-| **Desktop** | `src/` + `src-tauri/` | Tauri v2 (Rust) + Vue 3 + Vuetify 3 + ViUI local | Ghi mic/màn hình/system + cắt file + **transcribe offline** (PhoWhisper) |
-| **Web** | `web/` + `server/onescribe-be/` + `crates/core-split/` | Vue 3/Vite + `@hobui/viui` npm · BE Rust/axum (musl static) · MongoDB · Firebase Auth | Ghi (browser) + cắt file, **BỎ AI transcribe** (box .65 không GPU) |
+| **Desktop** | `src/` + `src-tauri/` | Tauri v2 (Rust) + Vue 3 + Vuetify 3 + ViUI local | Ghi mic/màn hình/system + cắt file + **transcribe offline** (PhoWhisper) hoặc OpenAI (key người dùng) |
+| **Web** | `web/` + `server/onescribe-be/` + `crates/core-split/` | React 19 + Vite 7 + Tailwind 4 (token từ localman-next) · BE Rust/axum (musl static) · MongoDB · Firebase Auth | Ghi (browser) + cắt file + **chép lời bằng OpenAI** (key người dùng tự nhập, chỉ email trong `TRANSCRIBE_EMAILS`) |
+| **iPhone** | `web/ios/` (Capacitor 8, đóng gói bản build của `web/`) | Swift plugin + cùng mã React | Ghi nền khi khoá màn hình theo đoạn 1 phút, lưu bền, tự tải lên; dùng chung backend web. Chi tiết: [ios-app.md](./ios-app.md) |
+
+Bản web Vue cũ nằm ở `web/src-vue-legacy/` (tham khảo, không build).
 
 ---
 
@@ -20,12 +23,12 @@ OneScribe = sản phẩm **One Series (iNET)** ghi/cắt/transcribe media. Repo 
 
 ## Web app — Frontend (`web/`)
 
-Vue 3 + Vite + `@hobui/viui` (Vi* npm) + Vue Router + Firebase JS SDK. Theme `inetOneDark` cấu hình trong `main.ts` (map token One Series vào Vuetify), font **Be Vietnam Pro** (Google Fonts), favicon = app icon desktop.
+React 19 + Vite 7 + Tailwind 4 + TanStack Query + Radix + Firebase JS SDK. Token màu lấy từ localman-next (`styles/tokens.css`, kiểm tương phản bằng `npm run check:tokens`).
 
-- **Shell** (`views/HomeView.vue`): header (BrandMark + "OneScribe" + email + Đăng xuất) + **QuotaBar** + `ViTabs` 3 tab (Ghi âm / Cắt file / Transcript "Sắp có"), `keep-alive` giữ state khi đổi tab. Bám sát layout desktop.
-- **views/**: `LoginView` (Google sign-in, nền dark), `RecordView` (Mode A — ghi), `SplitView` (Mode B — cắt file, 1 card).
-- **components/**: `BrandMark` (logo SVG sóng âm→dòng transcript), `AppTopBar` (header), `QuotaBar` (dung lượng/quota), `RecordingHistory` (lịch sử ghi + nút Nghe lại/Xoá), `MediaPlayer` (`<video>/<audio>` phát qua `/api/files/:id`).
-- **composables/**: `use-auth` (Firebase → session cookie), `use-upload` (chunked upload resumable), `use-splitter` (job cắt + poll), `use-recorder` (getUserMedia/getDisplayMedia + Web Audio mix + MediaRecorder timeslice 1s + upload nền + best-effort finalize), `use-recordings` (list + xoá recording), `use-usage` (quota, shared store).
+- **Shell** (`layout/`): top bar + 3 tab (Ghi âm / Cắt file / Transcript).
+- **pages/**: `login-page`, `record/` (nguồn ghi, theo dõi mức âm, thẻ ghi native trên iPhone, Lịch sử ghi gom theo ngày và theo phiên iPhone, panel "Chép lời" + hộp nhập key), `split/` (cắt file).
+- **features/** (logic, không UI): `files` (danh sách/xoá/gom nhóm), `upload` (chunk), `split` (job cắt), `recorder` (trình duyệt + bản native qua plugin Swift), `transcript` (API chép lời, ghép phiên, lưu key).
+- **lib/**: `api.ts` (`apiFetch`, `isNativeShell`, origin backend khi chạy trong app), `download.ts` (tải/phát qua plugin native trên iPhone), `native.ts` (khai báo plugin Swift).
 - Dev proxy `/api` → `127.0.0.1:8787`; prod nginx cùng origin.
 
 ## Web app — Backend (`server/onescribe-be/`)
@@ -38,6 +41,8 @@ Rust/axum → **1 static musl binary**, bind `127.0.0.1:8787`, secret nhúng com
 - `auth.rs` — Firebase ID token → verify (JWKS securetoken + email_verified + allowlist) → session cookie HttpOnly+Secure+SameSite=Lax; audit-log; middleware `require_auth`.
 - `jwks.rs`, `session.rs` — verify token + issue/verify session (jsonwebtoken).
 - `upload.rs` — chunked upload (init/chunk/status/finalize) append-disk, quota tăng dần, magic-byte (`infer`).
+- `transcribe/` — chép lời bằng OpenAI `gpt-4o-mini-transcribe`: `POST/GET /api/transcripts`, `GET /api/transcripts/export` (txt/srt, ghép cả phiên iPhone); hàng đợi riêng trong collection `transcripts`; cắt mảnh ≤45 giây tại khoảng lặng (ffmpeg `silencedetect`), nén Opus, gọi song song 4 mảnh. Key người dùng chỉ giữ trong RAM tới khi chép xong.
+- `access_log.rs`, `audit.rs` — log mọi request + collection `audit_events` (TTL 180 ngày) cho hành vi người dùng.
 - `recordings.rs` — **Mode A streaming**: init/chunk/finalize open-ended cho MediaRecorder (mirror upload, coll `recording_sessions` riêng) → `files{kind:recording}`. Finalize **remux `-c copy -f webm`** để dựng Cues+Duration (webm MediaRecorder streaming thiếu → không tua được); remux lỗi → fallback rename giữ container gốc.
 - `files.rs` — `GET /api/files` (lịch sử ghi) · `GET /api/files/:id` (stream + **HTTP Range** cho player tua) · `DELETE /api/files/:id` (xoá thủ công, ownership) · `GET /api/me/usage` (quota).
 - `jobs.rs` + `worker/split_worker.rs` — job queue cắt (claim atomic, concurrency=1). Mode B (upload webm): disk-free ≥2× → remux `-c copy -f matroska` → segment → dọn `fixed.mkv` → đoạn `kind:output` (tải zip). **Mode A (`recordingSplit`)**: input recording đã seekable → segment thẳng webm→webm + probe mỗi đoạn → đoạn `kind:recording` (vào Lịch sử ghi, phát/tua riêng) + **xoá bản ghi gốc**.
@@ -72,7 +77,7 @@ Rust/axum → **1 static musl binary**, bind `127.0.0.1:8787`, secret nhúng com
 
 ## Deploy (web)
 
-Build musl qua Docker (`scripts/build-musl.sh`, WSL) → binary `/opt/onescribe-be/onescribe-be` (systemd) + FE dist `/var/www/onescribe/dist`; nginx `:80` (CF DNS proxied lo TLS) tại `scribe.inetdev.io.vn`. Chi tiết: [deployment-guide.md](./deployment-guide.md). Thiết kế cắt/ghi: [split-record-design.md](./split-record-design.md).
+Build musl qua Docker (`scripts/build-musl.sh`) hoặc `cargo zigbuild` trên macOS → binary `/opt/onescribe-be/onescribe-be` (systemd) + FE dist `/var/www/onescribe/dist`; nginx `:80` (CF DNS proxied lo TLS) tại `scribe.inetdev.io.vn`. Chi tiết: [deploy-web-production.md](./deploy-web-production.md); app iPhone: [ios-app.md](./ios-app.md). Thiết kế cắt/ghi: [split-record-design.md](./split-record-design.md).
 
 ## Tính năng mới (session 2026-07-12)
 
@@ -83,6 +88,7 @@ Build musl qua Docker (`scripts/build-musl.sh`, WSL) → binary `/opt/onescribe-
 
 ## Unresolved / follow-up
 
-- Web chưa có Transcript (tab "Sắp có") — chờ hạ tầng GPU (trait `Worker`/`TranscribeWorker` stub sẵn).
-- Chưa có unit test cho `use-recorder` / `RateLimiter` (logic pure, mock được).
+- Tab Transcript của web vẫn là chỗ để sẵn; chép lời hiện nằm trong Lịch sử ghi (nút "Chép lời").
+- Chưa có unit test cho `RateLimiter` (logic pure, mock được).
+- App iPhone: QA trên máy thật (đăng nhập, ghi khoá màn hình, chép lời) còn chờ.
 - QA thủ công ghi mic/màn hình thật (getUserMedia/getDisplayMedia không automate được).
