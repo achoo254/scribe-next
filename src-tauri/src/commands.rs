@@ -174,8 +174,25 @@ pub fn transcribe_files(
     paths: Vec<String>,
     outputs: Vec<String>,
     size: String,
+    engine: Option<String>, // "local" (mặc định, Mode A không gửi) | "openai" (Mode C chọn cloud)
 ) -> Result<(), String> {
-    transcriber.transcribe(&app, paths, outputs, &size)
+    transcriber.transcribe(&app, paths, outputs, &size, engine.as_deref() == Some("openai"))
+}
+
+/// Mode C: đã lưu OpenAI API key trong keychain chưa (KHÔNG trả giá trị key về frontend).
+#[tauri::command]
+pub fn openai_key_status() -> Result<bool, String> {
+    crate::openai_key::load().map(|k| k.is_some())
+}
+
+#[tauri::command]
+pub fn set_openai_key(key: String) -> Result<(), String> {
+    crate::openai_key::save(&key)
+}
+
+#[tauri::command]
+pub fn delete_openai_key() -> Result<(), String> {
+    crate::openai_key::delete()
 }
 
 /// Mode C: hủy (kill sidecar → lần sau spawn lại).

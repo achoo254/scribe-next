@@ -7,6 +7,9 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import type { ModelSize } from "./asr-models";
 
+// Nguồn chép: "local" = model trên máy (offline) | "openai" = gpt-4o-mini-transcribe (cloud, Mode C).
+export type Engine = "local" | "openai";
+
 export interface Segment {
   start: number;
   end: number;
@@ -48,6 +51,9 @@ const deriveTxtPath = (p: string): string => p.replace(/\.[^.]+$/, "") + ".txt";
 export function useTranscribe() {
   const files = ref<string[]>([]);
   const selectedSize = ref<ModelSize>("medium"); // mặc định medium (cân bằng tốc độ/chất lượng)
+  const engine = ref<Engine>("local");
+  // Tổng thời lượng (giây) các file đã chọn — chỉ probe khi dùng cloud để ước tính chi phí.
+  const totalSeconds = ref<number | null>(null);
   const exportFormats = ref<string[]>(["txt", "srt"]); // định dạng xuất (Phase 02)
   const modelReady = ref(false);
   const modelPath = ref("");
@@ -97,6 +103,24 @@ export function useTranscribe() {
     downloading.value = false;
     downloadPct.value = 0;
     refreshModel();
+  });
+
+  // Probe thời lượng khi đổi file/nguồn. probeSeq chặn kết quả cũ ghi đè khi user đổi nhanh.
+  let probeSeq = 0;
+  watch([files, engine], async () => {
+    const seq = ++probeSeq;
+    if (engine.value !== "openai" || !files.value.length) {
+      totalSeconds.value = null;
+      return;
+    }
+    const secs = await Promise.all(
+      files.value.map((path) =>
+        invoke<{ duration_s: number }>("probe_file", { path })
+          .then((i) => i.duration_s)
+          .catch(() => 0),
+      ),
+    );
+    if (seq === probeSeq) totalSeconds.value = secs.reduce((a, b) => a + b, 0);
   });
 
   async function init() {
@@ -207,7 +231,9 @@ export function useTranscribe() {
     transcribing.value = true;
     progressPct.value = 0;
     try {
-      await invoke("transcribe_files", { paths, outputs: outputs(), size: selectedSize.value });
+      await invoke("transcribe_files", {
+        paths, outputs: outputs(), size: selectedSize.value, engine: engine.value,
+      });
     } catch (e) {
       error.value = String(e);
       transcribing.value = false;
@@ -260,7 +286,7 @@ export function useTranscribe() {
   onUnmounted(() => unlisteners.forEach((u) => u()));
 
   return {
-    files, selectedSize, exportFormats, modelReady, modelPath, downloading, downloadPct,
+    files, selectedSize, engine, totalSeconds, exportFormats, modelReady, modelPath, downloading, downloadPct,
     transcribing, progressPct, overallPct, indeterminate, doneCount: settled, total: expected,
     currentFile, deviceInfo, results, fileErrors, error,
     init, refreshModel, pickFiles, ensureModel, transcribe, retry, save, edit, cancel,

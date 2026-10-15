@@ -6,6 +6,7 @@ mod audio;
 mod commands;
 mod cuda;
 mod ffmpeg;
+mod openai_key;
 mod recorder;
 mod screen;
 mod settings;
@@ -72,6 +73,9 @@ pub fn run() {
             commands::save_transcript,
             commands::list_models,
             commands::delete_model,
+            commands::openai_key_status,
+            commands::set_openai_key,
+            commands::delete_openai_key,
             screen::list_monitors,
             screen::open_region_selector,
             screen::finish_region_selection,

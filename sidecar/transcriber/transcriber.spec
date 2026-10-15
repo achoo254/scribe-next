@@ -9,7 +9,7 @@ binaries = []
 # gpu_device import lazy trong main.get_model → khai tường minh để chắc chắn bundle vào release
 # (thiếu 1 module = GPU lỗi âm thầm chỉ khi chạy binary). cuda_runtime/model_paths import top-level
 # nên PyInstaller tự bắt, thêm cho nhất quán/self-document.
-hiddenimports = ['cuda_runtime', 'gpu_device', 'model_paths']
+hiddenimports = ['cuda_runtime', 'gpu_device', 'model_paths', 'openai_transcriber']
 for _pkg in ('faster_whisper', 'ctranslate2', 'av', 'huggingface_hub', 'tokenizers'):
     tmp_ret = collect_all(_pkg)
     datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]

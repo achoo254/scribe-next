@@ -4,6 +4,8 @@ Giao thức (line-delimited JSON):
   stdin :  {"cmd":"ensure_model","model_dir":"...","size":"small|medium|large|large-v3-mlx"}
            {"cmd":"transcribe","file":"...","out_dir":"...","outputs":["txt","srt","vtt","json"],
             "model_dir":"...","size":"...","prompt":"<glossary optional>"}
+           {"cmd":"transcribe_cloud","file":"...","out_dir":"...","outputs":[...],"api_key":"...",
+            "prompt":"<glossary optional>"}   (OpenAI gpt-4o-mini-transcribe, xem openai_transcriber)
            {"cmd":"shutdown"}
   stdout:  {"type":"ready"} | {"type":"download","pct":N} | {"type":"model_ready"}
            {"type":"progress","file":...,"pct":N} | {"type":"done",...} | {"type":"error","message":...}
@@ -249,6 +251,20 @@ def transcribe(file: str, out_dir: str, outputs, model_dir: str, size: str, prom
         text, segments = _transcribe_mlx(file, model_dir, size, prompt)  # MLX: GPU riêng, bỏ qua cuda
     else:
         text, segments = _transcribe_ct2(file, model_dir, size, prompt, use_gpu, cuda_dir)
+    _finish(file, out_dir, outputs, text, segments)
+
+
+def transcribe_cloud(file: str, out_dir: str, outputs, api_key: str, prompt=None):
+    import openai_transcriber
+
+    send({"type": "info", "message": f"Đang dùng OpenAI {openai_transcriber.MODEL} — mốc thời gian là ước lượng"})
+    text, segments = openai_transcriber.transcribe(
+        file, api_key, prompt, lambda pct: send({"type": "progress", "file": file, "pct": pct}),
+    )
+    _finish(file, out_dir, outputs, text, segments)
+
+
+def _finish(file: str, out_dir: str, outputs, text: str, segments):
     paths = _write_outputs(file, out_dir, outputs, text, segments)
     send({
         "type": "done", "file": file, "text": text, "segments": segments,
@@ -319,6 +335,11 @@ def main():
                     req["file"], req["out_dir"], req.get("outputs", ["txt", "srt"]),
                     req["model_dir"], req.get("size", "medium"), req.get("prompt"),
                     req.get("use_gpu", False), req.get("cuda_dir"),
+                )
+            elif cmd == "transcribe_cloud":
+                transcribe_cloud(
+                    req["file"], req["out_dir"], req.get("outputs", ["txt", "srt"]),
+                    req["api_key"], req.get("prompt"),
                 )
             elif cmd == "shutdown":
                 break

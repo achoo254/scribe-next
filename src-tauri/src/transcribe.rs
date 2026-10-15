@@ -334,10 +334,17 @@ impl Transcriber {
         paths: Vec<String>,
         outputs: Vec<String>,
         size: &str,
+        cloud: bool,
     ) -> Result<(), String> {
-        if !model_present(app, size) {
-            return Err("Chưa tải model — hãy tải model trước".into());
-        }
+        // Cloud: không cần model local, cần API key. Đọc key 1 lần cho cả batch.
+        let api_key = if cloud {
+            Some(crate::openai_key::load()?.ok_or("Chưa nhập OpenAI API key")?)
+        } else {
+            if !model_present(app, size) {
+                return Err("Chưa tải model — hãy tải model trước".into());
+            }
+            None
+        };
         self.ensure_spawned(app)?;
         let dir = model_dir(app, size).to_string_lossy().to_string();
         // Đọc settings 1 lần: glossary (initial_prompt) + use_gpu — cả 2 dùng chung Mode A + C.
@@ -358,14 +365,18 @@ impl Transcriber {
                 .parent()
                 .map(|p| p.to_string_lossy().to_string())
                 .unwrap_or_else(|| ".".to_string());
-            self.send(
-                serde_json::json!({
+            let job = match &api_key {
+                Some(key) => serde_json::json!({
+                    "cmd": "transcribe_cloud", "file": file, "out_dir": out_dir,
+                    "outputs": outputs, "api_key": key, "prompt": prompt,
+                }),
+                None => serde_json::json!({
                     "cmd": "transcribe", "file": file, "out_dir": out_dir,
                     "outputs": outputs, "model_dir": dir, "size": size, "prompt": prompt,
                     "use_gpu": use_gpu, "cuda_dir": cuda_dir_str,
-                })
-                .to_string(),
-            )?;
+                }),
+            };
+            self.send(job.to_string())?;
         }
         Ok(())
     }

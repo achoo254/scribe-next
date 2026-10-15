@@ -1,26 +1,29 @@
 <script setup lang="ts">
 // Mode C — Transcribe offline tiếng Việt (PhoWhisper). UI Vi* (iNET ViUI), token-only, WCAG AA.
-import { onMounted, onActivated } from "vue";
+import { computed, onMounted, onActivated } from "vue";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { ask } from "@tauri-apps/plugin-dialog";
 import {
   ViCard, ViButton, ViIcon, ViList, ViListItem, ViSelect,
-  ViTextarea, ViProgressLinear, ViAlert, ViButtonToggle, ViSwitch,
+  ViTextarea, ViProgressLinear, ViAlert, ViButtonToggle, ViSwitch, ViInput,
 } from "../design-system/vi-ui";
 import TranscriptPlayer from "../components/TranscriptPlayer.vue";
 import { useTranscribe, isVideoPath } from "../composables/use-transcribe";
 import { useAsrModels, useModelManager, formatBytes, type ModelSize } from "../composables/asr-models";
 import { useGlossary, GLOSSARY_SOFT_LIMIT } from "../composables/use-glossary";
 import { useGpuSetting, useCudaRuntime } from "../composables/use-gpu";
+import { useOpenAiKey, OPENAI_USD_PER_MIN } from "../composables/use-openai-key";
 
 const tr = useTranscribe();
 const gloss = useGlossary();
 const mm = useModelManager();
 const gpu = useGpuSetting();
 const cudaRt = useCudaRuntime();
+const oaKey = useOpenAiKey();
 onMounted(async () => {
   tr.init();
+  oaKey.refresh();
   gloss.load();
   mm.refresh();
   await gpu.load(); // chờ nạp use_gpu trước khi áp default (dưới) — mở lại app đã bật GPU cũng đúng
@@ -48,6 +51,21 @@ onActivated(() => {
 
 // Picker model — catalog dùng chung (asr-models); MLX gated theo nền tảng.
 const { sizeOptions, sizeHint } = useAsrModels();
+
+const isCloud = computed(() => tr.engine.value === "openai");
+// Sẵn sàng chạy: local cần model đã tải; cloud cần API key.
+const canRun = computed(
+  () =>
+    tr.files.value.length > 0 &&
+    !tr.transcribing.value &&
+    (isCloud.value ? oaKey.hasKey.value : tr.modelReady.value),
+);
+const costText = computed(() => {
+  const secs = tr.totalSeconds.value;
+  if (secs === null) return "";
+  const min = secs / 60;
+  return `${Math.round(min)} phút audio · ước tính ~$${(min * OPENAI_USD_PER_MIN).toFixed(2)}`;
+});
 
 const EXPORT_OPTS = [
   { value: "txt", label: "TXT" },
@@ -79,6 +97,22 @@ async function removeModel(size: ModelSize) {
 <template>
   <ViCard title="Transcript" class="pa-4">
     <div class="os-form">
+      <!-- Nguồn chép: offline (mặc định) hoặc OpenAI cloud (chỉ Mode C, user chủ động chọn) -->
+      <div class="os-row">
+        <span class="os-muted">Nguồn chép:</span>
+        <ViButtonToggle
+          v-model="tr.engine.value"
+          mandatory
+          divided
+          density="comfortable"
+          :disabled="tr.transcribing.value"
+        >
+          <ViButton value="local" size="small">Offline (trên máy)</ViButton>
+          <ViButton value="openai" size="small">OpenAI (cloud)</ViButton>
+        </ViButtonToggle>
+      </div>
+
+      <template v-if="!isCloud">
       <!-- Picker model: nhanh ↔ chất lượng -->
       <ViSelect
         v-model="tr.selectedSize.value"
@@ -122,6 +156,35 @@ async function removeModel(size: ModelSize) {
           <ViAlert v-if="cudaRt.error.value" type="error" density="compact" closable>{{ cudaRt.error.value }}</ViAlert>
         </template>
       </template>
+      </template>
+
+      <!-- Cloud: audio rời máy → cảnh báo rõ + key lưu trong keychain hệ điều hành -->
+      <template v-else>
+        <ViAlert type="warning" variant="tonal" density="compact">
+          Audio sẽ được gửi lên OpenAI (gpt-4o-mini-transcribe). Không dùng cho nội dung không được phép đưa ra ngoài.
+          Mốc thời gian SRT/VTT là ước lượng (sai số vài giây).
+        </ViAlert>
+        <div v-if="oaKey.hasKey.value" class="os-row">
+          <ViAlert type="success" variant="tonal" density="compact">API key đã lưu trong keychain.</ViAlert>
+          <ViButton variant="text" size="small" :disabled="tr.transcribing.value" @click="oaKey.remove()">
+            <ViIcon icon="IconTrash" start />Xoá key
+          </ViButton>
+        </div>
+        <div v-else class="os-row">
+          <ViInput
+            v-model="oaKey.input.value"
+            type="password"
+            label="OpenAI API key"
+            placeholder="sk-…"
+            autocomplete="off"
+            hide-details
+          />
+          <ViButton color="secondary" :disabled="!oaKey.input.value.trim()" @click="oaKey.save()">
+            Lưu key
+          </ViButton>
+        </div>
+        <ViAlert v-if="oaKey.error.value" type="error" density="compact" closable>{{ oaKey.error.value }}</ViAlert>
+      </template>
 
       <!-- Glossary: bias model đúng tên riêng/thuật ngữ (dùng chung Mode A + C) -->
       <ViTextarea
@@ -158,7 +221,8 @@ async function removeModel(size: ModelSize) {
         <ViListItem v-for="(p, i) in tr.files.value" :key="i" :title="base(p)" />
       </ViList>
 
-      <!-- Trạng thái model -->
+      <!-- Trạng thái model (chỉ nguồn offline) -->
+      <template v-if="!isCloud">
       <ViAlert v-if="tr.modelReady.value" type="success" variant="tonal" density="compact">
         Model {{ tr.selectedSize.value }} sẵn sàng (chạy offline).
       </ViAlert>
@@ -185,13 +249,15 @@ async function removeModel(size: ModelSize) {
       <p v-if="tr.modelPath.value" class="os-muted os-path">
         <ViIcon icon="IconFolder" />&nbsp;Model lưu tại: {{ tr.modelPath.value }}
       </p>
+      </template>
+      <span v-else-if="costText" class="os-muted">💲 {{ costText }}</span>
 
       <!-- Điều khiển transcribe -->
       <div class="os-row">
         <ViButton
           color="primary"
           size="large"
-          :disabled="!tr.files.value.length || tr.transcribing.value || !tr.modelReady.value"
+          :disabled="!canRun"
           @click="tr.transcribe()"
         >
           <ViIcon icon="IconFileText" start />Transcribe
