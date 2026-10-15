@@ -146,6 +146,20 @@ pub async fn get_owned(
         .map_err(|e| AppError::Internal(format!("find file: {e}")))
 }
 
+/// Các file của user trong `ids` (bỏ qua id không thuộc user), một truy vấn.
+pub async fn list_owned_by_ids(db: &Database, user_id: &str, ids: &[ObjectId]) -> Result<Vec<FileDoc>, AppError> {
+    let mut cur = db
+        .collection::<FileDoc>(COLL)
+        .find(doc! { "_id": { "$in": ids }, "userId": user_id })
+        .await
+        .map_err(|e| AppError::Internal(format!("find files: {e}")))?;
+    let mut out = Vec::new();
+    while let Some(r) = cur.next().await {
+        out.push(r.map_err(|e| AppError::Internal(format!("đọc file: {e}")))?);
+    }
+    Ok(out)
+}
+
 /// Các đoạn output của 1 job (ownership).
 pub async fn list_outputs_for_job(
     db: &Database,
@@ -215,7 +229,8 @@ pub async fn delete_doc(db: &Database, id: ObjectId) -> Result<(), AppError> {
         .delete_one(doc! { "_id": id })
         .await
         .map_err(|e| AppError::Internal(format!("xoá file doc: {e}")))?;
-    Ok(())
+    // Bản chép lời đi theo file: đây là nơi duy nhất xoá doc file (xoá tay, retention, cắt bản ghi).
+    super::transcript::delete(db, id).await
 }
 
 /// Tổng byte đã dùng của user (quota — red-team #3).

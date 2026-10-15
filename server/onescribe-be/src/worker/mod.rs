@@ -1,7 +1,7 @@
 //! Worker abstraction (honor quyết định #8: khung pluggable cho engine tương lai).
 //!
-//! `trait Worker` = 1 job type → 1 impl. Cắm engine mới (VD transcribe) = thêm 1 `impl Worker`,
-//! không đụng queue/API. Dispatch tĩnh theo `job.type` trong `jobs::run_job`.
+//! `trait Worker` = 1 job type → 1 impl. Dispatch tĩnh theo `job.type` trong `jobs::run_job`.
+//! Chép lời có hàng đợi riêng (`crate::transcribe`), không đi qua đây.
 
 pub mod split_worker;
 
@@ -23,13 +23,4 @@ pub struct OutputSeg {
 #[allow(async_fn_in_trait)] // dùng nội bộ, dispatch tĩnh — không cần Send bound của async-trait.
 pub trait Worker {
     async fn process(&self, state: &AppState, job: &Job) -> Result<Vec<OutputSeg>, String>;
-}
-
-/// Stub cho transcribe (decision #8: khung sẵn, engine cắm sau khi có hạ tầng GPU).
-pub struct TranscribeWorker;
-
-impl Worker for TranscribeWorker {
-    async fn process(&self, _state: &AppState, _job: &Job) -> Result<Vec<OutputSeg>, String> {
-        Err("transcribe chưa được hỗ trợ".into())
-    }
 }

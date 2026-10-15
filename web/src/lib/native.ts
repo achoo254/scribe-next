@@ -20,5 +20,13 @@ export interface NativeFilesPlugin {
 	share(options: { url: string }): Promise<void>;
 }
 
+/** Values kept in the app's Keychain (the user's own OpenAI key). */
+export interface SecretsPlugin {
+	get(options: { name: string }): Promise<{ value?: string }>;
+	set(options: { name: string; value: string }): Promise<void>;
+	remove(options: { name: string }): Promise<void>;
+}
+
 export const GoogleAuth = registerPlugin<GoogleAuthPlugin>("GoogleAuth");
 export const NativeFiles = registerPlugin<NativeFilesPlugin>("NativeFiles");
+export const Secrets = registerPlugin<SecretsPlugin>("Secrets");

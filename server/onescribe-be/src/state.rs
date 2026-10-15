@@ -3,6 +3,7 @@
 use crate::config::Config;
 use crate::jwks::JwksCache;
 use crate::rate_limit::RateLimiter;
+use crate::transcribe::PendingKeys;
 use mongodb::Database;
 use std::sync::Arc;
 
@@ -16,4 +17,6 @@ pub struct AppState {
     pub session_key: Arc<Vec<u8>>,
     /// Rate-limit theo IP (in-memory, red-team #2).
     pub rate: Arc<RateLimiter>,
+    /// API key OpenAI của người dùng đang chờ chép lời — chỉ trong RAM.
+    pub transcribe_keys: Arc<PendingKeys>,
 }

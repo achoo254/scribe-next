@@ -6,7 +6,7 @@ use crate::error::AppError;
 use crate::models::file::{self, FileDoc};
 use crate::models::job::{self, Job, SegRef};
 use crate::state::AppState;
-use crate::worker::{split_worker::SplitWorker, OutputSeg, TranscribeWorker, Worker};
+use crate::worker::{split_worker::SplitWorker, OutputSeg, Worker};
 use axum::body::Body;
 use axum::extract::{Path, State};
 use axum::http::header;
@@ -172,7 +172,7 @@ async fn run_job(state: &AppState, job: &Job) {
     let job_id = job.hex_id();
     let result: Result<Vec<OutputSeg>, String> = match job.job_type.as_str() {
         "split" => SplitWorker.process(state, job).await,
-        _ => TranscribeWorker.process(state, job).await,
+        other => Err(format!("loại job không hỗ trợ: {other}")),
     };
     let segs = match result {
         Ok(segs) => segs,

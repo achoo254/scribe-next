@@ -16,6 +16,7 @@ mod retention;
 mod routes;
 mod session;
 mod state;
+mod transcribe;
 mod upload;
 mod worker;
 
@@ -57,6 +58,9 @@ async fn main() {
             if let Err(e) = models::job::ensure_indexes(&db).await {
                 tracing::warn!("tạo index jobs thất bại: {e}");
             }
+            if let Err(e) = models::transcript::ensure_indexes(&db).await {
+                tracing::warn!("tạo index transcripts thất bại: {e}");
+            }
             if let Err(e) = audit::ensure_indexes(&db).await {
                 tracing::warn!("tạo index audit_events thất bại: {e}");
             }
@@ -71,6 +75,7 @@ async fn main() {
         jwks: Arc::new(JwksCache::new()),
         session_key: Arc::new(session_key),
         rate: Arc::new(RateLimiter::new()),
+        transcribe_keys: Arc::default(),
     };
 
     // Hồi phục job kẹt "running" sau crash/restart (red-team) + khởi worker queue nền.
@@ -80,6 +85,7 @@ async fn main() {
         Err(e) => tracing::warn!("reset running jobs lỗi: {e:?}"),
     }
     jobs::start_worker(state.clone());
+    transcribe::start_worker(state.clone()).await;
     retention::start_sweeper(state.clone()); // sweep purge quá hạn + orphan (red-team #1)
 
     let app = routes::build_router(state);

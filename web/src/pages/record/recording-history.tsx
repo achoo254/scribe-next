@@ -1,5 +1,7 @@
 import { IconDownload, IconMicrophoneOff } from "@tabler/icons-react";
 import { useMemo, useState } from "react";
+import { useAuth } from "../../auth/auth-context";
+import type { MediaSeek } from "../../components/media-player";
 import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
 import { Card } from "../../components/ui/card";
@@ -25,7 +27,13 @@ export function RecordingHistory() {
 	const query = useRecordingsQuery();
 	const download = useDownload();
 	const remove = useDeleteFiles();
+	const { user } = useAuth();
+	const transcribe = Boolean(user?.canTranscribe);
 	const [playingId, setPlayingId] = useState<string | null>(null);
+	const [seek, setSeek] = useState<{
+		fileId: string;
+		media: MediaSeek;
+	} | null>(null);
 	const [pending, setPending] = useState<{
 		item: RecordingItem;
 		label: string;
@@ -33,8 +41,14 @@ export function RecordingHistory() {
 	const items = query.data?.items ?? [];
 	const retentionDays = query.data?.retentionDays ?? 0;
 	const groups = useMemo(() => groupByDay(items), [items]);
-	const togglePlay = (id: string) =>
+	const togglePlay = (id: string) => {
+		setSeek(null);
 		setPlayingId((current) => (current === id ? null : id));
+	};
+	const seekTo = (fileId: string, time: number) => {
+		setPlayingId(fileId);
+		setSeek({ fileId, media: { time } });
+	};
 
 	async function confirmDelete(): Promise<void> {
 		if (!pending) return;
@@ -118,6 +132,9 @@ export function RecordingHistory() {
 												row={row}
 												retentionDays={retentionDays}
 												playingId={playingId}
+												seek={seek}
+												transcribe={transcribe}
+												onSeek={seekTo}
 												onTogglePlay={togglePlay}
 												onDelete={(item, label) => setPending({ item, label })}
 											/>
@@ -127,6 +144,9 @@ export function RecordingHistory() {
 												item={row.item}
 												retentionDays={retentionDays}
 												playing={playingId === row.item.id}
+												seek={seek?.fileId === row.item.id ? seek.media : null}
+												transcribe={transcribe}
+												onSeek={seekTo}
 												onTogglePlay={() => togglePlay(row.item.id)}
 												onDelete={() =>
 													setPending({ item: row.item, label: row.item.name })

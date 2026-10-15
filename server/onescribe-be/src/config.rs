@@ -31,6 +31,8 @@ pub struct Config {
     pub allowed_domains: Vec<String>,
     /// Allowlist email cụ thể (rỗng = không lọc theo email).
     pub allowed_emails: Vec<String>,
+    /// Email được dùng chép lời bằng OpenAI (rỗng = tắt tính năng với mọi người).
+    pub transcribe_emails: Vec<String>,
     /// TTL session cookie (giây).
     pub session_ttl_secs: i64,
     /// File lưu session signing key (tự sinh runtime, KHÔNG bake).
@@ -51,6 +53,7 @@ impl Config {
                 .to_string(),
             allowed_domains: parse_csv(option_env!("ALLOWED_DOMAINS")),
             allowed_emails: parse_csv(option_env!("ALLOWED_EMAILS")),
+            transcribe_emails: parse_csv(option_env!("TRANSCRIBE_EMAILS")),
             session_ttl_secs: 60 * 60 * 12, // 12h — TTL ngắn, FE re-login qua Firebase khi hết.
             session_key_path: option_env!("SESSION_KEY_PATH")
                 .unwrap_or(default_session_key_path())
@@ -77,6 +80,13 @@ impl Config {
             }
         }
         false
+    }
+}
+
+impl Config {
+    /// Email có được chép lời không. Khác `email_allowed`: danh sách rỗng nghĩa là KHÔNG ai được.
+    pub fn transcribe_allowed(&self, email: &str) -> bool {
+        !email.is_empty() && self.transcribe_emails.iter().any(|e| e.eq_ignore_ascii_case(email))
     }
 }
 

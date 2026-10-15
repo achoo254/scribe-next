@@ -20,7 +20,7 @@ tower-http = { version = "0.6", features = ["limit", "trace"] }
 
 # TLS out-bound = rustls (tránh OpenSSL/native-tls C lib → giữ musl static sạch).
 # reqwest: fetch JWKS securetoken. mongodb 3.x mặc định dùng rustls.
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "multipart", "rustls-tls"] }
 mongodb = "3"
 
 jsonwebtoken = "9"

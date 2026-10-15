@@ -9,6 +9,7 @@ import {
 	useState,
 } from "react";
 import { NativeRecorderPlugin } from "../features/recorder/native-recorder";
+import { forgetApiKey } from "../features/transcript/api-key";
 import { isNativeShell } from "../lib/api";
 import { firebaseSignOut, googleIdToken } from "../lib/firebase";
 import {
@@ -75,6 +76,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 			await NativeRecorderPlugin.signOut().catch(() => undefined);
 		await deleteSession();
 		await firebaseSignOut();
+		// The OpenAI key belongs to this user, not to the device.
+		await forgetApiKey().catch(() => undefined);
 		// The next user must not see this user's cached lists.
 		queryClient.clear();
 		setState({ ready: true, user: null });

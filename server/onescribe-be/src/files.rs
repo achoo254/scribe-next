@@ -4,7 +4,7 @@ use crate::audit;
 use crate::auth::UserId;
 use crate::config::{QUOTA_BYTES, RETENTION_DAYS};
 use crate::error::AppError;
-use crate::models::file;
+use crate::models::{file, transcript};
 use crate::state::AppState;
 use axum::body::Body;
 use axum::extract::{Path, Query, State};
@@ -14,7 +14,7 @@ use axum::{Extension, Json};
 use serde::Deserialize;
 use mongodb::bson::doc;
 use serde_json::{json, Value};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::io::SeekFrom;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use tokio_util::io::ReaderStream;
@@ -26,15 +26,19 @@ pub async fn list(
     Extension(user): Extension<UserId>,
 ) -> Result<Json<Value>, AppError> {
     let recs = file::list_recordings(&state.db, &user.0).await?;
+    let transcripts: HashMap<String, String> = transcript::statuses(&state.db, &user.0).await?.into_iter().collect();
     let items: Vec<Value> = recs
         .iter()
         .map(|f| {
+            let id = f.id.map(|o| o.to_hex());
+            let transcript = id.as_ref().and_then(|id| transcripts.get(id));
             json!({
-                "id": f.id.map(|o| o.to_hex()),
+                "id": id,
                 "name": f.name,
                 "kind": f.kind,
                 "size": f.size,
                 "durationS": f.duration_s,
+                "transcript": transcript.map(|status| json!({ "status": status })),
                 "hasVideo": f.has_video.unwrap_or(false),
                 "createdAt": f.created_at.try_to_rfc3339_string().ok(),
             })
@@ -278,7 +282,7 @@ fn file_download_name(name: &str, path: &str) -> String {
 }
 
 /// Bỏ ký tự không hợp lệ cho tên file (đặc biệt '/' tạo thư mục trong zip). Giữ dấu tiếng Việt.
-fn sanitize_filename(name: &str) -> String {
+pub(crate) fn sanitize_filename(name: &str) -> String {
     let s: String = name
         .chars()
         .map(|c| match c {
@@ -291,7 +295,7 @@ fn sanitize_filename(name: &str) -> String {
 }
 
 /// Content-Disposition attachment với fallback ASCII + `filename*` UTF-8 (RFC 5987) cho tên có dấu.
-fn content_disposition_attachment(filename: &str) -> HeaderValue {
+pub(crate) fn content_disposition_attachment(filename: &str) -> HeaderValue {
     let ascii: String = filename
         .chars()
         .map(|c| if c.is_ascii() && c != '"' && c != '\\' { c } else { '_' })

@@ -1,7 +1,7 @@
 //! Lắp router: public (health/auth) + protected (guard middleware + upload/jobs).
 
 use crate::state::AppState;
-use crate::{access_log, auth, files, jobs, rate_limit, recordings, upload};
+use crate::{access_log, auth, files, jobs, rate_limit, recordings, transcribe, upload};
 use axum::extract::DefaultBodyLimit;
 use axum::middleware::{from_fn, from_fn_with_state};
 use axum::routing::{get, post};
@@ -29,6 +29,8 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/jobs", post(jobs::create))
         .route("/api/jobs/{id}", get(jobs::get))
         .route("/api/jobs/{id}/download", get(jobs::download))
+        .route("/api/transcripts", post(transcribe::create).get(transcribe::get))
+        .route("/api/transcripts/export", get(transcribe::export))
         // Chunk upload 5MB/lần → nâng body limit (mặc định axum 2MB). Không buffer cả file (append disk).
         .layer(DefaultBodyLimit::max(8 * 1024 * 1024))
         .route_layer(from_fn_with_state(state.clone(), auth::require_auth))

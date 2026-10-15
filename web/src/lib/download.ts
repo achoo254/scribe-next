@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useToast } from "../components/ui/toast";
+import { transcriptExportPath } from "../features/transcript/transcript-api";
 import { apiUrl, errorMessage, isNativeShell } from "./api";
 import { NativeFiles } from "./native";
 
@@ -89,4 +90,5 @@ export const downloadPaths = {
 		`/api/files/archive?from=${from}&to=${to}`,
 	jobResult: (jobId: string) =>
 		`/api/jobs/${encodeURIComponent(jobId)}/download`,
+	transcript: transcriptExportPath,
 } as const;

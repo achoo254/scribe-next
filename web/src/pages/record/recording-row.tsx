@@ -1,4 +1,4 @@
-import { MediaPlayer } from "../../components/media-player";
+import { MediaPlayer, type MediaSeek } from "../../components/media-player";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import type { RecordingItem } from "../../features/files/files-api";
@@ -11,6 +11,7 @@ import { isNativeShell } from "../../lib/api";
 import { cn } from "../../lib/cn";
 import { downloadPaths, useDownload } from "../../lib/download";
 import { formatDateTime, formatDuration, formatSize } from "../../lib/format";
+import { TranscriptPanel } from "./transcript-panel";
 
 export interface RecordingRowProps {
 	item: RecordingItem;
@@ -18,6 +19,11 @@ export interface RecordingRowProps {
 	displayName?: string;
 	retentionDays: number;
 	playing: boolean;
+	/** Where the player jumps when a transcript sentence is clicked. */
+	seek?: MediaSeek | null;
+	/** Show "Chép lời" for this recording (single rows; a session has its own). */
+	transcribe?: boolean;
+	onSeek?: (fileId: string, seconds: number) => void;
 	onTogglePlay: () => void;
 	onDelete: () => void;
 }
@@ -28,6 +34,9 @@ export function RecordingRow({
 	displayName,
 	retentionDays,
 	playing,
+	seek,
+	transcribe = false,
+	onSeek,
 	onTogglePlay,
 	onDelete,
 }: RecordingRowProps) {
@@ -100,7 +109,17 @@ export function RecordingRow({
 					fileId={item.id}
 					video={item.hasVideo}
 					durationS={item.durationS}
+					seek={seek}
 					data-id={`${id}-player`}
+				/>
+			) : null}
+			{transcribe && onSeek ? (
+				<TranscriptPanel
+					parts={[{ fileId: item.id, durationS: item.durationS }]}
+					requested={Boolean(item.transcript)}
+					name={item.name}
+					onSeek={onSeek}
+					data-id={`${id}-transcript`}
 				/>
 			) : null}
 		</li>

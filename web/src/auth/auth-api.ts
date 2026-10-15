@@ -2,6 +2,8 @@ import { ApiError, apiFetch, apiJson } from "../lib/api";
 
 export interface CurrentUser {
 	email: string;
+	/** May transcribe recordings with an OpenAI key (backend allowlist). */
+	canTranscribe?: boolean;
 }
 
 /**

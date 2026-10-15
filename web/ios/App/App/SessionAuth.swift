@@ -1,5 +1,4 @@
 import Foundation
-import Security
 
 /// Backend session of the native side (plan D5). Sign-in keeps the Firebase
 /// refresh token in the app's own Keychain (no Keychain Sharing needed),
@@ -41,42 +40,17 @@ enum SessionAuth {
     private static let service = "vn.inet.onescribe.firebase"
     private static let account = "refreshToken"
 
-    /// Readable after the first unlock, so a refresh works on the lock screen.
     static func saveRefreshToken(_ token: String) {
-        let base: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-        ]
-        SecItemDelete(base as CFDictionary)
-        var item = base
-        item[kSecValueData as String] = Data(token.utf8)
-        item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-        SecItemAdd(item as CFDictionary, nil)
+        Keychain.save(token, service: service, account: account)
     }
 
     static func refreshToken() -> String? {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne,
-        ]
-        var result: AnyObject?
-        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
-              let data = result as? Data
-        else { return nil }
-        return String(data: data, encoding: .utf8)
+        Keychain.read(service: service, account: account)
     }
 
     /// Sign-out: the next sign-in starts from the Google sheet again.
     static func clear() {
-        SecItemDelete([
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-        ] as CFDictionary)
+        Keychain.delete(service: service, account: account)
     }
 
     // MARK: Refresh

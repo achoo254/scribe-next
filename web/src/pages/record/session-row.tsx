@@ -1,16 +1,21 @@
 import { IconChevronDown, IconChevronRight } from "@tabler/icons-react";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import type { MediaSeek } from "../../components/media-player";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import type { RecordingItem } from "../../features/files/files-api";
 import type { SessionRow as SessionRowData } from "../../features/files/recording-groups";
 import { formatDuration, formatSize } from "../../lib/format";
 import { RecordingRow } from "./recording-row";
+import { TranscriptPanel } from "./transcript-panel";
 
 export interface SessionRowProps {
 	row: SessionRowData;
 	retentionDays: number;
 	playingId: string | null;
+	seek: { fileId: string; media: MediaSeek } | null;
+	transcribe: boolean;
+	onSeek: (fileId: string, seconds: number) => void;
 	onTogglePlay: (id: string) => void;
 	onDelete: (item: RecordingItem, label: string) => void;
 }
@@ -34,10 +39,27 @@ export function SessionRow({
 	row,
 	retentionDays,
 	playingId,
+	seek,
+	transcribe,
+	onSeek,
 	onTogglePlay,
 	onDelete,
 }: SessionRowProps) {
 	const [open, setOpen] = useState(false);
+	const parts = useMemo(
+		() =>
+			row.parts.map(({ item }) => ({
+				fileId: item.id,
+				durationS: item.durationS,
+			})),
+		[row.parts],
+	);
+	// A transcript click plays one of the segments: open the list to show it.
+	// Every new seek reopens it, even after "Thu gọn".
+	useEffect(() => {
+		if (seek && row.parts.some(({ item }) => item.id === seek.fileId))
+			setOpen(true);
+	}, [seek, row.parts]);
 	const title = startLabel(row.createdAt);
 	const id = `history-session-${row.sessionId.slice(0, 8)}`;
 
@@ -72,6 +94,16 @@ export function SessionRow({
 					{open ? "Thu gọn" : "Xem các đoạn"}
 				</Button>
 			</div>
+			{transcribe ? (
+				<TranscriptPanel
+					parts={parts}
+					requested={row.parts.some(({ item }) => Boolean(item.transcript))}
+					name={title}
+					session={row.sessionId}
+					onSeek={onSeek}
+					data-id={`${id}-transcript`}
+				/>
+			) : null}
 			{open ? (
 				<ul className="m-0 grid list-none gap-3 border-border-subtle border-l-2 p-0 pl-3">
 					{row.parts.map(({ index, item }) => {
@@ -83,6 +115,7 @@ export function SessionRow({
 								displayName={`Phần ${String(index + 1).padStart(2, "0")}`}
 								retentionDays={retentionDays}
 								playing={playingId === item.id}
+								seek={seek?.fileId === item.id ? seek.media : null}
 								onTogglePlay={() => onTogglePlay(item.id)}
 								onDelete={() => onDelete(item, label)}
 							/>

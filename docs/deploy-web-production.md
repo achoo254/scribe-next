@@ -98,8 +98,10 @@ Build chạy mọi nhánh/MR để bắt lỗi sớm; deploy chỉ `main` (trán
 | `SSH_USER` | `root` | ✅ | ❌ | deploy |
 | `MONGO_URI` | Mongo URI prod trên `.65` (co-located; thường `mongodb://127.0.0.1:27017`) | ✅ | ✅ | be:build (bake) |
 | `PORT` | `8787` (khớp systemd + nginx proxy) | ✅ | ❌ | be:build (bake) |
+| `TRANSCRIBE_EMAILS` | `quocdat254@gmail.com` — email được dùng "Chép lời" bằng OpenAI (cách nhau dấu phẩy). Thiếu biến = tính năng tắt với mọi người | ✅ | ❌ | be:build (bake) |
 
 - `ALLOWED_DOMAINS` / `ALLOWED_EMAILS`: **KHÔNG set** → fallback rỗng = mở cho mọi email Google verified (quyết định hiện tại). Muốn siết → thêm biến `ALLOWED_DOMAINS=inet.vn` rồi build lại.
+- `TRANSCRIBE_EMAILS`: rỗng nghĩa là **không ai** được chép lời (ngược với allowlist đăng nhập). Key OpenAI do người dùng tự nhập trong app/web, gửi kèm mỗi lần chép; backend chỉ giữ trong RAM, không có biến key nào ở server.
 - **Protected** = chỉ inject trên protected branch/tag. `main` phải là **protected branch** (mặc định GitLab) để job `main` nhận được biến. Nhánh phụ không nhận protected var → build dùng fallback (vô hại vì không deploy).
 
 ### SSH source-IP allowlist (BẮT BUỘC)
@@ -123,7 +125,7 @@ Dùng Harbor pull-through mirror `harbor.000nethost.com/docker-hub/...` cho imag
 
 FE đọc `VITE_FIREBASE_API_KEY/AUTH_DOMAIN/PROJECT_ID` **lúc build** (`web/src/lib/firebase.ts`). Dev local và prod dùng chung một Firebase project, nên cả `npm run dev` lẫn `npm run build` (mode production mặc định của Vite) đọc cùng tệp `web/.env`. Tệp này **không có trong git**: máy build phải tự có (mẫu ở `web/.env.example`; config Firebase web là public, không phải secret). Thiếu biến nào thì `vite build` dừng và báo tên biến, thay vì ra bản build trắng trang (`auth/invalid-api-key`).
 
-Biến build của BE cho prod (`MONGO_URI`, `PORT`, `ALLOWED_DOMAINS`, `ALLOWED_EMAILS`) giữ cục bộ trong `.env.production` ở gốc repo (không có trong git), nạp vào shell trước khi build: `set -a; . ./.env.production; set +a`.
+Biến build của BE cho prod (`MONGO_URI`, `PORT`, `ALLOWED_DOMAINS`, `ALLOWED_EMAILS`, `TRANSCRIBE_EMAILS`) giữ cục bộ trong `.env.production` ở gốc repo (không có trong git), nạp vào shell trước khi build: `set -a; . ./.env.production; set +a`.
 
 ## Setup 1 lần trên `.65` (bootstrap — trước lần deploy CI đầu)
 

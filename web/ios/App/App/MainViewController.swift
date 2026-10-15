@@ -8,5 +8,6 @@ class MainViewController: CAPBridgeViewController {
         bridge?.registerPluginInstance(GoogleAuthPlugin())
         bridge?.registerPluginInstance(NativeFilesPlugin())
         bridge?.registerPluginInstance(RecorderPlugin())
+        bridge?.registerPluginInstance(SecretsPlugin())
     }
 }

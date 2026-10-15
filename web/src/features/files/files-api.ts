@@ -1,4 +1,5 @@
 import { apiFetch, apiJson } from "../../lib/api";
+import type { TranscriptStatus } from "../transcript/transcript-api";
 
 /** A browser recording (Mode A), listed in "Lịch sử ghi". */
 export interface RecordingItem {
@@ -8,6 +9,8 @@ export interface RecordingItem {
 	hasVideo: boolean;
 	size: number;
 	createdAt?: string;
+	/** Set once the recording was sent for transcription. */
+	transcript?: { status: TranscriptStatus } | null;
 }
 
 export interface RecordingList {

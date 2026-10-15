@@ -4,7 +4,7 @@ import {
 	IconVolume,
 	IconVolumeOff,
 } from "@tabler/icons-react";
-import { useRef, useState } from "react";
+import { type RefObject, useEffect, useRef, useState } from "react";
 import { useMediaSource } from "../lib/download";
 import { formatClock } from "../lib/format";
 import { IconButton } from "./ui/icon-button";
@@ -19,7 +19,37 @@ export interface MediaPlayerProps {
 	 * the total until the element reports a real one.
 	 */
 	durationS?: number;
+	/** Jump here and play; a new object (same time) jumps again. */
+	seek?: MediaSeek | null;
 	"data-id"?: string;
+}
+
+export interface MediaSeek {
+	time: number;
+}
+
+/**
+ * Applies `seek` once the element exists (the iOS app loads it async) and
+ * knows its duration: before `loadedmetadata`, Safari may drop the jump.
+ */
+function useSeek(
+	element: RefObject<HTMLMediaElement | null>,
+	seek: MediaSeek | null | undefined,
+): void {
+	useEffect(() => {
+		const media = element.current;
+		if (!media || !seek) return;
+		const jump = () => {
+			media.currentTime = seek.time;
+			media.play().catch(() => undefined);
+		};
+		if (media.readyState >= HTMLMediaElement.HAVE_METADATA) {
+			jump();
+			return;
+		}
+		media.addEventListener("loadedmetadata", jump, { once: true });
+		return () => media.removeEventListener("loadedmetadata", jump);
+	}, [element, seek]);
 }
 
 /**
@@ -31,6 +61,7 @@ export function MediaPlayer({
 	fileId,
 	video = false,
 	durationS,
+	seek,
 	"data-id": dataId,
 }: MediaPlayerProps) {
 	const { src, error } = useMediaSource(fileId);
@@ -49,28 +80,47 @@ export function MediaPlayer({
 		);
 	}
 	if (video) {
-		return (
-			// biome-ignore lint/a11y/useMediaCaption: user recordings have no captions
-			<video
-				data-id={dataId}
-				src={src}
-				controls
-				preload="metadata"
-				className="block max-h-90 w-full rounded-md bg-surface-subtle"
-			/>
-		);
+		return <VideoPlayer src={src} seek={seek} data-id={dataId} />;
 	}
-	return <AudioPlayer src={src} durationS={durationS} data-id={dataId} />;
+	return (
+		<AudioPlayer src={src} durationS={durationS} seek={seek} data-id={dataId} />
+	);
 }
 
-interface AudioPlayerProps {
+interface ElementPlayerProps {
 	src: string;
-	durationS?: number;
+	seek?: MediaSeek | null;
 	"data-id"?: string;
 }
 
-function AudioPlayer({ src, durationS, "data-id": dataId }: AudioPlayerProps) {
+function VideoPlayer({ src, seek, "data-id": dataId }: ElementPlayerProps) {
+	const video = useRef<HTMLVideoElement>(null);
+	useSeek(video, seek);
+	return (
+		// biome-ignore lint/a11y/useMediaCaption: user recordings have no captions
+		<video
+			ref={video}
+			data-id={dataId}
+			src={src}
+			controls
+			preload="metadata"
+			className="block max-h-90 w-full rounded-md bg-surface-subtle"
+		/>
+	);
+}
+
+interface AudioPlayerProps extends ElementPlayerProps {
+	durationS?: number;
+}
+
+function AudioPlayer({
+	src,
+	durationS,
+	seek,
+	"data-id": dataId,
+}: AudioPlayerProps) {
 	const audio = useRef<HTMLAudioElement>(null);
+	useSeek(audio, seek);
 	const [playing, setPlaying] = useState(false);
 	const [currentTime, setCurrentTime] = useState(0);
 	const [duration, setDuration] = useState(

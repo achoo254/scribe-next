@@ -74,7 +74,8 @@ pub async fn me(
     let email = user::find_email_by_id(&state.db, &user.0)
         .await?
         .ok_or_else(|| AppError::Unauthorized("user không tồn tại".into()))?;
-    Ok(Json(json!({ "email": email })))
+    let can_transcribe = state.config.transcribe_allowed(&email);
+    Ok(Json(json!({ "email": email, "canTranscribe": can_transcribe })))
 }
 
 /// Middleware guard: verify session cookie → gắn `UserId` vào request. Thiếu/sai → 401.
