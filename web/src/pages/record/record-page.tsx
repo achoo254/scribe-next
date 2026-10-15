@@ -14,6 +14,7 @@ import { useSplitJob } from "../../features/split/use-split-job";
 import { isNativeShell } from "../../lib/api";
 import { formatClock, parsePositiveNumber } from "../../lib/format";
 import { LiveMonitor } from "./live-monitor";
+import { NativeRecordCard } from "./native-record-card";
 import { RecordSourcesField } from "./record-sources";
 import { RecordingHistory } from "./recording-history";
 import { SplitAfterRecording } from "./split-after-recording";
@@ -22,13 +23,14 @@ const canScreen = supportsScreenCapture();
 
 /**
  * "Ghi âm" tab (Mode A): sources → record/stop → history and playback.
- * In the iOS app the browser recorder is not offered (native recording
- * comes with the Swift recorder), so only the history shows.
+ * In the iOS app the Swift recorder replaces the browser one (mic only:
+ * iOS gives no system sound or screen to a regular app).
  */
 export function RecordPage() {
 	if (isNativeShell()) {
 		return (
 			<div data-id="record" className="grid gap-4">
+				<NativeRecordCard />
 				<RecordingHistory />
 			</div>
 		);

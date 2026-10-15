@@ -1,8 +1,10 @@
 import { IconMicrophone } from "@tabler/icons-react";
 import { useEffect, useRef } from "react";
 import { MeterBar, type MeterTone } from "../../components/ui/meter-bar";
-import type { Recorder } from "../../features/recorder/recorder";
-import { useRecorderLevel } from "../../features/recorder/use-recorder";
+import {
+	type LevelSource,
+	useRecorderLevel,
+} from "../../features/recorder/use-recorder";
 
 const SURFACES: Record<string, string> = {
 	monitor: "Toàn màn hình",
@@ -34,7 +36,7 @@ export function levelTone(percent: number): MeterTone {
 	return "primary";
 }
 
-function LevelMeter({ recorder }: { recorder: Recorder }) {
+export function LevelMeter({ recorder }: { recorder: LevelSource }) {
 	const percent = levelPercent(useRecorderLevel(recorder));
 	return (
 		<div className="flex items-center gap-2 text-icon-muted">
@@ -52,7 +54,7 @@ function LevelMeter({ recorder }: { recorder: Recorder }) {
 }
 
 export interface LiveMonitorProps {
-	recorder: Recorder;
+	recorder: LevelSource;
 	stream: MediaStream | null;
 	showPreview: boolean;
 }

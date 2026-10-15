@@ -8,6 +8,8 @@ import {
 	useMemo,
 	useState,
 } from "react";
+import { NativeRecorderPlugin } from "../features/recorder/native-recorder";
+import { isNativeShell } from "../lib/api";
 import { firebaseSignOut, googleIdToken } from "../lib/firebase";
 import {
 	type CurrentUser,
@@ -67,6 +69,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 	}, []);
 
 	const logout = useCallback(async () => {
+		// iOS: stop recording and uploads first, so nothing reaches the old
+		// account after the cookie is gone (plan D5.2).
+		if (isNativeShell())
+			await NativeRecorderPlugin.signOut().catch(() => undefined);
 		await deleteSession();
 		await firebaseSignOut();
 		// The next user must not see this user's cached lists.

@@ -19,7 +19,13 @@ export function useRecorder(): RecorderApi {
 	return { ...state, recorder };
 }
 
+/** Anything that publishes an audio level (browser or native recorder). */
+export interface LevelSource {
+	getLevel: () => number;
+	subscribeLevel: (listener: () => void) => () => void;
+}
+
 /** RMS level 0..1 of the recording's audio, updated every frame. */
-export function useRecorderLevel(recorder: Recorder): number {
-	return useSyncExternalStore(recorder.subscribeLevel, recorder.getLevel);
+export function useRecorderLevel(source: LevelSource): number {
+	return useSyncExternalStore(source.subscribeLevel, source.getLevel);
 }
