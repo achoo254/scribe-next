@@ -1,9 +1,9 @@
 //! Lắp router: public (health/auth) + protected (guard middleware + upload/jobs).
 
 use crate::state::AppState;
-use crate::{auth, files, jobs, rate_limit, recordings, upload};
+use crate::{access_log, auth, files, jobs, rate_limit, recordings, upload};
 use axum::extract::DefaultBodyLimit;
-use axum::middleware::from_fn_with_state;
+use axum::middleware::{from_fn, from_fn_with_state};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde_json::{json, Value};
@@ -49,6 +49,8 @@ pub fn build_router(state: AppState) -> Router {
         .merge(public)
         .merge(protected)
         .layer(tower_http::trace::TraceLayer::new_for_http())
+        // Ngoài cùng: thấy cả request bị rate-limit/401 và đặt IP cho audit.
+        .layer(from_fn(access_log::layer))
         .with_state(state)
 }
 

@@ -3,6 +3,7 @@
 //! Red-team: #8 sessionId UUID server-sinh + verify userId + validate UUID (chống IDOR/traversal);
 //! #7 resumable stateless (độ dài `.part` trên disk = nguồn sự thật); #14 size cap 2GB; #3 quota tăng dần.
 
+use crate::audit;
 use crate::auth::UserId;
 use crate::config::{MAX_FILE_SIZE_BYTES, QUOTA_BYTES};
 use crate::error::AppError;
@@ -64,6 +65,8 @@ pub async fn init(
         })
         .await
         .map_err(|e| AppError::Internal(format!("tạo session: {e}")))?;
+    let details = doc! { "session": &session_id, "name": &req.name, "size": req.size };
+    audit::record(&state, Some(&user.0), "upload.start", details);
     Ok(Json(InitResp { session_id }))
 }
 
@@ -207,6 +210,13 @@ pub async fn finalize(
         .delete_one(doc! { "_id": &req.session })
         .await;
 
+    let details = doc! {
+        "fileId": &file_id,
+        "name": &name,
+        "size": size as i64,
+        "durationS": duration_s,
+    };
+    audit::record(&state, Some(&user.0), "upload.finish", details);
     Ok(Json(FinalizeResp { file_id, name, duration_s }))
 }
 

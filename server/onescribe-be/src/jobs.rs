@@ -1,5 +1,6 @@
 //! Job queue endpoints + worker loop (concurrency=1). Ownership mọi route.
 
+use crate::audit;
 use crate::auth::UserId;
 use crate::error::AppError;
 use crate::models::file::{self, FileDoc};
@@ -12,7 +13,7 @@ use axum::http::header;
 use axum::response::Response;
 use axum::{Extension, Json};
 use core_split::SplitCriterion;
-use mongodb::bson::oid::ObjectId;
+use mongodb::bson::{doc, oid::ObjectId};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::time::Duration;
@@ -48,6 +49,7 @@ pub async fn create(
     if req.recording_split && input.kind != "recording" {
         return Err(AppError::BadRequest("chỉ cắt-thành-bản-ghi được với bản ghi".into()));
     }
+    let criterion = format!("{:?}", req.criterion).to_lowercase();
     let job_id = job::create_split(
         &state.db,
         &user.0,
@@ -57,6 +59,14 @@ pub async fn create(
         req.recording_split,
     )
     .await?;
+    let details = doc! {
+        "jobId": &job_id,
+        "inputFileId": &req.input_file_id,
+        "criterion": criterion,
+        "value": req.value,
+        "recordingSplit": req.recording_split,
+    };
+    audit::record(&state, Some(&user.0), "job.create", details);
     Ok(Json(CreateResp { job_id }))
 }
 
@@ -95,6 +105,8 @@ pub async fn download(
     if files.is_empty() {
         return Err(AppError::NotFound("không có đoạn để tải".into()));
     }
+    let details = doc! { "jobId": &id, "count": files.len() as i64 };
+    audit::record(&state, Some(&user.0), "job.download", details);
     let entries: Vec<(String, String)> = files.into_iter().map(|f| (f.name, f.path)).collect();
     let zip_path = format!("{}/{}/outputs/{}.zip", state.config.data_dir, user.0, id);
     let zp = zip_path.clone();
@@ -167,9 +179,17 @@ async fn run_job(state: &AppState, job: &Job) {
         Err(e) => {
             tracing::warn!(job = %job_id, "job failed: {e}");
             let _ = job::finish_failed(&state.db, &job_id, &e).await;
+            let details = doc! { "jobId": &job_id, "error": &e };
+            audit::record(state, Some(&job.user_id), "job.failed", details);
             return;
         }
     };
+    let details = doc! {
+        "jobId": &job_id,
+        "segments": segs.len() as i64,
+        "recordingSplit": job.recording_split,
+    };
+    audit::record(state, Some(&job.user_id), "job.done", details);
     if job.recording_split {
         finish_recording_split(state, job, &job_id, segs).await;
     } else {

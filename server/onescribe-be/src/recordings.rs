@@ -6,6 +6,7 @@
 //! Red-team: #8 sessionId UUID server-sinh + verify userId (chống IDOR/traversal); #7 append-only
 //! stateless (độ dài `.part` = nguồn sự thật, không cần totalChunks); #3 quota tăng dần; #14 size cap.
 
+use crate::audit;
 use crate::auth::UserId;
 use crate::config::{MAX_FILE_SIZE_BYTES, QUOTA_BYTES};
 use crate::error::AppError;
@@ -59,6 +60,8 @@ pub async fn init(
         })
         .await
         .map_err(|e| AppError::Internal(format!("tạo session ghi: {e}")))?;
+    let details = doc! { "session": &session_id, "name": &req.name };
+    audit::record(&state, Some(&user.0), "recording.start", details);
     Ok(Json(InitResp { session_id }))
 }
 
@@ -218,6 +221,14 @@ pub async fn finalize(
         .delete_one(doc! { "_id": &req.session })
         .await;
 
+    let details = doc! {
+        "fileId": &file_id,
+        "name": &name,
+        "size": size as i64,
+        "durationS": duration_s,
+        "hasVideo": has_video,
+    };
+    audit::record(&state, Some(&user.0), "recording.finish", details);
     Ok(Json(FinalizeResp { file_id, name, duration_s }))
 }
 

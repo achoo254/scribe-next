@@ -207,6 +207,13 @@ curl -s  https://scribe.inetdev.io.vn/api/health  # liveness
 - **Runner reach `ghcr.io`: OK** — `be:build` pull `rust-musl-cross` thành công (263s).
 - **MongoDB `.65`:** auth ENABLED; `MONGO_URI` dùng cred `onescribe` (db + authSource = `onescribe`). **DB dùng chung cho team theo chủ đích** → cổng `27017` mở ra ngoài + mật khẩu chia sẻ là **cố ý**, KHÔNG firewall về localhost / KHÔNG rotate (team cần kết nối trực tiếp).
 
+## Log và audit
+
+BE ghi hai lớp (thêm 2026-10-15):
+
+- **Access log** ra journal (`target=access`): mỗi request `/api` một dòng `method`, `path`, `status`, `ms`, `ip` (từ `X-Real-IP` do nginx đặt), `user` (id Mongo, `-` khi chưa đăng nhập). Chunk upload/ghi thành công ở mức debug (khi ghi âm ≈1 request/giây); `/api/health` không log. Xem: `journalctl -u onescribe-be -o cat | grep "access: request"`.
+- **`audit_events`** trong Mongo (database `onescribe`): một doc cho mỗi hành vi `auth.login`, `auth.login_denied`, `auth.logout`, `recording.start`, `recording.finish`, `upload.start`, `upload.finish`, `job.create`, `job.done`, `job.failed`, `job.download`, `file.play`, `file.download`, `file.delete`, `recordings.archive` — kèm `at`, `userId`, `ip` và chi tiết (fileId, tên, kích thước…). TTL 180 ngày trên `at`; index `{userId, at}` để tra theo user. Ghi nền: Mongo lỗi chỉ log warn, không làm hỏng request.
+
 ## Ghi chú vận hành
 
 - **Mọi push lên `main` đều rebuild musl (~4.5') + redeploy** (chưa có `changes:` filter). Push chỉ đổi docs/config → dùng `git push -o ci.skip` để bỏ qua. Có thể thêm rule `changes: [web/**, server/**, crates/**, .gitlab-ci.yml]` nếu muốn tự lọc.

@@ -61,7 +61,7 @@ impl RateLimiter {
 }
 
 /// Real client IP: X-Real-IP (nginx $remote_addr sau set_real_ip_from) → XFF hop đầu → "unknown".
-fn client_ip(headers: &HeaderMap) -> String {
+pub(crate) fn client_ip(headers: &HeaderMap) -> String {
     if let Some(ip) = headers.get("x-real-ip").and_then(|v| v.to_str().ok()) {
         return ip.trim().to_string();
     }

@@ -1,5 +1,6 @@
 //! Files: lịch sử ghi (list) + phát lại (stream + HTTP Range cho player tua). Ownership mọi route.
 
+use crate::audit;
 use crate::auth::UserId;
 use crate::config::{QUOTA_BYTES, RETENTION_DAYS};
 use crate::error::AppError;
@@ -11,6 +12,7 @@ use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
 use axum::response::Response;
 use axum::{Extension, Json};
 use serde::Deserialize;
+use mongodb::bson::doc;
 use serde_json::{json, Value};
 use std::collections::HashSet;
 use std::io::SeekFrom;
@@ -92,6 +94,8 @@ pub async fn delete(
     if let Some(oid) = f.id {
         file::delete_doc(&state.db, oid).await?;
     }
+    let details = doc! { "fileId": &id, "name": &f.name, "kind": &f.kind, "size": f.size };
+    audit::record(&state, Some(&user.0), "file.delete", details);
     Ok(Json(json!({ "ok": true })))
 }
 
@@ -119,6 +123,16 @@ pub async fn stream(
     let total = meta.len();
     let ctype = content_type_for(&f.path);
     let want_download = q.download.is_some();
+    // Phát: chỉ ghi lần mở đầu (không Range hoặc từ byte 0), không ghi mỗi lần tua.
+    let opening = headers
+        .get(header::RANGE)
+        .and_then(|v| v.to_str().ok())
+        .is_none_or(|r| r.trim().starts_with("bytes=0-"));
+    if want_download || opening {
+        let action = if want_download { "file.download" } else { "file.play" };
+        let details = doc! { "fileId": &id, "name": &f.name, "kind": &f.kind };
+        audit::record(&state, Some(&user.0), action, details);
+    }
 
     let file_handle = tokio::fs::File::open(&f.path)
         .await
@@ -195,6 +209,8 @@ pub async fn archive(
     if selected.is_empty() {
         return Err(AppError::NotFound("không có bản ghi để tải".into()));
     }
+    let details = doc! { "count": selected.len() as i64, "from": q.from, "to": q.to };
+    audit::record(&state, Some(&user.0), "recordings.archive", details);
 
     // Tên trong zip: "<tên hiển thị>.<ext>", dedupe khi trùng (bản ghi có thể trùng tên).
     let mut used: HashSet<String> = HashSet::new();

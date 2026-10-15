@@ -1,5 +1,7 @@
 //! OneScribe Web backend — axum, bind 127.0.0.1 (nginx `/api` proxy), graceful shutdown SIGTERM.
 
+mod access_log;
+mod audit;
 mod auth;
 mod config;
 mod db;
@@ -54,6 +56,9 @@ async fn main() {
             }
             if let Err(e) = models::job::ensure_indexes(&db).await {
                 tracing::warn!("tạo index jobs thất bại: {e}");
+            }
+            if let Err(e) = audit::ensure_indexes(&db).await {
+                tracing::warn!("tạo index audit_events thất bại: {e}");
             }
         });
     }
