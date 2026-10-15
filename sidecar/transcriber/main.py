@@ -9,7 +9,7 @@ Giao thức (line-delimited JSON):
            {"type":"progress","file":...,"pct":N} | {"type":"done",...} | {"type":"error","message":...}
 
 Đa model + 2 backend (chọn theo size, xem model_paths.backend_of):
-- ct2 (small/medium/large): faster-whisper CPU int8 + BatchedInferencePipeline, giữ ấm 1 model.
+- ct2 (small/medium/large): faster-whisper CPU int8, decode tuần tự, giữ ấm 1 model.
 - mlx (large-v3-mlx): mlx-whisper Metal GPU (Apple Silicon), tự cache model. Lazy import.
 Offline sau khi tải model về model_dir.
 
@@ -35,6 +35,12 @@ _model_device = None # device đang nạp ("cpu"/"cuda") — đổi device (togg
 # Giới hạn phụ đề (chuẩn thường dùng): ~42 ký tự/dòng, tối đa 2 dòng, ~6s mỗi cue.
 SRT_MAX_CHARS = 42
 SRT_MAX_DUR = 6.0
+
+# Chống vòng lặp/hallucination, dùng chung 2 backend. Decode tuần tự (KHÔNG BatchedInferencePipeline):
+# batched ép temperature=0 không fallback → model rơi vào vòng lặp ("vâng, vâng…") là kẹt tới hết chunk.
+# Tuần tự giữ temperature fallback + compression_ratio_threshold; không nối text đoạn trước để lặp không
+# lan sang đoạn sau; bỏ đoạn hallucination nằm trong khoảng lặng >2s (cần word_timestamps).
+ANTI_LOOP_OPTS = {"condition_on_previous_text": False, "hallucination_silence_threshold": 2.0}
 
 
 def send(obj):
@@ -72,12 +78,10 @@ def get_model(model_dir: str, size: str, use_gpu: bool = False, cuda_dir=None):
         # gpu_device TRƯỚC: nó gọi os.add_dll_directory(cuda_dir) rồi mới import faster_whisper —
         # phải là lần import faster_whisper/ctranslate2 ĐẦU TIÊN của process để DLL search thấy CUDA.
         import gpu_device
-        base, actual_device, actual_compute = gpu_device.load_whisper_model(
+        _model, actual_device, actual_compute = gpu_device.load_whisper_model(
             resolve_model_path(model_dir, size), use_gpu, cuda_dir,
             os.cpu_count() or 8, send_info=lambda m: send({"type": "info", "message": m}),
         )
-        from faster_whisper import BatchedInferencePipeline
-        _model = BatchedInferencePipeline(model=base)  # batched → nhanh hơn ~2x
         _model_size, _model_device = size, actual_device  # actual_device (GPU fail → "cpu")
         send({"type": "info", "message": f"Đang dùng {actual_device.upper()} ({actual_compute}) — model {size}"})
     return _model
@@ -167,10 +171,10 @@ def to_json(segments, text: str) -> str:
 
 def _transcribe_ct2(file: str, model_dir: str, size: str, prompt, use_gpu=False, cuda_dir=None):
     model = get_model(model_dir, size, use_gpu, cuda_dir)
-    # batched + beam=1 + VAD (bỏ khoảng lặng) → nhanh. word_timestamps → resegment phụ đề + JSON.
+    # beam=1 + VAD (bỏ khoảng lặng) → nhanh. word_timestamps → resegment phụ đề + JSON.
     segments, info = model.transcribe(
-        file, batch_size=8, beam_size=1, language="vi",
-        vad_filter=True, word_timestamps=True, initial_prompt=prompt or None,
+        file, beam_size=1, language="vi",
+        vad_filter=True, word_timestamps=True, initial_prompt=prompt or None, **ANTI_LOOP_OPTS,
     )
     duration = getattr(info, "duration", 0.0) or 0.0
     norm, full = [], []
@@ -202,7 +206,7 @@ def _transcribe_mlx(file: str, model_dir: str, size: str, prompt):
     audio = decode_audio(file, sampling_rate=SAMPLE_RATE)
     result = mlx_whisper.transcribe(
         audio, path_or_hf_repo=resolve_model_path(model_dir, size),
-        language="vi", word_timestamps=True, initial_prompt=prompt or None,
+        language="vi", word_timestamps=True, initial_prompt=prompt or None, **ANTI_LOOP_OPTS,
     )
     norm = []
     for s in result.get("segments", []) or []:

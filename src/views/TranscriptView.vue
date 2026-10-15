@@ -11,7 +11,7 @@ import {
 import TranscriptPlayer from "../components/TranscriptPlayer.vue";
 import { useTranscribe, isVideoPath } from "../composables/use-transcribe";
 import { useAsrModels, useModelManager, formatBytes, type ModelSize } from "../composables/asr-models";
-import { useGlossary } from "../composables/use-glossary";
+import { useGlossary, GLOSSARY_SOFT_LIMIT } from "../composables/use-glossary";
 import { useGpuSetting, useCudaRuntime } from "../composables/use-gpu";
 
 const tr = useTranscribe();
@@ -130,7 +130,11 @@ async function removeModel(size: ModelSize) {
         placeholder="VD: VictoriaLogs, Grafana, tên người, tên sản phẩm… — để trống nếu không cần."
         rows="2"
         auto-grow
-        hide-details
+        :counter="GLOSSARY_SOFT_LIMIT"
+        :hide-details="!gloss.tooLong.value"
+        :messages="gloss.tooLong.value
+          ? 'Glossary quá dài — model chỉ đọc phần cuối và dễ bỏ sót chữ. Nên giữ vài từ khoá chính, phân cách bằng dấu phẩy.'
+          : undefined"
         @blur="gloss.save()"
       />
 
