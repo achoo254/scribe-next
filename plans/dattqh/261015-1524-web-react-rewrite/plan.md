@@ -44,7 +44,7 @@ created: 2026-10-15
 | 1 | [Khung dự án, token và primitive UI](./phase-01-khung-du-an-token-primitive.md) | M | Done |
 | 2 | [Lớp API, auth và logic nghiệp vụ](./phase-02-lop-api-auth-logic.md) | M | Done |
 | 3 | [Màn hình và parity tính năng](./phase-03-man-hinh-parity.md) | L | Code xong, chờ QA parity trên backend thật |
-| 4 | [Thay thế bản Vue, deploy prod, cập nhật plan iOS](./phase-04-thay-the-deploy.md) | S | Pending |
+| 4 | [Thay thế bản Vue, deploy prod, cập nhật plan iOS](./phase-04-thay-the-deploy.md) | S | Đã deploy prod 2026-10-15 |
 
 Thứ tự: **1 → 2 → 3 → 4**.
 

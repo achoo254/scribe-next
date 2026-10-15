@@ -1,6 +1,6 @@
 # Deploy Guide — OneScribe Web (prod .65)
 
-Hướng dẫn build + deploy **OneScribe Web** (BE axum musl + FE Vue) lên box prod `.65` tại `scribe.inetdev.io.vn`, qua **GitLab CI/CD** (runner sẵn có) + fallback deploy thủ công. Mục đích: AI Agent / dev có full context deploy mà không cần dò lại hạ tầng.
+Hướng dẫn build + deploy **OneScribe Web** (BE axum musl + FE React) lên box prod `.65` tại `scribe.inetdev.io.vn`, qua **GitLab CI/CD** (runner sẵn có) + fallback deploy thủ công. Mục đích: AI Agent / dev có full context deploy mà không cần dò lại hạ tầng.
 
 > Deploy **installer desktop** (Windows/macOS) là tài liệu khác: [deployment-guide.md](./deployment-guide.md). File này CHỈ cho bản Web.
 
@@ -189,7 +189,7 @@ set -a; . ./.env.production; set +a
 cargo zigbuild --release --target x86_64-unknown-linux-musl -p onescribe-be
 ```
 
-Lần đầu dùng cách này: 2026-10-15, chỉ thay BE (commit `cac8497`, có chép lời); FE trên `.65` vẫn là bản Vue. Trước khi thay đã sao lưu DB `onescribe` + binary cũ vào `/root/onescribe-backup-20261015-210141/` trên `.65`. Quay lại: `install -o onescribe -g onescribe -m 700 <thư mục>/onescribe-be.prev /opt/onescribe-be/onescribe-be.new && mv -f /opt/onescribe-be/onescribe-be.new /opt/onescribe-be/onescribe-be && systemctl restart onescribe-be`.
+Lần đầu dùng cách này: 2026-10-15, chỉ thay BE (commit `cac8497`, có chép lời). Cùng tối, deploy cả FE React + BE commit `bc14254` (sao lưu bản Vue + binary ở `/root/onescribe-backup-20261015-211433/`). `lab-ssh.sh` không có rsync: đẩy bản build FE bằng `tar -C web/dist -czf - . | lab-ssh.sh 65 "tar -xzf - -C /tmp/onescribe-fe"`. Trước khi thay đã sao lưu DB `onescribe` + binary cũ vào `/root/onescribe-backup-20261015-210141/` trên `.65`. Quay lại: `install -o onescribe -g onescribe -m 700 <thư mục>/onescribe-be.prev /opt/onescribe-be/onescribe-be.new && mv -f /opt/onescribe-be/onescribe-be.new /opt/onescribe-be/onescribe-be && systemctl restart onescribe-be`.
 
 > **Repo chính là GitHub** (`origin` = `achoo254/one-scribe`, không có GitHub Actions): push không tự deploy, deploy prod làm tay theo mục này. Remote `gitlabs.inet.vn` và `.gitlab-ci.yml` là cách cũ, dừng từ 2026-08-21.
 

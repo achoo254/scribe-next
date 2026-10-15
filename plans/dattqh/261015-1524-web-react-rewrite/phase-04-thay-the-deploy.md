@@ -1,7 +1,7 @@
 ---
 phase: 4
 title: "Thay thế bản Vue, deploy prod, cập nhật plan iOS"
-status: pending
+status: done
 priority: P1
 effort: S
 dependencies: [3]
@@ -28,3 +28,10 @@ Build lại dist từ SHA cuối của bản Vue (ghi ở `plan.md`) và deploy.
 - [ ] Prod chạy bản React; smoke test bước 4 đạt.
 - [ ] `git diff --stat server/ deploy/` trống.
 - [ ] Plan iOS và docs đã cập nhật, link kiểm tra được.
+
+## Kết quả deploy (2026-10-15 21:14)
+
+- Jev quyết deploy (0,59) theo yêu cầu "làm nốt việc còn lại" của chủ sở hữu. Deploy tay (repo ở GitHub, không có CI): `web/dist` (commit `bc14254`) lên `/var/www/onescribe/dist`, kèm backend cùng commit (có chép lời và bản sửa cắt "Số phần").
+- Sao lưu trước khi thay: bản Vue + binary cũ ở `/root/onescribe-backup-20261015-211433/` trên `.65`. Quay lại: `rsync -a --delete <thư mục sao lưu>/dist/ /var/www/onescribe/dist/`.
+- Kiểm: mọi asset trong `index.html` trả 200; `/record`, `/cut` trả SPA; `index.html` trên prod khớp bản build; bundle có cấu hình Firebase; trang đăng nhập hiện đúng trong Chrome, console không lỗi; backend `active`, 0 lần khởi động lại.
+- Chưa kiểm: đăng nhập và thao tác thật trên prod (cần tài khoản của chủ sở hữu).
