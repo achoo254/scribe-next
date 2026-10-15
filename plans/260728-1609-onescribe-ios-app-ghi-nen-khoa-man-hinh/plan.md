@@ -155,7 +155,7 @@ Bốn hành vi đã verify, phải hiện diện trong thiết kế client:
 | 1 | Ghi âm sống sót khoá màn hình / cuộc gọi / chuyển app | P1 |
 | 2 | Đầy đủ tính năng web: Ghi âm, Cắt file, Lịch sử + phát lại, Quota, Xoá | P1 |
 | 3 | Không mất dữ liệu khi mất sóng / app bị kill — **trừ đoạn đang mở, bán kính tối đa 1 phút** (D6). Bản ghi quan trọng export được ra Files trước hạn 14 ngày (V2) | P1 |
-| 4 | Không sửa code backend, **trừ khi Gate 0 fail** (D3/D4) | P2 |
+| 4 | Không sửa code backend, **trừ khi Gate 0 fail** (D3/D4). Phase 5–6 là ngoại lệ có chủ đích: cần endpoint token tạm thời, chặn chi phí và `TranscribeWorker` | P2 |
 | 5 | Code tách lớp, sẵn sàng nâng cấp App Store | P2 |
 
 ## Phases
@@ -166,8 +166,10 @@ Bốn hành vi đã verify, phải hiện diện trong thiết kế client:
 | 2 | [Recorder + upload](./phase-02-recorder-va-upload.md) | **L** | Pending |
 | 3 | [UI parity tab Ghi âm](./phase-03-ui-parity-tab-ghi-am.md) | **M** | Pending |
 | 4 | [Deploy, vận hành, lộ trình App Store](./phase-04-deploy-va-van-hanh.md) | **S** | Pending |
+| 5 | [Realtime transcript](./phase-05-realtime-transcript.md) | **L** | Pending |
+| 6 | [Bản transcript hoàn chỉnh sau buổi ghi](./phase-06-ban-hoan-chinh-sau-buoi-ghi.md) | **M** | Pending |
 
-Thứ tự bắt buộc: **1 → 2 → 3 → 4**.
+Thứ tự bắt buộc: **1 → 2 → 3 → 4 → 5 → 6**. Phase 5 và 6 thêm ngày 2026-10-15, sau khi đo OpenAI Realtime cho tiếng Việt ([báo cáo](../dattqh/reports/research-261015-1415-realtime-transcription-probe.md)).
 
 Đổi so với bản 1: Phase 2+3 cũ **gộp làm một** (tách chúng bắt phải sửa `RecordView.vue` ba lượt và dựng UI tạm rồi xoá); Phase 6 cũ **xoá**, nội dung lộ trình App Store thành sản phẩm tài liệu của Phase 4. Phase 1 lên **L** vì gánh thêm tầng transport.
 
@@ -197,6 +199,8 @@ Thứ tự bắt buộc: **1 → 2 → 3 → 4**.
 | Phát media phải tải trọn file → file Mode B 2GB | Trung bình | Hiển thị tiến độ; ghi nhận hạn chế; ưu tiên phát đoạn ghi (3.73 MB) |
 | Đoạn đang mở mất khi OS kill | Chấp nhận | Đoạn 1 phút → bán kính 1 phút; báo cáo rõ thay vì im lặng |
 | Profile hết hạn 7 ngày giữa lúc đang dùng | Trung bình | Phase 4: script deploy 1 lệnh in ngày hết hạn |
+| **Không có TestFlight** — TestFlight bắt buộc tài khoản Apple Developer trả phí ($99/năm); chủ sở hữu không đăng ký (2026-10-15) | Đã chấp nhận | Cài qua Xcode bằng Personal Team như Phase 0; cài lại mỗi 7 ngày bằng script Phase 4 |
+| Realtime gửi audio ra OpenAI, tốn tiền theo phút | Trung bình | Phase 5: công tắc bật/tắt, allowlist email, trần phút ở backend |
 | `RecordView.vue` là file dùng chung → hồi quy web | Trung bình | Mọi nhánh sau `isNative`; tiêu chí hồi quy chạy được (dev server, không phải `file://`) |
 
 ## Dependencies
