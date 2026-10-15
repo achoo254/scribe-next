@@ -23,7 +23,7 @@ Chất lượng bản realtime kém bản chép cả file khoảng 5 điểm kh�
 |---|---|---|
 | R1 | Model `gpt-4o-mini-transcribe`, `language: "vi"`, `turn_detection: server_vad` (`silence_duration_ms: 500`) | Chủ sở hữu chọn (2026-10-15): khoảng $0,003/phút, ngân sách $10/tháng. `gpt-live-transcribe` hiện chữ từng từ nhưng tốn $0,017/phút và phải tự làm VAD |
 | R2 | Streaming viết bằng Swift (`URLSessionWebSocketTask`), không viết bằng JS | WKWebView bị đình chỉ khi khoá màn hình (D2). Chữ do Swift giữ; Vue **ghi đè** state từ Swift khi foreground, không merge |
-| R3 | API key chỉ nằm trên backend; app xin **token tạm thời** cho từng phiên | Không nhúng key vào app (ai có file app cũng trích được key) |
+| R3 | ~~API key chỉ nằm trên backend~~ → **thay bởi T1/T3 của Phase 6** (2026-10-15): key do người dùng tự nhập, nằm trong Keychain của iPhone; app dùng key đó xin token tạm thời cho phiên | Chủ sở hữu chốt key tự nhập; không còn key chung để bảo vệ |
 | R4 | Mất mạng thì realtime hụt đoạn đó, **không** chặn ghi | File AAC vẫn nguyên; Phase 6 chép lại cả file để bù |
 | R5 | Bật/tắt realtime bằng một công tắc trên màn ghi, mặc định bật | Có buổi ghi không được phép gửi audio ra ngoài; tắt thì ghi như Phase 2 |
 

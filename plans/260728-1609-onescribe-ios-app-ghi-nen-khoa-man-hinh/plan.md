@@ -186,9 +186,9 @@ Bốn hành vi đã verify, phải hiện diện trong thiết kế client:
 | 3 | [UI parity tab Ghi âm](./phase-03-ui-parity-tab-ghi-am.md) | **M** | Thẻ ghi native + gom phiên trong Lịch sử ghi xong; QA chờ iPhone |
 | 4 | [Deploy, vận hành, lộ trình App Store](./phase-04-deploy-va-van-hanh.md) | **S** | `npm run ios:device` + `docs/ios-app.md` xong; còn lộ trình App Store |
 | 5 | [Realtime transcript](./phase-05-realtime-transcript.md) | **L** | Pending |
-| 6 | [Bản transcript hoàn chỉnh sau buổi ghi](./phase-06-ban-hoan-chinh-sau-buoi-ghi.md) | **M** | Pending |
+| 6 | [Chép lời bản ghi bằng OpenAI (key người dùng tự nhập)](./phase-06-ban-hoan-chinh-sau-buoi-ghi.md) | **L** | Đang làm; làm trước Phase 5 |
 
-Thứ tự bắt buộc: **1 → 2 → 3 → 4 → 5 → 6**. Phase 5 và 6 thêm ngày 2026-10-15, sau khi đo OpenAI Realtime cho tiếng Việt ([báo cáo](../dattqh/reports/research-261015-1415-realtime-transcription-probe.md)).
+Thứ tự: **1 → 2 → 3 → 4**, rồi **6 trước 5** (2026-10-15: Phase 6 không cần iPhone để kiểm phần lớn; key OpenAI do người dùng tự nhập, thay R3 của Phase 5). Phase 5 và 6 thêm ngày 2026-10-15, sau khi đo OpenAI Realtime cho tiếng Việt ([báo cáo](../dattqh/reports/research-261015-1415-realtime-transcription-probe.md)).
 
 Đổi so với bản 1: Phase 2+3 cũ **gộp làm một** (tách chúng bắt phải sửa `RecordView.vue` ba lượt và dựng UI tạm rồi xoá); Phase 6 cũ **xoá**, nội dung lộ trình App Store thành sản phẩm tài liệu của Phase 4. Phase 1 lên **L** vì gánh thêm tầng transport.
 
