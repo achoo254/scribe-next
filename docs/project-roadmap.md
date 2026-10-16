@@ -70,6 +70,11 @@ Chi tiết và lập luận: phase 4 của plan iOS. Tóm tắt:
 
 | Ưu tiên | Hạng mục | Ghi chú |
 |---------|----------|---------|
+| P0 | **Refactor UI/UX theo format hệ sinh thái hoandat** (plan `dattqh/261016-1426-ui-ux-hoandat-ecosystem-refactor`) | Đang làm; trước mọi mục dưới |
+| P1 | **Gói "Sau cuộc họp"**: tóm tắt + quyết định + việc cần làm (LLM trên transcript), đánh dấu khoảnh khắc khi đang ghi (cả màn hình khoá iPhone), gửi biên bản sang chat.hoandat.com qua bot | Người dùng chốt 16/10 sau refactor UI; Jev chấm giá trị/công sức 2,34/1,08 · 1,80/0,69 · 1,99/0,81 (thang 0–3). Mọi tính năng LLM đi qua quota + trần chi phí như chép lời |
+| P1 | **Gói "Kho bản ghi"**: tìm kiếm toàn văn mọi transcript (nhảy tới đúng giây), rồi hỏi đáp trên bản ghi có trích mốc thời gian | Sau gói "Sau cuộc họp"; Jev 1,96/1,27 · 2,37/1,53 |
+| P2 | **Xuất phụ đề SRT/VTT, DOCX/Markdown**; sau đó **dịch transcript Việt ↔ Anh** | Jev 1,79/1,09 · 1,68/1,05 |
+| P3 | **Phân biệt người nói** (Người 1/2, đổi tên được) | Cần nghiên cứu khả năng của model chép lời trước; Jev 1,54/1,00 (công sức có thể bị đánh giá thấp) |
 | P1 | **QA app iPhone còn lại** — cuộc gọi đến, AirPods, máy bay | Cần máy thứ hai + AirPods |
 | P1 | **Realtime transcript trên iPhone** (Phase 5 plan iOS) | Gate 0 bước 1 đo xong từ Mac; bước 2 (WebSocket khi khoá màn hình) cần iPhone |
 | P2 | **QA thủ công web** — ghi mic + màn hình/system thật (Chrome), cắt file thật | getUserMedia/getDisplayMedia không automate được |
