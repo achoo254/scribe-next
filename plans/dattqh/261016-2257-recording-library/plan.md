@@ -1,6 +1,6 @@
 ---
 title: "Gói Kho bản ghi: tìm kiếm toàn văn và hỏi đáp có trích mốc giây"
-status: in-progress
+status: completed
 created: 2026-10-16
 tier: L
 ---
@@ -25,11 +25,14 @@ Embedding hoặc vector search; lưu lịch sử hỏi đáp; tìm trong biên b
 ## Phase
 | # | Phase | Tier | Status |
 |---|---|---|---|
-| 1 | [Backend + web: index câu, tìm kiếm, hỏi đáp](./phase-01-build.md) | L | Pending |
-| 2 | [Review, deploy, docs](./phase-02-ship.md) | M | Pending |
+| 1 | [Backend + web: index câu, tìm kiếm, hỏi đáp](./phase-01-build.md) | L | Completed |
+| 2 | [Review, deploy, docs](./phase-02-ship.md) | M | Completed |
 
 ## Tiêu chí nghiệm thu
 - Gõ "hop dong" tìm ra câu có "hợp đồng"; tìm cụm nhiều từ; kết quả có mốc giây, bấm vào là phát đúng chỗ. Index cập nhật sau khi chép lời, sửa câu và xoá bản ghi.
 - Hỏi đáp trả lời đúng theo bản ghi thử và trích mốc giây đúng câu nguồn. Khi không có trong bản ghi thì nói rõ là không tìm thấy. Hết lượt thì báo giờ mở lại.
 - Dữ liệu cũ đã có trên prod được đưa vào index lúc khởi động (backfill một lần, có cờ đánh dấu đã chạy).
 - Mọi cổng kiểm tra đạt.
+
+## Kết quả
+Lên prod 17/10/2026 06:23 (chi tiết deploy ở [phase 2](./phase-02-ship.md)). Chưa thử tìm kiếm và hỏi đáp thật trên prod vì cần chủ sản phẩm đăng nhập.

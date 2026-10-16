@@ -97,7 +97,7 @@ Tất cả trong `/opt/scribe-be`, chủ `scribe`, quyền 600, ghi bằng stdin
 - **Binary KHÔNG đọc env lúc chạy** → KHÔNG dùng systemd `EnvironmentFile`.
 - **Danh sách biến là `server/scribe-be/build.rs`** (biến nào không có ở đó thì không vào binary); mặc định và ý nghĩa ở `server/scribe-be/src/config.rs`.
 - **Bắt buộc lúc build:** `DB_NAME`, `PUBLIC_URL`, `SESSION_KEY_PATH`, `DATA_DIR`, `OIDC_WEB_CLIENT_SECRET_PATH`. Thiếu biến nào thì binary **dừng ngay khi khởi động** và log tên biến thiếu (để không bao giờ chạy với database hay thư mục sai).
-- **Tuỳ chọn:** `MONGO_URI` (mặc định `mongodb://127.0.0.1:27017`), `PORT` (`8787`), `ALLOWED_DOMAINS`, `ALLOWED_EMAILS`, `TRANSCRIBE_EMAILS`, `TRANSCRIBE_OPEN`, các biến OIDC, `OPENAI_KEY_PATH`, các biến hạn mức chép lời, báo động, tóm tắt và liên kết chat (bảng dưới).
+- **Tuỳ chọn:** `MONGO_URI` (mặc định `mongodb://127.0.0.1:27017`), `PORT` (`8787`), `ALLOWED_DOMAINS`, `ALLOWED_EMAILS`, `TRANSCRIBE_EMAILS`, `TRANSCRIBE_OPEN`, các biến OIDC, `OPENAI_KEY_PATH`, các biến hạn mức chép lời, báo động, tóm tắt, hỏi đáp và liên kết chat (bảng dưới).
 
 > Đổi bất kỳ biến nào = **build lại binary** rồi redeploy; sửa env trên server vô tác dụng.
 
@@ -119,11 +119,13 @@ Tất cả trong `/opt/scribe-be`, chủ `scribe`, quyền 600, ghi bằng stdin
 | `NOTIFY_BOT_API`, `NOTIFY_BOT_TOKEN_PATH`, `NOTIFY_CHAT_ID` | Báo động qua bot (§Deploy) |
 | `SUMMARY_MODEL` | Model viết biên bản, mặc định `gpt-4.1-mini`. Giá token dùng để quy ra trần chi phí là giá của `gpt-4.1-mini` (`server/scribe-be/src/summary/mod.rs`): đổi model thì sửa giá ở đó |
 | `SUMMARY_FREE_DAILY`, `SUMMARY_PAID_DAILY`, `SUMMARY_FREE_MONTHLY_MINUTES`, `SUMMARY_PAID_MONTHLY_MINUTES` | Hạn mức tóm tắt (§Deploy); prod dùng mặc định |
+| `ASK_FREE_DAILY`, `ASK_PAID_DAILY` | Số lượt hỏi đáp mỗi ngày, mặc định 30 / 200 (§Deploy); prod dùng mặc định. Hỏi đáp dùng model `SUMMARY_MODEL` và trần chi phí tháng của tóm tắt, không có biến trần riêng |
 | `CHAT_LINK_POLL` | `1`/`true` = chạy task long-poll của bot để liên kết chat. **Chỉ bật trên prod**, không bao giờ ở dev (§Deploy) |
 | `CHAT_BOT_USERNAME` | Tên bot trong deep link; prod để trống, BE hỏi `/bot/v1/me` |
 
 - `ALLOWED_DOMAINS` / `ALLOWED_EMAILS`: **KHÔNG set** → fallback rỗng = mở cho mọi tài khoản hoandat-auth có email đã xác minh (quyết định hiện tại). Muốn siết → thêm `ALLOWED_DOMAINS=<domain>` rồi build lại.
 - `TRANSCRIBE_EMAILS`: rỗng (và chưa bật `TRANSCRIBE_OPEN`) nghĩa là **không ai** được chép lời (ngược với allowlist đăng nhập).
+- Mốc gửi nguyên bản ghi cho hỏi đáp **không phải biến build**: hằng trong `full_context_chars` (`server/scribe-be/src/search/ask.rs`), gói free dưới 30.000 ký tự, gói trả phí dưới 120.000 ký tự; dài hơn thì chỉ gửi các câu liên quan. Đổi mốc là sửa code; lý do chọn mốc ghi ngay trên hàm.
 
 ### Đăng nhập hoandat-auth
 
@@ -203,6 +205,8 @@ nginx -t && systemctl reload nginx
 >
 > Liên kết chat dùng chung token bot ở `NOTIFY_BOT_TOKEN_PATH`, không thêm endpoint public: BE long-poll `GET {NOTIFY_BOT_API}/updates`. Mỗi bot chỉ có một poll, poll mới làm poll cũ nhận 409, mà dev và prod dùng chung token: **chỉ prod build với `CHAT_LINK_POLL=1`**; backend dev bật cờ này sẽ lấy mất `/start` và nút xác nhận của người dùng prod. Tắt cờ thì không tạo được liên kết mới (`POST /api/chat/link` trả 503 `CHAT_LINK_DISABLED`, web ẩn mục liên kết với người chưa liên kết); liên kết đã có vẫn gửi biên bản được.
 >
+> **Tìm kiếm và hỏi đáp** (gói "Kho bản ghi", lên prod 17/10/2026 06:23): tìm kiếm không gọi model và không tính tiền. Hỏi đáp dùng key OpenAI của server và model `SUMMARY_MODEL`; mỗi tài khoản có số lượt mỗi ngày giờ VN `ASK_FREE_DAILY` (30) / `ASK_PAID_DAILY` (200) (sổ `ask:<userId>:<ngày>` trong `summary_usage`), còn trần chi phí tháng của tài khoản, trần tổng tháng và cờ tạm ngưng khi key hỏng thì **dùng chung với tóm tắt**. `admin usage --recompute` cộng cả `ask_runs.costS`; `--apply` từ chối khi còn lượt hỏi đáp đang mở. Lần khởi động đầu tiên của bản có index tìm kiếm dựng index cho mọi phiên đã chép xong rồi ghi doc `search.backfill` vào `kv`; có doc đó thì không chạy lại. Phiên dựng lỗi do retention đối soát mỗi giờ dựng lại. Muốn dựng lại cả kho: xoá doc `search.backfill` rồi restart.
+>
 > **Đổi dữ liệu chép lời (`transcripts`):** chạy `scripts/transcripts-audit.js` (chỉ đọc) trước, và `mongodump --db "$DB_NAME" --collection transcripts` vào thư mục sao lưu ngay trước deploy. Khôi phục khi dữ liệu hỏng: `mongorestore --drop --nsInclude "$DB_NAME.transcripts" <thư mục sao lưu>`.
 
 Cần `cargo-zigbuild` (build chéo musl trên macOS: `brew install zig`, `rustup target add x86_64-unknown-linux-musl`, `cargo install cargo-zigbuild --locked`), cộng SSH key `.65`.
@@ -258,6 +262,7 @@ curl -s  "https://$DEPLOY_DOMAIN/api/health"   # liveness
 - [ ] FE load, đăng nhập qua hoandat-auth được (`/api/auth/login` → 303 sang `auth.hoandat.com` với `client_id=scribe-web`; allowlist mở → mọi email đã xác minh).
 - [ ] `/api/auth/native/config` trả client `scribe-mobile` (app iPhone đăng nhập được).
 - [ ] Ghi/cắt file → upload + phát lại (Range) hoạt động.
+- [ ] Index tìm kiếm: lần khởi động đầu của bản có index, journal có dòng `đã dựng index tìm kiếm cho dữ liệu cũ` kèm `sessions`, `sentences`, `failed`; `db.kv.findOne({_id: "search.backfill"})` có `doneAt`. Các lần khởi động sau không có dòng này (đã có cờ). `failed` lớn hơn 0 thì xem dòng `dựng index lỗi` cùng lúc; retention dựng lại các phiên đó ở lượt quét kế.
 
 ## Trạng thái đã xác minh (2026-10-16, sau đổi tên + đăng nhập)
 
@@ -265,14 +270,14 @@ curl -s  "https://$DEPLOY_DOMAIN/api/health"   # liveness
 - **Cloudflare:** `scribe.hoandat.com` proxied, SSL "Full" (CF↔origin là HTTPS, chứng chỉ tự ký chung của box); `http://` → 301 `https://`. Domain cũ `scribe.inetdev.io.vn` đã bỏ (vhost và DNS đã xoá, không 301).
 - **IdP:** `scribe-web` và `scribe-mobile` bật trên hoandat-auth; `SCRIBE_WEB_CLIENT_SECRET` nằm trong `/var/www/hoandat-auth/.env`.
 - **MongoDB `.65`:** auth ENABLED; `MONGO_URI` dùng user riêng `scribe` (database + authSource = `scribe`). **mongod dùng chung cho team theo chủ đích** → cổng `27017` mở ra ngoài + mật khẩu chia sẻ là **cố ý**, KHÔNG firewall về localhost / KHÔNG rotate (team cần kết nối trực tiếp).
-- **Sao lưu:** `/root/scribe-backup-<ts>/` (mới nhất `20261016-132747`, trước khi đổi đăng nhập) và `/root/onescribe-backup-20261016-124301/` (dump db `onescribe` trước đổi tên). Không có cron backup.
+- **Sao lưu:** `/root/scribe-backup-<ts>/` (mới nhất `20261017-062309`, trước khi lên gói "Kho bản ghi") và `/root/onescribe-backup-20261016-124301/` (dump db `onescribe` trước đổi tên). Không có cron backup.
 
 ## Log và audit
 
 BE ghi hai lớp (thêm 2026-10-15):
 
 - **Access log** ra journal (`target=access`): mỗi request `/api` một dòng `method`, `path`, `status`, `ms`, `ip` (từ `X-Real-IP` do nginx đặt), `user` (id Mongo, `-` khi chưa đăng nhập). Chunk upload/ghi thành công ở mức debug (khi ghi âm ≈1 request/giây); `/api/health` không log. Xem: `journalctl -u "$DEPLOY_SERVICE" -o cat | grep "access: request"`.
-- **`audit_events`** trong Mongo (database `$DB_NAME`): một doc cho mỗi hành vi `auth.login`, `auth.login_denied`, `auth.logout`, `auth.link` (ghép user cũ theo email), `auth.backchannel_logout`, `auth.device_revoked`, `recording.start`, `recording.finish`, `upload.start`, `upload.finish`, `job.create`, `job.done`, `job.failed`, `job.download`, `file.play`, `file.download`, `file.delete`, `recordings.archive`, `transcript.create`, `transcript.rerun`, `transcript.done`, `transcript.failed`, `transcript.rename`, `transcript.edit`, `transcript.delete`, `transcript.blocked`, `transcript.cap_50`, `transcript.cap_80`, `transcript.cap_reached`, `transcript.key_invalid`, `transcript.share`, `summary.create`, `summary.failed`, `summary.blocked`, `summary.key_invalid`, `chat.link`, `chat.unlink`, `admin.set_plan`, `admin.usage_recompute`, `admin.block`, `admin.unblock` — kèm `at`, `userId`, `ip` và chi tiết (fileId, tên, kích thước…; sự kiện transcript chỉ ghi khoá phiên, id file và số câu/độ dài tên, không ghi tiêu đề hay câu; sự kiện tóm tắt và gửi chat không ghi nội dung biên bản). TTL 180 ngày trên `at`; index `{userId, at}` để tra theo user. Ghi nền: Mongo lỗi chỉ log warn, không làm hỏng request.
+- **`audit_events`** trong Mongo (database `$DB_NAME`): một doc cho mỗi hành vi `auth.login`, `auth.login_denied`, `auth.logout`, `auth.link` (ghép user cũ theo email), `auth.backchannel_logout`, `auth.device_revoked`, `recording.start`, `recording.finish`, `upload.start`, `upload.finish`, `job.create`, `job.done`, `job.failed`, `job.download`, `file.play`, `file.download`, `file.delete`, `recordings.archive`, `transcript.create`, `transcript.rerun`, `transcript.done`, `transcript.failed`, `transcript.rename`, `transcript.edit`, `transcript.delete`, `transcript.blocked`, `transcript.cap_50`, `transcript.cap_80`, `transcript.cap_reached`, `transcript.key_invalid`, `transcript.share`, `summary.create`, `summary.failed`, `summary.blocked`, `summary.key_invalid`, `chat.link`, `chat.unlink`, `ask.create`, `ask.blocked`, `ask.failed`, `admin.set_plan`, `admin.usage_recompute`, `admin.block`, `admin.unblock` — kèm `at`, `userId`, `ip` và chi tiết (fileId, tên, kích thước…; sự kiện transcript chỉ ghi khoá phiên, id file và số câu/độ dài tên, không ghi tiêu đề hay câu; sự kiện tóm tắt và gửi chat không ghi nội dung biên bản; sự kiện hỏi đáp không ghi câu hỏi hay câu trả lời, câu tìm kiếm không vào audit). TTL 180 ngày trên `at`; index `{userId, at}` để tra theo user. Ghi nền: Mongo lỗi chỉ log warn, không làm hỏng request.
 
 ## Ghi chú vận hành
 
