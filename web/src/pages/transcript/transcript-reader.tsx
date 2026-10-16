@@ -128,7 +128,7 @@ export function TranscriptReader({
 	startTranscribe.current = transcribe.start;
 	const requestRerun = useCallback((segment: TranscriptSegment) => {
 		if (segment.edited) setRerun(segment);
-		else void startTranscribe.current([segment.fileId]);
+		else void startTranscribe.current([segment.fileId], segment.durationS);
 	}, []);
 
 	function onTime(seconds: number): void {
@@ -309,7 +309,12 @@ export function TranscriptReader({
 						className="ml-2"
 						data-id="reader-send-rest"
 						loading={transcribe.pending}
-						onClick={() => void transcribe.start(toSend.map((s) => s.fileId))}
+						onClick={() =>
+							void transcribe.start(
+								toSend.map((s) => s.fileId),
+								toSend.reduce((sum, s) => sum + s.durationS, 0),
+							)
+						}
 					>
 						Chép {toSend.length} đoạn còn lại
 					</Button>
@@ -368,7 +373,7 @@ export function TranscriptReader({
 				</div>
 			) : null}
 
-			{transcribe.keyModal}
+			{transcribe.dialog}
 			<ConfirmModal
 				open={rerun !== null}
 				onOpenChange={(next) => {
@@ -377,7 +382,9 @@ export function TranscriptReader({
 				title="Chép lại đoạn"
 				question={`Bỏ ${rerun?.editedSentences ?? 0} câu đã sửa ở đoạn ${(rerun?.index ?? 0) + 1}?`}
 				confirmLabel="Chép lại"
-				onConfirm={() => transcribe.start(rerun ? [rerun.fileId] : [])}
+				onConfirm={() =>
+					transcribe.start(rerun ? [rerun.fileId] : [], rerun?.durationS ?? 0)
+				}
 				data-id="reader-rerun"
 			>
 				Đoạn này sẽ về câu máy mới; các đoạn khác giữ phần đã sửa.

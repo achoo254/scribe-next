@@ -416,6 +416,13 @@ mod tests {
             sentences,
             model: "m".into(),
             updated_at: DateTime::now(),
+            charged_s: 0,
+            sent_s: 0,
+            month: None,
+            free_pool: false,
+            open: false,
+            settled: true,
+            attempts: 0,
         }
     }
 

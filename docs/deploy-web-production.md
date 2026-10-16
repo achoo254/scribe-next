@@ -151,7 +151,13 @@ nginx -t && systemctl reload nginx
 
 ## Deploy (làm tay)
 
-> **Trước mỗi lần restart BE:** chờ hàng đợi chép lời rỗng. Key OpenAI của người dùng chỉ nằm trong RAM, restart làm các lượt đang chép báo lỗi và người dùng phải bấm lại. Trên `.65`: `mongosh "$MONGO_URI" --quiet --eval 'db.transcripts.countDocuments({status:{$in:["queued","running"]}})'` phải ra `0`.
+> **Restart BE khi đang chép lời:** lượt đang chạy được xếp lại và chạy từ đầu (audio gửi lại bị OpenAI tính tiền lần nữa; lượt đã bị cắt ngang một lần thì dừng hẳn). Nên chờ hàng đợi rỗng trước khi restart: đếm `db.transcripts.countDocuments({status:{$in:["queued","running"]}})` qua `scripts/prod-mongosh.sh` của skill `scribe-ops-prod`.
+>
+> **Key OpenAI của server:** tệp `OPENAI_KEY_PATH` (biến build, vd `$DEPLOY_APP_DIR/.openai-key`), chủ `$DEPLOY_USER`, quyền 600, ghi bằng stdin, không bao giờ in. Đọc lúc khởi động; thiếu hoặc sai dạng thì chép lời tắt (journal: "không đọc được tệp key OpenAI"). OpenAI báo key hỏng/hết credit thì BE ngắt chép lời tới lần khởi động sau (audit `transcript.key_invalid`). Đổi key: ghi đè tệp rồi restart.
+>
+> **Gói và sổ phút** (chạy trên `.65` bằng user của service, cấu hình nhúng trong binary):
+> `sudo -u $DEPLOY_USER $DEPLOY_APP_DIR/$DEPLOY_SERVICE admin set-plan <email> <free|plus> [--until YYYY-MM-DD]`;
+> `… admin usage [--email <email>] [--month YYYY-MM] [--recompute [--apply]]` (đối soát sổ từ `transcribe_runs`). Hạn mức: biến build `TRANSCRIBE_FREE_MINUTES` (120), `TRANSCRIBE_PLUS_MINUTES` (3000), `TRANSCRIBE_FREE_POOL_USD` (10), `TRANSCRIBE_MONTHLY_CAP_USD` (30); `TRANSCRIBE_OPEN=1` mở chép lời cho mọi user đăng nhập (chưa bật).
 >
 > **Đổi dữ liệu chép lời (`transcripts`):** chạy `scripts/transcripts-audit.js` (chỉ đọc) trước, và `mongodump --db "$DB_NAME" --collection transcripts` vào thư mục sao lưu ngay trước deploy. Khôi phục khi dữ liệu hỏng: `mongorestore --drop --nsInclude "$DB_NAME.transcripts" <thư mục sao lưu>`.
 
@@ -221,7 +227,7 @@ curl -s  "https://$DEPLOY_DOMAIN/api/health"   # liveness
 BE ghi hai lớp (thêm 2026-10-15):
 
 - **Access log** ra journal (`target=access`): mỗi request `/api` một dòng `method`, `path`, `status`, `ms`, `ip` (từ `X-Real-IP` do nginx đặt), `user` (id Mongo, `-` khi chưa đăng nhập). Chunk upload/ghi thành công ở mức debug (khi ghi âm ≈1 request/giây); `/api/health` không log. Xem: `journalctl -u "$DEPLOY_SERVICE" -o cat | grep "access: request"`.
-- **`audit_events`** trong Mongo (database `$DB_NAME`): một doc cho mỗi hành vi `auth.login`, `auth.login_denied`, `auth.logout`, `recording.start`, `recording.finish`, `upload.start`, `upload.finish`, `job.create`, `job.done`, `job.failed`, `job.download`, `file.play`, `file.download`, `file.delete`, `recordings.archive`, `transcript.create`, `transcript.rerun`, `transcript.done`, `transcript.failed`, `transcript.rename`, `transcript.edit`, `transcript.delete` — kèm `at`, `userId`, `ip` và chi tiết (fileId, tên, kích thước…; sự kiện transcript chỉ ghi khoá phiên, id file và số câu/độ dài tên, không ghi tiêu đề hay câu). TTL 180 ngày trên `at`; index `{userId, at}` để tra theo user. Ghi nền: Mongo lỗi chỉ log warn, không làm hỏng request.
+- **`audit_events`** trong Mongo (database `$DB_NAME`): một doc cho mỗi hành vi `auth.login`, `auth.login_denied`, `auth.logout`, `recording.start`, `recording.finish`, `upload.start`, `upload.finish`, `job.create`, `job.done`, `job.failed`, `job.download`, `file.play`, `file.download`, `file.delete`, `recordings.archive`, `transcript.create`, `transcript.rerun`, `transcript.done`, `transcript.failed`, `transcript.rename`, `transcript.edit`, `transcript.delete`, `transcript.blocked`, `transcript.cap_80`, `transcript.cap_reached`, `transcript.key_invalid`, `admin.set_plan`, `admin.usage_recompute` — kèm `at`, `userId`, `ip` và chi tiết (fileId, tên, kích thước…; sự kiện transcript chỉ ghi khoá phiên, id file và số câu/độ dài tên, không ghi tiêu đề hay câu). TTL 180 ngày trên `at`; index `{userId, at}` để tra theo user. Ghi nền: Mongo lỗi chỉ log warn, không làm hỏng request.
 
 ## Ghi chú vận hành
 

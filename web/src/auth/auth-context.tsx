@@ -9,10 +9,9 @@ import {
 	useState,
 } from "react";
 import { NativeRecorderPlugin } from "../features/recorder/native-recorder";
-import { forgetApiKey } from "../features/transcript/api-key";
 import { isNativeShell } from "../lib/api";
 import { firebaseSignOut, googleIdToken } from "../lib/firebase";
-import { NativeFiles } from "../lib/native";
+import { NativeFiles, Secrets } from "../lib/native";
 import {
 	type CurrentUser,
 	createSession,
@@ -30,6 +29,8 @@ interface AuthApi extends AuthState {
 	/** Google popup → backend session; throws with a Vietnamese message. */
 	login: () => Promise<void>;
 	logout: () => Promise<void>;
+	/** Re-reads `/api/me` (minutes left after a transcription request). */
+	refresh: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthApi | null>(null);
@@ -80,16 +81,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 		}
 		await deleteSession();
 		await firebaseSignOut();
-		// The OpenAI key belongs to this user, not to the device.
-		await forgetApiKey().catch(() => undefined);
+		// Older builds kept the user's own OpenAI key in the Keychain: remove it.
+		if (isNativeShell())
+			await Secrets.remove({ name: "openaiApiKey" }).catch(() => undefined);
 		// The next user must not see this user's cached lists.
 		queryClient.clear();
 		setState({ ready: true, user: null });
 	}, [queryClient]);
 
+	const refresh = useCallback(async () => {
+		const user = await fetchCurrentUser().catch(() => null);
+		if (user) setState({ ready: true, user });
+	}, []);
+
 	const api = useMemo<AuthApi>(
-		() => ({ ...state, login, logout }),
-		[state, login, logout],
+		() => ({ ...state, login, logout, refresh }),
+		[state, login, logout, refresh],
 	);
 	return <AuthContext.Provider value={api}>{children}</AuthContext.Provider>;
 }

@@ -31,7 +31,7 @@ Thao tác ghi prod; người dùng đã đồng ý các hạng mục phần B. M
 
 ## 7c — Mở chép lời (vài ngày sau 7b)
 
-Bật `TRANSCRIBE_OPEN` (build lại) khi 7b chạy ổn vài ngày (Jev 0,98). Quota `free` 120 phút, quỹ free $10, trần tổng $30 đã có từ phần A. Kiểm một tài khoản mới chép được trong hạn mức, chạm quỹ free bị chặn có số.
+Bật `TRANSCRIBE_OPEN` (build lại) khi 7b chạy ổn vài ngày (Jev 0,98) **và Phase 9 đã deploy**. Quota `free` 120 phút, quỹ free $10, trần tổng $30 đã có từ phần A. Kiểm một tài khoản mới chép được trong hạn mức, chạm quỹ free bị chặn có số.
 
 ## Dọn (mỗi bước hỏi trước)
 

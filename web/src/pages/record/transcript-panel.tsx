@@ -11,7 +11,6 @@ import {
 	transcriptKey,
 } from "../../features/transcript-docs/transcript-docs-api";
 import { transcriptDocKeys } from "../../features/transcript-docs/transcript-docs-queries";
-import { forgetApiKey } from "../../features/transcript/api-key";
 import {
 	type TranscriptPart,
 	mergeTranscripts,
@@ -23,9 +22,6 @@ import { errorMessage, isNativeShell } from "../../lib/api";
 import { downloadPaths, useDownload } from "../../lib/download";
 import { formatClock } from "../../lib/format";
 import { useTranscribe } from "./use-transcribe";
-
-/** OpenAI refused the key itself: asking for another one is the fix. */
-const KEY_PROBLEM = /API key|credit/i;
 
 export interface TranscriptPanelProps {
 	/** Files of the recording in playback order (one, or an iPhone session's segments). */
@@ -59,6 +55,10 @@ export function TranscriptPanel({
 	const openTranscript = useOpenTranscript();
 	const fileIds = useMemo(() => parts.map((p) => p.fileId), [parts]);
 	const [asked, setAsked] = useState(false);
+	const secondsOf = (ids: readonly string[]) =>
+		parts
+			.filter((part) => ids.includes(part.fileId))
+			.reduce((sum, part) => sum + (part.durationS ?? 0), 0);
 	const [open, setOpen] = useState(false);
 	const transcribe = useTranscribe(() => {
 		setAsked(true);
@@ -88,13 +88,12 @@ export function TranscriptPanel({
 				const t = query.data?.find((item) => item.fileId === id);
 				return !t || t.status === "failed";
 			});
-	const keyProblem = merged.failed > 0 && KEY_PROBLEM.test(merged.error);
 	const scope: ExportScope = session ? { session } : { fileIds };
 
 	/** "Chép lại" over edited sentences asks first: those edits would be lost. */
 	async function start(): Promise<void> {
 		if (!allDone) {
-			await transcribe.start(toSend);
+			await transcribe.start(toSend, secondsOf(toSend));
 			return;
 		}
 		try {
@@ -115,7 +114,7 @@ export function TranscriptPanel({
 			});
 			return;
 		}
-		await transcribe.start(toSend);
+		await transcribe.start(toSend, secondsOf(toSend));
 	}
 
 	const status = merged.untouched
@@ -211,20 +210,6 @@ export function TranscriptPanel({
 			{merged.failed > 0 && !busy ? (
 				<Alert tone="danger" data-id={`${dataId}-error`}>
 					{merged.error || "Chép lời thất bại."}
-					{keyProblem ? (
-						<Button
-							size="sm"
-							variant="ghost"
-							className="ml-2"
-							data-id={`${dataId}-change-key`}
-							onClick={() => {
-								void forgetApiKey();
-								transcribe.askKey(toSend, merged.error);
-							}}
-						>
-							Đổi key
-						</Button>
-					) : null}
 				</Alert>
 			) : null}
 
@@ -251,7 +236,7 @@ export function TranscriptPanel({
 				</ol>
 			) : null}
 
-			{transcribe.keyModal}
+			{transcribe.dialog}
 			<ConfirmModal
 				open={lostEdits !== null}
 				onOpenChange={(next) => {
@@ -260,7 +245,7 @@ export function TranscriptPanel({
 				title="Chép lại"
 				question={`Bỏ phần đã sửa ở ${lostEdits?.segments ?? 0} đoạn (${lostEdits?.sentences ?? 0} câu)?`}
 				confirmLabel="Chép lại"
-				onConfirm={() => transcribe.start(toSend)}
+				onConfirm={() => transcribe.start(toSend, secondsOf(toSend))}
 				data-id={`${dataId}-rerun`}
 			>
 				Chép lại cả bản ghi thay mọi câu bằng bản chép mới. Muốn giữ phần đã

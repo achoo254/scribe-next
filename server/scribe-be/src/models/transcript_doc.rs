@@ -240,13 +240,15 @@ mod tests {
         assert_eq!(get(&db, &user, &key).await.expect("get").expect("doc").title, None);
 
         // Chép lại đoạn a: runId đổi → câu sửa của lượt cũ hết hiệu lực.
-        transcript::enqueue(&db, a, &user, "run-2", "m").await.expect("enqueue");
+        let charge = crate::models::usage::Charge { user_id: user.clone(), month: "test".into(), free_pool: false };
+        transcript::enqueue(&db, a, &user, "run-2", "m", &charge, 0).await.expect("enqueue");
         let run = transcript::statuses_for_files(&db, &user, &[a]).await.expect("status");
         assert_eq!(effective_texts(d.edits.get(&a.to_hex()), &run[0].run_id, 1), None);
 
         // Xoá đoạn a: câu sửa của a dọn theo; còn b nên doc phiên chưa mồ côi.
         let fa = files.iter().find(|(_, f)| f.id == Some(a)).map(|(_, f)| f).expect("fa");
         file::delete_doc(&db, fa).await.expect("xoá a");
+        db.collection::<Document>(crate::models::usage::RUNS_COLL).delete_many(doc! { "userId": &user }).await.expect("dọn");
         let d = get(&db, &user, &key).await.expect("get").expect("doc");
         assert!(!d.edits.contains_key(&a.to_hex()) && d.edits.contains_key(&b.to_hex()));
         assert!(transcript::statuses_for_files(&db, &user, &[a]).await.expect("status").is_empty());

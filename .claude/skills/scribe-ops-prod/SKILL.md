@@ -70,8 +70,8 @@ app trên máy, không chỉ Scribe.
 3. **DB `onescribe` nằm trên mongod CHUNG cổng 27017** (cùng các db của app khác). Chỉ truy vấn db `onescribe` qua
    `scripts/prod-mongosh.sh`; không `dropDatabase`, không đụng db khác, không đổi cấu hình mongod. Cổng 27017 mở ra
    ngoài và mật khẩu chia sẻ là **cố ý** (team kết nối trực tiếp) — không tự firewall/rotate.
-4. **Restart backend làm hỏng lượt chép lời đang chạy** (key OpenAI của người dùng chỉ nằm trong RAM). Trước mọi
-   restart: hàng đợi phải rỗng (§6). Khác 0 thì chờ, không restart.
+4. **Restart backend khi đang chép lời làm tốn tiền:** lượt dở chạy lại từ đầu và audio gửi lại bị OpenAI tính lần
+   nữa. Trước mọi restart: hàng đợi nên rỗng (§6); khác 0 thì chờ nếu được.
 5. **KHÔNG build trên server.** Build ở máy dev (`cargo zigbuild` cho backend musl, `npm run build` cho FE), đẩy
    artifact lên.
 6. **Cấu hình nằm trong binary.** `MONGO_URI`, `DB_NAME`, `TRANSCRIBE_EMAILS`, allowlist… nhúng lúc build từ
@@ -79,8 +79,8 @@ app trên máy, không chỉ Scribe.
    build + deploy lại. Không `strings` binary để đọc cấu hình.
 7. **KHÔNG xử lý dữ liệu nặng trên .65**: ~7,5 GB RAM, còn trống khoảng 3 GB cho cả máy (đo 16/10/2026); unit có
    `MemoryMax=1G`. Truy vấn có projection/`limit`, log lọc tại nguồn (`journalctl … | grep`).
-8. **Không in bí mật** (`MONGO_URI`, private key SSH, session key `/opt/onescribe-be/.session-key`, key OpenAI người
-   dùng): đọc vào biến, truyền qua env/stdin chứ không qua argv; `.env.production` chỉ liệt kê tên biến
+8. **Không in bí mật** (`MONGO_URI`, private key SSH, session key `/opt/onescribe-be/.session-key`, key OpenAI của
+   server ở tệp `OPENAI_KEY_PATH`, chủ sở hữu giữ bản gốc ở `$ACCESS_TOKENS_JSON` mục `api.openai.com`): đọc vào biến, truyền qua env/stdin chứ không qua argv; `.env.production` chỉ liệt kê tên biến
    (`sed 's/=.*//' .env.production`).
 9. **Chọn đúng tệp credential:** máy .65 nằm trong `$ALL_IN_ONE_STAGING_DEV`, entry `SSH_SERVER_STAGING`; **không** có
    trong `$ALL_IN_ONE_PROD`. Cổng 24700 có allowlist IP (`CP_SSH_ACL`) — SSH bị chặn thì báo user, không gỡ chain.
@@ -141,8 +141,12 @@ Tìm nhanh tiêu đề: `grep -n '^#' docs/deploy-web-production.md`.
 - **Phiên iPhone** là nhiều file tên `<sessionId>#<index>`; khoá transcript `s:<sessionId>`, bản ghi trình duyệt
   `f:<fileId>`.
 - **`audit_events` không chứa tiêu đề hay câu transcript** — đừng tìm nội dung ở đó; chỉ có `key`, `fileId`, số câu.
-- **Hàng đợi chép lời sau restart:** lượt `queued/running` lúc khởi động bị đánh `failed` với thông báo "Máy chủ đã
-  khởi động lại…". Thấy lỗi này hàng loạt ⟹ có restart trong lúc đang chép.
+- **Hàng đợi chép lời sau restart:** lượt `running` được xếp lại; lượt bị cắt ngang lần hai thì `failed` với thông báo
+  "Máy chủ đã khởi động lại…". Thấy lỗi này hàng loạt ⟹ restart lặp lại khi đang chép.
+- **Tiền chép lời:** sổ `transcribe_usage` (tháng giờ VN), chi tiết `transcribe_runs`. Tra: `sudo -u <user> <binary> admin
+  usage [--email …]`; đối soát `--recompute` (chỉ xem), `--apply` là thao tác ghi. Cấp gói `admin set-plan` cũng là ghi.
+- **Chép lời tạm ngưng toàn hệ thống** (503 "Chép lời đang tạm ngưng"): key OpenAI hỏng hoặc hết credit — tìm
+  `transcript.key_invalid` trong `audit_events` và dòng "key OpenAI của server không dùng được" trong journal.
 - **Đĩa:** dữ liệu người dùng ở `/opt/onescribe-be/data/<userId>/` (`recordings/`, `uploads/`, `outputs/`, `tmp/*.part`).
 - **`lsof -ti :PORT` liệt kê cả client** — dùng `ss -ltnp` hoặc `-sTCP:LISTEN` trước khi kết luận hay kill gì.
 - **Bản sao lưu** nằm ở `/root/onescribe-backup-<YYYYMMDD-HHMMSS>/` trên chính .65 (`onescribe-be.prev`, `dist/`,

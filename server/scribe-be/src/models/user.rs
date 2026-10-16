@@ -44,16 +44,65 @@ pub async fn upsert_and_get_id(
     }
 }
 
-/// Lấy email theo user id (hex `_id`). Dùng cho `/api/me`.
-pub async fn find_email_by_id(db: &Database, user_id: &str) -> Result<Option<String>, AppError> {
-    let oid = ObjectId::parse_str(user_id)
-        .map_err(|_| AppError::Unauthorized("user id không hợp lệ".into()))?;
+/// Email + gói chép lời của user (gói hết hạn do `plan::effective` xử lý).
+pub struct Profile {
+    pub email: String,
+    pub plan: Option<String>,
+    pub plan_until: Option<DateTime>,
+}
+
+pub async fn find_profile(db: &Database, user_id: &str) -> Result<Option<Profile>, AppError> {
+    let oid = ObjectId::parse_str(user_id).map_err(|_| AppError::Unauthorized("user id không hợp lệ".into()))?;
     let doc = db
         .collection::<Document>(COLL)
         .find_one(doc! { "_id": oid })
+        .projection(doc! { "email": 1, "plan": 1, "planUntil": 1 })
         .await
         .map_err(|e| AppError::Internal(format!("mongo find user: {e}")))?;
-    Ok(doc.and_then(|d| d.get_str("email").ok().map(str::to_string)))
+    Ok(doc.map(|d| Profile {
+        email: d.get_str("email").unwrap_or_default().to_string(),
+        plan: d.get_str("plan").ok().map(str::to_string),
+        plan_until: d.get_datetime("planUntil").ok().copied(),
+    }))
+}
+
+/// Các user có email này (không phân biệt hoa thường). Dùng cho CLI admin: phải khớp đúng một user.
+pub async fn find_ids_by_email(db: &Database, email: &str) -> Result<Vec<String>, AppError> {
+    let pattern = format!("^{}$", regex_escape(email));
+    let mut cur = db
+        .collection::<Document>(COLL)
+        .find(doc! { "email": { "$regex": pattern, "$options": "i" } })
+        .projection(doc! { "_id": 1 })
+        .await
+        .map_err(|e| AppError::Internal(format!("mongo find user: {e}")))?;
+    let mut ids = Vec::new();
+    while let Some(d) = futures_util::StreamExt::next(&mut cur).await {
+        let d = d.map_err(|e| AppError::Internal(format!("mongo find user: {e}")))?;
+        if let Ok(id) = d.get_object_id("_id") {
+            ids.push(id.to_hex());
+        }
+    }
+    Ok(ids)
+}
+
+fn regex_escape(s: &str) -> String {
+    s.chars()
+        .flat_map(|c| if "\\.^$|?*+()[]{}/".contains(c) { vec!['\\', c] } else { vec![c] })
+        .collect()
+}
+
+/// Đặt gói; `until` = None với gói plus nghĩa là không hết hạn; gói free xoá hạn.
+pub async fn set_plan(db: &Database, user_id: &str, plan: &str, until: Option<DateTime>) -> Result<(), AppError> {
+    let oid = ObjectId::parse_str(user_id).map_err(|_| AppError::BadRequest("user id không hợp lệ".into()))?;
+    let update = match until {
+        Some(until) => doc! { "$set": { "plan": plan, "planUntil": until } },
+        None => doc! { "$set": { "plan": plan }, "$unset": { "planUntil": "" } },
+    };
+    db.collection::<Document>(COLL)
+        .update_one(doc! { "_id": oid }, update)
+        .await
+        .map(|_| ())
+        .map_err(|e| AppError::Internal(format!("mongo set plan: {e}")))
 }
 
 async fn run_upsert(
@@ -88,5 +137,15 @@ pub(crate) fn is_duplicate_key(e: &MongoError) -> bool {
         ErrorKind::Write(WriteFailure::WriteError(ref we)) => we.code == DUP_KEY,
         ErrorKind::Command(ref ce) => ce.code == DUP_KEY,
         _ => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn emails_are_matched_literally() {
+        assert_eq!(regex_escape("a.b+c@x.vn"), "a\\.b\\+c@x\\.vn");
     }
 }

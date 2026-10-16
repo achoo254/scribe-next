@@ -5,7 +5,7 @@
 
 use crate::audit;
 use crate::error::AppError;
-use crate::models::user;
+use crate::models::{plan, usage, user};
 use crate::session;
 use crate::state::AppState;
 use axum::extract::{Request, State};
@@ -71,11 +71,30 @@ pub async fn me(
     State(state): State<AppState>,
     Extension(user): Extension<UserId>,
 ) -> Result<Json<Value>, AppError> {
-    let email = user::find_email_by_id(&state.db, &user.0)
+    let profile = user::find_profile(&state.db, &user.0)
         .await?
         .ok_or_else(|| AppError::Unauthorized("user không tồn tại".into()))?;
-    let can_transcribe = state.config.transcribe_allowed(&email);
-    Ok(Json(json!({ "email": email, "canTranscribe": can_transcribe })))
+    let can_transcribe = state.config.transcribe_allowed(&profile.email);
+    let transcription = if can_transcribe {
+        let now = chrono::Utc::now();
+        let month = usage::month_key(now);
+        let used = usage::month_usage(&state.db, &user.0, &month).await?;
+        let plan = plan::effective(profile.plan.as_deref(), profile.plan_until, mongodb::bson::DateTime::now());
+        let limits = state.config.transcribe_limits;
+        let pool_full = plan == plan::Plan::Free && used.free_pool_seconds >= limits.free_pool_seconds;
+        json!({
+            "plan": plan.name(),
+            "planUntil": profile.plan_until.and_then(|d| d.try_to_rfc3339_string().ok()),
+            "usedMinutes": usage::used_minutes(used.user_seconds),
+            "limitMinutes": plan.limit_seconds(&limits) / 60,
+            "resetsAt": usage::next_reset(now).to_rfc3339(),
+            "capReached": pool_full || used.total_seconds >= limits.monthly_cap_seconds,
+            "paused": !state.transcriber.ready(),
+        })
+    } else {
+        Value::Null
+    };
+    Ok(Json(json!({ "email": profile.email, "canTranscribe": can_transcribe, "transcription": transcription })))
 }
 
 /// Middleware guard: verify session cookie → gắn `UserId` vào request. Thiếu/sai → 401.

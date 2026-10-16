@@ -1,7 +1,7 @@
 //! ffmpeg (tìm khoảng lặng, cắt + nén Opus từng mảnh) và gọi OpenAI `audio/transcriptions`.
 //!
-//! API key là của người dùng, chỉ đi qua header `Authorization`: không đưa vào thông báo lỗi, log hay
-//! argv của tiến trình con.
+//! API key (của server) chỉ đi qua header `Authorization`: không đưa vào thông báo lỗi, log hay argv
+//! của tiến trình con.
 
 use super::chunking::{self, Span};
 use reqwest::multipart::{Form, Part};
@@ -59,23 +59,26 @@ fn last_line(text: &str) -> &str {
     text.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or("").trim()
 }
 
-/// Chép một mảnh; chữ có dấu hiệu lặp thì thử lại với temperature cao hơn.
+/// Chép một mảnh; chữ có dấu hiệu lặp thì thử lại với temperature cao hơn. Trả (chữ, số lần gửi đã
+/// được OpenAI xử lý) — mỗi lần là một lần bị tính tiền.
 pub async fn transcribe_chunk(
     http: &reqwest::Client,
     api_key: &str,
     audio: Vec<u8>,
     seconds: f64,
-) -> Result<String, String> {
+) -> Result<(String, u32), String> {
     let mut first = None;
+    let mut posts = 0;
     for temperature in RETRY_TEMPS {
         let text = post(http, api_key, &audio, temperature).await?;
+        posts += 1;
         if !chunking::looks_looped(&text, seconds) {
-            return Ok(text);
+            return Ok((text, posts));
         }
         first.get_or_insert(text);
     }
     // Lần nào cũng có vẻ lặp: giữ bản temperature 0 (ít bịa nhất) thay vì bản 0,8.
-    Ok(first.unwrap_or_default())
+    Ok((first.unwrap_or_default(), posts))
 }
 
 async fn post(http: &reqwest::Client, api_key: &str, audio: &[u8], temperature: &str) -> Result<String, String> {
@@ -142,16 +145,22 @@ pub fn api_error(status: u16, body: &str) -> String {
     if is_quota(body) {
         return NO_CREDIT.into();
     }
+    // Thông điệp của OpenAI có thể nêu tổ chức/dự án của tài khoản server: chỉ ghi log, người dùng thấy
+    // câu chung kèm mã.
     let message = serde_json::from_str::<serde_json::Value>(body)
         .ok()
         .and_then(|v| v["error"]["message"].as_str().map(str::to_string))
         .unwrap_or_else(|| body.chars().take(200).collect());
-    format!("OpenAI HTTP {status}: {message}")
+    tracing::warn!(status, "OpenAI từ chối mảnh: {message}");
+    if status == 400 {
+        return "Không chép được đoạn audio này (OpenAI từ chối dữ liệu).".into();
+    }
+    format!("Dịch vụ chép lời đang lỗi (HTTP {status}), thử lại sau.")
 }
 
-pub const KEY_INVALID: &str = "OpenAI: API key không hợp lệ hoặc đã bị thu hồi";
-pub const NO_CREDIT: &str =
-    "OpenAI: tài khoản đã hết credit — nạp thêm tại platform.openai.com/settings/organization/billing";
+/// Lỗi của key server (chỉ ghi log/audit cho quản trị; người dùng thấy thông báo tạm ngưng chung).
+pub const KEY_INVALID: &str = "OpenAI: API key của server không hợp lệ hoặc đã bị thu hồi";
+pub const NO_CREDIT: &str = "OpenAI: tài khoản của server đã hết credit";
 
 #[cfg(test)]
 mod tests {
@@ -162,7 +171,8 @@ mod tests {
         assert_eq!(api_error(401, "{}"), KEY_INVALID);
         let quota = r#"{"error":{"code":"insufficient_quota","message":"You exceeded"}}"#;
         assert_eq!(api_error(429, quota), NO_CREDIT);
-        let other = r#"{"error":{"message":"Audio file is too short"}}"#;
-        assert_eq!(api_error(400, other), "OpenAI HTTP 400: Audio file is too short");
+        let other = r#"{"error":{"message":"Rate limit reached in organization org-abc"}}"#;
+        assert!(!api_error(429, other).contains("org-abc"));
+        assert_eq!(api_error(400, "{}"), "Không chép được đoạn audio này (OpenAI từ chối dữ liệu).");
     }
 }

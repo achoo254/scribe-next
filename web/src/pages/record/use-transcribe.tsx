@@ -1,84 +1,120 @@
 import { type ReactNode, useState } from "react";
+import { useAuth } from "../../auth/auth-context";
+import { Button } from "../../components/ui/button";
+import { Modal, ModalClose } from "../../components/ui/modal";
+import { ModalFooter } from "../../components/ui/modal-footer";
 import { useToast } from "../../components/ui/toast";
-import { loadApiKey, saveApiKey } from "../../features/transcript/api-key";
 import { useRequestTranscripts } from "../../features/transcript/transcript-queries";
-import { ApiError, errorMessage } from "../../lib/api";
-import { ApiKeyModal } from "./api-key-modal";
+import { errorMessage } from "../../lib/api";
+
+/** Above this many minutes, say how much of the month it uses before sending. */
+const CONFIRM_ABOVE_MINUTES = 10;
 
 export interface Transcribe {
-	/** Queues the files with the saved key, asking for one first when there is none. */
-	start: (fileIds: readonly string[]) => Promise<void>;
-	/** Asks for another key (OpenAI refused this one), then queues the files. */
-	askKey: (fileIds: readonly string[], reason?: string) => void;
+	/**
+	 * Queues the files; `seconds` is their total length, used to ask first
+	 * when a long recording takes a big part of the monthly minutes.
+	 */
+	start: (fileIds: readonly string[], seconds: number) => Promise<void>;
 	pending: boolean;
-	/** The key dialog; render it once next to the buttons that call `start`. */
-	keyModal: ReactNode;
+	/** The confirmation dialog; render it once next to the buttons that call `start`. */
+	dialog: ReactNode;
 }
 
 /**
- * "Chép lời" with the user's own OpenAI key, shared by the recordings list
- * and the transcript reader. `onSent` runs once the backend queued the files.
+ * "Chép lời" on the server's OpenAI key, shared by the recordings list and
+ * the transcript reader. `onSent` runs once the backend queued the files;
+ * the minutes left are re-read afterwards.
  */
 export function useTranscribe(onSent?: () => void): Transcribe {
 	const toast = useToast();
+	const { user, refresh } = useAuth();
 	const request = useRequestTranscripts();
-	const [prompt, setPrompt] = useState<{
+	const [pendingConfirm, setPendingConfirm] = useState<{
 		fileIds: readonly string[];
-		reason?: string;
+		minutes: number;
 	} | null>(null);
+	const quota = user?.transcription;
+	const left = quota
+		? Math.max(0, quota.limitMinutes - quota.usedMinutes)
+		: null;
 
-	async function send(
-		fileIds: readonly string[],
-		apiKey: string,
-	): Promise<void> {
-		await request.mutateAsync({ fileIds, apiKey });
-		onSent?.();
-	}
-
-	async function start(fileIds: readonly string[]): Promise<void> {
-		const saved = await loadApiKey().catch(() => "");
-		if (!saved) {
-			setPrompt({ fileIds });
-			return;
-		}
+	async function send(fileIds: readonly string[]): Promise<void> {
 		try {
-			await send(fileIds, saved);
+			await request.mutateAsync({ fileIds });
+			onSent?.();
 		} catch (cause) {
-			// A malformed saved key: ask for a new one instead of failing again.
-			if (
-				cause instanceof ApiError &&
-				cause.status === 400 &&
-				/key/i.test(cause.message)
-			) {
-				setPrompt({ fileIds, reason: cause.message });
-				return;
-			}
 			toast.show({
 				tone: "error",
 				title: "Không chép lời được",
 				description: errorMessage(cause),
 			});
+		} finally {
+			void refresh();
 		}
 	}
 
-	const keyModal = (
-		<ApiKeyModal
-			open={prompt !== null}
+	async function start(
+		fileIds: readonly string[],
+		seconds: number,
+	): Promise<void> {
+		const minutes = Math.ceil(seconds / 60);
+		if (minutes > CONFIRM_ABOVE_MINUTES) {
+			setPendingConfirm({ fileIds, minutes });
+			return;
+		}
+		await send(fileIds);
+	}
+
+	const dialog = (
+		<Modal
+			open={pendingConfirm !== null}
 			onOpenChange={(next) => {
-				if (!next) setPrompt(null);
+				if (!next) setPendingConfirm(null);
 			}}
-			reason={prompt?.reason}
-			onSubmit={async (apiKey) => {
-				await saveApiKey(apiKey);
-				await send(prompt?.fileIds ?? [], apiKey);
-			}}
-		/>
+			title="Chép lời bản ghi dài"
+			size="sm"
+			data-id="transcribe-confirm"
+			footer={
+				<ModalFooter>
+					<ModalClose asChild>
+						<Button variant="ghost">Huỷ</Button>
+					</ModalClose>
+					<Button
+						variant="primary"
+						data-id="transcribe-confirm-send"
+						disabled={left !== null && (pendingConfirm?.minutes ?? 0) > left}
+						loading={request.isPending}
+						onClick={() => {
+							const next = pendingConfirm;
+							setPendingConfirm(null);
+							if (next) void send(next.fileIds);
+						}}
+					>
+						Chép lời
+					</Button>
+				</ModalFooter>
+			}
+		>
+			<p className="m-0 text-sm">
+				Bản ghi này dùng khoảng{" "}
+				<strong>{pendingConfirm?.minutes ?? 0} phút</strong>
+				{left !== null ? (
+					<>
+						{" "}
+						trong <strong>{left} phút</strong> còn lại của tháng này.
+					</>
+				) : (
+					"."
+				)}
+			</p>
+			{left !== null && (pendingConfirm?.minutes ?? 0) > left ? (
+				<p className="m-0 mt-2 text-error-text text-sm">
+					Không đủ phút còn lại cho bản ghi này.
+				</p>
+			) : null}
+		</Modal>
 	);
 
-	return {
-		start,
-		askKey: (fileIds, reason) => setPrompt({ fileIds, reason }),
-		pending: request.isPending,
-		keyModal,
-	};
+	return { start, pending: request.isPending, dialog };
 }

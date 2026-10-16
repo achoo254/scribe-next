@@ -1,6 +1,7 @@
 //! Scribe Web backend — axum, bind 127.0.0.1 (nginx `/api` proxy), graceful shutdown SIGTERM.
 
 mod access_log;
+mod admin;
 mod audit;
 mod auth;
 mod config;
@@ -39,11 +40,24 @@ async fn main() {
         tracing::error!("{e}");
         std::process::exit(1);
     });
-    let session_key = session::load_or_create_key(&config.session_key_path)
-        .unwrap_or_else(|e| panic!("không tạo được session key ({}): {e}", config.session_key_path));
     let db = db::connect(&config.mongo_uri, &config.db_name)
         .await
         .unwrap_or_else(|e| panic!("{e}"));
+    // `scribe-be admin …`: chỉ nối Mongo rồi thoát — không session key, index, worker hay sweeper,
+    // để chạy cạnh service đang phục vụ mà không nhận lượt chép hay dọn file.
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.first().map(String::as_str) == Some("admin") {
+        match admin::run(&config, &db, &args[1..]).await {
+            Ok(out) => println!("{out:#}"),
+            Err(e) => {
+                eprintln!("{e}");
+                std::process::exit(2);
+            }
+        }
+        return;
+    }
+    let session_key = session::load_or_create_key(&config.session_key_path)
+        .unwrap_or_else(|e| panic!("không tạo được session key ({}): {e}", config.session_key_path));
     // Index unique `transcript_docs` phải có trước request đầu tiên: upsert đua nhau dựa vào nó để
     // không tạo hai doc cho một phiên. Không tạo được thì dừng thay vì chạy thiếu bảo đảm.
     if let Err(e) = models::transcript_doc::ensure_indexes(&db).await {
@@ -77,6 +91,7 @@ async fn main() {
     }
 
     let port = config.port;
+    let config_key_path = config.openai_key_path.clone();
     let jwks = Arc::new(JwksCache::new(config.firebase_project_id.clone()));
     let state = AppState {
         config: Arc::new(config),
@@ -85,7 +100,7 @@ async fn main() {
         jwks,
         session_key: Arc::new(session_key),
         rate: Arc::new(RateLimiter::new()),
-        transcribe_keys: Arc::default(),
+        transcriber: Arc::new(transcribe::Transcriber::load(config_key_path.as_deref())),
     };
 
     // Hồi phục job kẹt "running" sau crash/restart (red-team) + khởi worker queue nền.

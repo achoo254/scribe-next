@@ -33,6 +33,7 @@ Hiện người dùng tự dán key OpenAI, đăng nhập bằng Firebase Google
 | 6 | [Web + iPhone: đăng nhập qua IdP, bỏ Firebase](./phase-06-clients-oidc-login.md) | M | Pending | 5 |
 | 7 | [Hạ tầng: 7a DB + service, 7b đăng nhập + domain, 7c mở chép lời](./phase-07-infra-cutover.md) | M | Pending | 6 (7a chỉ cần 3) |
 | 8 | [QA iPhone thật + docs](./phase-08-qa-docs.md) | S | Pending | 7 |
+| 9 | [Chống lạm dụng gói free (bắt buộc trước 7c)](./phase-09-free-abuse-guards.md) | M | Pending | 5 |
 
 ## Thiết kế chính
 
@@ -61,7 +62,7 @@ POST /api/transcripts ─► allowlist? ─► cần = Σ durationS các file
 - Backend tin IdP bằng cách xác minh ID token ES256 qua JWKS một lần lúc đăng nhập rồi cấp phiên riêng (không cần resource audience).
 - Phiên lưu trong Mongo (`sessions`, `_id` = băm của token) để thu hồi được; web nhận back-channel logout; mobile mất phiên khi máy bị thu hồi ở `/account` (refresh IdP giữ phía server, `invalid_grant`).
 - Bỏ hẳn Firebase, không chạy song song (người dùng chốt) ⟹ đổi đăng nhập một chiều, thử đủ trên dev local + iOS simulator trước.
-- Mở chép lời cho mọi người bằng cờ `TRANSCRIBE_OPEN`, bật vài ngày sau khi đổi đăng nhập ổn (Jev 0,98).
+- Mở chép lời cho mọi người bằng cờ `TRANSCRIBE_OPEN`, bật vài ngày sau khi đổi đăng nhập ổn (Jev 0,98) **và chỉ sau Phase 9** (chống lạm dụng free: giới hạn ngày, theo IP, tài khoản mới chờ 24 giờ, lệnh admin chặn, báo Telegram — người dùng chốt).
 - User cũ ghép theo email khi IdP báo `email_verified` (đã duyệt D1: "migrate user theo email"); sau đó khoá theo `idpSub`.
 
 ## Non-goals
@@ -107,4 +108,5 @@ Bán gói / thanh toán; trang admin web (CLI là đủ); Sign in with Apple; t�
 | Mở chép lời | Jev cờ riêng, sau vài ngày 0,98 | Áp dụng (7c) |
 | Rollback đăng nhập | Jev giữ Firebase song song 0,62 | Người dùng: bỏ Firebase, không song song ⟹ một chiều |
 | Mongo prod | đo: standalone 7.0.28 | Không transaction |
+| Chống lạm dụng free trước 7c | Jev 0,72–0,79 từng biện pháp | Người dùng: bộ đầy đủ, giữ quỹ $10 ⟹ Phase 9 |
 | iOS target | đo: 15.0 | Callback scheme riêng, ghi nhận rủi ro |

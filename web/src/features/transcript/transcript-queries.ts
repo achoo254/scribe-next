@@ -41,13 +41,8 @@ export function useTranscriptsQuery(
 export function useRequestTranscripts() {
 	const queryClient = useQueryClient();
 	return useMutation({
-		mutationFn: ({
-			fileIds,
-			apiKey,
-		}: {
-			fileIds: readonly string[];
-			apiKey: string;
-		}) => requestTranscripts(fileIds, apiKey),
+		mutationFn: ({ fileIds }: { fileIds: readonly string[] }) =>
+			requestTranscripts(fileIds),
 		onSuccess: () =>
 			Promise.all([
 				queryClient.invalidateQueries({ queryKey: transcriptKeys.all }),

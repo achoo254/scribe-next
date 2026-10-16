@@ -29,12 +29,12 @@ function batches<T>(items: readonly T[]): T[][] {
 }
 
 /**
- * Queues the recordings for transcription with the user's own OpenAI key.
- * The backend keeps the key in memory only until these files are done.
+ * Queues the recordings for transcription. The backend uses its own OpenAI
+ * key and first takes the minutes from the user's monthly allowance; a
+ * refusal (403) carries a message with the numbers.
  */
 export async function requestTranscripts(
 	fileIds: readonly string[],
-	apiKey: string,
 	fetcher: typeof fetch = fetch,
 ): Promise<number> {
 	let queued = 0;
@@ -43,7 +43,7 @@ export async function requestTranscripts(
 			"/api/transcripts",
 			{
 				method: "POST",
-				json: { fileIds: batch, apiKey },
+				json: { fileIds: batch },
 				fallbackError: "Không gửi được yêu cầu chép lời",
 			},
 			fetcher,

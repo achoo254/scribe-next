@@ -17,6 +17,10 @@ pub enum AppError {
     TooLarge(String),
     /// 429 — rate-limit theo IP (red-team #2).
     TooManyRequests(String),
+    /// 403 kèm số — hết phút chép lời (`QUOTA_EXCEEDED`) hoặc hạn mức chung (`CAP_REACHED`).
+    Quota { code: &'static str, message: String, used_minutes: i64, limit_minutes: i64 },
+    /// 503 — tính năng tạm ngưng (vd key OpenAI của server hỏng).
+    Unavailable(String),
     Internal(String),
 }
 
@@ -30,6 +34,8 @@ impl AppError {
             AppError::Conflict(m) => (StatusCode::CONFLICT, m),
             AppError::TooLarge(m) => (StatusCode::PAYLOAD_TOO_LARGE, m),
             AppError::TooManyRequests(m) => (StatusCode::TOO_MANY_REQUESTS, m),
+            AppError::Quota { message, .. } => (StatusCode::FORBIDDEN, message),
+            AppError::Unavailable(m) => (StatusCode::SERVICE_UNAVAILABLE, m),
             AppError::Internal(m) => (StatusCode::INTERNAL_SERVER_ERROR, m),
         }
     }
@@ -37,6 +43,15 @@ impl AppError {
 
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
+        if let AppError::Quota { code, message, used_minutes, limit_minutes } = &self {
+            let body = json!({
+                "error": message,
+                "code": code,
+                "usedMinutes": used_minutes,
+                "limitMinutes": limit_minutes,
+            });
+            return (StatusCode::FORBIDDEN, Json(body)).into_response();
+        }
         let (status, msg) = self.parts();
         if status == StatusCode::INTERNAL_SERVER_ERROR {
             tracing::error!("internal error: {msg}");

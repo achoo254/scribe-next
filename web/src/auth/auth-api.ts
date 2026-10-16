@@ -1,9 +1,24 @@
 import { ApiError, apiFetch, apiJson } from "../lib/api";
 
+/** Monthly transcription allowance of the signed-in user. */
+export interface Transcription {
+	plan: "free" | "plus";
+	planUntil?: string | null;
+	usedMinutes: number;
+	limitMinutes: number;
+	/** Start of next month (Vietnam time), when the minutes reset. */
+	resetsAt: string;
+	/** The shared monthly limit is used up: nobody on this plan can transcribe. */
+	capReached: boolean;
+	/** Transcription is paused for everyone (server key unusable). */
+	paused?: boolean;
+}
+
 export interface CurrentUser {
 	email: string;
-	/** May transcribe recordings with an OpenAI key (backend allowlist). */
+	/** May transcribe recordings (backend allowlist). */
 	canTranscribe?: boolean;
+	transcription?: Transcription | null;
 }
 
 /**

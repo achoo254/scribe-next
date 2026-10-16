@@ -5,6 +5,22 @@ import { fakeFetch, jsonResponse } from "../../test/fake-fetch";
 import { renderWithProviders } from "../../test/render-with-providers";
 import { TranscriptPanel } from "./transcript-panel";
 
+const auth = vi.hoisted(() => ({
+	user: {
+		email: "a@b.c",
+		canTranscribe: true,
+		transcription: {
+			plan: "free",
+			usedMinutes: 100,
+			limitMinutes: 120,
+			resetsAt: "2026-10-31T17:00:00Z",
+			capReached: false,
+		},
+	},
+	refresh: async () => undefined,
+}));
+vi.mock("../../auth/auth-context", () => ({ useAuth: () => auth }));
+
 const sentence = { start: 0, end: 1, text: "Câu." };
 
 function done(fileId: string) {

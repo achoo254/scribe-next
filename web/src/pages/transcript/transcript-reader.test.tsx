@@ -9,6 +9,22 @@ import { fakeFetch, jsonResponse } from "../../test/fake-fetch";
 import { renderWithProviders } from "../../test/render-with-providers";
 import { TranscriptReader } from "./transcript-reader";
 
+const auth = vi.hoisted(() => ({
+	user: {
+		email: "a@b.c",
+		canTranscribe: true,
+		transcription: {
+			plan: "free",
+			usedMinutes: 100,
+			limitMinutes: 120,
+			resetsAt: "2026-10-31T17:00:00Z",
+			capReached: false,
+		},
+	},
+	refresh: async () => undefined,
+}));
+vi.mock("../../auth/auth-context", () => ({ useAuth: () => auth }));
+
 const KEY = "s:aaaaaaaa-1111";
 const PATH = "/api/transcript-docs/s%3Aaaaaaaaa-1111";
 
@@ -164,5 +180,26 @@ describe("TranscriptReader", () => {
 		).toBeInTheDocument();
 		expect(screen.getByRole("button", { name: "Lưu" })).toBeDisabled();
 		expect(fake.calls.some((c) => c.method === "PUT")).toBe(false);
+	});
+
+	it("asks before a long transcription and shows the minutes left", async () => {
+		const long: TranscriptDetail = {
+			...DETAIL,
+			segments: DETAIL.segments.map((s) =>
+				s.fileId === "d" ? { ...s, durationS: 30 * 60 } : s,
+			),
+		};
+		const fake = renderReader({ [`GET ${PATH}`]: jsonResponse(long) });
+		await userEvent.click(
+			await screen.findByRole("button", { name: "Chép 1 đoạn còn lại" }),
+		);
+		const dialog = await screen.findByRole("dialog");
+		expect(dialog).toHaveTextContent("khoảng 30 phút");
+		expect(dialog).toHaveTextContent("20 phút còn lại");
+		// 30 phút > 20 phút còn lại: không cho gửi.
+		expect(
+			within(dialog).getByRole("button", { name: "Chép lời" }),
+		).toBeDisabled();
+		expect(fake.calls.some((c) => c.method === "POST")).toBe(false);
 	});
 });

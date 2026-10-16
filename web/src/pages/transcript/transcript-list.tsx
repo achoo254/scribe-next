@@ -11,6 +11,7 @@ import {
 } from "../../features/transcript-docs/reader-model";
 import { useTranscriptDocsQuery } from "../../features/transcript-docs/transcript-docs-queries";
 import { formatDateTime, formatDuration } from "../../lib/format";
+import { TranscriptionQuota } from "./transcription-quota";
 
 export interface TranscriptListProps {
 	active: boolean;
@@ -25,6 +26,7 @@ export function TranscriptList({ active, onOpen }: TranscriptListProps) {
 	return (
 		<Card data-id="transcripts" className="grid gap-4 p-4 sm:p-6">
 			<h2 className="m-0 font-bold font-mono text-lg">Transcript</h2>
+			<TranscriptionQuota />
 			{query.isPending ? (
 				<SkeletonRegion label="Đang tải transcript…" className="grid gap-3">
 					<Skeleton className="h-16" />
