@@ -49,7 +49,9 @@ Thao tác ghi prod; người dùng đã đồng ý các hạng mục phần B. M
 - 13:30 người dùng đăng nhập prod: user cũ được ghép theo email (`idpSub` gắn vào user Firebase), giữ gói plus, đủ 53 file.
 - 13:4x báo động qua bot chat.hoandat.com `@bot_scribe_bot` (chat riêng id 12): token `/opt/scribe-be/.notify-bot-token` (600, chủ scribe), build `c24bb6a` sha `4a2e6114…`, hàng đợi 0 trước restart, `admin notify-test` gửi được.
 - App iPhone mới (origin `https://scribe.hoandat.com`, đăng nhập hoandat-auth) cài qua cáp: BUILD SUCCEEDED, đã cài; người dùng mở app thủ công (máy đang khoá).
-- Chưa: người dùng thử đăng nhập/ghi/tải lên trên iPhone, back-channel logout thật, xoá bản ghi DNS `scribe.inetdev.io.vn` ở Cloudflare (chờ người dùng).
+- Lỗi đăng nhập iPhone 13:39: sau trang đồng ý, IdP chuyển hướng về `com.hoandat.scribe:/auth/callback` nhưng CSP `form-action` của IdP không có scheme riêng nên WebKit chặn, sheet không đóng. Sửa ở hoandat-auth `52f5b11` (thêm scheme của `CHAT_MOBILE_REDIRECT_URI`, `SCRIBE_MOBILE_REDIRECT_URI` vào `form-action`; 519 test + 10 e2e), deploy `infra/deploy.sh`, healthz 200, localman/chat 200.
+- 13:4x iPhone: `native/exchange` 200, 1 thiết bị + 1 phiên mobile, ghi âm (`recordings/init` → `finalize`), chép lời bằng key server (`transcript.create` → `transcript.done`), phát lại file; journal 0 ERROR.
+- Chưa: back-channel logout thật, xoá bản ghi DNS `scribe.inetdev.io.vn` ở Cloudflare (chờ người dùng).
 
 ## 7c — Mở chép lời (vài ngày sau 7b)
 
