@@ -25,6 +25,8 @@ pub struct Discovery {
     pub jwks_uri: String,
     #[serde(default)]
     pub end_session_endpoint: Option<String>,
+    #[serde(default)]
+    pub revocation_endpoint: Option<String>,
 }
 
 /// Claim cần từ ID token.
@@ -42,6 +44,10 @@ pub struct IdClaims {
     /// Phiên ở IdP (có khi client bật back-channel logout).
     #[serde(default)]
     pub sid: Option<String>,
+    #[serde(default)]
+    aud: serde_json::Value,
+    #[serde(default)]
+    azp: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -81,7 +87,9 @@ struct KeyCache {
     fetched: Option<Instant>,
 }
 
-/// Lỗi khi đổi/làm mới token: IdP từ chối grant (máy bị thu hồi, code đã dùng) hay lỗi tạm thời.
+/// Lỗi khi đổi/làm mới token. Chỉ `invalid_grant` là IdP thật sự từ chối grant (code sai/đã dùng, máy bị
+/// thu hồi); mọi lỗi khác (429, `invalid_client`, 5xx, mạng) là tạm thời hoặc cấu hình — không được coi là
+/// thu hồi, kẻo xoá nhầm thiết bị.
 #[derive(Debug)]
 pub enum GrantError {
     Rejected(String),
@@ -131,18 +139,32 @@ impl Oidc {
             }
         }
         let jwks_uri = self.discovery(http).await?.jwks_uri.clone();
-        let set: JwkSet = http
-            .get(&jwks_uri)
-            .timeout(Duration::from_secs(10))
-            .send()
-            .await
-            .map_err(|e| AppError::Unavailable(format!("tải JWKS: {e}")))?
-            .json()
-            .await
-            .map_err(|e| AppError::Unavailable(format!("đọc JWKS: {e}")))?;
         let mut cache = self.keys.write().await;
-        cache.set = Some(set);
+        // Request khác vừa tải xong trong lúc chờ khoá ghi: dùng luôn.
+        if cache.fetched.is_some_and(|t| t.elapsed() < REFETCH_COOLDOWN) {
+            if let Some(jwk) = cache.set.as_ref().and_then(|s| s.find(kid)) {
+                return DecodingKey::from_jwk(jwk).map_err(|e| AppError::Internal(format!("dựng khoá: {e}")));
+            }
+            return Err(AppError::Unauthorized("không tìm thấy khoá ký".into()));
+        }
+        let fetched: Result<JwkSet, String> = async {
+            http.get(&jwks_uri)
+                .timeout(Duration::from_secs(10))
+                .send()
+                .await
+                .map_err(|e| format!("tải JWKS: {e}"))?
+                .json()
+                .await
+                .map_err(|e| format!("đọc JWKS: {e}"))
+        }
+        .await;
+        // Tải lỗi cũng tính là một lần tải (không gọi lại IdP mỗi request khi IdP sập) và dùng tạm bộ
+        // khoá cũ nếu còn khoá `kid` này.
         cache.fetched = Some(Instant::now());
+        match fetched {
+            Ok(set) => cache.set = Some(set),
+            Err(e) => tracing::warn!("JWKS: {e} — dùng bộ khoá đã có"),
+        }
         let jwk = cache
             .set
             .as_ref()
@@ -151,13 +173,14 @@ impl Oidc {
         DecodingKey::from_jwk(jwk).map_err(|e| AppError::Internal(format!("dựng khoá: {e}")))
     }
 
-    /// ID token hợp lệ cho `client_id`, đúng `nonce` của lượt đăng nhập.
+    /// ID token hợp lệ cho `client_id`, đúng `nonce` của lượt đăng nhập (`None`: token từ lần làm mới,
+    /// không mang nonce).
     pub async fn verify_id_token(
         &self,
         http: &reqwest::Client,
         token: &str,
         client_id: &str,
-        nonce: &str,
+        nonce: Option<&str>,
     ) -> Result<IdClaims, AppError> {
         let header = decode_header(token).map_err(|_| AppError::Unauthorized("ID token không hợp lệ".into()))?;
         if !matches!(header.alg, Algorithm::ES256 | Algorithm::RS256) {
@@ -172,8 +195,15 @@ impl Oidc {
         let claims = decode::<IdClaims>(token, &key, &validation)
             .map_err(|_| AppError::Unauthorized("ID token không hợp lệ hoặc hết hạn".into()))?
             .claims;
-        if claims.nonce.as_deref() != Some(nonce) {
-            return Err(AppError::Unauthorized("ID token sai nonce".into()));
+        if let Some(nonce) = nonce {
+            if claims.nonce.as_deref() != Some(nonce) {
+                return Err(AppError::Unauthorized("ID token sai nonce".into()));
+            }
+        }
+        // Nhiều audience thì `azp` phải là chính client này (OIDC Core 3.1.3.7).
+        let many = claims.aud.as_array().is_some_and(|a| a.len() > 1);
+        if many && claims.azp.as_deref() != Some(client_id) {
+            return Err(AppError::Unauthorized("ID token không dành cho client này".into()));
         }
         Ok(claims)
     }
@@ -235,10 +265,10 @@ impl Oidc {
             return Ok(TokenSet { id_token, refresh_token: tokens.refresh_token });
         }
         let error = serde_json::from_str::<TokenError>(&body).map(|e| e.error).unwrap_or_default();
-        if status.is_client_error() {
-            Err(GrantError::Rejected(if error.is_empty() { format!("HTTP {status}") } else { error }))
+        if error == "invalid_grant" {
+            Err(GrantError::Rejected(error))
         } else {
-            Err(GrantError::Unavailable(format!("HTTP {status}")))
+            Err(GrantError::Unavailable(format!("HTTP {status} {error}")))
         }
     }
 
@@ -262,6 +292,17 @@ impl Oidc {
             form.push(("client_id", client_id));
         }
         self.token_request(http, &form, secret.map(|s| (client_id, s))).await
+    }
+
+    /// Thu hồi refresh token của client native (đăng xuất trên app: grant không còn treo ở `/account`).
+    /// Lỗi chỉ log — phiên Scribe đã xoá.
+    pub async fn revoke(&self, http: &reqwest::Client, client_id: &str, refresh_token: &str) {
+        let Ok(discovery) = self.discovery(http).await else { return };
+        let Some(endpoint) = discovery.revocation_endpoint.clone() else { return };
+        let form = [("token", refresh_token), ("token_type_hint", "refresh_token"), ("client_id", client_id)];
+        if let Err(e) = http.post(&endpoint).form(&form).timeout(Duration::from_secs(10)).send().await {
+            tracing::warn!("thu hồi refresh token ở IdP lỗi: {e}");
+        }
     }
 
     /// Làm mới refresh token của client native (dùng một lần, xoay vòng).
@@ -333,22 +374,28 @@ mod tests {
                     "email": "a@b.vn", "email_verified": true, "sid": "s1" })
         };
         let good = sign(&idp, None, "k1", claims("scribe-web", "n1", now() + 300));
-        let ok = oidc.verify_id_token(&http, &good, "scribe-web", "n1").await.expect("hợp lệ");
+        let ok = oidc.verify_id_token(&http, &good, "scribe-web", Some("n1")).await.expect("hợp lệ");
         assert_eq!((ok.sub.as_str(), ok.sid.as_deref(), ok.email_verified), ("acc_1", Some("s1"), true));
 
-        assert!(oidc.verify_id_token(&http, &good, "scribe-web", "khác").await.is_err(), "sai nonce");
-        assert!(oidc.verify_id_token(&http, &good, "scribe-mobile", "n1").await.is_err(), "sai aud");
+        assert!(oidc.verify_id_token(&http, &good, "scribe-web", Some("khác")).await.is_err(), "sai nonce");
+        assert!(oidc.verify_id_token(&http, &good, "scribe-mobile", Some("n1")).await.is_err(), "sai aud");
         let expired = sign(&idp, None, "k1", claims("scribe-web", "n1", now() - 3600));
-        assert!(oidc.verify_id_token(&http, &expired, "scribe-web", "n1").await.is_err(), "hết hạn");
+        assert!(oidc.verify_id_token(&http, &expired, "scribe-web", Some("n1")).await.is_err(), "hết hạn");
         let unknown_kid = sign(&idp, None, "k9", claims("scribe-web", "n1", now() + 300));
-        assert!(oidc.verify_id_token(&http, &unknown_kid, "scribe-web", "n1").await.is_err(), "kid lạ");
+        assert!(oidc.verify_id_token(&http, &unknown_kid, "scribe-web", Some("n1")).await.is_err(), "kid lạ");
         // `alg: none` không bao giờ được nhận.
         let unsigned = format!(
             "{}.{}.",
             URL_SAFE_NO_PAD.encode(br#"{"alg":"none","kid":"k1"}"#),
             URL_SAFE_NO_PAD.encode(claims("scribe-web", "n1", now() + 300).to_string())
         );
-        assert!(oidc.verify_id_token(&http, &unsigned, "scribe-web", "n1").await.is_err(), "alg none");
+        assert!(oidc.verify_id_token(&http, &unsigned, "scribe-web", Some("n1")).await.is_err(), "alg none");
+        // Nhiều audience mà `azp` khác client: từ chối.
+        let mut multi = claims("scribe-web", "n1", now() + 300);
+        multi["aud"] = json!(["scribe-web", "other"]);
+        multi["azp"] = json!("other");
+        let multi = sign(&idp, None, "k1", multi);
+        assert!(oidc.verify_id_token(&http, &multi, "scribe-web", Some("n1")).await.is_err(), "azp");
     }
 
     #[tokio::test]

@@ -12,6 +12,7 @@ const LOGIN_ERRORS: Record<string, string> = {
 		"Email của tài khoản chưa được xác minh — đăng nhập bằng Google hoặc GitHub đã xác minh email.",
 	forbidden: "Tài khoản này chưa được phép dùng Scribe.",
 	idp: "Máy chủ đăng nhập báo lỗi — thử lại sau.",
+	busy: "Quá nhiều lượt đăng nhập — đợi một phút rồi thử lại.",
 	failed: "Đăng nhập thất bại — thử lại sau.",
 };
 

@@ -17,7 +17,13 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 const WINDOW: Duration = Duration::from_secs(60);
-const AUTH_LIMIT: u32 = 20; // /api/auth/* — login/logout
+/// Route đăng nhập thường (login, callback, cấu hình, làm mới, đăng xuất): đủ rộng cho văn phòng chung NAT.
+const AUTH_LIMIT: u32 = 120;
+/// `/api/auth/native/exchange` không cần đăng nhập mà mỗi lần gọi IdP: chặt theo IP.
+const EXCHANGE_LIMIT: u32 = 10;
+/// Mọi lần gọi token endpoint của IdP đi ra từ một IP server, IdP cho 60/phút/IP: giữ dưới mức đó để
+/// một người gửi code rác không làm hỏng đăng nhập và làm mới của mọi người.
+pub const IDP_TOKEN_BUDGET: u32 = 45;
 // protected NGOẠI TRỪ /chunk (xem api_limit). Đủ cho poll (~40/phút) + thao tác người dùng; chunk
 // streaming (upload lớn hàng trăm req / recording 60 req/phút) được MIỄN vì đã chặn bởi quota+size.
 const API_LIMIT: u32 = 300;
@@ -38,7 +44,7 @@ impl RateLimiter {
     }
 
     /// true = cho phép; false = vượt ngưỡng trong cửa sổ. Reset đếm khi hết cửa sổ.
-    fn allow(&self, key: &str, limit: u32) -> bool {
+    pub fn allow(&self, key: &str, limit: u32) -> bool {
         let now = Instant::now();
         let mut map = match self.inner.lock() {
             Ok(m) => m,
@@ -81,6 +87,24 @@ pub async fn auth_limit(
 ) -> Result<Response, AppError> {
     let ip = client_ip(req.headers());
     if !state.rate.allow(&format!("auth:{ip}"), AUTH_LIMIT) {
+        // login/callback là điều hướng của trình duyệt: trả trang đăng nhập kèm mã thay vì JSON trần.
+        let path = req.uri().path();
+        if path == "/api/auth/login" || path == "/api/auth/callback" {
+            return Ok(crate::auth::login_failed(&state, "busy"));
+        }
+        return Err(AppError::TooManyRequests("quá nhiều yêu cầu đăng nhập, thử lại sau".into()));
+    }
+    Ok(next.run(req).await)
+}
+
+/// Middleware cho `/api/auth/native/exchange` (route public, mỗi lần gọi tới IdP).
+pub async fn exchange_limit(
+    State(state): State<AppState>,
+    req: Request,
+    next: Next,
+) -> Result<Response, AppError> {
+    let ip = client_ip(req.headers());
+    if !state.rate.allow(&format!("exchange:{ip}"), EXCHANGE_LIMIT) {
         return Err(AppError::TooManyRequests("quá nhiều yêu cầu đăng nhập, thử lại sau".into()));
     }
     Ok(next.run(req).await)

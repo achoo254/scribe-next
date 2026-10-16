@@ -16,6 +16,7 @@ use crate::error::AppError;
 use crate::models::session::{self as sessions, Client};
 use crate::models::{plan, usage, user};
 use crate::oidc::{GrantError, SCOPE};
+use crate::rate_limit::IDP_TOKEN_BUDGET;
 use crate::session::{open, random_token, seal};
 use crate::state::AppState;
 use axum::extract::{Form, Query, Request, State};
@@ -34,8 +35,15 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-/// Cookie mang trạng thái một lượt đăng nhập web (gắn lượt với trình duyệt đã bắt đầu nó).
-const LOGIN_COOKIE: &str = "scribe_login";
+/// Cookie gắn lượt đăng nhập web với trình duyệt đã bắt đầu nó. Trên https là `__Host-` (Path=/, không
+/// Domain): subdomain khác của hoandat.com (vd tunnel do người dùng tự phục vụ) không ghi đè được.
+fn login_cookie_name(state: &AppState) -> &'static str {
+    if state.config.public_url.starts_with("https://") {
+        "__Host-scribe_login"
+    } else {
+        "scribe_login"
+    }
+}
 /// Phiên vừa kiểm còn hiệu lực bao lâu trong RAM; đăng xuất/thu hồi xoá ngay khỏi cache.
 const CACHE_TTL: Duration = Duration::from_secs(30);
 
@@ -86,6 +94,15 @@ fn session_cookie(state: &AppState, value: String, ttl_secs: i64) -> Cookie<'sta
         .build()
 }
 
+/// Mỗi lần gọi token endpoint của IdP trừ vào ngân sách chung của server (IdP giới hạn theo IP).
+fn take_idp_budget(state: &AppState) -> Result<(), AppError> {
+    if state.rate.allow("idp-token", IDP_TOKEN_BUDGET) {
+        Ok(())
+    } else {
+        Err(AppError::Unavailable("máy chủ đăng nhập đang bận, thử lại sau ít phút".into()))
+    }
+}
+
 fn pkce_challenge(verifier: &str) -> String {
     URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()))
 }
@@ -95,7 +112,7 @@ fn callback_url(state: &AppState) -> String {
 }
 
 /// Kết thúc lượt đăng nhập web có lỗi: về trang đăng nhập kèm mã ngắn (trang tự dịch ra câu).
-fn login_failed(state: &AppState, code: &str) -> Response {
+pub(crate) fn login_failed(state: &AppState, code: &str) -> Response {
     Redirect::to(&format!("{}/login?error={code}", state.config.public_url)).into_response()
 }
 
@@ -135,11 +152,11 @@ pub async fn login(State(state): State<AppState>, jar: CookieJar) -> Result<(Coo
         .append_pair("nonce", &nonce)
         .append_pair("code_challenge", &pkce_challenge(&verifier))
         .append_pair("code_challenge_method", "S256");
-    let cookie = Cookie::build((LOGIN_COOKIE, login_state))
+    let cookie = Cookie::build((login_cookie_name(&state), login_state))
         .http_only(true)
         .secure(state.config.public_url.starts_with("https://"))
         .same_site(SameSite::Lax)
-        .path("/api/auth")
+        .path("/")
         .max_age(time::Duration::minutes(10))
         .build();
     Ok((jar.add(cookie), Redirect::to(url.as_str())))
@@ -154,8 +171,9 @@ pub struct CallbackQuery {
 
 /// `GET /api/auth/callback` — IdP trả code: đổi, xác minh, ghép user, tạo phiên.
 pub async fn callback(State(state): State<AppState>, jar: CookieJar, Query(q): Query<CallbackQuery>) -> Response {
-    let expected = jar.get(LOGIN_COOKIE).map(|c| c.value().to_string());
-    let jar = jar.remove(Cookie::build(LOGIN_COOKIE).path("/api/auth").build());
+    let name = login_cookie_name(&state);
+    let expected = jar.get(name).map(|c| c.value().to_string());
+    let jar = jar.remove(Cookie::build(name).path("/").build());
     if let Some(error) = q.error {
         let code = if error == "access_denied" { "denied" } else { "idp" };
         return (jar, login_failed(&state, code)).into_response();
@@ -168,14 +186,15 @@ pub async fn callback(State(state): State<AppState>, jar: CookieJar, Query(q): Q
         return (jar, login_failed(&state, "expired")).into_response();
     }
     match finish_web_login(&state, &code, &login_state).await {
-        Ok((token, ttl)) => {
-            let jar = jar.add(session_cookie(&state, token, ttl));
+        Ok((token, max_age)) => {
+            let jar = jar.add(session_cookie(&state, token, max_age));
             (jar, Redirect::to(&format!("{}/", state.config.public_url))).into_response()
         }
         Err(AppError::Forbidden(m)) => {
             let code = if m.contains("xác minh") { "unverified" } else { "forbidden" };
             (jar, login_failed(&state, code)).into_response()
         }
+        Err(AppError::Unavailable(_)) => (jar, login_failed(&state, "idp")).into_response(),
         Err(e) => {
             tracing::warn!("đăng nhập web lỗi: {e:?}");
             (jar, login_failed(&state, "failed")).into_response()
@@ -188,22 +207,31 @@ async fn finish_web_login(state: &AppState, code: &str, login_state: &str) -> Re
         .await?
         .ok_or_else(|| AppError::Unauthorized("lượt đăng nhập đã hết hạn".into()))?;
     let client_id = &state.config.oidc_web_client_id;
+    take_idp_budget(state)?;
     let tokens = state
         .oidc
         .exchange_code(&state.http, client_id, Some(&state.oidc_web_secret), code, &saved.code_verifier, &callback_url(state))
         .await
         .map_err(grant_error)?;
-    let claims = state.oidc.verify_id_token(&state.http, &tokens.id_token, client_id, &saved.nonce).await?;
+    let claims = state.oidc.verify_id_token(&state.http, &tokens.id_token, client_id, Some(&saved.nonce)).await?;
     let user_id = admit(state, &claims).await?;
     let (token, _) = sessions::create(&state.db, &user_id, Client::Web, claims.sid.as_deref(), None).await?;
     audit::record(state, Some(&user_id), "auth.login", doc! { "client": "web" });
-    Ok((token, sessions::WEB_TTL_S))
+    // Cookie sống tới trần trượt 7 ngày; hạn thật do server giữ (`sessions.expiresAt`, trượt 12 giờ).
+    Ok((token, sessions::WEB_MAX_AGE_S))
 }
 
+/// Chi tiết lỗi của IdP chỉ ghi log; người dùng nhận câu ngắn.
 fn grant_error(e: GrantError) -> AppError {
     match e {
-        GrantError::Rejected(m) => AppError::Unauthorized(format!("máy chủ đăng nhập từ chối: {m}")),
-        GrantError::Unavailable(m) => AppError::Unavailable(format!("máy chủ đăng nhập không phản hồi: {m}")),
+        GrantError::Rejected(m) => {
+            tracing::info!("IdP từ chối grant: {m}");
+            AppError::Unauthorized("đăng nhập không còn hiệu lực, đăng nhập lại".into())
+        }
+        GrantError::Unavailable(m) => {
+            tracing::warn!("IdP lỗi: {m}");
+            AppError::Unavailable("máy chủ đăng nhập không phản hồi, thử lại sau".into())
+        }
     }
 }
 
@@ -238,12 +266,13 @@ pub async fn native_exchange(
         return Err(AppError::BadRequest("thiếu PKCE hoặc nonce".into()));
     }
     let client_id = &state.config.oidc_mobile_client_id;
+    take_idp_budget(&state)?;
     let tokens = state
         .oidc
         .exchange_code(&state.http, client_id, None, &body.code, &body.code_verifier, &state.config.oidc_mobile_redirect_uri)
         .await
         .map_err(grant_error)?;
-    let claims = state.oidc.verify_id_token(&state.http, &tokens.id_token, client_id, &body.nonce).await?;
+    let claims = state.oidc.verify_id_token(&state.http, &tokens.id_token, client_id, Some(&body.nonce)).await?;
     let refresh = tokens
         .refresh_token
         .ok_or_else(|| AppError::Internal("IdP không cấp refresh token cho app".into()))?;
@@ -264,41 +293,65 @@ pub struct DeviceBody {
     device_token: String,
 }
 
-/// `POST /api/auth/native/refresh` — phiên mới cho thiết bị sau khi IdP còn công nhận máy. Mỗi thiết bị
-/// chỉ một lần làm mới chạy cùng lúc (refresh token IdP dùng một lần): lần trùng nhận 409, app thử lại.
+/// `POST /api/auth/native/refresh` — phiên mới cho thiết bị khi IdP còn công nhận máy và tài khoản vẫn
+/// được phép. Mỗi thiết bị chỉ một lần làm mới chạy cùng lúc (refresh token IdP dùng một lần): lần trùng
+/// nhận 409 và app chờ rồi dùng cookie lần kia cấp; thiết bị không còn thì 401.
 pub async fn native_refresh(
     State(state): State<AppState>,
     jar: CookieJar,
     Json(body): Json<DeviceBody>,
 ) -> Result<(CookieJar, Json<Value>), AppError> {
-    let Some(device) = sessions::lock_device(&state.db, &body.device_token).await? else {
-        return Err(AppError::Conflict("đang làm mới phiên, thử lại sau giây lát".into()));
+    let device = match sessions::lock_device(&state.db, &body.device_token).await? {
+        sessions::DeviceLock::Locked(device) => device,
+        sessions::DeviceLock::Busy => return Err(AppError::Conflict("đang làm mới phiên, thử lại sau giây lát".into())),
+        sessions::DeviceLock::Missing => {
+            return Err(AppError::Unauthorized("máy đã bị đăng xuất, đăng nhập lại".into()));
+        }
+    };
+    let revoke = |state: &AppState, device: &sessions::Device| {
+        let (state, device_id) = (state.clone(), device.id.clone());
+        async move {
+            let removed = sessions::delete_device(&state.db, &device_id).await?;
+            state.session_cache.forget(&removed);
+            Ok::<(), AppError>(())
+        }
     };
     let Some(refresh) = open(&state.session_key, &device.refresh_sealed) else {
-        let removed = sessions::delete_device(&state.db, &device.id).await?;
-        state.session_cache.forget(&removed);
+        revoke(&state, &device).await?;
         return Err(AppError::Unauthorized("phiên của máy không còn dùng được, đăng nhập lại".into()));
     };
-    match state.oidc.refresh(&state.http, &state.config.oidc_mobile_client_id, &refresh).await {
-        Ok(tokens) => {
-            let sealed = tokens.refresh_token.as_deref().map(|r| seal(&state.session_key, r));
-            // Ghi token mới TRƯỚC khi nhả khoá (token cũ đã hết hiệu lực ở IdP).
-            sessions::unlock_device(&state.db, &device.id, sealed.as_deref()).await?;
-            let (token, _) = sessions::create(&state.db, &device.user_id, Client::Mobile, None, Some(&device.id)).await?;
-            Ok((jar.add(session_cookie(&state, token, sessions::MOBILE_TTL_S)), Json(json!({ "ok": true }))))
-        }
-        Err(GrantError::Rejected(reason)) => {
-            // Máy bị thu hồi ở /account, hoặc grant hết hạn: bỏ thiết bị, app phải đăng nhập lại.
-            let removed = sessions::delete_device(&state.db, &device.id).await?;
-            state.session_cache.forget(&removed);
-            audit::record(&state, Some(&device.user_id), "auth.device_revoked", doc! { "reason": reason });
-            Err(AppError::Unauthorized("máy đã bị đăng xuất, đăng nhập lại".into()))
-        }
-        Err(GrantError::Unavailable(m)) => {
-            sessions::unlock_device(&state.db, &device.id, None).await?;
-            Err(AppError::Unavailable(format!("máy chủ đăng nhập không phản hồi: {m}")))
-        }
+    if let Err(e) = take_idp_budget(&state) {
+        sessions::unlock_device(&state.db, &device, None).await?;
+        return Err(e);
     }
+    let client_id = &state.config.oidc_mobile_client_id;
+    let tokens = match state.oidc.refresh(&state.http, client_id, &refresh).await {
+        Ok(tokens) => tokens,
+        Err(GrantError::Rejected(reason)) => {
+            // Máy bị thu hồi ở /account hoặc grant hết hạn: bỏ thiết bị, app phải đăng nhập lại.
+            revoke(&state, &device).await?;
+            audit::record(&state, Some(&device.user_id), "auth.device_revoked", doc! { "reason": reason });
+            return Err(AppError::Unauthorized("máy đã bị đăng xuất, đăng nhập lại".into()));
+        }
+        Err(e) => {
+            sessions::unlock_device(&state.db, &device, None).await?;
+            return Err(grant_error(e));
+        }
+    };
+    // Ghi token mới TRƯỚC mọi kiểm tra khác: token cũ đã chết ở IdP.
+    let sealed = tokens.refresh_token.as_deref().map(|r| seal(&state.session_key, r));
+    sessions::unlock_device(&state.db, &device, sealed.as_deref()).await?;
+
+    // Tài khoản vẫn phải là của máy này và vẫn được phép (allowlist có thể đã đổi).
+    let claims = state.oidc.verify_id_token(&state.http, &tokens.id_token, client_id, None).await?;
+    let owner = user::find_id_by_sub(&state.db, &claims.sub).await?;
+    if owner.as_deref() != Some(device.user_id.as_str()) || admit(&state, &claims).await.is_err() {
+        revoke(&state, &device).await?;
+        audit::record(&state, Some(&device.user_id), "auth.device_revoked", doc! { "reason": "not_allowed" });
+        return Err(AppError::Unauthorized("tài khoản không còn được phép, đăng nhập lại".into()));
+    }
+    let (token, _) = sessions::create(&state.db, &device.user_id, Client::Mobile, None, Some(&device.id)).await?;
+    Ok((jar.add(session_cookie(&state, token, sessions::MOBILE_TTL_S)), Json(json!({ "ok": true }))))
 }
 
 // MARK: Đăng xuất
@@ -324,6 +377,12 @@ pub async fn logout(State(state): State<AppState>, jar: CookieJar, body: Option<
     }
     if let Some(device_token) = body.and_then(|Json(b)| b.device_token) {
         let device_id = crate::session::hash_token(&device_token);
+        // Thu hồi grant ở IdP để máy không còn treo ở /account.
+        if let Ok(Some(sealed)) = sessions::device_refresh(&state.db, &device_id).await {
+            if let Some(refresh) = open(&state.session_key, &sealed) {
+                state.oidc.revoke(&state.http, &state.config.oidc_mobile_client_id, &refresh).await;
+            }
+        }
         if let Ok(removed) = sessions::delete_device(&state.db, &device_id).await {
             state.session_cache.forget(&removed);
         }
@@ -354,8 +413,13 @@ pub async fn backchannel_logout(State(state): State<AppState>, Form(form): Form<
             Ok(c) => c,
             Err(_) => return (axum::http::StatusCode::BAD_REQUEST, "invalid logout token").into_response(),
         };
-    if !sessions::first_seen_jti(&state.db, &claims.jti).await {
-        return no_store_ok();
+    match sessions::seen_jti(&state.db, &claims.jti).await {
+        Ok(true) => return no_store_ok(),
+        Ok(false) => {}
+        Err(e) => {
+            tracing::error!("back-channel logout lỗi: {e:?}");
+            return (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "error").into_response();
+        }
     }
     let removed = match (&claims.sid, &claims.sub) {
         (Some(sid), _) => sessions::delete_web_by_idp_sid(&state.db, sid).await,
@@ -369,6 +433,9 @@ pub async fn backchannel_logout(State(state): State<AppState>, Form(form): Form<
     match removed {
         Ok(ids) => {
             state.session_cache.forget(&ids);
+            if let Err(e) = sessions::record_jti(&state.db, &claims.jti).await {
+                tracing::warn!("ghi jti lỗi (phiên đã xoá): {e:?}");
+            }
             audit::record(&state, None, "auth.backchannel_logout", doc! { "sessions": ids.len() as i64 });
             no_store_ok()
         }
@@ -436,6 +503,13 @@ pub async fn require_auth(
             let session = sessions::find(&state.db, &token)
                 .await?
                 .ok_or_else(|| AppError::Unauthorized("phiên đã hết hạn, đăng nhập lại".into()))?;
+            // Allowlist có thể đã đổi từ lúc đăng nhập (build mới): kiểm lại mỗi lần cache hết hạn.
+            let email = user::find_profile(&state.db, &session.user_id).await?.map(|p| p.email).unwrap_or_default();
+            if !state.config.email_allowed(&email) {
+                let removed = sessions::delete_by_user(&state.db, &session.user_id, None).await?;
+                state.session_cache.forget(&removed);
+                return Err(AppError::Unauthorized("tài khoản không còn được phép".into()));
+            }
             state.session_cache.put(session.id, session.user_id.clone());
             session.user_id
         }

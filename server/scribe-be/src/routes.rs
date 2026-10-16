@@ -55,15 +55,24 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/auth/login", get(auth::login))
         .route("/api/auth/callback", get(auth::callback))
         .route("/api/auth/native/config", get(auth::native_config))
-        .route("/api/auth/native/exchange", post(auth::native_exchange))
         .route("/api/auth/native/refresh", post(auth::native_refresh))
         .route("/api/auth/logout", post(auth::logout))
-        .route("/api/auth/backchannel-logout", post(auth::backchannel_logout))
         .route_layer(from_fn_with_state(state.clone(), rate_limit::auth_limit));
+
+    // Đổi code của app: route public, mỗi lần gọi IdP ⟹ giới hạn chặt riêng.
+    let exchange_routes = Router::new()
+        .route("/api/auth/native/exchange", post(auth::native_exchange))
+        .route_layer(from_fn_with_state(state.clone(), rate_limit::exchange_limit));
+
+    // Back-channel logout: IdP gọi (logout token có chữ ký), không giới hạn tần suất — bị 429 thì phiên
+    // web sống tiếp sau khi người dùng đã đăng xuất ở IdP.
+    let backchannel = Router::new().route("/api/auth/backchannel-logout", post(auth::backchannel_logout));
 
     let public = Router::new()
         .route("/api/health", get(health))
-        .merge(auth_routes);
+        .merge(auth_routes)
+        .merge(exchange_routes)
+        .merge(backchannel);
 
     Router::new()
         .merge(public)

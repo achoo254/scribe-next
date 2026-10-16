@@ -206,6 +206,16 @@ pub struct Device {
     pub id: String,
     pub user_id: String,
     pub refresh_sealed: String,
+    /// Mã của lần giữ khoá này: chỉ chính nó nhả được khoá.
+    pub lock: String,
+}
+
+pub enum DeviceLock {
+    Locked(Device),
+    /// Một lần làm mới khác của máy đang chạy.
+    Busy,
+    /// Không có thiết bị (đã thu hồi, đã đăng xuất): app phải đăng nhập lại.
+    Missing,
 }
 
 /// Lưu thiết bị mới, trả token thiết bị cho app (chỉ băm được lưu).
@@ -220,44 +230,68 @@ pub async fn create_device(db: &Database, user_id: &str, refresh_sealed: &str) -
             "createdAt": DateTime::now(),
             "refreshedAt": DateTime::now(),
             "refreshingAt": null,
+            "lock": null,
         })
         .await
         .map_err(internal("lưu thiết bị"))?;
     Ok((token, id))
 }
 
-/// Giữ quyền làm mới của thiết bị. `None`: không có thiết bị, hoặc một lần làm mới khác đang chạy.
-pub async fn lock_device(db: &Database, device_token: &str) -> Result<Option<Device>, AppError> {
+/// Giữ quyền làm mới của thiết bị (một lần mỗi lúc: refresh token của IdP dùng một lần).
+pub async fn lock_device(db: &Database, device_token: &str) -> Result<DeviceLock, AppError> {
     let id = hash_token(device_token);
-    let d = db
-        .collection::<Document>(DEVICES)
+    let lock = random_token();
+    let coll = db.collection::<Document>(DEVICES);
+    let d = coll
         .find_one_and_update(
             doc! { "_id": &id, "$or": [{ "refreshingAt": null }, { "refreshingAt": { "$lt": after(-REFRESH_LOCK_S) } }] },
-            doc! { "$set": { "refreshingAt": DateTime::now() } },
+            doc! { "$set": { "refreshingAt": DateTime::now(), "lock": &lock } },
         )
         .await
         .map_err(internal("khoá thiết bị"))?;
-    Ok(d.and_then(|d| {
+    let Some(d) = d else {
+        let exists = coll.count_documents(doc! { "_id": &id }).await.map_err(internal("đọc thiết bị"))? > 0;
+        return Ok(if exists { DeviceLock::Busy } else { DeviceLock::Missing });
+    };
+    let device = (|| {
         Some(Device {
             id: id.clone(),
             user_id: d.get_str("userId").ok()?.to_string(),
             refresh_sealed: d.get_str("refresh").ok()?.to_string(),
+            lock: lock.clone(),
         })
-    }))
+    })();
+    Ok(device.map_or(DeviceLock::Missing, DeviceLock::Locked))
 }
 
-/// Ghi refresh token mới (hoặc giữ cũ khi lỗi tạm) và nhả khoá.
-pub async fn unlock_device(db: &Database, device_id: &str, refresh_sealed: Option<&str>) -> Result<(), AppError> {
-    let mut set = doc! { "refreshingAt": null };
+/// Ghi refresh token mới (hoặc giữ cũ khi lỗi tạm) và nhả khoá — chỉ khi vẫn còn giữ khoá này. Mất khoá
+/// (quá hạn, lần khác đã giữ) mà có token mới thì vẫn phải ghi: token cũ đã chết ở IdP.
+pub async fn unlock_device(db: &Database, device: &Device, refresh_sealed: Option<&str>) -> Result<(), AppError> {
+    let mut set = doc! { "refreshingAt": null, "lock": null };
     if let Some(r) = refresh_sealed {
         set.insert("refresh", r);
         set.insert("refreshedAt", DateTime::now());
     }
+    let filter = if refresh_sealed.is_some() {
+        doc! { "_id": &device.id }
+    } else {
+        doc! { "_id": &device.id, "lock": &device.lock }
+    };
     db.collection::<Document>(DEVICES)
-        .update_one(doc! { "_id": device_id }, doc! { "$set": set })
+        .update_one(filter, doc! { "$set": set })
         .await
         .map(|_| ())
         .map_err(internal("nhả khoá thiết bị"))
+}
+
+/// Refresh token (đã mã hoá) của thiết bị — để thu hồi ở IdP khi đăng xuất.
+pub async fn device_refresh(db: &Database, device_id: &str) -> Result<Option<String>, AppError> {
+    let d = db
+        .collection::<Document>(DEVICES)
+        .find_one(doc! { "_id": device_id })
+        .await
+        .map_err(internal("đọc thiết bị"))?;
+    Ok(d.and_then(|d| d.get_str("refresh").ok().map(str::to_string)))
 }
 
 /// Xoá thiết bị và mọi phiên của nó (máy bị thu hồi ở IdP, hoặc đăng xuất trên app).
@@ -268,9 +302,22 @@ pub async fn delete_device(db: &Database, device_id: &str) -> Result<Vec<String>
 
 // MARK: Logout token
 
-/// `true` lần đầu thấy `jti` (lần sau là phát lại).
-pub async fn first_seen_jti(db: &Database, jti: &str) -> bool {
-    db.collection::<Document>(JTIS).insert_one(doc! { "_id": jti, "at": DateTime::now() }).await.is_ok()
+/// `jti` của logout token đã xử lý xong chưa (phát lại thì bỏ qua).
+pub async fn seen_jti(db: &Database, jti: &str) -> Result<bool, AppError> {
+    db.collection::<Document>(JTIS)
+        .count_documents(doc! { "_id": jti })
+        .await
+        .map(|n| n > 0)
+        .map_err(internal("đọc jti"))
+}
+
+/// Ghi `jti` SAU khi đã xoá phiên: xoá lỗi thì IdP gửi lại và lần sau vẫn xử lý.
+pub async fn record_jti(db: &Database, jti: &str) -> Result<(), AppError> {
+    match db.collection::<Document>(JTIS).insert_one(doc! { "_id": jti, "at": DateTime::now() }).await {
+        Ok(_) => Ok(()),
+        Err(e) if crate::models::user::is_duplicate_key(&e) => Ok(()),
+        Err(e) => Err(AppError::Internal(format!("ghi jti: {e}"))),
+    }
 }
 
 #[cfg(test)]
@@ -305,15 +352,29 @@ mod tests {
 
         // Hai lần làm mới đồng thời: chỉ một lần giữ được khoá.
         let (a, b) = tokio::join!(lock_device(&db, &device_token), lock_device(&db, &device_token));
-        assert_eq!([a.expect("a").is_some(), b.expect("b").is_some()].iter().filter(|x| **x).count(), 1);
-        unlock_device(&db, &device_id, Some("sealed-2")).await.expect("nhả");
-        assert_eq!(lock_device(&db, &device_token).await.expect("khoá").map(|d| d.refresh_sealed), Some("sealed-2".into()));
+        let (a, b) = (a.expect("a"), b.expect("b"));
+        let locked = [&a, &b].into_iter().filter(|l| matches!(l, DeviceLock::Locked(_))).count();
+        let busy = [&a, &b].into_iter().filter(|l| matches!(l, DeviceLock::Busy)).count();
+        assert_eq!((locked, busy), (1, 1));
+        let held = match (a, b) {
+            (DeviceLock::Locked(d), _) | (_, DeviceLock::Locked(d)) => d,
+            _ => unreachable!("một lần giữ được khoá"),
+        };
+        unlock_device(&db, &held, Some("sealed-2")).await.expect("nhả");
+        match lock_device(&db, &device_token).await.expect("khoá") {
+            DeviceLock::Locked(d) => assert_eq!(d.refresh_sealed, "sealed-2"),
+            _ => panic!("phải giữ được khoá sau khi nhả"),
+        }
 
         // Thu hồi thiết bị xoá phiên của nó.
         assert_eq!(delete_device(&db, &device_id).await.expect("xoá").len(), 1);
         assert!(find(&db, &mobile).await.expect("tìm").is_none());
-        assert!(first_seen_jti(&db, &format!("jti-{user}")).await);
-        assert!(!first_seen_jti(&db, &format!("jti-{user}")).await);
+        assert!(matches!(lock_device(&db, &device_token).await.expect("khoá"), DeviceLock::Missing));
+        let jti = format!("jti-{user}");
+        assert!(!seen_jti(&db, &jti).await.expect("đọc"));
+        record_jti(&db, &jti).await.expect("ghi");
+        record_jti(&db, &jti).await.expect("ghi lại không lỗi");
+        assert!(seen_jti(&db, &jti).await.expect("đọc"));
         delete_by_user(&db, &user, None).await.expect("dọn");
     }
 }
