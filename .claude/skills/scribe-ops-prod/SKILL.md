@@ -1,6 +1,6 @@
 ---
 name: scribe-ops-prod
-description: Tra cứu thông tin và vận hành Scribe (one-scribe) trên PRODUCTION (scribe.inetdev.io.vn, server dùng chung 103.72.98.65 cổng SSH 24700, systemd onescribe-be cổng 127.0.0.1:8787, binary /opt/onescribe-be, FE /var/www/onescribe/dist, database onescribe trên mongod chung 27017). Chỉ đường đọc docs/deploy-web-production.md — credential ở $ALL_IN_ONE_STAGING_DEV entry SSH_SERVER_STAGING, cấu hình prod ở .env.production (không commit), SSH/mongosh qua scripts/ của skill, deploy bằng cargo zigbuild + npm run build theo §6. Kích hoạt khi user nhắc "prod", "production", "scribe.inetdev.io.vn", "server .65", "SSH prod", "mongosh prod", "log prod", "journal prod", "deploy prod", "rollback", "onescribe-be", "backup Scribe", "audit_events", "hàng đợi chép lời prod". KHÔNG dùng cho dev local (localhost:5173/8787, Mongo dev lab 176, cargo run, npm run dev) và không dùng cho app iPhone cài qua cáp (docs/ios-app.md).
+description: Tra cứu thông tin và vận hành Scribe (one-scribe) trên PRODUCTION (scribe.inetdev.io.vn, server dùng chung 103.72.98.65 cổng SSH 24700, systemd scribe-be cổng 127.0.0.1:8787, binary /opt/scribe-be, FE /var/www/scribe/dist, database scribe trên mongod chung 27017; bản cũ scribe-be/db onescribe để nguyên chờ dọn). Chỉ đường đọc docs/deploy-web-production.md — credential ở $ALL_IN_ONE_STAGING_DEV entry SSH_SERVER_STAGING, cấu hình prod ở .env.production (không commit), SSH/mongosh qua scripts/ của skill, deploy bằng cargo zigbuild + npm run build theo §6. Kích hoạt khi user nhắc "prod", "production", "scribe.inetdev.io.vn", "server .65", "SSH prod", "mongosh prod", "log prod", "journal prod", "deploy prod", "rollback", "scribe-be", "scribe-be", "backup Scribe", "audit_events", "hàng đợi chép lời prod". KHÔNG dùng cho dev local (localhost:5173/8787, Mongo dev lab 176, cargo run, npm run dev) và không dùng cho app iPhone cài qua cáp (docs/ios-app.md).
 ---
 
 # Scribe Ops — Production
@@ -52,7 +52,7 @@ của máy edge iNET, không phải môi trường của Scribe).
 
 | Dấu hiệu | Môi trường | Ai lo |
 |---|---|---|
-| `scribe.inetdev.io.vn`, `103.72.98.65`, `onescribe-be`, `/opt/onescribe-be`, `/var/www/onescribe`, db `onescribe` trên `.65` | **Scribe prod** | skill này |
+| `scribe.inetdev.io.vn`, `103.72.98.65`, `scribe-be`, `/opt/scribe-be`, `/var/www/scribe`, db `scribe` trên `.65` (tên cũ `onescribe*` từ trước 16/10/2026) | **Scribe prod** | skill này |
 | `localhost:5173` / `:8787`, `.env.development`, Mongo `192.168.122.176` (lab 176), `cargo run`, `npm run dev` | Dev local | `README.md` §Chạy dev, skill `inet-lab-ops` cho box lab |
 | App iPhone cài qua cáp (`npm run ios:device`) | Bản build trên máy người dùng, nói chuyện với prod | `docs/ios-app.md` |
 | `localman.hoandat.com`, `auth.hoandat.com`, pm2 `localman-api`/`hoandat-auth`, `tunelo`, mongod `27018` | Repo khác trên cùng máy | skill của repo đó; không đụng |
@@ -62,12 +62,12 @@ app trên máy, không chỉ Scribe.
 
 ## 1. Luật cứng (vi phạm = sự cố thật)
 
-1. **Mặc định CHỈ ĐỌC.** Deploy, `systemctl restart|stop onescribe-be`, thay binary/FE, sửa systemd unit hay nginx
-   conf, ghi Mongo, `mongorestore`, xoá file trong `/opt/onescribe-be/data` ⟹ chỉ làm khi user yêu cầu **tường minh
+1. **Mặc định CHỈ ĐỌC.** Deploy, `systemctl restart|stop scribe-be`, thay binary/FE, sửa systemd unit hay nginx
+   conf, ghi Mongo, `mongorestore`, xoá file trong `/opt/scribe-be/data` ⟹ chỉ làm khi user yêu cầu **tường minh
    cho chính lần đó**. Không tự đề xuất deploy prod vào "việc còn lại".
-2. **Chỉ chạm thứ của Scribe.** Chỉ `systemctl … onescribe-be`; không đụng service/pm2 của app khác; không reload
+2. **Chỉ chạm thứ của Scribe.** Chỉ `systemctl … scribe-be`; không đụng service/pm2 của app khác; không reload
    nginx khi chưa `nginx -t`; chỉ THÊM server block của Scribe, không sửa vhost khác.
-3. **DB `onescribe` nằm trên mongod CHUNG cổng 27017** (cùng các db của app khác). Chỉ truy vấn db `onescribe` qua
+3. **DB `scribe` nằm trên mongod CHUNG cổng 27017** (cùng các db của app khác). Chỉ truy vấn db `scribe` qua
    `scripts/prod-mongosh.sh`; không `dropDatabase`, không đụng db khác, không đổi cấu hình mongod. Cổng 27017 mở ra
    ngoài và mật khẩu chia sẻ là **cố ý** (team kết nối trực tiếp) — không tự firewall/rotate.
 4. **Restart backend khi đang chép lời làm tốn tiền:** lượt dở chạy lại từ đầu và audio gửi lại bị OpenAI tính lần
@@ -79,7 +79,7 @@ app trên máy, không chỉ Scribe.
    build + deploy lại. Không `strings` binary để đọc cấu hình.
 7. **KHÔNG xử lý dữ liệu nặng trên .65**: ~7,5 GB RAM, còn trống khoảng 3 GB cho cả máy (đo 16/10/2026); unit có
    `MemoryMax=1G`. Truy vấn có projection/`limit`, log lọc tại nguồn (`journalctl … | grep`).
-8. **Không in bí mật** (`MONGO_URI`, private key SSH, session key `/opt/onescribe-be/.session-key`, key OpenAI của
+8. **Không in bí mật** (`MONGO_URI`, private key SSH, session key `/opt/scribe-be/.session-key`, key OpenAI của
    server ở tệp `OPENAI_KEY_PATH`, chủ sở hữu giữ bản gốc ở `$ACCESS_TOKENS_JSON` mục `api.openai.com`): đọc vào biến, truyền qua env/stdin chứ không qua argv; `.env.production` chỉ liệt kê tên biến
    (`sed 's/=.*//' .env.production`).
 9. **Chọn đúng tệp credential:** máy .65 nằm trong `$ALL_IN_ONE_STAGING_DEV`, entry `SSH_SERVER_STAGING`; **không** có
@@ -118,10 +118,10 @@ Tìm nhanh tiêu đề: `grep -n '^#' docs/deploy-web-production.md`.
 2. **Trên server, chỉ đọc** (từ gốc repo; `S=.claude/skills/scribe-ops-prod/scripts`):
 
    ```bash
-   $S/prod-ssh.sh 'systemctl is-active onescribe-be; systemctl show onescribe-be -p NRestarts -p ActiveEnterTimestamp' </dev/null
-   $S/prod-ssh.sh 'journalctl -u onescribe-be --since "-1 hour" --no-pager -o cat | grep -E "ERROR|WARN" | tail -50' </dev/null
-   $S/prod-ssh.sh 'journalctl -u onescribe-be --since "-1 hour" -o cat | grep "access: request" | tail -50' </dev/null
-   $S/prod-ssh.sh 'free -h; df -h /; ls -d /root/onescribe-backup-*' </dev/null
+   $S/prod-ssh.sh 'systemctl is-active scribe-be; systemctl show scribe-be -p NRestarts -p ActiveEnterTimestamp' </dev/null
+   $S/prod-ssh.sh 'journalctl -u scribe-be --since "-1 hour" --no-pager -o cat | grep -E "ERROR|WARN" | tail -50' </dev/null
+   $S/prod-ssh.sh 'journalctl -u scribe-be --since "-1 hour" -o cat | grep "access: request" | tail -50' </dev/null
+   $S/prod-ssh.sh 'free -h; df -h /; ls -d /root/scribe-backup-* /root/onescribe-backup-*' </dev/null
    ```
 
 3. **Dữ liệu** (script mongosh chỉ đọc, bắt đầu thẳng bằng truy vấn trên `db`):
@@ -147,10 +147,14 @@ Tìm nhanh tiêu đề: `grep -n '^#' docs/deploy-web-production.md`.
   usage [--email …]`; đối soát `--recompute` (chỉ xem), `--apply` là thao tác ghi. Cấp gói `admin set-plan` cũng là ghi.
 - **Chép lời tạm ngưng toàn hệ thống** (503 "Chép lời đang tạm ngưng"): key OpenAI hỏng hoặc hết credit — tìm
   `transcript.key_invalid` trong `audit_events` và dòng "key OpenAI của server không dùng được" trong journal.
-- **Đĩa:** dữ liệu người dùng ở `/opt/onescribe-be/data/<userId>/` (`recordings/`, `uploads/`, `outputs/`, `tmp/*.part`).
+- **Đĩa:** dữ liệu người dùng ở `/opt/scribe-be/data/<userId>/` (`recordings/`, `uploads/`, `outputs/`, `tmp/*.part`).
 - **`lsof -ti :PORT` liệt kê cả client** — dùng `ss -ltnp` hoặc `-sTCP:LISTEN` trước khi kết luận hay kill gì.
-- **Bản sao lưu** nằm ở `/root/onescribe-backup-<YYYYMMDD-HHMMSS>/` trên chính .65 (`onescribe-be.prev`, `dist/`,
-  dump Mongo). Không có cron backup cho Scribe.
+- **Bản sao lưu** nằm ở `/root/scribe-backup-<YYYYMMDD-HHMMSS>/` trên chính .65 (`scribe-be.prev`, `dist/`,
+  dump Mongo). Bản trước 16/10/2026 nằm ở `/root/onescribe-backup-*`. Không có cron backup cho Scribe.
+- **Đổi tên 16/10/2026 12:43:** db `onescribe` → `scribe` (user Mongo `scribe`, chỉ `readWrite`+`dbAdmin` trên `scribe`),
+  `onescribe-be` → `scribe-be` (user hệ thống `scribe`). Bản cũ (`onescribe-be` disabled, db `onescribe`,
+  `/opt/onescribe-be`, `/var/www/onescribe`) để nguyên làm đường lùi tới khi user cho dọn. Tạo user/db Mongo mới cần
+  tài khoản quản trị `mongo_admin_*` của entry `SSH_SERVER_STAGING` (mật khẩu qua stdin vào tệp 600, không argv).
 - **Máy dev:** hook của Claude chặn lệnh có chữ `target` (đường dẫn build) ⟹ build prod với
   `CARGO_TARGET_DIR=<thư mục scratch>`. `tar` trên macOS kèm xattr (cảnh báo `LIBARCHIVE.xattr` ở server, vô hại) ⟹
   nén bằng `COPYFILE_DISABLE=1 tar --no-xattrs …`, giải nén bằng `tar --no-same-owner` và `rsync --chown=root:root`
@@ -162,7 +166,7 @@ Tìm nhanh tiêu đề: `grep -n '^#' docs/deploy-web-production.md`.
 ## 5. Kết luận từ dữ liệu prod
 
 Kết quả âm tính (*rỗng / 0 / không thấy lỗi*) mặc định là **chưa kết luận được** tới khi trả lời đủ: đã đọc đúng nguồn
-chưa (đúng db `onescribe` chứ không phải db khác trên cùng mongod, đúng unit `onescribe-be`), phạm vi thời gian nào,
+chưa (đúng db `scribe` chứ không phải db khác trên cùng mongod, đúng unit `scribe-be`), phạm vi thời gian nào,
 nguồn đó có thật sự ghi loại sự kiện này không (chunk upload thành công chỉ log mức debug; `/api/health` không log).
 Báo phép đo đã làm trước, rồi mới tới kết quả. Còn mắt xích chưa đo thì gọi là giả thuyết.
 
@@ -184,8 +188,8 @@ Báo phép đo đã làm trước, rồi mới tới kết quả. Còn mắt xí
 
   ```bash
   TS=$(date +%Y%m%d-%H%M%S)
-  $S/prod-ssh.sh "set -e; B=/root/onescribe-backup-$TS; mkdir -p \$B; chmod 700 \$B
-    cp -p $DEPLOY_APP_DIR/$DEPLOY_SERVICE \$B/onescribe-be.prev; cp -a $DEPLOY_WEB_ROOT \$B/dist" </dev/null
+  $S/prod-ssh.sh "set -e; B=/root/scribe-backup-$TS; mkdir -p \$B; chmod 700 \$B
+    cp -p $DEPLOY_APP_DIR/$DEPLOY_SERVICE \$B/scribe-be.prev; cp -a $DEPLOY_WEB_ROOT \$B/dist" </dev/null
   ```
 
   Hàng đợi rỗng và dump `transcripts` cần `MONGO_URI` — chạy qua `prod-mongosh.sh` (đếm) hoặc truyền URI qua stdin
@@ -196,10 +200,10 @@ Báo phép đo đã làm trước, rồi mới tới kết quả. Còn mắt xí
   `docs/deploy-web-production.md` §Deploy (làm tay). So `sha256sum` binary hai đầu.
 - **Nghiệm thu:** §Verify sau deploy + `/api/health`, `NRestarts`, journal không có `ERROR` mới sau 30 phút; FE trả
   đúng `assets/index-*.js` vừa build.
-- **Rollback code:** `install -o $DEPLOY_USER -g $DEPLOY_USER -m 700 /root/onescribe-backup-<ts>/onescribe-be.prev
-  $DEPLOY_APP_DIR/$DEPLOY_SERVICE.new && mv -f … && systemctl restart onescribe-be`; FE: `rsync -a --delete
-  /root/onescribe-backup-<ts>/dist/ $DEPLOY_WEB_ROOT/`. Rollback code không đảo ngược dữ liệu (bản cũ bỏ qua
+- **Rollback code:** `install -o $DEPLOY_USER -g $DEPLOY_USER -m 700 /root/scribe-backup-<ts>/scribe-be.prev
+  $DEPLOY_APP_DIR/$DEPLOY_SERVICE.new && mv -f … && systemctl restart scribe-be`; FE: `rsync -a --delete
+  /root/scribe-backup-<ts>/dist/ $DEPLOY_WEB_ROOT/`. Rollback code không đảo ngược dữ liệu (bản cũ bỏ qua
   `transcript_docs`).
-- **Khôi phục dữ liệu** chỉ khi dữ liệu hỏng và user đồng ý: `mongorestore --drop --nsInclude "onescribe.<coll>"` từ
+- **Khôi phục dữ liệu** chỉ khi dữ liệu hỏng và user đồng ý: `mongorestore --drop --nsInclude "scribe.<coll>"` từ
   dump trong thư mục sao lưu. Ghi tên thư mục sao lưu vào báo cáo.
 - **Dọn sao lưu cũ** (> 14 ngày hoặc khi user xác nhận ổn định) cũng là thao tác ghi: hỏi trước.

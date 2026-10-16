@@ -21,6 +21,16 @@ Thao tác ghi prod; người dùng đã đồng ý các hạng mục phần B. M
 6. Kiểm: health, đăng nhập (Firebase vẫn chạy ở bước này), mở 3 bản ghi cũ phát + xuất được, chép một bản ngắn, sổ phút đúng.
 - Rollback 7a: bật lại `onescribe-be` (db `onescribe` + `data/` cũ còn nguyên); ghi mới trong `scribe` sau thời điểm sao lưu sẽ thiếu ở bản cũ — báo người dùng.
 
+### Kết quả 7a (2026-10-16 12:43)
+
+- Jev: dừng bản cũ rồi mới sao chép (0,83), giữ cổng 8787 (0,94). Làm 7a trước, giữ 7b tới khi người dùng đăng nhập thử trên dev (0,94).
+- Build `a90a7e8` (vẫn Firebase) với `DB_NAME=scribe`, `DATA_DIR`/`SESSION_KEY_PATH`/`OPENAI_KEY_PATH` dưới `/opt/scribe-be`; sha256 `ba60c557…`.
+- User hệ thống `scribe` (uid 968), unit `scribe-be` từ `deploy/scribe-be.service`; user Mongo `scribe` (chỉ `readWrite`+`dbAdmin` trên db `scribe`) tạo bằng tài khoản quản trị, mật khẩu chỉ nằm trong `.env.production` (gitignore) và trên server.
+- Cửa sổ chuyển: hàng đợi 0 → dừng `onescribe-be` 12:43:02 → sao lưu `/root/onescribe-backup-20261016-124301/` (dump db `onescribe` 9 collection, binary, dist, vhost, unit) → `mongorestore` sang `scribe`: 9/9 collection khớp số doc (users 1, files 53, audit_events 124, còn lại 0) → `files.path` sửa 53/53, còn 0 đường dẫn cũ → `data/` 268 MB, 56/56 tệp → vhost `root /var/www/scribe/dist`, `nginx -t` OK, reload → `scribe-be` active 12:43:05. Downtime khoảng 3 giây.
+- Nghiệm thu: FE 200 (`index-8BNOtOKg.js`), `/api/health` ok, `/api/me` 401, journal "chép lời bật (key server)", NRestarts 0, RSS ~11 MB, 5 `files.path` ngẫu nhiên tồn tại và thuộc `scribe`; tệp cấu hình admin tạm đã xoá.
+- Chưa: người dùng đăng nhập (Firebase) mở bản ghi cũ và chép một bản ngắn.
+- Đường lùi: `systemctl disable --now scribe-be && systemctl enable --now onescribe-be`, chép lại `onescribe.conf` từ thư mục sao lưu, `nginx -t`, reload.
+
 ## 7b — Đổi đăng nhập + domain (một chiều)
 
 1. DNS `A scribe.hoandat.com → 103.72.98.65` proxied (như `auth.hoandat.com`), zone SSL "full", origin dùng chứng chỉ tự ký chung `/etc/pki/nginx/server.{crt,key}`.
