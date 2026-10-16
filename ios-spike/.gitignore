@@ -1,6 +1,0 @@
-# .xcodeproj sinh từ project.yml bằng `xcodegen generate` — không commit.
-*.xcodeproj/
-*.xcworkspace/
-DerivedData/
-build/
-.DS_Store

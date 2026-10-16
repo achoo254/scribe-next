@@ -1,0 +1,44 @@
+# Kiểm tra tự động cho web (React) và backend (Rust). Chỉ kiểm, không deploy:
+# deploy prod lên .65 vẫn làm tay theo docs/deploy-web-production.md.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run check:tokens
+      - run: npm test
+
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      # ffmpeg cho test cắt file thật của core-split (thiếu thì test tự bỏ qua).
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo test --workspace

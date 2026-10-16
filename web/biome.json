@@ -9,7 +9,6 @@
 		"ignore": [
 			"**/dist/**",
 			"**/*.d.ts",
-			"src-vue-legacy/**",
 			"ios/**",
 			"package-lock.json",
 			"**/*.css",
