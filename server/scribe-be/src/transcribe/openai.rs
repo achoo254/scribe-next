@@ -36,12 +36,13 @@ pub async fn speech_spans(ffmpeg: &str, path: &str, duration: f64) -> Result<Vec
     Ok(chunking::speech_from_silences(&silences, duration))
 }
 
-/// Mảnh `[a, z)` → Opus mono 16 kHz 32 kbps trong bộ nhớ (~180 KB cho 45 giây).
-pub async fn encode_chunk(ffmpeg: &str, path: &str, chunk: Span) -> Result<Vec<u8>, String> {
+/// Mảnh `[a, z)` → Opus mono 16 kHz 32 kbps trong bộ nhớ (~180 KB cho 45 giây), kèm âm lượng đỉnh (dB)
+/// đo trong cùng lần giải mã (`None` khi ffmpeg không báo).
+pub async fn encode_chunk(ffmpeg: &str, path: &str, chunk: Span) -> Result<(Vec<u8>, Option<f64>), String> {
     let (start, length) = (format!("{:.3}", chunk.0), format!("{:.3}", chunk.1 - chunk.0));
     let out = Command::new(ffmpeg)
-        .args(["-hide_banner", "-nostats", "-loglevel", "error", "-ss", &start, "-t", &length])
-        .args(["-i", path, "-vn", "-ac", "1", "-ar", "16000", "-c:a", "libopus", "-b:a", "32k"])
+        .args(["-hide_banner", "-nostats", "-loglevel", "info", "-ss", &start, "-t", &length])
+        .args(["-i", path, "-vn", "-af", "volumedetect", "-ac", "1", "-ar", "16000", "-c:a", "libopus", "-b:a", "32k"])
         .args(["-f", "ogg", "pipe:1"])
         .stdin(Stdio::null())
         .kill_on_drop(true)
@@ -52,7 +53,8 @@ pub async fn encode_chunk(ffmpeg: &str, path: &str, chunk: Span) -> Result<Vec<u
         let stderr = String::from_utf8_lossy(&out.stderr);
         return Err(format!("ffmpeg không nén được mảnh: {}", last_line(&stderr)));
     }
-    Ok(out.stdout)
+    let peak = chunking::parse_max_volume(&String::from_utf8_lossy(&out.stderr));
+    Ok((out.stdout, peak))
 }
 
 fn last_line(text: &str) -> &str {

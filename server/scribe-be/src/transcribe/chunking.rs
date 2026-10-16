@@ -84,6 +84,19 @@ pub fn plan_chunks(speech: &[Span], duration: f64) -> Vec<Span> {
     cuts.windows(2).map(|w| (w[0], w[1])).collect()
 }
 
+/// Âm lượng đỉnh của cả mảnh dưới mức này thì mảnh hoàn toàn im lặng: không gửi, không tính phút. Đo
+/// 16/10/2026 trên bản họp thật: mảnh có lời đỉnh −1…−19 dB, bản gần im lặng đỉnh −33 dB (trung bình
+/// −52 dB). Chỉ bỏ cả mảnh — cắt ghép im lặng bên trong mảnh có lời làm model bịa chữ nhiều hơn.
+pub const SILENT_PEAK_DB: f64 = -30.0;
+
+/// Đỉnh âm lượng (dB) từ stderr của `ffmpeg -af volumedetect`; không đọc được thì `None`.
+pub fn parse_max_volume(stderr: &str) -> Option<f64> {
+    stderr.lines().find_map(|line| {
+        let rest = &line[line.find("max_volume:")? + "max_volume:".len()..];
+        rest.trim().trim_end_matches("dB").trim().parse().ok()
+    })
+}
+
 /// Mảnh có tiếng nói không. Mảnh im lặng hoàn toàn dễ bị bịa chữ và tốn tiền vô ích.
 pub fn has_speech(chunk: Span, speech: &[Span]) -> bool {
     speech.iter().any(|&(s, e)| e > chunk.0 && s < chunk.1)
@@ -226,6 +239,15 @@ fn push_trimmed(out: &mut Vec<String>, current: &mut String) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn peak_volume_is_read_from_volumedetect() {
+        let stderr = "[Parsed_volumedetect_0 @ 0x1] mean_volume: -52.3 dB\n[Parsed_volumedetect_0 @ 0x1] max_volume: -33.0 dB\n";
+        assert_eq!(parse_max_volume(stderr), Some(-33.0));
+        assert!(parse_max_volume(stderr).is_some_and(|p| p < SILENT_PEAK_DB));
+        assert_eq!(parse_max_volume("max_volume: -0.0 dB"), Some(0.0));
+        assert_eq!(parse_max_volume("không có số"), None);
+    }
 
     #[test]
     fn speech_is_the_complement_of_silences() {

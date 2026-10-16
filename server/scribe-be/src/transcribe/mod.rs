@@ -598,8 +598,9 @@ impl Progress<'_> {
     }
 }
 
-/// Chép một tệp audio/video: tìm khoảng lặng, cắt mảnh, gọi OpenAI song song, ghép câu có mốc.
-/// Trả (chữ liền, các câu, số mảnh đã gửi).
+/// Chép một tệp audio/video: tìm khoảng lặng, cắt mảnh, gọi OpenAI song song, ghép câu có mốc. Mảnh
+/// hoàn toàn im lặng (đỉnh < `SILENT_PEAK_DB`) không gửi và không tính vào giây đã gửi, nên người dùng
+/// được hoàn phần đã giữ cho nó. Trả (chữ liền, các câu, số mảnh đã gửi).
 async fn transcribe_path(
     http: &reqwest::Client,
     ffmpeg: &str,
@@ -620,7 +621,10 @@ async fn transcribe_path(
     // `buffered` giữ thứ tự; lỗi một mảnh thì dừng và bỏ các mảnh đang chờ (khỏi tốn tiền vô ích).
     let mut results = stream::iter(chunks.iter().copied())
         .map(|chunk| async move {
-            let audio = openai::encode_chunk(ffmpeg, path, chunk).await?;
+            let (audio, peak) = openai::encode_chunk(ffmpeg, path, chunk).await?;
+            if peak.is_some_and(|p| p < chunking::SILENT_PEAK_DB) {
+                return Ok::<_, String>((String::new(), false));
+            }
             let seconds = (chunk.1 - chunk.0).ceil() as i64;
             // Ghi giây sắp gửi TRƯỚC khi gửi: tiền đã chi luôn nằm trong sổ, kể cả khi tiến trình chết.
             if let Some(p) = progress {
@@ -631,11 +635,14 @@ async fn transcribe_path(
             if let Some(p) = progress.filter(|_| posts > 1) {
                 p.count_sent(seconds * (i64::from(posts) - 1)).await?;
             }
-            Ok::<_, String>(text)
+            Ok((text, true))
         })
         .buffered(PARALLEL);
-    while let Some(text) = results.next().await {
-        texts.push(text?);
+    let mut sent = 0;
+    while let Some(result) = results.next().await {
+        let (text, was_sent) = result?;
+        sent += usize::from(was_sent);
+        texts.push(text);
         if let Some(p) = progress {
             let pct = (texts.len() as f64 / total as f64 * 100.0).min(99.0).floor();
             // Lượt đã bị thay hoặc file bị xoá: dừng để khỏi tốn tiền của người dùng.
@@ -651,7 +658,7 @@ async fn transcribe_path(
         .flat_map(|(&chunk, text)| chunking::sentences(text, chunk, &speech))
         .collect();
     let text = texts.iter().filter(|t| !t.is_empty()).cloned().collect::<Vec<_>>().join(" ");
-    Ok((text, sentences, total))
+    Ok((text, sentences, sent))
 }
 
 #[cfg(test)]
