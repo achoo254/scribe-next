@@ -5,9 +5,14 @@
  */
 import { registerPlugin } from "@capacitor/core";
 
-export interface GoogleAuthPlugin {
-	/** Google sign-in sheet → Firebase ID token (for POST /api/auth/session). */
-	signIn(): Promise<{ idToken: string }>;
+export interface HoandatAuthPlugin {
+	/**
+	 * hoandat-auth sign-in sheet (Code + PKCE made in the app); the backend
+	 * redeems the code and sets the session cookie. Resolves with the email.
+	 */
+	signIn(): Promise<{ email: string }>;
+	/** Ends the backend session and forgets this device. */
+	signOut(): Promise<void>;
 }
 
 export interface NativeFilesPlugin {
@@ -29,6 +34,6 @@ export interface SecretsPlugin {
 	remove(options: { name: string }): Promise<void>;
 }
 
-export const GoogleAuth = registerPlugin<GoogleAuthPlugin>("GoogleAuth");
+export const HoandatAuth = registerPlugin<HoandatAuthPlugin>("HoandatAuth");
 export const NativeFiles = registerPlugin<NativeFilesPlugin>("NativeFiles");
 export const Secrets = registerPlugin<SecretsPlugin>("Secrets");

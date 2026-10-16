@@ -3,15 +3,6 @@
 //! [Red-team #13] Dùng `option_env!` (KHÔNG `env!`) → máy dev thiếu secret vẫn `cargo check`/build
 //! được (fallback về localhost). Production: `build.rs` bake giá trị thật lúc build.
 
-/// Issuer hợp lệ của Firebase ID token cho một project.
-pub fn firebase_issuer(project_id: &str) -> String {
-    format!("https://securetoken.google.com/{project_id}")
-}
-
-/// JWK endpoint (securetoken) — public key RS256 để verify Firebase ID token.
-pub const FIREBASE_JWKS_URL: &str =
-    "https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com";
-
 /// Size cap mỗi file (2GB — chốt validate 2026-07-11, ~40% quota 5GB). Red-team #14.
 pub const MAX_FILE_SIZE_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 /// Quota mỗi user (5GB — chốt validate). Red-team #3.
@@ -68,8 +59,15 @@ pub struct Config {
     pub mongo_uri: String,
     /// Tên database Mongo của app.
     pub db_name: String,
-    /// Firebase project ID (công khai): aud/iss khi verify ID token.
-    pub firebase_project_id: String,
+    /// Origin của app như trình duyệt thấy (`https://scribe.hoandat.com`, dev `http://localhost:5174`):
+    /// redirect OIDC, cookie Secure hay không.
+    pub public_url: String,
+    pub oidc_issuer: String,
+    /// Client confidential của web (`scribe-web`, dev `scribe-web-dev`); secret đọc từ tệp lúc khởi động.
+    pub oidc_web_client_id: String,
+    pub oidc_web_client_secret_path: String,
+    pub oidc_mobile_client_id: String,
+    pub oidc_mobile_redirect_uri: String,
     /// Allowlist domain (rỗng = cho mọi email đã verified — user chốt mở).
     pub allowed_domains: Vec<String>,
     /// Allowlist email cụ thể (rỗng = không lọc theo email).
@@ -81,8 +79,6 @@ pub struct Config {
     /// `TRANSCRIBE_OPEN=1`: mọi user đăng nhập được chép lời (trong hạn mức gói), không chỉ `TRANSCRIBE_EMAILS`.
     pub transcribe_open: bool,
     pub transcribe_limits: TranscribeLimits,
-    /// TTL session cookie (giây).
-    pub session_ttl_secs: i64,
     /// File lưu session signing key (tự sinh runtime, KHÔNG bake).
     pub session_key_path: String,
     /// Thư mục lưu upload/output ({data_dir}/{userId}/...).
@@ -98,9 +94,10 @@ impl Config {
     pub fn from_env() -> Result<Self, String> {
         let required = [
             ("DB_NAME", option_env!("DB_NAME")),
-            ("FIREBASE_PROJECT_ID", option_env!("FIREBASE_PROJECT_ID")),
+            ("PUBLIC_URL", option_env!("PUBLIC_URL")),
             ("SESSION_KEY_PATH", option_env!("SESSION_KEY_PATH")),
             ("DATA_DIR", option_env!("DATA_DIR")),
+            ("OIDC_WEB_CLIENT_SECRET_PATH", option_env!("OIDC_WEB_CLIENT_SECRET_PATH")),
         ];
         let missing: Vec<&str> =
             required.iter().filter(|(_, v)| v.is_none_or(str::is_empty)).map(|(k, _)| *k).collect();
@@ -114,7 +111,14 @@ impl Config {
                 .unwrap_or("mongodb://127.0.0.1:27017")
                 .to_string(),
             db_name: get(0),
-            firebase_project_id: get(1),
+            public_url: get(1).trim_end_matches('/').to_string(),
+            oidc_issuer: option_env!("OIDC_ISSUER").unwrap_or("https://auth.hoandat.com").to_string(),
+            oidc_web_client_id: option_env!("OIDC_WEB_CLIENT_ID").unwrap_or("scribe-web").to_string(),
+            oidc_web_client_secret_path: get(4),
+            oidc_mobile_client_id: option_env!("OIDC_MOBILE_CLIENT_ID").unwrap_or("scribe-mobile").to_string(),
+            oidc_mobile_redirect_uri: option_env!("OIDC_MOBILE_REDIRECT_URI")
+                .unwrap_or("com.hoandat.scribe:/auth/callback")
+                .to_string(),
             allowed_domains: parse_csv(option_env!("ALLOWED_DOMAINS")),
             allowed_emails: parse_csv(option_env!("ALLOWED_EMAILS")),
             transcribe_emails: parse_csv(option_env!("TRANSCRIBE_EMAILS")),
@@ -126,7 +130,6 @@ impl Config {
                 option_env!("TRANSCRIBE_FREE_POOL_USD"),
                 option_env!("TRANSCRIBE_MONTHLY_CAP_USD"),
             ),
-            session_ttl_secs: 60 * 60 * 12, // 12h — TTL ngắn, FE re-login qua Firebase khi hết.
             session_key_path: get(2),
             data_dir: get(3),
             ffmpeg_path: option_env!("FFMPEG_PATH").unwrap_or("ffmpeg").to_string(),

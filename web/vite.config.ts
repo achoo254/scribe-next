@@ -2,23 +2,14 @@ import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig, loadEnv } from "vite";
 
-/**
- * Build-time config: Firebase web config (public, not a secret) read by
- * src/lib/firebase.ts, and the backend origin the native shell calls.
- */
-const REQUIRED_ENV = [
-	"VITE_FIREBASE_API_KEY",
-	"VITE_FIREBASE_AUTH_DOMAIN",
-	"VITE_FIREBASE_PROJECT_ID",
-	"VITE_NATIVE_API_ORIGIN",
-] as const;
+/** Build-time config: the backend origin the native shell calls. */
+const REQUIRED_ENV = ["VITE_NATIVE_API_ORIGIN"] as const;
 
 /** Vendor chunks: libraries stay cached across deploys. */
 const VENDOR_CHUNKS: ReadonlyArray<readonly [string, RegExp]> = [
 	["vendor-react", /^(?:react|react-dom|scheduler|react-router|cookie)$/],
 	["vendor-query", /^@tanstack\//],
 	["vendor-radix", /^@radix-ui\//],
-	["vendor-firebase", /^(?:firebase|@firebase\/)/],
 ];
 
 const PACKAGES_DIR = "/node_modules/";

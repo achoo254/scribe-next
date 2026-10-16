@@ -1,4 +1,4 @@
-import { ApiError, apiFetch, apiJson } from "../lib/api";
+import { ApiError, apiJson } from "../lib/api";
 
 /** Monthly transcription allowance of the signed-in user. */
 export interface Transcription {
@@ -36,23 +36,20 @@ export async function fetchCurrentUser(
 	}
 }
 
-/** Trades a Firebase ID token for the backend session cookie. */
-export function createSession(
-	idToken: string,
-	fetcher: typeof fetch = fetch,
-): Promise<CurrentUser> {
-	return apiJson<CurrentUser>(
-		"/api/auth/session",
-		{ method: "POST", json: { idToken }, fallbackError: "Đăng nhập thất bại" },
-		fetcher,
-	);
-}
-
-/** Ends the backend session; a failure still signs the user out locally. */
+/**
+ * Ends the backend session; returns where to end the hoandat-auth session
+ * too (web), or null. A failure still signs the user out locally.
+ */
 export async function deleteSession(
 	fetcher: typeof fetch = fetch,
-): Promise<void> {
-	await apiFetch("/api/auth/logout", { method: "POST" }, fetcher).catch(
-		() => undefined,
-	);
+): Promise<string | null> {
+	const body = await apiJson<{ endSessionUrl?: string | null }>(
+		"/api/auth/logout",
+		{ method: "POST", json: {} },
+		fetcher,
+	).catch(() => null);
+	return body?.endSessionUrl ?? null;
 }
+
+/** Where the web sign-in starts: the backend redirects to hoandat-auth. */
+export const WEB_LOGIN_PATH = "/api/auth/login";

@@ -52,8 +52,13 @@ pub fn build_router(state: AppState) -> Router {
 
     // Auth: rate-limit chặt (chống brute/amplification). Health KHÔNG giới hạn (systemd/nginx liveness).
     let auth_routes = Router::new()
-        .route("/api/auth/session", post(auth::create_session))
+        .route("/api/auth/login", get(auth::login))
+        .route("/api/auth/callback", get(auth::callback))
+        .route("/api/auth/native/config", get(auth::native_config))
+        .route("/api/auth/native/exchange", post(auth::native_exchange))
+        .route("/api/auth/native/refresh", post(auth::native_refresh))
         .route("/api/auth/logout", post(auth::logout))
+        .route("/api/auth/backchannel-logout", post(auth::backchannel_logout))
         .route_layer(from_fn_with_state(state.clone(), rate_limit::auth_limit));
 
     let public = Router::new()

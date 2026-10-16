@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-	createSession,
-	deleteSession,
-	fetchCurrentUser,
-} from "../../auth/auth-api";
+import { deleteSession, fetchCurrentUser } from "../../auth/auth-api";
 import { fakeFetch, jsonResponse } from "../../test/fake-fetch";
 import {
 	deleteFile,
@@ -63,24 +59,24 @@ describe("auth API", () => {
 		expect(await fetchCurrentUser(anonymous.fetcher)).toBeNull();
 	});
 
-	it("trades the ID token and surfaces the backend's refusal", async () => {
-		const { fetcher, calls } = fakeFetch({
-			"POST /api/auth/session": jsonResponse(
-				{ error: "Email không được phép" },
-				403,
-			),
+	it("returns where to end the hoandat-auth session after logout", async () => {
+		const { fetcher } = fakeFetch({
+			"POST /api/auth/logout": jsonResponse({
+				ok: true,
+				endSessionUrl:
+					"https://auth.hoandat.com/session/end?client_id=scribe-web",
+			}),
 		});
-		await expect(createSession("tok", fetcher)).rejects.toMatchObject({
-			message: "Email không được phép",
-		});
-		expect(calls[0]?.body).toEqual({ idToken: "tok" });
+		await expect(deleteSession(fetcher)).resolves.toBe(
+			"https://auth.hoandat.com/session/end?client_id=scribe-web",
+		);
 	});
 
 	it("logs out even when the backend is unreachable", async () => {
 		const { fetcher, calls } = fakeFetch({
 			"POST /api/auth/logout": new TypeError("Failed to fetch"),
 		});
-		await expect(deleteSession(fetcher)).resolves.toBeUndefined();
+		await expect(deleteSession(fetcher)).resolves.toBeNull();
 		expect(calls[0]?.method).toBe("POST");
 	});
 });

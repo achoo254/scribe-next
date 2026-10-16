@@ -1,7 +1,8 @@
 //! State dùng chung cho handlers (Clone rẻ — mọi field Arc/handle nội bộ).
 
 use crate::config::Config;
-use crate::jwks::JwksCache;
+use crate::auth::SessionCache;
+use crate::oidc::Oidc;
 use crate::rate_limit::RateLimiter;
 use crate::transcribe::Transcriber;
 use mongodb::Database;
@@ -12,8 +13,12 @@ pub struct AppState {
     pub config: Arc<Config>,
     pub db: Database,
     pub http: reqwest::Client,
-    pub jwks: Arc<JwksCache>,
-    /// Session signing key (HS256) — sinh runtime, KHÔNG bake (red-team #4).
+    /// Client OIDC của hoandat-auth (discovery + JWKS cache).
+    pub oidc: Arc<Oidc>,
+    /// Secret client web (đọc từ tệp lúc khởi động, không nhúng binary).
+    pub oidc_web_secret: Arc<String>,
+    pub session_cache: Arc<SessionCache>,
+    /// Khoá 32 byte sinh lúc chạy (tệp 600): mã hoá refresh token IdP của thiết bị.
     pub session_key: Arc<Vec<u8>>,
     /// Rate-limit theo IP (in-memory, red-team #2).
     pub rate: Arc<RateLimiter>,

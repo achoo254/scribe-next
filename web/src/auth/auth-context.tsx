@@ -9,12 +9,11 @@ import {
 	useState,
 } from "react";
 import { NativeRecorderPlugin } from "../features/recorder/native-recorder";
-import { isNativeShell } from "../lib/api";
-import { firebaseSignOut, googleIdToken } from "../lib/firebase";
-import { NativeFiles, Secrets } from "../lib/native";
+import { apiUrl, isNativeShell } from "../lib/api";
+import { HoandatAuth, NativeFiles, Secrets } from "../lib/native";
 import {
 	type CurrentUser,
-	createSession,
+	WEB_LOGIN_PATH,
 	deleteSession,
 	fetchCurrentUser,
 } from "./auth-api";
@@ -26,7 +25,11 @@ interface AuthState {
 }
 
 interface AuthApi extends AuthState {
-	/** Google popup → backend session; throws with a Vietnamese message. */
+	/**
+	 * hoandat-auth sign-in. The web leaves the page (the backend redirects to
+	 * the IdP and back); the iOS app opens the sign-in sheet and resolves once
+	 * the session exists. Throws with a Vietnamese message.
+	 */
 	login: () => Promise<void>;
 	logout: () => Promise<void>;
 	/** Re-reads `/api/me` (minutes left after a transcription request). */
@@ -59,16 +62,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 	}, []);
 
 	const login = useCallback(async () => {
-		const idToken = await googleIdToken();
-		try {
-			const user = await createSession(idToken);
-			setState({ ready: true, user });
-		} catch (error) {
-			// The backend refused (allowlist, bad token): drop the Firebase
-			// session too, so the next attempt starts clean.
-			await firebaseSignOut();
-			throw error;
+		if (!isNativeShell()) {
+			window.location.assign(apiUrl(WEB_LOGIN_PATH));
+			return;
 		}
+		await HoandatAuth.signIn();
+		const user = await fetchCurrentUser();
+		if (!user)
+			throw new Error(
+				"Đăng nhập xong nhưng máy chủ chưa nhận phiên — thử lại.",
+			);
+		setState({ ready: true, user });
 	}, []);
 
 	const logout = useCallback(async () => {
@@ -79,14 +83,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 			// Audio copied for playback belongs to this account.
 			await NativeFiles.clear().catch(() => undefined);
 		}
-		await deleteSession();
-		await firebaseSignOut();
+		const endSessionUrl = isNativeShell()
+			? await HoandatAuth.signOut()
+					.then(() => null)
+					.catch(() => null)
+			: await deleteSession();
 		// Older builds kept the user's own OpenAI key in the Keychain: remove it.
 		if (isNativeShell())
 			await Secrets.remove({ name: "openaiApiKey" }).catch(() => undefined);
 		// The next user must not see this user's cached lists.
 		queryClient.clear();
 		setState({ ready: true, user: null });
+		// Web: also end the hoandat-auth session (it returns to the sign-in page).
+		if (endSessionUrl) window.location.assign(endSessionUrl);
 	}, [queryClient]);
 
 	const refresh = useCallback(async () => {

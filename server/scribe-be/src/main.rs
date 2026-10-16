@@ -9,8 +9,8 @@ mod db;
 mod error;
 mod files;
 mod jobs;
-mod jwks;
 mod models;
+mod oidc;
 mod rate_limit;
 mod recordings;
 mod retention;
@@ -22,7 +22,6 @@ mod upload;
 mod worker;
 
 use config::Config;
-use jwks::JwksCache;
 use rate_limit::RateLimiter;
 use state::AppState;
 use std::net::SocketAddr;
@@ -72,9 +71,6 @@ async fn main() {
     {
         let db = db.clone();
         tokio::spawn(async move {
-            if let Err(e) = models::user::ensure_indexes(&db).await {
-                tracing::warn!("tạo index users thất bại (chống-trùng yếu đi nếu Mongo lỗi): {e}");
-            }
             if let Err(e) = models::file::ensure_indexes(&db).await {
                 tracing::warn!("tạo index files thất bại: {e}");
             }
@@ -92,12 +88,31 @@ async fn main() {
 
     let port = config.port;
     let config_key_path = config.openai_key_path.clone();
-    let jwks = Arc::new(JwksCache::new(config.firebase_project_id.clone()));
+    let oidc_issuer = config.oidc_issuer.clone();
+    let oidc_web_secret = std::fs::read_to_string(&config.oidc_web_client_secret_path)
+        .map(|s| s.trim().to_string())
+        .ok()
+        .filter(|s| s.len() >= 32)
+        .unwrap_or_else(|| {
+            tracing::error!(path = %config.oidc_web_client_secret_path, "không đọc được secret client OIDC (≥ 32 ký tự)");
+            std::process::exit(1);
+        });
+    // Đăng nhập dựa vào index unique của users (không tạo user trùng) và TTL của phiên.
+    if let Err(e) = models::user::ensure_indexes(&db).await {
+        tracing::error!("{e}");
+        std::process::exit(1);
+    }
+    if let Err(e) = models::session::ensure_indexes(&db).await {
+        tracing::error!("{e}");
+        std::process::exit(1);
+    }
     let state = AppState {
         config: Arc::new(config),
         db,
         http,
-        jwks,
+        oidc: Arc::new(oidc::Oidc::new(&oidc_issuer)),
+        oidc_web_secret: Arc::new(oidc_web_secret),
+        session_cache: Arc::default(),
         session_key: Arc::new(session_key),
         rate: Arc::new(RateLimiter::new()),
         transcriber: Arc::new(transcribe::Transcriber::load(config_key_path.as_deref())),

@@ -5,7 +5,7 @@ import UIKit
 /// target (Capacitor only discovers packaged plugins on its own).
 class MainViewController: CAPBridgeViewController {
     override open func capacitorDidLoad() {
-        bridge?.registerPluginInstance(GoogleAuthPlugin())
+        bridge?.registerPluginInstance(HoandatAuthPlugin())
         bridge?.registerPluginInstance(NativeFilesPlugin())
         bridge?.registerPluginInstance(RecorderPlugin())
         bridge?.registerPluginInstance(SecretsPlugin())

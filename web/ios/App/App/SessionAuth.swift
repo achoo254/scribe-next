@@ -1,11 +1,12 @@
 import Foundation
 
-/// Backend session of the native side (plan D5). Sign-in keeps the Firebase
-/// refresh token in the app's own Keychain (no Keychain Sharing needed),
-/// so when the 12-hour session cookie expires during a long recording the
-/// upload queue gets a new one without any UI: refresh token → Firebase ID
-/// token (securetoken API) → `POST /api/auth/session` → cookie in
-/// HTTPCookieStorage, which CapacitorHttp and URLSession.shared both use.
+/// Backend session of the native side. Sign-in (HoandatAuthPlugin) leaves
+/// a device token of the backend in the app's own Keychain; when the
+/// 12-hour session cookie expires during a long recording the upload queue
+/// trades it for a new cookie (`POST /api/auth/native/refresh`), which the
+/// backend grants only while hoandat-auth still accepts this device. The
+/// cookie lands in HTTPCookieStorage, which CapacitorHttp and
+/// URLSession.shared both use.
 enum SessionAuth {
     /// Backend origin, set at build time (`SCRIBE_BACKEND_ORIGIN` → Info.plist
     /// `ScribeBackendOrigin`; `npm run ios:device` fills it from web/.env).
@@ -20,26 +21,6 @@ enum SessionAuth {
     /// Host part of `backendOrigin`, for matching request URLs.
     static var backendHost: String { URL(string: backendOrigin)?.host ?? "" }
 
-    /// Google/Firebase client config, from GoogleService-Info.plist.
-    struct Config {
-        let clientId: String
-        let reversedClientId: String
-        let apiKey: String
-        let bundleId: String
-
-        static func load() throws -> Config {
-            guard
-                let url = Bundle.main.url(forResource: "GoogleService-Info", withExtension: "plist"),
-                let dict = NSDictionary(contentsOf: url) as? [String: Any],
-                let clientId = dict["CLIENT_ID"] as? String,
-                let reversed = dict["REVERSED_CLIENT_ID"] as? String,
-                let apiKey = dict["API_KEY"] as? String,
-                let bundleId = dict["BUNDLE_ID"] as? String
-            else { throw AuthError("Thiếu cấu hình GoogleService-Info.plist trong app.") }
-            return Config(clientId: clientId, reversedClientId: reversed, apiKey: apiKey, bundleId: bundleId)
-        }
-    }
-
     struct AuthError: LocalizedError {
         let message: String
         init(_ message: String) { self.message = message }
@@ -48,77 +29,110 @@ enum SessionAuth {
 
     // MARK: Keychain
 
-    private static let service = "com.hoandat.scribe.firebase"
-    private static let account = "refreshToken"
+    private static let service = "com.hoandat.scribe.session"
+    private static let account = "deviceToken"
+    /// Firebase refresh token of older builds: removed on the next sign-in or sign-out.
+    private static let legacyService = "com.hoandat.scribe.firebase"
 
-    static func saveRefreshToken(_ token: String) {
-        Keychain.save(token, service: service, account: account)
-    }
-
-    static func refreshToken() -> String? {
+    static func deviceToken() -> String? {
         Keychain.read(service: service, account: account)
     }
 
-    /// Sign-out: the next sign-in starts from the Google sheet again.
+    /// Sign-out (or a revoked device): the next sign-in starts from the IdP sheet again.
     static func clear() {
         Keychain.delete(service: service, account: account)
+        Keychain.delete(service: legacyService, account: "refreshToken")
+    }
+
+    // MARK: Sign-in
+
+    /// Redeems the IdP code at the backend (session cookie set by the
+    /// response) and keeps the device token. Returns the signed-in email.
+    static func exchange(code: String, verifier: String, nonce: String) async throws -> String {
+        let json = try await post("/api/auth/native/exchange",
+                                  ["code": code, "codeVerifier": verifier, "nonce": nonce],
+                                  failure: "Máy chủ không cấp phiên đăng nhập")
+        guard let token = json["deviceToken"] as? String else {
+            throw AuthError("Máy chủ không trả mã thiết bị.")
+        }
+        clear()
+        Keychain.save(token, service: service, account: account)
+        return json["email"] as? String ?? ""
+    }
+
+    static func signOut() async {
+        var body: [String: Any] = [:]
+        if let token = deviceToken() { body["deviceToken"] = token }
+        _ = try? await post("/api/auth/logout", body, failure: "Đăng xuất")
+        clear()
     }
 
     // MARK: Refresh
 
-    /// Gets a new backend session cookie from the stored refresh token.
-    /// Throws when there is none or Firebase/the backend refuses it; the
-    /// caller then asks the user to sign in again.
+    private static let renewal = Renewal()
+
+    /// Gets a new backend session cookie from the stored device token. Throws
+    /// when there is none or the backend refuses it (device revoked at the
+    /// IdP); the caller then asks the user to sign in again.
     static func refreshSession(session: URLSession = .shared) async throws {
-        guard let refresh = refreshToken() else { throw AuthError("Chưa có phiên đăng nhập để làm mới.") }
-        let config = try Config.load()
+        try await renewal.run { try await renew(session: session) }
+    }
 
-        var components = URLComponents()
-        components.scheme = "https"
-        components.host = "securetoken.googleapis.com"
-        components.path = "/v1/token"
-        components.queryItems = [URLQueryItem(name: "key", value: config.apiKey)]
-        guard let tokenURL = components.url, let sessionURL = URL(string: "\(backendOrigin)/api/auth/session")
-        else { throw AuthError("Đường dẫn làm mới phiên không hợp lệ.") }
+    private static func renew(session: URLSession) async throws {
+        guard let token = deviceToken() else { throw AuthError("Chưa có phiên đăng nhập để làm mới.") }
+        do {
+            _ = try await post("/api/auth/native/refresh", ["deviceToken": token],
+                               session: session, failure: "Máy chủ không cấp lại phiên")
+        } catch let error as HTTPError where error.status == 409 {
+            // Another renewal of this device is running (e.g. from the WebView): it sets the cookie.
+            try await Task.sleep(nanoseconds: 2_000_000_000)
+        } catch let error as HTTPError where error.status == 401 {
+            clear()
+            throw AuthError(error.message)
+        }
+    }
 
-        var tokenRequest = URLRequest(url: tokenURL)
-        tokenRequest.httpMethod = "POST"
-        tokenRequest.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-        tokenRequest.setValue(config.bundleId, forHTTPHeaderField: "X-Ios-Bundle-Identifier")
-        tokenRequest.httpBody = formEncoded(["grant_type": "refresh_token", "refresh_token": refresh])
-        let token = try await sendJSON(tokenRequest, session: session, failure: "Không làm mới được đăng nhập")
-        guard let idToken = token["id_token"] as? String else { throw AuthError("Firebase không trả ID token.") }
-        if let rotated = token["refresh_token"] as? String { saveRefreshToken(rotated) }
+    /// One renewal at a time: the IdP refresh token behind the device is single-use.
+    private actor Renewal {
+        private var running: Task<Void, Error>?
 
-        var sessionRequest = URLRequest(url: sessionURL)
-        sessionRequest.httpMethod = "POST"
-        sessionRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        sessionRequest.httpBody = try JSONSerialization.data(withJSONObject: ["idToken": idToken])
-        _ = try await sendJSON(sessionRequest, session: session, failure: "Máy chủ không cấp lại phiên")
+        func run(_ work: @escaping @Sendable () async throws -> Void) async throws {
+            if let running { return try await running.value }
+            let task = Task { try await work() }
+            running = task
+            defer { running = nil }
+            try await task.value
+        }
     }
 
     // MARK: Helpers
+
+    /// HTTP failure with its status (renewal branches on 401/409).
+    struct HTTPError: LocalizedError {
+        let status: Int
+        let message: String
+        var errorDescription: String? { message }
+    }
 
     static func sendJSON(_ request: URLRequest, session: URLSession = .shared,
                          failure: String) async throws -> [String: Any] {
         let (data, response) = try await session.data(for: request)
         let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
-        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-            let detail = (json["error"] as? [String: Any])?["message"] as? String
-                ?? json["error_description"] as? String
-                ?? (json["error"] as? String)
-                ?? "HTTP \((response as? HTTPURLResponse)?.statusCode ?? 0)"
-            throw AuthError("\(failure): \(detail)")
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard (200..<300).contains(status) else {
+            let detail = (json["error"] as? String) ?? "HTTP \(status)"
+            throw HTTPError(status: status, message: "\(failure): \(detail)")
         }
         return json
     }
 
-    static func formEncoded(_ fields: [String: String]) -> Data {
-        var allowed = CharacterSet.alphanumerics
-        allowed.insert(charactersIn: "-._~")
-        return fields
-            .map { "\($0.key)=\($0.value.addingPercentEncoding(withAllowedCharacters: allowed) ?? $0.value)" }
-            .joined(separator: "&")
-            .data(using: .utf8) ?? Data()
+    static func post(_ path: String, _ body: [String: Any], session: URLSession = .shared,
+                     failure: String) async throws -> [String: Any] {
+        guard let url = URL(string: backendOrigin + path) else { throw AuthError("Đường dẫn máy chủ không hợp lệ.") }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        return try await sendJSON(request, session: session, failure: failure)
     }
 }

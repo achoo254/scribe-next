@@ -1,20 +1,27 @@
-import { IconBrandGoogle } from "@tabler/icons-react";
+import { IconLogin2 } from "@tabler/icons-react";
 import { useState } from "react";
-import { useNavigate } from "react-router";
+import { useNavigate, useSearchParams } from "react-router";
 import { useAuth } from "../auth/auth-context";
-import { loginErrorMessage } from "../auth/login-error";
+import { loginErrorFromCode, loginErrorMessage } from "../auth/login-error";
 import { BrandMark, Wordmark } from "../components/brand/wordmark";
 import { ThemeToggle } from "../components/theme-toggle";
 import { Alert } from "../components/ui/alert";
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
 
-/** Google sign-in; the backend decides who may enter (allowlist). */
+/**
+ * Sign-in with the hoandat account (hoandat-auth: Google, GitHub…); the
+ * backend decides who may enter (allowlist). A failed web sign-in comes
+ * back here with `?error=<code>`.
+ */
 export function LoginPage() {
 	const { login } = useAuth();
 	const navigate = useNavigate();
+	const [params] = useSearchParams();
 	const [busy, setBusy] = useState(false);
-	const [error, setError] = useState("");
+	const [error, setError] = useState(() =>
+		loginErrorFromCode(params.get("error")),
+	);
 
 	async function signIn(): Promise<void> {
 		setError("");
@@ -52,12 +59,15 @@ export function LoginPage() {
 							size="lg"
 							block
 							loading={busy}
-							data-id="login-google"
-							leadingIcon={<IconBrandGoogle size={20} aria-hidden="true" />}
+							data-id="login-submit"
+							leadingIcon={<IconLogin2 size={20} aria-hidden="true" />}
 							onClick={() => void signIn()}
 						>
-							Đăng nhập với Google
+							Đăng nhập
 						</Button>
+						<p className="m-0 text-center text-muted text-sm">
+							Dùng tài khoản hoandat (Google hoặc GitHub).
+						</p>
 						{error ? (
 							<Alert tone="danger" data-id="login-error">
 								{error}

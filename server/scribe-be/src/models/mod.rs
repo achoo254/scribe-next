@@ -5,3 +5,4 @@ pub mod transcript;
 pub mod transcript_doc;
 pub mod plan;
 pub mod usage;
+pub mod session;

@@ -24,6 +24,10 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "mul
 mongodb = "3"
 
 jsonwebtoken = "9"
+# OIDC hoandat-auth: băm token phiên, PKCE, mã hoá refresh token IdP của thiết bị (thuần Rust, musl sạch).
+sha2 = "0.10"
+base64 = "0.22"
+aes-gcm = "0.10"
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
 rand = "0.8"
 time = "0.3"
@@ -36,3 +40,7 @@ futures-util = "0.3"
 
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[dev-dependencies]
+# Sinh khoá ký ES256 tạm trong test OIDC (không commit khoá riêng).
+ring = "0.17"
