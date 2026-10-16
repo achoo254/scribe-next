@@ -43,3 +43,5 @@ dependencies: [4]
 **Còn mở**: chưa deploy web prod. Danh từ "transcript" trong câu có cần Việt hoá cho đồng bộ với "Lời đã chép" hay không là việc chờ Jev quyết.
 
 - Jev 16/10: nhãn trang "Lời đã chép" (0,81); danh từ trong câu Việt hoá thành "bản chép lời" (0,99), vd "Mở bản chép lời", "Xoá bản chép lời", "Chưa có bản chép lời nào"; URL `/transcripts` giữ nguyên.
+
+- Deploy web prod 2026-10-16 17:05: điều kiện đạt, sao lưu `/root/scribe-backup-20261016-170525/web`, prod `index-BodpZ39F.js`, các trang 200.
