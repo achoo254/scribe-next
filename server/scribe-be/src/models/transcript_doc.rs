@@ -240,7 +240,7 @@ mod tests {
         assert_eq!(get(&db, &user, &key).await.expect("get").expect("doc").title, None);
 
         // Chép lại đoạn a: runId đổi → câu sửa của lượt cũ hết hiệu lực.
-        let charge = crate::models::usage::Charge { user_id: user.clone(), month: "test".into(), free_pool: false, day: None, ip: None };
+        let charge = crate::models::usage::Charge { user_id: user.clone(), month: "test".into(), free_pool: false, day: None };
         transcript::enqueue(&db, a, &user, "run-2", "m", &charge, 0).await.expect("enqueue");
         let run = transcript::statuses_for_files(&db, &user, &[a]).await.expect("status");
         assert_eq!(effective_texts(d.edits.get(&a.to_hex()), &run[0].run_id, 1), None);

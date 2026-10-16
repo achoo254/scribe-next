@@ -33,3 +33,7 @@ Người dùng chốt 2026-10-16 ("bộ đầy đủ, giữ quỹ $10"; Jev 0,72
 - Review `plans/dattqh/reports/code-reviewer-261016-1310-free-abuse-guards.md`: đã sửa H1 (worker bỏ qua tài khoản bị khoá), M1 (quyết toán đi hết các sổ dù một sổ lỗi), M2, các mục thấp (`blocked: true` sửa tay, timeout 10 giây cho Telegram, tên trường log, dùng chung múi giờ). Để lại: M3 (IPv6 /64 dễ né, CGNAT dễ chặn nhầm — chính sách, chờ người dùng), TTL cho doc theo ngày (nhỏ), `recompute` không sửa sổ ngày/IP (sổ tự hết hạn theo ngày).
 - Kiểm: clippy `-D warnings` sạch, 33 test thường, 5 test Mongo thật (đua 6 lượt chỉ 3 lượt qua giới hạn ngày; IP; plus không bị giới hạn; hoàn trả cả sổ ngày/IP; khoá/mở khoá), E2E dev 14/14 (tài khoản mới, DAILY_LIMIT, TOO_LONG_FOR_FREE, IP_LIMIT, IP khác, plus, `admin block` xoá phiên, phiên mới bị 401, audit). Lượt giả dừng ở ffmpeg, không gọi OpenAI.
 - Chưa: bot Telegram riêng + chat id (người dùng cung cấp), gửi thử `admin notify-test`.
+
+## Bỏ giới hạn theo IP (2026-10-16 13:11)
+
+Người dùng chốt "bỏ quy tắc IP" (Jev 0,75 cho phương án này; giữ 60 phút 0,01, nâng 180 phút 0,23, gộp /56 0,01): người dùng 4G sau NAT nhà mạng chung IPv4 bị chặn nhầm, còn IPv6 /64 dễ né (review M3). Đã gỡ sổ `ip:`, mã `IP_LIMIT`, biến `TRANSCRIBE_FREE_IP_DAILY_MINUTES`, trường `ip` trên doc lượt. Tiền vẫn giữ bởi giới hạn ngày mỗi tài khoản, tài khoản mới chờ 24 giờ, quỹ free $10, trần $30, báo Telegram và `admin block`. Kiểm lại: clippy sạch, 33 test, 5 test Mongo thật, E2E dev 12/12 (ba tài khoản cùng IP đều chép được).

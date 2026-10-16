@@ -2,8 +2,7 @@
 //! tổng. Tiền OpenAI là của chủ sản phẩm nên phút được **giữ chỗ** trước khi gửi audio, rồi
 //! **quyết toán** theo số giây thật sự đã gửi khi lượt chép kết thúc.
 //!
-//! Gói free còn hai sổ theo ngày (giờ Việt Nam) chống một người mở nhiều tài khoản: mỗi tài khoản, và
-//! mọi tài khoản cùng IP (IPv6 gộp theo /64).
+//! Gói free còn sổ theo ngày (giờ Việt Nam) của từng tài khoản.
 //!
 //! Mongo prod là standalone (không transaction): mỗi bước là một lệnh nguyên tử trên một doc; giữ chỗ
 //! hỏng ở bước sau thì trả lại các bước trước.
@@ -46,21 +45,6 @@ pub fn next_day(now: ChronoDateTime<Utc>) -> ChronoDateTime<Utc> {
         .with_timezone(&Utc)
 }
 
-/// Khoá sổ IP: IPv4 nguyên địa chỉ, IPv6 theo /64 (một máy thường có cả dải). IP không đọc được
-/// (`unknown`) thì không có sổ IP — chỉ xảy ra khi request không qua nginx.
-pub fn ip_bucket(ip: &str) -> Option<String> {
-    match ip.trim().parse::<std::net::IpAddr>().ok()? {
-        std::net::IpAddr::V4(v4) => Some(v4.to_string()),
-        std::net::IpAddr::V6(v6) => match v6.to_ipv4_mapped() {
-            Some(v4) => Some(v4.to_string()),
-            None => {
-                let s = v6.segments();
-                Some(format!("{:x}:{:x}:{:x}:{:x}::/64", s[0], s[1], s[2], s[3]))
-            }
-        },
-    }
-}
-
 /// Lúc bắt đầu tháng sau (giờ Việt Nam) — ngày quota đặt lại.
 pub fn next_reset(now: ChronoDateTime<Utc>) -> ChronoDateTime<Utc> {
     let local = now.with_timezone(&vietnam());
@@ -84,9 +68,7 @@ fn total_doc(month: &str) -> String {
 fn day_doc(user_id: &str, day: &str) -> String {
     format!("d:{user_id}:{day}")
 }
-fn ip_doc(ip: &str, day: &str) -> String {
-    format!("ip:{ip}:{day}")
-}
+
 
 /// Vì sao không giữ được chỗ.
 #[derive(Debug, PartialEq)]
@@ -95,8 +77,6 @@ pub enum Blocked {
     UserQuota,
     /// Tài khoản free đã dùng hết phút của hôm nay.
     DailyLimit,
-    /// Các tài khoản free cùng IP đã dùng hết phút của hôm nay.
-    IpLimit,
     /// Quỹ chung của gói free đã hết trong tháng.
     FreePool,
     /// Trần chi phí tổng của tháng.
@@ -112,32 +92,26 @@ pub struct Charge {
     pub free_pool: bool,
     /// Gói free: ngày của sổ ngày (`YYYY-MM-DD`).
     pub day: Option<String>,
-    /// Gói free: khoá sổ IP (`ip_bucket`), không có khi không biết IP.
-    pub ip: Option<String>,
 }
 
 impl Charge {
     /// Các sổ một lượt chép của `user_id` tính vào. Sổ ngày và IP chỉ áp cho gói free.
-    pub fn new(user_id: &str, plan: Plan, now: ChronoDateTime<Utc>, ip: Option<String>) -> Charge {
+    pub fn new(user_id: &str, plan: Plan, now: ChronoDateTime<Utc>) -> Charge {
         let free = plan == Plan::Free;
         Charge {
             user_id: user_id.to_string(),
             month: month_key(now),
             free_pool: free,
             day: free.then(|| day_key(now)),
-            ip: if free { ip } else { None },
         }
     }
 
     /// Mọi sổ của lượt, mỗi sổ kèm lý do chặn khi nó đầy, theo thứ tự giữ chỗ: tháng của user → ngày của
-    /// user → ngày của IP → quỹ free → trần tổng.
+    /// user → quỹ free → trần tổng.
     fn books(&self) -> Vec<(String, Blocked)> {
         let mut books = vec![(user_doc(&self.user_id, &self.month), Blocked::UserQuota)];
         if let Some(day) = &self.day {
             books.push((day_doc(&self.user_id, day), Blocked::DailyLimit));
-            if let Some(ip) = &self.ip {
-                books.push((ip_doc(ip, day), Blocked::IpLimit));
-            }
         }
         if self.free_pool {
             books.push((free_pool_doc(&self.month), Blocked::FreePool));
@@ -152,7 +126,6 @@ pub fn limit_of(blocked: &Blocked, user_limit: i64, limits: &TranscribeLimits) -
     match blocked {
         Blocked::UserQuota => user_limit,
         Blocked::DailyLimit => limits.free_daily_seconds,
-        Blocked::IpLimit => limits.free_ip_daily_seconds,
         Blocked::FreePool => limits.free_pool_seconds,
         Blocked::TotalCap => limits.monthly_cap_seconds,
     }
@@ -246,7 +219,7 @@ pub async fn blocked_usage(db: &Database, charge: &Charge, blocked: &Blocked) ->
     }
 }
 
-/// Đếm số lần một khoá bị chặn trong ngày (vd `daily:<userId>:<ngày>`); trả số lần sau khi cộng.
+/// Đếm số lần một khoá bị chặn trong ngày (`daily:<userId>:<ngày>`); trả số lần sau khi cộng.
 pub async fn count_hit(db: &Database, key: &str) -> i64 {
     let res = db
         .collection::<Document>("transcribe_marks")
@@ -343,15 +316,10 @@ mod tests {
     }
 
     #[test]
-    fn days_follow_vietnam_time_and_ips_group_by_network() {
+    fn days_follow_vietnam_time() {
         assert_eq!(day_key(at("2026-10-16T16:59:59Z")), "2026-10-16");
         assert_eq!(day_key(at("2026-10-16T17:00:00Z")), "2026-10-17");
         assert_eq!(next_day(at("2026-10-16T04:00:00Z")), at("2026-10-16T17:00:00Z"));
-        assert_eq!(ip_bucket("203.0.113.9").as_deref(), Some("203.0.113.9"));
-        assert_eq!(ip_bucket("2001:db8:1:2:aaaa::1").as_deref(), Some("2001:db8:1:2::/64"));
-        assert_eq!(ip_bucket("2001:db8:1:2:bbbb::9"), ip_bucket("2001:db8:1:2:aaaa::1"));
-        assert_eq!(ip_bucket("::ffff:198.51.100.7").as_deref(), Some("198.51.100.7"));
-        assert_eq!(ip_bucket("unknown"), None);
     }
 
     #[test]
@@ -373,12 +341,11 @@ mod tests {
         let db = crate::db::connect(&uri, &db_name).await.expect("kết nối Mongo");
         let month = format!("test-{}", uuid::Uuid::new_v4().simple());
         // Sổ giả: ngày dùng chính chuỗi `month`, để một regex dọn hết.
-        let charge = |user: &str, plan: Plan, ip: &str| Charge {
+        let charge = |user: &str, plan: Plan| Charge {
             user_id: user.to_string(),
             month: month.clone(),
             free_pool: plan == Plan::Free,
             day: (plan == Plan::Free).then(|| month.clone()),
-            ip: (plan == Plan::Free).then(|| format!("{ip}-{month}")),
         };
         let mut limits = TranscribeLimits {
             free_seconds: 100,
@@ -386,10 +353,9 @@ mod tests {
             free_pool_seconds: 150,
             monthly_cap_seconds: 400,
             free_daily_seconds: 1_000,
-            free_ip_daily_seconds: 1_000,
             free_delay_hours: 0,
         };
-        let (alice, bob, carol) = (charge("alice", Plan::Free, "a"), charge("bob", Plan::Free, "b"), charge("carol", Plan::Plus, "c"));
+        let (alice, bob, carol) = (charge("alice", Plan::Free), charge("bob", Plan::Free), charge("carol", Plan::Plus));
 
         // 20 lượt song song, mỗi lượt 10 giây, user free hạn mức 100 ⟹ đúng 10 lượt được giữ.
         let tasks = (0..20).map(|_| reserve(&db, &alice, 100, 10, &limits));
@@ -399,11 +365,10 @@ mod tests {
         let usage = month_usage(&db, "alice", &month).await.expect("đọc");
         assert_eq!((usage.user_seconds, usage.free_pool_seconds, usage.total_seconds), (100, 100, 100));
 
-        // Quỹ free còn 50: bob (free) giữ 60 bị chặn bởi quỹ, mọi sổ của bob (tháng, ngày, IP) trả về 0.
+        // Quỹ free còn 50: bob (free) giữ 60 bị chặn bởi quỹ, mọi sổ của bob (tháng, ngày) trả về 0.
         assert_eq!(reserve(&db, &bob, 100, 60, &limits).await.expect("bob"), Err(Blocked::FreePool));
         assert_eq!(month_usage(&db, "bob", &month).await.expect("đọc").user_seconds, 0);
         assert_eq!(blocked_usage(&db, &bob, &Blocked::DailyLimit).await.expect("ngày"), 0);
-        assert_eq!(blocked_usage(&db, &bob, &Blocked::IpLimit).await.expect("ip"), 0);
         // carol (plus) không bị quỹ free chặn, chỉ bị trần tổng (400 − 100 = 300).
         reserve(&db, &carol, 1_000, 300, &limits).await.expect("carol").expect("giữ");
         assert_eq!(reserve(&db, &carol, 1_000, 1, &limits).await.expect("carol"), Err(Blocked::TotalCap));
@@ -414,30 +379,22 @@ mod tests {
         let usage = month_usage(&db, "carol", &month).await.expect("đọc");
         assert_eq!((usage.user_seconds, usage.total_seconds), (250, 350));
 
-        // Giới hạn ngày 30 giây mỗi tài khoản, 50 giây mỗi IP; quỹ và trần rộng.
+        // Giới hạn ngày 30 giây mỗi tài khoản; quỹ và trần rộng.
         limits.free_daily_seconds = 30;
-        limits.free_ip_daily_seconds = 50;
         limits.free_pool_seconds = 10_000;
         limits.monthly_cap_seconds = 10_000;
-        let (dave, erin, frank, grace) =
-            (charge("dave", Plan::Free, "x"), charge("erin", Plan::Free, "x"), charge("frank", Plan::Free, "y"), charge("grace", Plan::Plus, "x"));
+        let (dave, erin, grace) = (charge("dave", Plan::Free), charge("erin", Plan::Free), charge("grace", Plan::Plus));
         let tasks = (0..6).map(|_| reserve(&db, &dave, 100, 10, &limits));
         let ok = futures_util::future::join_all(tasks).await.iter().filter(|r| matches!(r, Ok(Ok(_)))).count();
         assert_eq!(ok, 3, "dave chỉ được 30 giây trong ngày");
         assert_eq!(reserve(&db, &dave, 100, 10, &limits).await.expect("dave"), Err(Blocked::DailyLimit));
-        // erin cùng IP: còn 20 giây của IP.
-        reserve(&db, &erin, 100, 10, &limits).await.expect("erin").expect("giữ");
-        assert_eq!(reserve(&db, &erin, 100, 20, &limits).await.expect("erin"), Err(Blocked::IpLimit));
-        assert_eq!(month_usage(&db, "erin", &month).await.expect("đọc").user_seconds, 10);
-        assert_eq!(blocked_usage(&db, &erin, &Blocked::IpLimit).await.expect("ip"), 40);
-        // IP khác không bị ảnh hưởng; gói plus cùng IP không có sổ ngày/IP.
-        reserve(&db, &frank, 100, 20, &limits).await.expect("frank").expect("giữ");
+        assert_eq!(month_usage(&db, "dave", &month).await.expect("đọc").user_seconds, 30);
+        // Tài khoản khác không bị ảnh hưởng; gói plus không có sổ ngày.
+        reserve(&db, &erin, 100, 30, &limits).await.expect("erin").expect("giữ");
         reserve(&db, &grace, 1_000, 500, &limits).await.expect("grace").expect("giữ");
-        assert_eq!(blocked_usage(&db, &erin, &Blocked::IpLimit).await.expect("ip"), 40);
-        // Hoàn 10 giây của dave trả cả sổ ngày lẫn sổ IP.
+        // Hoàn 10 giây của dave trả cả sổ ngày.
         settle(&db, &dave, -10).await.expect("hoàn");
         assert_eq!(blocked_usage(&db, &dave, &Blocked::DailyLimit).await.expect("ngày"), 20);
-        assert_eq!(blocked_usage(&db, &dave, &Blocked::IpLimit).await.expect("ip"), 30);
 
         db.collection::<Document>(COLL)
             .delete_many(doc! { "_id": { "$regex": format!("{month}$") } })

@@ -62,7 +62,7 @@ POST /api/transcripts ─► allowlist? ─► cần = Σ durationS các file
 - Backend tin IdP bằng cách xác minh ID token ES256 qua JWKS một lần lúc đăng nhập rồi cấp phiên riêng (không cần resource audience).
 - Phiên lưu trong Mongo (`sessions`, `_id` = băm của token) để thu hồi được; web nhận back-channel logout; mobile mất phiên khi máy bị thu hồi ở `/account` (refresh IdP giữ phía server, `invalid_grant`).
 - Bỏ hẳn Firebase, không chạy song song (người dùng chốt) ⟹ đổi đăng nhập một chiều, thử đủ trên dev local + iOS simulator trước.
-- Mở chép lời cho mọi người bằng cờ `TRANSCRIBE_OPEN`, bật vài ngày sau khi đổi đăng nhập ổn (Jev 0,98) **và chỉ sau Phase 9** (chống lạm dụng free: giới hạn ngày, theo IP, tài khoản mới chờ 24 giờ, lệnh admin chặn, báo Telegram — người dùng chốt).
+- Mở chép lời cho mọi người bằng cờ `TRANSCRIBE_OPEN`, bật vài ngày sau khi đổi đăng nhập ổn (Jev 0,98) **và chỉ sau Phase 9** (chống lạm dụng free: giới hạn ngày mỗi tài khoản, tài khoản mới chờ 24 giờ, lệnh admin chặn, báo Telegram — người dùng chốt; bỏ giới hạn theo IP 16/10).
 - User cũ ghép theo email khi IdP báo `email_verified` (đã duyệt D1: "migrate user theo email"); sau đó khoá theo `idpSub`.
 
 ## Non-goals

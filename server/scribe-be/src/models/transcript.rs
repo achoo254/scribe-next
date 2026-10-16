@@ -55,11 +55,9 @@ pub struct TranscriptDoc {
     /// Lượt có tính vào quỹ chung của gói free không.
     #[serde(rename = "freePool", default)]
     pub free_pool: bool,
-    /// Gói free: ngày của sổ ngày và khoá sổ IP (`usage::Charge`).
+    /// Gói free: ngày của sổ ngày (`usage::Charge`).
     #[serde(default)]
     pub day: Option<String>,
-    #[serde(default)]
-    pub ip: Option<String>,
     /// Lượt còn chạy, sổ còn mở.
     #[serde(default)]
     pub open: bool,
@@ -82,7 +80,6 @@ impl TranscriptDoc {
             month: self.month.clone()?,
             free_pool: self.free_pool,
             day: self.day.clone(),
-            ip: self.ip.clone(),
         })
     }
 }
@@ -103,7 +100,6 @@ async fn settle_closed(db: &Database, before: &TranscriptDoc) {
         "month": &charge.month,
         "freePool": charge.free_pool,
         "day": &charge.day,
-        "ip": &charge.ip,
         "chargedS": before.charged_s,
         "sentS": before.sent_s,
         "at": DateTime::now(),
@@ -154,7 +150,6 @@ pub async fn enqueue(
                     "month": &charge.month,
                     "freePool": charge.free_pool,
                     "day": &charge.day,
-                    "ip": &charge.ip,
                     "open": true,
                     "settled": false,
                     "attempts": 0,
@@ -474,14 +469,13 @@ mod tests {
     use super::*;
     use crate::config::TranscribeLimits;
 
-    /// Giữ chỗ gói free trên sổ giả: ngày và IP dùng chính chuỗi `month` để dọn chung một regex.
+    /// Giữ chỗ gói free trên sổ giả: ngày dùng chính chuỗi `month` để dọn chung một regex.
     async fn take(db: &Database, user: &str, month: &str, need: i64, limits: &TranscribeLimits) -> Charge {
         let charge = Charge {
             user_id: user.to_string(),
             month: month.to_string(),
             free_pool: true,
             day: Some(month.to_string()),
-            ip: Some(format!("ip-{month}")),
         };
         usage::reserve(db, &charge, limits.free_seconds, need, limits).await.expect("giữ").expect("đủ");
         charge
@@ -503,7 +497,6 @@ mod tests {
             free_pool_seconds: 10_000,
             monthly_cap_seconds: 10_000,
             free_daily_seconds: 10_000,
-            free_ip_daily_seconds: 10_000,
             free_delay_hours: 0,
         };
         let used = |db: Database, user: String, month: String| async move {

@@ -134,11 +134,6 @@ fn blocked_error(blocked: &Blocked, used_s: i64, limit_s: i64, now: chrono::Date
             format!("Gói miễn phí chép được {limit_minutes} phút mỗi ngày, hôm nay đã dùng {used_minutes} phút. Mở lại lúc 0 giờ."),
             usage::next_day(now),
         ),
-        Blocked::IpLimit => (
-            "IP_LIMIT",
-            format!("Mạng bạn đang dùng đã hết {limit_minutes} phút chép lời miễn phí của hôm nay. Mở lại lúc 0 giờ."),
-            usage::next_day(now),
-        ),
         Blocked::FreePool | Blocked::TotalCap => (
             "CAP_REACHED",
             "Chép lời đã dùng hết hạn mức chung của tháng này, sẽ mở lại đầu tháng sau.".to_string(),
@@ -161,17 +156,11 @@ fn too_new(profile: &user::Profile, delay_hours: i64, now: chrono::DateTime<chro
     })
 }
 
-/// Một tài khoản hoặc IP chạm giới hạn ngày lần thứ 3 trong ngày: báo chủ sản phẩm (một lần mỗi ngày).
+/// Một tài khoản chạm giới hạn ngày lần thứ 3 trong ngày: báo chủ sản phẩm (một lần mỗi ngày).
 async fn note_repeated_block(state: &AppState, charge: &Charge, blocked: &Blocked, email: &str) {
-    let Some(day) = &charge.day else { return };
-    let ip = charge.ip.as_deref().unwrap_or("?");
-    let (key, who) = match blocked {
-        Blocked::DailyLimit => (format!("daily:{}:{day}", charge.user_id), format!("tài khoản {email}")),
-        Blocked::IpLimit => (format!("ip:{ip}:{day}"), format!("IP {ip}")),
-        _ => return,
-    };
-    if usage::count_hit(&state.db, &key).await == 3 {
-        notify::send(state, format!("{who} chạm giới hạn chép lời miễn phí trong ngày lần thứ 3 ({day})."));
+    let (Blocked::DailyLimit, Some(day)) = (blocked, &charge.day) else { return };
+    if usage::count_hit(&state.db, &format!("daily:{}:{day}", charge.user_id)).await == 3 {
+        notify::send(state, format!("Tài khoản {email} chạm giới hạn chép lời miễn phí trong ngày lần thứ 3 ({day})."));
     }
 }
 
@@ -224,8 +213,8 @@ pub async fn create(
             return Err(e);
         }
     }
-    if plan == plan::Plan::Free && total > limits.free_daily_seconds.min(limits.free_ip_daily_seconds) {
-        let max = limits.free_daily_seconds.min(limits.free_ip_daily_seconds) / 60;
+    if plan == plan::Plan::Free && total > limits.free_daily_seconds {
+        let max = limits.free_daily_seconds / 60;
         return Err(AppError::Quota {
             code: "TOO_LONG_FOR_FREE",
             message: format!(
@@ -237,8 +226,7 @@ pub async fn create(
             retry_at: None,
         });
     }
-    let ip = audit::CLIENT_IP.try_with(|ip| usage::ip_bucket(ip)).ok().flatten();
-    let charge = Charge::new(&user.0, plan, now, ip);
+    let charge = Charge::new(&user.0, plan, now);
     let user_limit = plan.limit_seconds(&limits);
     if let Err(blocked) = usage::reserve(&state.db, &charge, user_limit, total, &limits).await? {
         let used_s = usage::blocked_usage(&state.db, &charge, &blocked).await?;

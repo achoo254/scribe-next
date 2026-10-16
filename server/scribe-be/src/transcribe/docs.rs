@@ -421,7 +421,6 @@ mod tests {
             month: None,
             free_pool: false,
             day: None,
-            ip: None,
             open: false,
             settled: true,
             attempts: 0,

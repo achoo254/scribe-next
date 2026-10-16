@@ -19,10 +19,9 @@ const DEFAULT_PLUS_MINUTES: i64 = 3000;
 /// Quỹ chung của user gói free; trần tổng chặn mọi người (người dùng chốt 2026-10-16).
 const DEFAULT_FREE_POOL_USD: f64 = 10.0;
 const DEFAULT_MONTHLY_CAP_USD: f64 = 30.0;
-/// Chống lạm dụng gói free (người dùng chốt 2026-10-16): phút mỗi ngày mỗi tài khoản, mỗi IP, và số giờ
-/// tài khoản mới phải chờ trước khi chép lời.
+/// Chống lạm dụng gói free (người dùng chốt 2026-10-16; bỏ giới hạn theo IP vì người dùng 4G chung IP
+/// nhà mạng): phút mỗi ngày mỗi tài khoản và số giờ tài khoản mới phải chờ trước khi chép lời.
 const DEFAULT_FREE_DAILY_MINUTES: i64 = 30;
-const DEFAULT_FREE_IP_DAILY_MINUTES: i64 = 60;
 const DEFAULT_FREE_DELAY_HOURS: i64 = 24;
 
 /// Hạn mức chép lời, tính bằng giây audio mỗi tháng.
@@ -36,8 +35,6 @@ pub struct TranscribeLimits {
     pub monthly_cap_seconds: i64,
     /// Gói free: giây mỗi ngày (giờ Việt Nam) của một tài khoản. `0` = gói free không chép được.
     pub free_daily_seconds: i64,
-    /// Gói free: giây mỗi ngày của mọi tài khoản free cùng một IP (IPv6 gộp theo /64).
-    pub free_ip_daily_seconds: i64,
     /// Gói free: số giờ từ lúc tạo tài khoản tới khi được chép lời. `0` = không chờ.
     pub free_delay_hours: i64,
 }
@@ -61,17 +58,15 @@ impl TranscribeLimits {
             free_pool_seconds: usd_seconds(free_pool_usd, DEFAULT_FREE_POOL_USD),
             monthly_cap_seconds: usd_seconds(cap_usd, DEFAULT_MONTHLY_CAP_USD),
             free_daily_seconds: DEFAULT_FREE_DAILY_MINUTES * 60,
-            free_ip_daily_seconds: DEFAULT_FREE_IP_DAILY_MINUTES * 60,
             free_delay_hours: DEFAULT_FREE_DELAY_HOURS,
         }
     }
 
     /// Ghi đè các giới hạn chống lạm dụng gói free bằng biến build (giá trị sai/âm thì giữ mặc định).
-    fn with_free_guards(self, daily_minutes: Option<&str>, ip_daily_minutes: Option<&str>, delay_hours: Option<&str>) -> Self {
+    fn with_free_guards(self, daily_minutes: Option<&str>, delay_hours: Option<&str>) -> Self {
         let num = |v: Option<&str>, default: i64| v.and_then(|s| s.trim().parse().ok()).filter(|m: &i64| *m >= 0).unwrap_or(default);
         TranscribeLimits {
             free_daily_seconds: num(daily_minutes, DEFAULT_FREE_DAILY_MINUTES) * 60,
-            free_ip_daily_seconds: num(ip_daily_minutes, DEFAULT_FREE_IP_DAILY_MINUTES) * 60,
             free_delay_hours: num(delay_hours, DEFAULT_FREE_DELAY_HOURS),
             ..self
         }
@@ -160,7 +155,6 @@ impl Config {
             )
             .with_free_guards(
                 option_env!("TRANSCRIBE_FREE_DAILY_MINUTES"),
-                option_env!("TRANSCRIBE_FREE_IP_DAILY_MINUTES"),
                 option_env!("TRANSCRIBE_FREE_DELAY_HOURS"),
             ),
             telegram_token_path: option_env!("TELEGRAM_TOKEN_PATH").filter(|p| !p.is_empty()).map(str::to_string),
@@ -221,8 +215,9 @@ mod tests {
         let c = TranscribeLimits::from_parts(Some("60"), Some("x"), Some("-5"), Some("15"));
         assert_eq!((c.free_seconds, c.plus_seconds), (3600, 3000 * 60));
         assert_eq!((c.free_pool_seconds, c.monthly_cap_seconds), (200_000, 300_000));
-        assert_eq!((d.free_daily_seconds, d.free_ip_daily_seconds, d.free_delay_hours), (1800, 3600, 24));
-        let g = d.with_free_guards(Some("10"), Some("bad"), Some("0"));
-        assert_eq!((g.free_daily_seconds, g.free_ip_daily_seconds, g.free_delay_hours), (600, 3600, 0));
+        assert_eq!((d.free_daily_seconds, d.free_delay_hours), (1800, 24));
+        let g = d.with_free_guards(Some("10"), Some("0"));
+        assert_eq!((g.free_daily_seconds, g.free_delay_hours), (600, 0));
+        assert_eq!(d.with_free_guards(Some("bad"), Some("-1")).free_daily_seconds, 1800);
     }
 }
