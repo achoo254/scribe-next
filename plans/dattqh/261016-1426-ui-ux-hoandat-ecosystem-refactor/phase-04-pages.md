@@ -59,3 +59,5 @@ dependencies: [3]
 - Chưa deploy, chưa thử trên iPhone thật. Lưới nền mới chỉ có ở trang đăng nhập; vẽ cho cả app như Localman hay không là việc chờ Jev quyết.
 
 - Jev 16/10: sửa `test:e2e` cho pnpm ngay (0,81) — gọi CLI của `@playwright/test`; lưới nền chỉ ở trang đăng nhập (0,64; cả app 0,36).
+
+- Deploy web prod 2026-10-16 16:43: điều kiện đạt, sao lưu `/root/scribe-backup-20261016-164319/web`, prod `index-DVxZRNcB.js`, `/login` `/record` `/split` `/transcripts` 200.
