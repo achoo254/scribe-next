@@ -83,7 +83,7 @@ fn extract_id(doc: Option<Document>) -> Result<String, AppError> {
 }
 
 /// Lỗi Mongo có phải duplicate-key (E11000) không — dùng để retry upsert khi đua unique index.
-fn is_duplicate_key(e: &MongoError) -> bool {
+pub(crate) fn is_duplicate_key(e: &MongoError) -> bool {
     match *e.kind {
         ErrorKind::Write(WriteFailure::WriteError(ref we)) => we.code == DUP_KEY,
         ErrorKind::Command(ref ce) => ce.code == DUP_KEY,

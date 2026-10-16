@@ -173,6 +173,91 @@ pub async fn statuses(db: &Database, user_id: &str) -> Result<Vec<(String, Strin
     Ok(out)
 }
 
+/// Trạng thái một lượt chép, không kèm câu (poll khi đang chép, xếp chép lời).
+#[derive(Debug, Clone, PartialEq)]
+pub struct RunStatus {
+    pub file_id: ObjectId,
+    pub status: String,
+    pub progress: f64,
+    pub run_id: String,
+    pub error: Option<String>,
+}
+
+fn run_status(d: &bson::Document) -> Option<RunStatus> {
+    Some(RunStatus {
+        file_id: d.get_object_id("_id").ok()?,
+        status: d.get_str("status").ok()?.to_string(),
+        progress: d.get_f64("progress").unwrap_or(0.0),
+        run_id: d.get_str("runId").unwrap_or_default().to_string(),
+        error: d.get_str("error").ok().map(str::to_string),
+    })
+}
+
+/// Trạng thái các file của user (projection: không kéo `text`/`sentences`).
+pub async fn statuses_for_files(db: &Database, user_id: &str, file_ids: &[ObjectId]) -> Result<Vec<RunStatus>, AppError> {
+    let mut cur = db
+        .collection::<bson::Document>(COLL)
+        .find(doc! { "_id": { "$in": file_ids }, "userId": user_id })
+        .projection(doc! { "status": 1, "progress": 1, "runId": 1, "error": 1 })
+        .await
+        .map_err(|e| AppError::Internal(format!("đọc trạng thái chép lời: {e}")))?;
+    let mut out = Vec::new();
+    while let Some(r) = cur.next().await {
+        let d = r.map_err(|e| AppError::Internal(format!("đọc trạng thái chép lời: {e}")))?;
+        out.extend(run_status(&d));
+    }
+    Ok(out)
+}
+
+/// Dòng tóm tắt cho danh sách transcript: trạng thái + vài câu đầu + tổng số câu.
+#[derive(Debug)]
+pub struct Preview {
+    pub run: RunStatus,
+    pub first_texts: Vec<String>,
+    pub sentence_count: usize,
+}
+
+/// Số câu đầu kéo về cho dòng xem trước trong danh sách.
+pub const PREVIEW_SENTENCES: i32 = 3;
+
+/// Tóm tắt mọi lượt chép của user. Aggregate `$slice` để không kéo toàn bộ câu của phiên dài.
+pub async fn previews(db: &Database, user_id: &str) -> Result<Vec<Preview>, AppError> {
+    let pipeline = vec![
+        doc! { "$match": { "userId": user_id } },
+        doc! { "$project": {
+            "status": 1, "progress": 1, "runId": 1, "error": 1,
+            "first": { "$slice": [{ "$ifNull": ["$sentences.text", []] }, PREVIEW_SENTENCES] },
+            "count": { "$size": { "$ifNull": ["$sentences", []] } },
+        } },
+    ];
+    let mut cur = db
+        .collection::<bson::Document>(COLL)
+        .aggregate(pipeline)
+        .await
+        .map_err(|e| AppError::Internal(format!("đọc tóm tắt chép lời: {e}")))?;
+    let mut out = Vec::new();
+    while let Some(r) = cur.next().await {
+        let d = r.map_err(|e| AppError::Internal(format!("đọc tóm tắt chép lời: {e}")))?;
+        let Some(run) = run_status(&d) else { continue };
+        let first_texts = d
+            .get_array("first")
+            .map(|a| a.iter().filter_map(|t| t.as_str().map(str::to_string)).collect())
+            .unwrap_or_default();
+        let sentence_count = d.get_i32("count").map_or(0, |n| n.max(0) as usize);
+        out.push(Preview { run, first_texts, sentence_count });
+    }
+    Ok(out)
+}
+
+/// Xoá transcript của các file thuộc user (xoá transcript, giữ audio).
+pub async fn delete_owned(db: &Database, user_id: &str, file_ids: &[ObjectId]) -> Result<u64, AppError> {
+    db.collection::<TranscriptDoc>(COLL)
+        .delete_many(doc! { "_id": { "$in": file_ids }, "userId": user_id })
+        .await
+        .map(|r| r.deleted_count)
+        .map_err(|e| AppError::Internal(format!("xoá chép lời: {e}")))
+}
+
 /// Xoá cùng file (gọi từ `file::delete_doc`, nơi duy nhất xoá doc file).
 pub async fn delete(db: &Database, file_id: ObjectId) -> Result<(), AppError> {
     db.collection::<TranscriptDoc>(COLL)

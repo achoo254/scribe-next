@@ -4,7 +4,10 @@ import type { MediaSeek } from "../../components/media-player";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import type { RecordingItem } from "../../features/files/files-api";
-import type { SessionRow as SessionRowData } from "../../features/files/recording-groups";
+import {
+	type SessionRow as SessionRowData,
+	sessionTitle,
+} from "../../features/files/recording-groups";
 import { formatDuration, formatSize } from "../../lib/format";
 import { RecordingRow } from "./recording-row";
 import { TranscriptPanel } from "./transcript-panel";
@@ -18,17 +21,6 @@ export interface SessionRowProps {
 	onSeek: (fileId: string, seconds: number) => void;
 	onTogglePlay: (id: string) => void;
 	onDelete: (item: RecordingItem, label: string) => void;
-}
-
-function startLabel(createdAt?: string): string {
-	if (!createdAt) return "Bản ghi trên iPhone";
-	const date = new Date(createdAt);
-	if (Number.isNaN(date.getTime())) return "Bản ghi trên iPhone";
-	const time = date.toLocaleTimeString("vi-VN", {
-		hour: "2-digit",
-		minute: "2-digit",
-	});
-	return `Bản ghi trên iPhone ${time}`;
 }
 
 /**
@@ -60,7 +52,7 @@ export function SessionRow({
 		if (seek && row.parts.some(({ item }) => item.id === seek.fileId))
 			setOpen(true);
 	}, [seek, row.parts]);
-	const title = startLabel(row.createdAt);
+	const title = sessionTitle(row.createdAt);
 	const id = `history-session-${row.sessionId.slice(0, 8)}`;
 
 	return (

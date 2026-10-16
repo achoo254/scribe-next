@@ -11,6 +11,8 @@ pub enum AppError {
     Forbidden(String),
     BadRequest(String),
     NotFound(String),
+    /// 409 — dữ liệu đã đổi so với lúc client đọc (vd đoạn vừa được chép lại).
+    Conflict(String),
     /// 413 — vượt size cap / quota (red-team #3/#14).
     TooLarge(String),
     /// 429 — rate-limit theo IP (red-team #2).
@@ -25,6 +27,7 @@ impl AppError {
             AppError::Forbidden(m) => (StatusCode::FORBIDDEN, m),
             AppError::BadRequest(m) => (StatusCode::BAD_REQUEST, m),
             AppError::NotFound(m) => (StatusCode::NOT_FOUND, m),
+            AppError::Conflict(m) => (StatusCode::CONFLICT, m),
             AppError::TooLarge(m) => (StatusCode::PAYLOAD_TOO_LARGE, m),
             AppError::TooManyRequests(m) => (StatusCode::TOO_MANY_REQUESTS, m),
             AppError::Internal(m) => (StatusCode::INTERNAL_SERVER_ERROR, m),

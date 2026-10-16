@@ -4,11 +4,22 @@ use crate::state::AppState;
 use crate::{access_log, auth, files, jobs, rate_limit, recordings, transcribe, upload};
 use axum::extract::DefaultBodyLimit;
 use axum::middleware::{from_fn, from_fn_with_state};
-use axum::routing::{get, post};
+use axum::routing::{get, post, put};
 use axum::{Json, Router};
 use serde_json::{json, Value};
 
 pub fn build_router(state: AppState) -> Router {
+    // Transcript theo phiên: body chỉ là chữ (tiêu đề, câu sửa) → trần riêng 1 MiB thay vì 8 MiB.
+    let transcript_docs = Router::new()
+        .route("/api/transcript-docs", get(transcribe::docs::list))
+        .route(
+            "/api/transcript-docs/{key}",
+            get(transcribe::docs::get).patch(transcribe::docs::rename).delete(transcribe::docs::delete),
+        )
+        .route("/api/transcript-docs/{key}/status", get(transcribe::docs::status))
+        .route("/api/transcript-docs/{key}/segments/{file_id}", put(transcribe::docs::save_segment))
+        .layer(DefaultBodyLimit::max(1024 * 1024));
+
     // Route cần đăng nhập → guard verify session; rate-limit chung (ngưỡng cao, không cản recording).
     let protected = Router::new()
         .route("/api/me", get(auth::me))
@@ -33,6 +44,8 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/transcripts/export", get(transcribe::export))
         // Chunk upload 5MB/lần → nâng body limit (mặc định axum 2MB). Không buffer cả file (append disk).
         .layer(DefaultBodyLimit::max(8 * 1024 * 1024))
+        // Gộp SAU `.layer` ở trên: nhóm này giữ trần 1 MiB của riêng nó.
+        .merge(transcript_docs)
         .route_layer(from_fn_with_state(state.clone(), auth::require_auth))
         // api_limit thêm SAU → chạy TRƯỚC require_auth (reject rẻ trước khi verify session).
         .route_layer(from_fn_with_state(state.clone(), rate_limit::api_limit));

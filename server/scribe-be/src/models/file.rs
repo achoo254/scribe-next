@@ -223,14 +223,90 @@ pub async fn find_expired(db: &Database) -> Result<Vec<FileDoc>, AppError> {
     Ok(out)
 }
 
-/// Xoá 1 file doc theo id (gọi SAU khi đã xoá file disk — thứ tự cố định, red-team #1).
-pub async fn delete_doc(db: &Database, id: ObjectId) -> Result<(), AppError> {
+/// Xoá file doc (gọi SAU khi đã xoá file disk — thứ tự cố định, red-team #1).
+///
+/// Bản chép lời đi theo file: đây là nơi duy nhất xoá doc file (xoá tay, retention, cắt bản ghi).
+/// Câu sửa của đoạn trong `transcript_docs` dọn theo, lỗi chỉ `warn` (đĩa đã xoá, không báo lỗi
+/// ngược); sweep mồ côi trong retention là cơ chế đảm bảo.
+pub async fn delete_doc(db: &Database, f: &FileDoc) -> Result<(), AppError> {
+    let Some(id) = f.id else { return Ok(()) };
     db.collection::<FileDoc>(COLL)
         .delete_one(doc! { "_id": id })
         .await
         .map_err(|e| AppError::Internal(format!("xoá file doc: {e}")))?;
-    // Bản chép lời đi theo file: đây là nơi duy nhất xoá doc file (xoá tay, retention, cắt bản ghi).
-    super::transcript::delete(db, id).await
+    super::transcript::delete(db, id).await?;
+    if f.kind == "recording" {
+        let key = session_key(&f.name, id);
+        if let Err(e) = super::transcript_doc::unset_edits(db, &f.user_id, &key, id).await {
+            tracing::warn!(file = %id, "dọn câu sửa của đoạn lỗi (sweep mồ côi sẽ dọn): {e:?}");
+        }
+    }
+    Ok(())
+}
+
+/// `<sessionId>#<index>` — tên đoạn do app iPhone đặt (`UploadQueue.swift`). Cùng luật với
+/// `parseSegmentName` của web (`recording-groups.ts`), thêm trần 64 ký tự cho id phiên.
+pub fn parse_segment_name(name: &str) -> Option<(&str, u32)> {
+    let (session, index) = name.split_once('#')?;
+    let session_ok = (8..=64).contains(&session.len())
+        && session.bytes().all(|b| b.is_ascii_digit() || b.is_ascii_lowercase() || b == b'-');
+    // Tối đa 9 chữ số (cùng luật với web): luôn vừa u32.
+    let index_ok = (1..=9).contains(&index.len()) && index.bytes().all(|b| b.is_ascii_digit());
+    if !session_ok || !index_ok {
+        return None;
+    }
+    Some((session, index.parse().ok()?))
+}
+
+/// Khoá phiên của một bản ghi: `s:<sessionId>` cho đoạn iPhone, `f:<id>` cho bản ghi một file.
+/// Tiền tố để tên do client đặt không trùng được khoá của file khác.
+pub fn session_key(name: &str, id: ObjectId) -> String {
+    match parse_segment_name(name) {
+        Some((session, _)) => format!("s:{session}"),
+        None => format!("f:{}", id.to_hex()),
+    }
+}
+
+/// Khoá có đúng một trong hai dạng của [`session_key`] không (kiểm trước khi đưa vào truy vấn).
+pub fn is_valid_session_key(key: &str) -> bool {
+    if let Some(session) = key.strip_prefix("s:") {
+        return parse_segment_name(&format!("{session}#0")).is_some();
+    }
+    key.strip_prefix("f:")
+        .is_some_and(|hex| hex.len() == 24 && hex.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)))
+}
+
+/// Các bản ghi của user thuộc phiên `key`, theo thứ tự ghi (index đoạn; bản ghi một file là 0).
+/// `key` phải hợp lệ ([`is_valid_session_key`]); khoá sai dạng trả rỗng.
+pub async fn list_session(db: &Database, user_id: &str, key: &str) -> Result<Vec<(u32, FileDoc)>, AppError> {
+    if !is_valid_session_key(key) {
+        return Ok(Vec::new());
+    }
+    let filter = if let Some(session) = key.strip_prefix("s:") {
+        // `session` chỉ gồm [0-9a-z-] (đã kiểm) nên đặt thẳng vào regex được.
+        doc! { "userId": user_id, "kind": "recording", "name": { "$regex": format!("^{session}#[0-9]+$") } }
+    } else if let Some(oid) = key.strip_prefix("f:").and_then(|hex| ObjectId::parse_str(hex).ok()) {
+        doc! { "_id": oid, "userId": user_id, "kind": "recording" }
+    } else {
+        return Ok(Vec::new());
+    };
+    let mut cur = db
+        .collection::<FileDoc>(COLL)
+        .find(filter)
+        .await
+        .map_err(|e| AppError::Internal(format!("find phiên ghi: {e}")))?;
+    let mut out = Vec::new();
+    while let Some(r) = cur.next().await {
+        let f = r.map_err(|e| AppError::Internal(format!("đọc phiên ghi: {e}")))?;
+        // Bản ghi trình duyệt tình cờ đặt tên giống đoạn iPhone thì thuộc phiên `s:`, không phải `f:`.
+        if f.id.is_none_or(|id| session_key(&f.name, id) != key) {
+            continue;
+        }
+        let index = parse_segment_name(&f.name).map_or(0, |(_, index)| index);
+        out.push((index, f));
+    }
+    out.sort_by_key(|(index, _)| *index);
+    Ok(out)
 }
 
 /// Tổng byte đã dùng của user (quota — red-team #3).
@@ -253,4 +329,47 @@ pub async fn user_usage_bytes(db: &Database, user_id: &str) -> Result<u64, AppEr
         return Ok(total.max(0) as u64);
     }
     Ok(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn session_key_groups_ios_segments_and_keeps_other_recordings_alone() {
+        let id = ObjectId::parse_str("65f0a1b2c3d4e5f60718293a").expect("oid");
+        let file_key = "f:65f0a1b2c3d4e5f60718293a";
+        // Cùng ví dụ với `recording-groups.test.ts` của web.
+        assert_eq!(session_key("6ad09d56-a5e5#12", id), "s:6ad09d56-a5e5");
+        assert_eq!(session_key("aaaaaaaa-1111#0", id), "s:aaaaaaaa-1111");
+        assert_eq!(session_key("Bản ghi #3", id), file_key);
+        assert_eq!(session_key("abc#1", id), file_key);
+        assert_eq!(session_key("Bản ghi 16:31:09", id), file_key);
+        // Phiên iPhone thật (UUID chữ thường) và phiên selftest của RecorderPlugin.
+        assert_eq!(
+            session_key("0b6c3f9e-2d4a-4f8e-9a51-7c2b1e0d3f44#48", id),
+            "s:0b6c3f9e-2d4a-4f8e-9a51-7c2b1e0d3f44"
+        );
+        assert_eq!(session_key("selftest-1760590000#0", id), "s:selftest-1760590000");
+        // Chữ hoa, index rỗng/không phải số, id phiên quá dài: không phải đoạn iPhone.
+        assert_eq!(session_key("ABCDEFGH-1111#0", id), file_key);
+        assert_eq!(session_key("aaaaaaaa-1111#", id), file_key);
+        assert_eq!(session_key("aaaaaaaa-1111#1a", id), file_key);
+        assert_eq!(session_key("aaaaaaaa-1111#1234567890", id), file_key);
+        assert_eq!(session_key(&format!("{}#0", "a".repeat(65)), id), file_key);
+        assert_eq!(parse_segment_name("6ad09d56-a5e5#12"), Some(("6ad09d56-a5e5", 12)));
+    }
+
+    #[test]
+    fn session_keys_are_validated_before_queries() {
+        assert!(is_valid_session_key("s:6ad09d56-a5e5"));
+        assert!(is_valid_session_key("f:65f0a1b2c3d4e5f60718293a"));
+        assert!(!is_valid_session_key("s:abc"));
+        assert!(!is_valid_session_key("s:6ad09d56-a5e5#1"));
+        assert!(!is_valid_session_key("s:6ad09d56.a5e5"));
+        assert!(!is_valid_session_key("f:65F0A1B2C3D4E5F60718293A"));
+        assert!(!is_valid_session_key("f:65f0a1b2"));
+        assert!(!is_valid_session_key("x:6ad09d56-a5e5"));
+        assert!(!is_valid_session_key(""));
+    }
 }

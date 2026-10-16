@@ -8,6 +8,7 @@ import {
 	groupOutputsByJob,
 	groupSessions,
 	parseSegmentName,
+	sessionTitle,
 } from "./recording-groups";
 
 function recording(id: string, createdAt?: string): RecordingItem {
@@ -114,9 +115,29 @@ describe("groupSessions", () => {
 	it("keeps names that only look similar as single recordings", () => {
 		expect(parseSegmentName("Bản ghi #3")).toBeNull();
 		expect(parseSegmentName("abc#1")).toBeNull();
+		// Same limits as the backend's session key.
+		expect(parseSegmentName(`${"a".repeat(65)}#1`)).toBeNull();
+		expect(parseSegmentName("aaaaaaaa-1111#1234567890")).toBeNull();
 		expect(parseSegmentName("6ad09d56-a5e5#12")).toEqual({
 			sessionId: "6ad09d56-a5e5",
 			index: 12,
 		});
+	});
+});
+
+describe("sessionTitle", () => {
+	it("names a session by its start time, with the date when asked", () => {
+		const start = new Date(2026, 9, 16, 9, 41).toISOString();
+		expect(sessionTitle(start)).toBe("Bản ghi trên iPhone 09:41");
+		expect(sessionTitle(start, { withDate: true })).toBe(
+			"Bản ghi trên iPhone 09:41 16/10/2026",
+		);
+	});
+
+	it("falls back to a plain name without a valid start", () => {
+		expect(sessionTitle(undefined)).toBe("Bản ghi trên iPhone");
+		expect(sessionTitle("not a date", { withDate: true })).toBe(
+			"Bản ghi trên iPhone",
+		);
 	});
 });

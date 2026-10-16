@@ -4,7 +4,7 @@
 
 use crate::config::RETENTION_DAYS;
 use crate::error::AppError;
-use crate::models::file;
+use crate::models::{file, transcript_doc};
 use crate::state::AppState;
 use mongodb::bson::{doc, DateTime, Document};
 use std::path::Path;
@@ -61,8 +61,8 @@ async fn sweep_once(state: &AppState) -> Result<(), AppError> {
                 let _ = tokio::fs::remove_file(&zip).await;
             }
         }
-        if let Some(id) = f.id {
-            let _ = file::delete_doc(&state.db, id).await;
+        if let Err(e) = file::delete_doc(&state.db, f).await {
+            tracing::warn!(path = %f.path, "sweep: xoá doc file lỗi (thử lại chu kỳ sau): {e:?}");
         }
         removed += 1;
         bytes += f.size.max(0) as u64;
@@ -73,10 +73,11 @@ async fn sweep_once(state: &AppState) -> Result<(), AppError> {
     let orphan_parts = sweep_orphan_parts(data_dir).await;
     let stale_sessions = sweep_stale_sessions(&state.db).await;
     let stale_jobs = sweep_stale_jobs(&state.db).await;
+    let orphan_docs = sweep_orphan_transcript_docs(&state.db).await;
 
-    if removed > 0 || orphan_parts > 0 || stale_sessions > 0 || stale_jobs > 0 {
+    if removed > 0 || orphan_parts > 0 || stale_sessions > 0 || stale_jobs > 0 || orphan_docs > 0 {
         tracing::info!(
-            "retention: xoá {removed} file (~{} MB), {orphan_parts} .part mồ côi, {stale_sessions} session cũ, {stale_jobs} job cũ",
+            "retention: xoá {removed} file (~{} MB), {orphan_parts} .part mồ côi, {stale_sessions} session cũ, {stale_jobs} job cũ, {orphan_docs} transcript mồ côi",
             bytes / 1_048_576
         );
     }
@@ -92,6 +93,14 @@ async fn sweep_stale_jobs(db: &mongodb::Database) -> u64 {
         .await
         .map(|r| r.deleted_count)
         .unwrap_or(0)
+}
+
+/// Xoá tiêu đề/câu sửa của phiên không còn audio (bước dọn trong `file::delete_doc` có thể lỗi).
+async fn sweep_orphan_transcript_docs(db: &mongodb::Database) -> u64 {
+    transcript_doc::delete_orphans(db).await.unwrap_or_else(|e| {
+        tracing::warn!("sweep transcript_docs mồ côi lỗi: {e:?}");
+        0
+    })
 }
 
 /// Xoá `.part` trong `{data}/<user>/tmp/` cũ hơn 1 ngày (session bỏ dở). Trả số file đã xoá.

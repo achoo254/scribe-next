@@ -109,14 +109,26 @@ function VideoPlayer({ src, seek, "data-id": dataId }: ElementPlayerProps) {
 	);
 }
 
-interface AudioPlayerProps extends ElementPlayerProps {
+export interface AudioPlayerProps extends ElementPlayerProps {
 	durationS?: number;
+	/** Starts playing as soon as it can (the next segment of a session). */
+	autoPlay?: boolean;
+	/** Seconds into the file, as the element reports them while playing. */
+	onTimeUpdate?: (seconds: number) => void;
+	onEnded?: () => void;
 }
 
-function AudioPlayer({
+/**
+ * Compact audio bar for a ready `src`. The transcript reader renders one per
+ * segment (`key` = file id), so changing segment starts from a clean element.
+ */
+export function AudioPlayer({
 	src,
 	durationS,
 	seek,
+	autoPlay = false,
+	onTimeUpdate,
+	onEnded,
 	"data-id": dataId,
 }: AudioPlayerProps) {
 	const audio = useRef<HTMLAudioElement>(null);
@@ -154,14 +166,20 @@ function AudioPlayer({
 				ref={audio}
 				src={src}
 				preload="metadata"
+				autoPlay={autoPlay}
 				onLoadedMetadata={readDuration}
 				onDurationChange={readDuration}
-				onTimeUpdate={(event) =>
-					setCurrentTime(event.currentTarget.currentTime)
-				}
+				onTimeUpdate={(event) => {
+					const time = event.currentTarget.currentTime;
+					setCurrentTime(time);
+					onTimeUpdate?.(time);
+				}}
 				onPlay={() => setPlaying(true)}
 				onPause={() => setPlaying(false)}
-				onEnded={() => setPlaying(false)}
+				onEnded={() => {
+					setPlaying(false);
+					onEnded?.();
+				}}
 				onVolumeChange={(event) => {
 					setVolume(event.currentTarget.volume);
 					setMuted(event.currentTarget.muted);

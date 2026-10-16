@@ -44,6 +44,12 @@ async fn main() {
     let db = db::connect(&config.mongo_uri, &config.db_name)
         .await
         .unwrap_or_else(|e| panic!("{e}"));
+    // Index unique `transcript_docs` phải có trước request đầu tiên: upsert đua nhau dựa vào nó để
+    // không tạo hai doc cho một phiên. Không tạo được thì dừng thay vì chạy thiếu bảo đảm.
+    if let Err(e) = models::transcript_doc::ensure_indexes(&db).await {
+        tracing::error!("{e}");
+        std::process::exit(1);
+    }
     let http = reqwest::Client::builder()
         .build()
         .expect("dựng reqwest client");

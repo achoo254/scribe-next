@@ -1,26 +1,28 @@
-import { IconFileText } from "@tabler/icons-react";
+import { IconArrowRight, IconFileText } from "@tabler/icons-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
+import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { useToast } from "../../components/ui/toast";
+import { editedCounts } from "../../features/transcript-docs/reader-model";
 import {
-	forgetApiKey,
-	loadApiKey,
-	saveApiKey,
-} from "../../features/transcript/api-key";
+	fetchTranscriptDoc,
+	transcriptKey,
+} from "../../features/transcript-docs/transcript-docs-api";
+import { transcriptDocKeys } from "../../features/transcript-docs/transcript-docs-queries";
+import { forgetApiKey } from "../../features/transcript/api-key";
 import {
 	type TranscriptPart,
 	mergeTranscripts,
 } from "../../features/transcript/merge-transcripts";
 import type { ExportScope } from "../../features/transcript/transcript-api";
-import {
-	useRequestTranscripts,
-	useTranscriptsQuery,
-} from "../../features/transcript/transcript-queries";
-import { ApiError, errorMessage, isNativeShell } from "../../lib/api";
+import { useTranscriptsQuery } from "../../features/transcript/transcript-queries";
+import { useOpenTranscript } from "../../layout/transcript-nav";
+import { errorMessage, isNativeShell } from "../../lib/api";
 import { downloadPaths, useDownload } from "../../lib/download";
 import { formatClock } from "../../lib/format";
-import { ApiKeyModal } from "./api-key-modal";
+import { useTranscribe } from "./use-transcribe";
 
 /** OpenAI refused the key itself: asking for another one is the fix. */
 const KEY_PROBLEM = /API key|credit/i;
@@ -53,18 +55,31 @@ export function TranscriptPanel({
 }: TranscriptPanelProps) {
 	const toast = useToast();
 	const download = useDownload();
-	const request = useRequestTranscripts();
+	const queryClient = useQueryClient();
+	const openTranscript = useOpenTranscript();
 	const fileIds = useMemo(() => parts.map((p) => p.fileId), [parts]);
 	const [asked, setAsked] = useState(false);
+	const [open, setOpen] = useState(false);
+	const transcribe = useTranscribe(() => {
+		setAsked(true);
+		setOpen(true);
+		void queryClient.invalidateQueries({ queryKey: transcriptDocKeys.all });
+	});
 	const query = useTranscriptsQuery(fileIds, requested || asked);
 	const merged = useMemo(
 		() => mergeTranscripts(parts, query.data ?? []),
 		[parts, query.data],
 	);
-	const [open, setOpen] = useState(false);
-	const [keyPrompt, setKeyPrompt] = useState<{ reason?: string } | null>(null);
+	/** Edits a full re-transcription would discard, waiting for confirmation. */
+	const [lostEdits, setLostEdits] = useState<{
+		segments: number;
+		sentences: number;
+	} | null>(null);
+	const docKey = transcriptKey(
+		session ? { session } : { fileId: fileIds[0] ?? "" },
+	);
 
-	const busy = merged.pending > 0 || request.isPending;
+	const busy = merged.pending > 0 || transcribe.pending;
 	const allDone = merged.total > 0 && merged.done === merged.total;
 	/** Files to send now: never sent or failed; everything when all are done. */
 	const toSend = allDone
@@ -76,41 +91,31 @@ export function TranscriptPanel({
 	const keyProblem = merged.failed > 0 && KEY_PROBLEM.test(merged.error);
 	const scope: ExportScope = session ? { session } : { fileIds };
 
-	async function send(apiKey: string): Promise<void> {
-		setAsked(true);
-		await request.mutateAsync({ fileIds: toSend, apiKey });
-		setOpen(true);
-	}
-
+	/** "Chép lại" over edited sentences asks first: those edits would be lost. */
 	async function start(): Promise<void> {
-		const saved = await loadApiKey().catch(() => "");
-		if (!saved) {
-			setKeyPrompt({});
+		if (!allDone) {
+			await transcribe.start(toSend);
 			return;
 		}
 		try {
-			await send(saved);
-		} catch (cause) {
-			// A malformed saved key: ask for a new one instead of failing again.
-			if (
-				cause instanceof ApiError &&
-				cause.status === 400 &&
-				/key/i.test(cause.message)
-			) {
-				setKeyPrompt({ reason: cause.message });
+			const detail = await queryClient.fetchQuery({
+				queryKey: transcriptDocKeys.detail(docKey),
+				queryFn: () => fetchTranscriptDoc(docKey),
+			});
+			const edited = editedCounts(detail.segments);
+			if (edited.segments > 0) {
+				setLostEdits(edited);
 				return;
 			}
+		} catch (cause) {
 			toast.show({
 				tone: "error",
-				title: "Không chép lời được",
+				title: "Không kiểm được phần đã sửa",
 				description: errorMessage(cause),
 			});
+			return;
 		}
-	}
-
-	async function submitKey(apiKey: string): Promise<void> {
-		await saveApiKey(apiKey);
-		await send(apiKey);
+		await transcribe.start(toSend);
 	}
 
 	const status = merged.untouched
@@ -134,6 +139,17 @@ export function TranscriptPanel({
 					>
 						{status}
 					</span>
+				) : null}
+				{merged.done > 0 && openTranscript ? (
+					<Button
+						size="sm"
+						variant="ghost"
+						data-id={`${dataId}-open`}
+						leadingIcon={<IconArrowRight size={16} aria-hidden="true" />}
+						onClick={() => openTranscript(docKey)}
+					>
+						Mở transcript
+					</Button>
 				) : null}
 				{merged.lines.length > 0 ? (
 					<Button
@@ -203,7 +219,7 @@ export function TranscriptPanel({
 							data-id={`${dataId}-change-key`}
 							onClick={() => {
 								void forgetApiKey();
-								setKeyPrompt({ reason: merged.error });
+								transcribe.askKey(toSend, merged.error);
 							}}
 						>
 							Đổi key
@@ -235,14 +251,21 @@ export function TranscriptPanel({
 				</ol>
 			) : null}
 
-			<ApiKeyModal
-				open={keyPrompt !== null}
+			{transcribe.keyModal}
+			<ConfirmModal
+				open={lostEdits !== null}
 				onOpenChange={(next) => {
-					if (!next) setKeyPrompt(null);
+					if (!next) setLostEdits(null);
 				}}
-				reason={keyPrompt?.reason}
-				onSubmit={submitKey}
-			/>
+				title="Chép lại"
+				question={`Bỏ phần đã sửa ở ${lostEdits?.segments ?? 0} đoạn (${lostEdits?.sentences ?? 0} câu)?`}
+				confirmLabel="Chép lại"
+				onConfirm={() => transcribe.start(toSend)}
+				data-id={`${dataId}-rerun`}
+			>
+				Chép lại cả bản ghi thay mọi câu bằng bản chép mới. Muốn giữ phần đã
+				sửa, hãy chép lại từng đoạn trong tab Transcript.
+			</ConfirmModal>
 		</div>
 	);
 }

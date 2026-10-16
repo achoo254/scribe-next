@@ -54,31 +54,43 @@ export interface MediaSource {
  */
 export function useMediaSource(fileId: string): MediaSource {
 	const native = isNativeShell();
-	const [state, setState] = useState<MediaSource>(() => ({
-		src: native ? null : mediaUrl(fileId),
+	// The app's answer is kept with the file it belongs to: right after
+	// `fileId` changes, the render must not hand out the previous file.
+	const [loaded, setLoaded] = useState<MediaSource & { fileId: string }>({
+		fileId: "",
+		src: null,
 		error: "",
-	}));
+	});
 
 	useEffect(() => {
-		if (!native) {
-			setState({ src: mediaUrl(fileId), error: "" });
-			return;
-		}
+		if (!native) return;
 		let cancelled = false;
-		setState({ src: null, error: "" });
 		NativeFiles.cache({ url: mediaUrl(fileId) })
 			.then(({ url }) => {
-				if (!cancelled) setState({ src: url, error: "" });
+				if (!cancelled) setLoaded({ fileId, src: url, error: "" });
 			})
 			.catch((cause: unknown) => {
-				if (!cancelled) setState({ src: null, error: errorMessage(cause) });
+				if (!cancelled)
+					setLoaded({ fileId, src: null, error: errorMessage(cause) });
 			});
 		return () => {
 			cancelled = true;
 		};
 	}, [fileId, native]);
 
-	return state;
+	if (!native) return { src: mediaUrl(fileId), error: "" };
+	return loaded.fileId === fileId
+		? { src: loaded.src, error: loaded.error }
+		: { src: null, error: "" };
+}
+
+/**
+ * Starts loading a file that will play soon (the next segment). The web
+ * streams on demand, so only the iOS app copies it into its cache ahead.
+ */
+export function preloadMedia(fileId: string): void {
+	if (!isNativeShell()) return;
+	NativeFiles.cache({ url: mediaUrl(fileId) }).catch(() => undefined);
 }
 
 /** Paths of the download endpoints, in one place. */

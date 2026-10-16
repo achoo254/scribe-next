@@ -270,10 +270,8 @@ async fn finish_recording_split(state: &AppState, job: &Job, job_id: &str, segs:
         }
     };
     if disk_ok {
-        if let Some(oid) = input.id {
-            if let Err(e) = file::delete_doc(&state.db, oid).await {
-                tracing::warn!(job = %job_id, "xoá doc gốc lỗi: {e:?}");
-            }
+        if let Err(e) = file::delete_doc(&state.db, &input).await {
+            tracing::warn!(job = %job_id, "xoá doc gốc lỗi: {e:?}");
         }
     }
 

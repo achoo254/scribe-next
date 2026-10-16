@@ -107,7 +107,7 @@ export function groupOutputsByJob(
 }
 
 /** Name of a segment recorded by the iOS app: `<sessionId>#<index>`. */
-const SEGMENT_NAME = /^([0-9a-z-]{8,})#(\d+)$/;
+const SEGMENT_NAME = /^([0-9a-z-]{8,64})#(\d{1,9})$/;
 
 export interface SessionRow {
 	kind: "session";
@@ -173,4 +173,31 @@ export function groupSessions(items: readonly RecordingItem[]): HistoryRow[] {
 	for (const row of sessions.values())
 		row.parts.sort((a, b) => a.index - b.index);
 	return rows;
+}
+
+const IPHONE_SESSION = "Bản ghi trên iPhone";
+
+/**
+ * Default name of an iPhone session: "Bản ghi trên iPhone 09:41", with the
+ * date too (`withDate`) where sessions of different days sit together, as in
+ * the transcript list.
+ */
+export function sessionTitle(
+	createdAt?: string | null,
+	{ withDate = false }: { withDate?: boolean } = {},
+): string {
+	if (!createdAt) return IPHONE_SESSION;
+	const date = new Date(createdAt);
+	if (Number.isNaN(date.getTime())) return IPHONE_SESSION;
+	const time = date.toLocaleTimeString("vi-VN", {
+		hour: "2-digit",
+		minute: "2-digit",
+	});
+	if (!withDate) return `${IPHONE_SESSION} ${time}`;
+	const day = date.toLocaleDateString("vi-VN", {
+		day: "2-digit",
+		month: "2-digit",
+		year: "numeric",
+	});
+	return `${IPHONE_SESSION} ${time} ${day}`;
 }

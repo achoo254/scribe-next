@@ -52,6 +52,40 @@ describe("useMediaSource", () => {
 		});
 	});
 
+	it("never hands out the previous file right after the file changes", async () => {
+		asNative();
+		const seen: Array<{ fileId: string; src: string | null }> = [];
+		const { result, rerender } = renderHook(
+			({ fileId }) => {
+				const source = useMediaSource(fileId);
+				seen.push({ fileId, src: source.src });
+				return source;
+			},
+			{ initialProps: { fileId: "f1" } },
+		);
+		await waitFor(() => expect(result.current.src).not.toBeNull());
+		cache.mockImplementationOnce(() => new Promise(() => undefined));
+		rerender({ fileId: "f2" });
+		// Not even one render of f2 may carry the f1 copy.
+		expect(seen.filter((r) => r.fileId === "f2").map((r) => r.src)).toEqual(
+			seen.filter((r) => r.fileId === "f2").map(() => null),
+		);
+	});
+
+	it("switches the web stream URL in the same render", () => {
+		const seen: Array<string | null> = [];
+		const { rerender } = renderHook(
+			({ fileId }) => {
+				const source = useMediaSource(fileId);
+				if (fileId === "f2") seen.push(source.src);
+				return source;
+			},
+			{ initialProps: { fileId: "f1" } },
+		);
+		rerender({ fileId: "f2" });
+		expect(new Set(seen)).toEqual(new Set([mediaUrl("f2")]));
+	});
+
 	it("reports a failed download", async () => {
 		asNative();
 		cache.mockRejectedValueOnce(new Error("Phiên đăng nhập đã hết"));

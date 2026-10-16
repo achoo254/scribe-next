@@ -95,9 +95,7 @@ pub async fn delete(
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
         Err(e) => return Err(AppError::Internal(format!("xoá file disk: {e}"))),
     }
-    if let Some(oid) = f.id {
-        file::delete_doc(&state.db, oid).await?;
-    }
+    file::delete_doc(&state.db, &f).await?;
     let details = doc! { "fileId": &id, "name": &f.name, "kind": &f.kind, "size": f.size };
     audit::record(&state, Some(&user.0), "file.delete", details);
     Ok(Json(json!({ "ok": true })))

@@ -14,7 +14,12 @@ public class NativeFilesPlugin: CAPPlugin, CAPBridgedPlugin {
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "cache", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "share", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "clear", returnType: CAPPluginReturnPromise),
     ]
+
+    /// One download per file at a time: the transcript reader asks for the
+    /// next segment ahead of time, then again when it starts playing.
+    private let downloads = MediaDownloads()
 
     static var backendHost: String { SessionAuth.backendHost }
 
@@ -28,24 +33,48 @@ public class NativeFilesPlugin: CAPPlugin, CAPBridgedPlugin {
         Task {
             do {
                 let url = try backendURL(call)
-                let dir = try Self.directory("media")
                 let key = url.path.replacingOccurrences(of: "/", with: "_")
-                if let cached = try? FileManager.default
-                    .contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)
-                    .first(where: { $0.deletingPathExtension().lastPathComponent == key }) {
-                    call.resolve(["url": portable(cached)])
-                    return
-                }
-                let (temp, response) = try await download(url)
-                let ext = (response.suggestedFilename as NSString?)?.pathExtension ?? ""
-                let target = dir.appendingPathComponent(key).appendingPathExtension(ext)
-                try? FileManager.default.removeItem(at: target)
-                try FileManager.default.moveItem(at: temp, to: target)
-                call.resolve(["url": portable(target)])
+                let file = try await downloads.file(for: key) { try await self.cacheFile(url, key: key) }
+                call.resolve(["url": portable(file)])
             } catch {
                 call.reject(error.localizedDescription, "DOWNLOAD_FAILED")
             }
         }
+    }
+
+    /// Deletes Caches/media (sign-out: recordings belong to the account).
+    @objc func clear(_ call: CAPPluginCall) {
+        Task {
+            do {
+                try FileManager.default.removeItem(at: try Self.directory("media"))
+            } catch {
+                // Nothing cached, or already gone: nothing to clear either way.
+            }
+            call.resolve()
+        }
+    }
+
+    /// The cached copy of `url`, downloading it first when missing. The copy
+    /// lands under a unique name, then takes its final name in one step, so a
+    /// reader never sees a half-written file.
+    private func cacheFile(_ url: URL, key: String) async throws -> URL {
+        let dir = try Self.directory("media")
+        if let cached = try? FileManager.default
+            .contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)
+            .first(where: { $0.deletingPathExtension().lastPathComponent == key }) {
+            return cached
+        }
+        let (temp, response) = try await download(url)
+        let ext = (response.suggestedFilename as NSString?)?.pathExtension ?? ""
+        let staged = dir.appendingPathComponent("\(UUID().uuidString).part")
+        try FileManager.default.moveItem(at: temp, to: staged)
+        let target = dir.appendingPathComponent(key).appendingPathExtension(ext)
+        if FileManager.default.fileExists(atPath: target.path) {
+            _ = try FileManager.default.replaceItemAt(target, withItemAt: staged)
+        } else {
+            try FileManager.default.moveItem(at: staged, to: target)
+        }
+        return target
     }
 
     /// Downloads under the server's file name, then opens the share sheet.
@@ -118,5 +147,20 @@ public class NativeFilesPlugin: CAPPlugin, CAPBridgedPlugin {
         let dir = base.appendingPathComponent(name, isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir
+    }
+}
+
+/// Joins concurrent requests for the same file onto one download.
+actor MediaDownloads {
+    private var running: [String: Task<URL, Error>] = [:]
+
+    func file(for key: String, load: @escaping @Sendable () async throws -> URL) async throws -> URL {
+        if let task = running[key] {
+            return try await task.value
+        }
+        let task = Task { try await load() }
+        running[key] = task
+        defer { running[key] = nil }
+        return try await task.value
     }
 }

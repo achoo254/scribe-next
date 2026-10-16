@@ -12,6 +12,7 @@ import { NativeRecorderPlugin } from "../features/recorder/native-recorder";
 import { forgetApiKey } from "../features/transcript/api-key";
 import { isNativeShell } from "../lib/api";
 import { firebaseSignOut, googleIdToken } from "../lib/firebase";
+import { NativeFiles } from "../lib/native";
 import {
 	type CurrentUser,
 	createSession,
@@ -72,8 +73,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 	const logout = useCallback(async () => {
 		// iOS: stop recording and uploads first, so nothing reaches the old
 		// account after the cookie is gone (plan D5.2).
-		if (isNativeShell())
+		if (isNativeShell()) {
 			await NativeRecorderPlugin.signOut().catch(() => undefined);
+			// Audio copied for playback belongs to this account.
+			await NativeFiles.clear().catch(() => undefined);
+		}
 		await deleteSession();
 		await firebaseSignOut();
 		// The OpenAI key belongs to this user, not to the device.

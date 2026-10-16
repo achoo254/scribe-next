@@ -18,6 +18,8 @@ export interface NativeFilesPlugin {
 	cache(options: { url: string }): Promise<{ url: string }>;
 	/** Downloads the URL, then opens the share sheet (Save to Files…). */
 	share(options: { url: string }): Promise<void>;
+	/** Deletes every cached recording (sign-out: the next user must not play them). */
+	clear(): Promise<void>;
 }
 
 /** Values kept in the app's Keychain (the user's own OpenAI key). */

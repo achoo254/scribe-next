@@ -9,6 +9,7 @@
 //! [`PARALLEL`] mảnh — không chặn hàng đợi Cắt file.
 
 pub mod chunking;
+pub mod docs;
 mod export;
 mod openai;
 
@@ -16,7 +17,7 @@ use crate::audit;
 use crate::auth::UserId;
 use crate::error::AppError;
 use crate::files::{content_disposition_attachment, sanitize_filename};
-use crate::models::{file, transcript, user};
+use crate::models::{file, transcript, transcript_doc, user};
 use crate::state::AppState;
 use axum::extract::{Query, State};
 use axum::http::header;
@@ -133,6 +134,8 @@ pub async fn create(
     if owned.iter().any(|f| f.kind != "recording") {
         return Err(AppError::BadRequest("chỉ chép lời được bản ghi".into()));
     }
+    // Chép lại đoạn đã có kết quả: câu sửa của lượt cũ hết hiệu lực (gắn `runId`).
+    let rerun = transcript::statuses_for_files(&state.db, &user.0, &files).await?.len();
     let key = Arc::new(ApiKey(key.to_string()));
     for &oid in &files {
         let run_id = uuid::Uuid::new_v4().to_string();
@@ -145,6 +148,9 @@ pub async fn create(
     }
     state.transcribe_keys.wake.notify_one();
     audit::record(&state, Some(&user.0), "transcript.create", doc! { "files": files.len() as i64 });
+    if rerun > 0 {
+        audit::record(&state, Some(&user.0), "transcript.rerun", doc! { "files": rerun as i64 });
+    }
     Ok(Json(json!({ "queued": files.len() })))
 }
 
@@ -216,15 +222,34 @@ pub async fn export(
     };
     let docs = transcript::list_owned(&state.db, &user.0, &ids).await?;
     let by_id: HashMap<ObjectId, &transcript::TranscriptDoc> = docs.iter().map(|t| (t.id, t)).collect();
+    // Câu sửa theo phiên của từng file (một truy vấn), áp theo luật `runId` như màn hình đọc.
+    let keys: Vec<String> = files.iter().filter_map(|f| Some(file::session_key(&f.name, f.id?))).collect();
+    let edits: HashMap<String, transcript_doc::SessionDoc> = transcript_doc::get_many(&state.db, &user.0, &keys)
+        .await?
+        .into_iter()
+        .map(|d| (d.key.clone(), d))
+        .collect();
 
-    let mut parts = Vec::new();
+    let mut segments: Vec<(f64, Vec<Sentence>)> = Vec::new();
     let mut offset = 0.0;
     for f in &files {
-        if let Some(t) = f.id.and_then(|id| by_id.get(&id)).filter(|t| t.status == "done") {
-            parts.push(export::Part { offset_s: offset, sentences: &t.sentences });
+        let Some(id) = f.id else { continue };
+        let done = by_id.get(&id).filter(|t| t.status == "done");
+        let sentences = match done {
+            Some(t) => {
+                let edit = edits.get(&file::session_key(&f.name, id)).and_then(|d| d.edits.get(&id.to_hex()));
+                docs::effective_sentences(t, edit).0
+            }
+            None => Vec::new(),
+        };
+        let duration = docs::segment_duration(f, &sentences);
+        if done.is_some() {
+            segments.push((offset, sentences));
         }
-        offset += f.duration_s.unwrap_or(0.0);
+        offset += duration;
     }
+    let parts: Vec<export::Part<'_>> =
+        segments.iter().map(|(offset_s, sentences)| export::Part { offset_s: *offset_s, sentences }).collect();
     if parts.is_empty() {
         return Err(AppError::NotFound("chưa có bản chép lời nào xong".into()));
     }
@@ -247,16 +272,12 @@ pub async fn export(
 /// File cần xuất, theo thứ tự ghép.
 async fn export_files(state: &AppState, user_id: &str, q: &ExportQuery) -> Result<Vec<file::FileDoc>, AppError> {
     if let Some(session) = q.session.as_deref().filter(|s| !s.is_empty()) {
-        let prefix = format!("{session}#");
-        let mut parts: Vec<(u32, file::FileDoc)> = file::list_recordings(&state.db, user_id)
-            .await?
-            .into_iter()
-            .filter_map(|f| {
-                let index = f.name.strip_prefix(&prefix)?.parse().ok()?;
-                Some((index, f))
-            })
-            .collect();
-        parts.sort_by_key(|(index, _)| *index);
+        // Gom phiên cùng một nguồn với `/api/transcript-docs` (`file::session_key`).
+        let key = format!("s:{session}");
+        if !file::is_valid_session_key(&key) {
+            return Err(AppError::BadRequest("phiên ghi không hợp lệ".into()));
+        }
+        let parts = file::list_session(&state.db, user_id, &key).await?;
         return Ok(parts.into_iter().map(|(_, f)| f).collect());
     }
     let ids = parse_ids(q.ids.as_deref().unwrap_or(""))?;
