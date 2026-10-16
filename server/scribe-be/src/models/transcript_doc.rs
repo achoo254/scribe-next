@@ -4,6 +4,10 @@
 //! `key` là khoá phiên (`file::session_key`): `s:<sessionId>` cho phiên iPhone nhiều đoạn,
 //! `f:<fileId>` cho bản ghi một file. Doc tạo lười khi người dùng đổi tên hoặc sửa lần đầu.
 //!
+//! Doc còn giữ biên bản (`summary`, xem `crate::summary`) và dấu mốc (`bookmarks`). Dấu mốc được đánh
+//! lúc đang ghi, khi phiên có thể chưa có file nào: doc tạo lười bằng upsert, sweep mồ côi chừa doc
+//! còn mới ([`ORPHAN_GRACE_HOURS`]).
+//!
 //! Phần sửa của một đoạn gắn với `runId` của lượt chép đã sinh ra câu máy: chép lại thì `runId` đổi
 //! và phần sửa cũ tự hết hiệu lực ([`effective_texts`]), không cần dọn đồng bộ.
 
@@ -26,6 +30,53 @@ pub struct SegmentEdit {
     pub texts: Vec<String>,
 }
 
+/// Một quyết định trong biên bản; `at` = giây tính từ đầu phiên.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Decision {
+    pub text: String,
+    pub at: f64,
+}
+
+/// Một việc cần làm; người làm và hạn chỉ có khi bản ghi nói rõ.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Action {
+    pub text: String,
+    #[serde(default)]
+    pub owner: Option<String>,
+    #[serde(default)]
+    pub due: Option<String>,
+    pub at: f64,
+}
+
+/// Biên bản đã lưu. `sourceHash` = băm chữ đầu vào: chữ hiện tại khác thì biên bản đã cũ.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct StoredSummary {
+    pub model: String,
+    #[serde(rename = "createdAt")]
+    pub created_at: DateTime,
+    #[serde(rename = "sourceHash")]
+    pub source_hash: String,
+    pub summary: String,
+    #[serde(default)]
+    pub decisions: Vec<Decision>,
+    #[serde(default)]
+    pub actions: Vec<Action>,
+}
+
+/// Dấu mốc người dùng bấm lúc ghi; `at` = giây tính từ đầu phiên.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Bookmark {
+    pub id: String,
+    pub at: f64,
+    #[serde(default)]
+    pub label: Option<String>,
+}
+
+/// Số dấu mốc tối đa của một doc.
+pub const MAX_BOOKMARKS: usize = 200;
+/// Sweep mồ côi chừa doc tạo chưa tới chừng này giờ: dấu mốc của phiên đang ghi có trước file.
+const ORPHAN_GRACE_HOURS: i64 = 24;
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SessionDoc {
     #[serde(rename = "_id")]
@@ -38,6 +89,10 @@ pub struct SessionDoc {
     /// Theo id file (hex).
     #[serde(default)]
     pub edits: HashMap<String, SegmentEdit>,
+    #[serde(default)]
+    pub summary: Option<StoredSummary>,
+    #[serde(default)]
+    pub bookmarks: Vec<Bookmark>,
 }
 
 /// Câu sửa của đoạn còn dùng được: cùng lượt chép và cùng số câu với câu máy hiện tại.
@@ -122,6 +177,48 @@ pub async fn set_edits(db: &Database, user_id: &str, key: &str, file_id: ObjectI
     upsert(db, user_id, key, update).await
 }
 
+/// Lưu (hoặc thay) biên bản của phiên.
+pub async fn set_summary(db: &Database, user_id: &str, key: &str, summary: &StoredSummary) -> Result<(), AppError> {
+    let value = mongodb::bson::to_bson(summary).map_err(|e| AppError::Internal(format!("mã hoá biên bản: {e}")))?;
+    upsert(db, user_id, key, doc! { "$set": { "summary": value, "updatedAt": DateTime::now() } }).await
+}
+
+/// Thêm một dấu mốc; trả `false` khi doc đã đủ [`MAX_BOOKMARKS`]. Điều kiện "chưa có phần tử thứ 200"
+/// nằm trong filter nên hai lần thêm đồng thời không vượt trần; doc đầy thì upsert đụng unique index.
+pub async fn add_bookmark(db: &Database, user_id: &str, key: &str, bookmark: &Bookmark) -> Result<bool, AppError> {
+    let coll = db.collection::<Document>(COLL);
+    let last_slot = format!("bookmarks.{}", MAX_BOOKMARKS - 1);
+    let filter = doc! { "userId": user_id, "key": key, last_slot: { "$exists": false } };
+    let value = mongodb::bson::to_bson(bookmark).map_err(|e| AppError::Internal(format!("mã hoá dấu mốc: {e}")))?;
+    let update = doc! {
+        "$push": { "bookmarks": value },
+        "$set": { "updatedAt": DateTime::now() },
+        "$setOnInsert": { "createdAt": DateTime::now() },
+    };
+    match coll.update_one(filter.clone(), update.clone()).upsert(true).await {
+        Ok(_) => Ok(true),
+        // Doc đã có mà không khớp filter (đã đầy), hoặc thua cuộc đua tạo doc: thử lại không upsert.
+        Err(e) if is_duplicate_key(&e) => coll
+            .update_one(filter, update)
+            .await
+            .map(|r| r.matched_count > 0)
+            .map_err(|e| AppError::Internal(format!("thêm dấu mốc (lần hai): {e}"))),
+        Err(e) => Err(AppError::Internal(format!("thêm dấu mốc: {e}"))),
+    }
+}
+
+/// Xoá một dấu mốc; `false` khi không có.
+pub async fn remove_bookmark(db: &Database, user_id: &str, key: &str, id: &str) -> Result<bool, AppError> {
+    db.collection::<Document>(COLL)
+        .update_one(
+            doc! { "userId": user_id, "key": key, "bookmarks.id": id },
+            doc! { "$pull": { "bookmarks": { "id": id } }, "$set": { "updatedAt": DateTime::now() } },
+        )
+        .await
+        .map(|r| r.modified_count > 0)
+        .map_err(|e| AppError::Internal(format!("xoá dấu mốc: {e}")))
+}
+
 pub async fn unset_edits(db: &Database, user_id: &str, key: &str, file_id: ObjectId) -> Result<(), AppError> {
     let path = format!("edits.{}", file_id.to_hex());
     db.collection::<Document>(COLL)
@@ -156,12 +253,15 @@ pub async fn delete(db: &Database, user_id: &str, key: &str) -> Result<(), AppEr
         .map_err(|e| AppError::Internal(format!("xoá transcript_docs: {e}")))
 }
 
-/// Xoá doc không còn file bản ghi nào của phiên (audio đã bị xoá tay, hết hạn, hay bị cắt).
+/// Xoá doc không còn file bản ghi nào của phiên (audio đã bị xoá tay, hết hạn, hay bị cắt). Doc tạo
+/// chưa tới [`ORPHAN_GRACE_HOURS`] giờ được chừa: phiên đang ghi có dấu mốc trước khi có file.
 /// Đây là cơ chế đảm bảo; bước dọn trong `file::delete_doc` chỉ là tối ưu. Trả số doc đã xoá.
 pub async fn delete_orphans(db: &Database) -> Result<u64, AppError> {
+    let cutoff = DateTime::from_millis(DateTime::now().timestamp_millis() - ORPHAN_GRACE_HOURS * 3_600_000);
+    let old_enough = doc! { "$or": [{ "createdAt": { "$lt": cutoff } }, { "createdAt": { "$exists": false } }] };
     let mut cur = db
         .collection::<Document>(COLL)
-        .find(doc! {})
+        .find(old_enough)
         .projection(doc! { "userId": 1, "key": 1 })
         .await
         .map_err(|e| AppError::Internal(format!("quét transcript_docs: {e}")))?;
@@ -196,6 +296,33 @@ mod tests {
         assert_eq!(effective_texts(Some(&edit), "run-2", 2), None);
         assert_eq!(effective_texts(Some(&edit), "run-1", 3), None);
         assert_eq!(effective_texts(None, "run-1", 2), None);
+    }
+
+    /// Trần dấu mốc trên Mongo thật (DB dev): `TRANSCRIPT_TEST_MONGO_URI=<uri> TRANSCRIPT_TEST_DB_NAME=<db>
+    /// cargo test bookmarks_cap -- --ignored`. Doc chưa có lúc thêm mốc đầu; thêm đồng thời không vượt trần.
+    #[tokio::test]
+    #[ignore]
+    async fn bookmarks_cap_on_real_mongo() {
+        let uri = std::env::var("TRANSCRIPT_TEST_MONGO_URI").expect("TRANSCRIPT_TEST_MONGO_URI");
+        let db_name = std::env::var("TRANSCRIPT_TEST_DB_NAME").expect("TRANSCRIPT_TEST_DB_NAME");
+        let db = crate::db::connect(&uri, &db_name).await.expect("kết nối Mongo");
+        ensure_indexes(&db).await.expect("index");
+        let user = format!("selftest-{}", uuid::Uuid::new_v4());
+        let key = format!("f:{}", ObjectId::new().to_hex());
+        let mark = |i: usize| Bookmark { id: format!("m{i}"), at: i as f64, label: None };
+        let tasks = (0..MAX_BOOKMARKS + 20).map(|i| {
+            let (db, user, key) = (db.clone(), user.clone(), key.clone());
+            async move { add_bookmark(&db, &user, &key, &mark(i)).await.expect("thêm") }
+        });
+        let added = futures_util::future::join_all(tasks).await.into_iter().filter(|ok| *ok).count();
+        assert_eq!(added, MAX_BOOKMARKS);
+        assert_eq!(get(&db, &user, &key).await.expect("get").expect("doc").bookmarks.len(), MAX_BOOKMARKS);
+        let first = get(&db, &user, &key).await.expect("get").expect("doc").bookmarks[0].id.clone();
+        assert!(remove_bookmark(&db, &user, &key, &first).await.expect("xoá"));
+        assert!(!remove_bookmark(&db, &user, &key, &first).await.expect("xoá lại"));
+        assert!(add_bookmark(&db, &user, &key, &mark(999)).await.expect("thêm sau khi xoá"));
+        assert!(!add_bookmark(&db, &user, &key, &mark(1000)).await.expect("đầy"));
+        delete(&db, &user, &key).await.expect("dọn");
     }
 
     /// Vòng đời trên Mongo thật (DB dev): `TRANSCRIPT_TEST_MONGO_URI=<uri> TRANSCRIPT_TEST_DB_NAME=<db>
@@ -255,8 +382,16 @@ mod tests {
         delete_orphans(&db).await.expect("sweep");
         assert!(get(&db, &user, &key).await.expect("get").is_some());
 
-        // Xoá đoạn cuối mà không qua `delete_doc` (giả lập bước dọn bị lỗi): sweep dọn doc phiên.
+        // Xoá đoạn cuối mà không qua `delete_doc` (giả lập bước dọn bị lỗi): doc còn mới thì sweep chừa
+        // (phiên đang ghi có dấu mốc trước file), doc đủ cũ thì bị dọn.
         db.collection::<Document>("files").delete_one(doc! { "_id": b }).await.expect("xoá b");
+        delete_orphans(&db).await.expect("sweep");
+        assert!(get(&db, &user, &key).await.expect("get").is_some());
+        let two_days_ago = DateTime::from_millis(DateTime::now().timestamp_millis() - 48 * 3_600_000);
+        db.collection::<Document>(COLL)
+            .update_one(doc! { "userId": &user, "key": &key }, doc! { "$set": { "createdAt": two_days_ago } })
+            .await
+            .expect("lùi createdAt");
         assert!(delete_orphans(&db).await.expect("sweep") >= 1);
         assert!(get(&db, &user, &key).await.expect("get").is_none());
     }

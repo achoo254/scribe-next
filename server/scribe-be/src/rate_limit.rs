@@ -31,6 +31,7 @@ const API_LIMIT: u32 = 300;
 struct Bucket {
     count: u32,
     start: Instant,
+    window: Duration,
 }
 
 #[derive(Default)]
@@ -45,6 +46,11 @@ impl RateLimiter {
 
     /// true = cho phép; false = vượt ngưỡng trong cửa sổ. Reset đếm khi hết cửa sổ.
     pub fn allow(&self, key: &str, limit: u32) -> bool {
+        self.allow_in(key, limit, WINDOW)
+    }
+
+    /// Như [`Self::allow`] với cửa sổ riêng (vd 10 lượt gửi chat mỗi giờ của một người).
+    pub fn allow_in(&self, key: &str, limit: u32, window: Duration) -> bool {
         let now = Instant::now();
         let mut map = match self.inner.lock() {
             Ok(m) => m,
@@ -54,12 +60,13 @@ impl RateLimiter {
         // nhiều IP thật, bucket "fresh" chưa bị dọn → map có thể tạm lớn trong lúc tải; mỗi entry
         // vài chục byte nên vẫn an toàn ở quy mô công cụ nội bộ.
         if map.len() > 10_000 {
-            map.retain(|_, b| now.duration_since(b.start) <= WINDOW);
+            map.retain(|_, b| now.duration_since(b.start) <= b.window);
         }
-        let b = map.entry(key.to_string()).or_insert(Bucket { count: 0, start: now });
-        if now.duration_since(b.start) > WINDOW {
+        let b = map.entry(key.to_string()).or_insert(Bucket { count: 0, start: now, window });
+        if now.duration_since(b.start) > b.window {
             b.count = 0;
             b.start = now;
+            b.window = window;
         }
         b.count += 1;
         b.count <= limit
@@ -126,4 +133,17 @@ pub async fn api_limit(
         return Err(AppError::TooManyRequests("quá nhiều yêu cầu, thử lại sau".into()));
     }
     Ok(next.run(req).await)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn limiter_counts_per_key_within_the_window() {
+        let rate = RateLimiter::new();
+        assert!((0..3).all(|_| rate.allow_in("share:a", 3, Duration::from_secs(3600))));
+        assert!(!rate.allow_in("share:a", 3, Duration::from_secs(3600)));
+        assert!(rate.allow_in("share:b", 3, Duration::from_secs(3600)));
+    }
 }

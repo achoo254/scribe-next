@@ -24,6 +24,28 @@ const DEFAULT_MONTHLY_CAP_USD: f64 = 30.0;
 const DEFAULT_FREE_DAILY_MINUTES: i64 = 30;
 const DEFAULT_FREE_DELAY_HOURS: i64 = 24;
 
+/// Tóm tắt (biên bản): lượt mỗi ngày giờ Việt Nam (Jev chốt 16/10/2026) và model mặc định.
+const DEFAULT_SUMMARY_FREE_DAILY: i64 = 10;
+const DEFAULT_SUMMARY_PAID_DAILY: i64 = 50;
+const DEFAULT_SUMMARY_MODEL: &str = "gpt-4.1-mini";
+
+/// Lượt tóm tắt mỗi ngày (giờ Việt Nam) của một tài khoản, theo gói.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SummaryLimits {
+    pub free_daily: i64,
+    pub paid_daily: i64,
+}
+
+impl SummaryLimits {
+    fn from_parts(free: Option<&str>, paid: Option<&str>) -> Self {
+        let num = |v: Option<&str>, default: i64| v.and_then(|s| s.trim().parse().ok()).filter(|n: &i64| *n >= 0).unwrap_or(default);
+        SummaryLimits {
+            free_daily: num(free, DEFAULT_SUMMARY_FREE_DAILY),
+            paid_daily: num(paid, DEFAULT_SUMMARY_PAID_DAILY),
+        }
+    }
+}
+
 /// Hạn mức chép lời, tính bằng giây audio mỗi tháng.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct TranscribeLimits {
@@ -104,6 +126,15 @@ pub struct Config {
     pub notify_bot_api: String,
     pub notify_bot_token_path: Option<String>,
     pub notify_chat_id: Option<String>,
+    pub summary_limits: SummaryLimits,
+    /// Model OpenAI viết biên bản (`SUMMARY_MODEL`). Giá token để quy ra trần chi phí là giá của
+    /// `gpt-4.1-mini` (`summary::cost`): đổi model thì cập nhật giá ở đó.
+    pub summary_model: String,
+    /// `CHAT_LINK_POLL=1`: chạy task long-poll của bot để liên kết chat. Mặc định tắt: dev và prod dùng
+    /// chung token bot, backend dev bật poll sẽ lấy mất update của prod.
+    pub chat_link_poll: bool,
+    /// Username của bot trên chat.hoandat.com (`CHAT_BOT_USERNAME`); thiếu thì hỏi `/bot/v1/me`.
+    pub chat_bot_username: Option<String>,
     /// File lưu session signing key (tự sinh runtime, KHÔNG bake).
     pub session_key_path: String,
     /// Thư mục lưu upload/output ({data_dir}/{userId}/...).
@@ -162,6 +193,17 @@ impl Config {
             notify_bot_api: option_env!("NOTIFY_BOT_API").unwrap_or("https://chat.hoandat.com/bot/v1").trim_end_matches('/').to_string(),
             notify_bot_token_path: option_env!("NOTIFY_BOT_TOKEN_PATH").filter(|p| !p.is_empty()).map(str::to_string),
             notify_chat_id: option_env!("NOTIFY_CHAT_ID").filter(|c| !c.is_empty()).map(str::to_string),
+            summary_limits: SummaryLimits::from_parts(option_env!("SUMMARY_FREE_DAILY"), option_env!("SUMMARY_PAID_DAILY")),
+            summary_model: option_env!("SUMMARY_MODEL")
+                .map(str::trim)
+                .filter(|m| !m.is_empty())
+                .unwrap_or(DEFAULT_SUMMARY_MODEL)
+                .to_string(),
+            chat_link_poll: matches!(option_env!("CHAT_LINK_POLL"), Some("1" | "true")),
+            chat_bot_username: option_env!("CHAT_BOT_USERNAME")
+                .map(|u| u.trim().trim_start_matches('@'))
+                .filter(|u| !u.is_empty())
+                .map(str::to_string),
             session_key_path: get(2),
             data_dir: get(3),
             ffmpeg_path: option_env!("FFMPEG_PATH").unwrap_or("ffmpeg").to_string(),
@@ -222,5 +264,12 @@ mod tests {
         let g = d.with_free_guards(Some("10"), Some("0"));
         assert_eq!((g.free_daily_seconds, g.free_delay_hours), (600, 0));
         assert_eq!(d.with_free_guards(Some("bad"), Some("-1")).free_daily_seconds, 1800);
+    }
+
+    #[test]
+    fn summary_limits_default_to_ten_and_fifty() {
+        assert_eq!(SummaryLimits::from_parts(None, None), SummaryLimits { free_daily: 10, paid_daily: 50 });
+        assert_eq!(SummaryLimits::from_parts(Some(" 3 "), Some("-1")), SummaryLimits { free_daily: 3, paid_daily: 50 });
+        assert_eq!(SummaryLimits::from_parts(Some("x"), Some("0")), SummaryLimits { free_daily: 10, paid_daily: 0 });
     }
 }

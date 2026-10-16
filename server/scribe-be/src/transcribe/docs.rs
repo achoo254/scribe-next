@@ -28,7 +28,7 @@ const MAX_SENTENCE_CHARS: usize = 2000;
 /// Tên đoạn do client đặt: index nhảy vọt không được làm phình danh sách "thiếu đoạn".
 const MAX_MISSING_REPORTED: usize = 200;
 
-fn check_key(key: &str) -> Result<(), AppError> {
+pub(crate) fn check_key(key: &str) -> Result<(), AppError> {
     if file::is_valid_session_key(key) {
         Ok(())
     } else {
@@ -77,7 +77,7 @@ pub(super) fn effective_sentences(t: &TranscriptDoc, edit: Option<&SegmentEdit>)
 }
 
 #[derive(Debug)]
-struct SegmentView {
+pub(crate) struct SegmentView {
     file_id: String,
     index: u32,
     offset_s: f64,
@@ -147,6 +147,54 @@ fn assemble(
         offset += duration_s;
     }
     out
+}
+
+/// Phiên đã ghép: đoạn theo thứ tự ghi, đoạn đã áp câu sửa, và doc người dùng (tiêu đề, biên bản, dấu mốc).
+pub(crate) struct Loaded {
+    pub files: Vec<(u32, FileDoc)>,
+    pub segments: Vec<SegmentView>,
+    pub doc: Option<transcript_doc::SessionDoc>,
+}
+
+impl Loaded {
+    /// Tên hiển thị: tiêu đề người dùng đặt, rồi tên file của bản ghi một file.
+    pub fn title(&self, key: &str) -> Option<String> {
+        self.doc.as_ref().and_then(|d| d.title.clone()).or_else(|| single_name(key, &self.files))
+    }
+
+    /// Thời lượng cả phiên (giây): mốc cuối của đoạn cuối.
+    pub fn duration_s(&self) -> f64 {
+        self.segments.last().map_or(0.0, |seg| seg.offset_s + seg.duration_s)
+    }
+
+    /// Lúc bắt đầu phiên (RFC 3339).
+    pub fn created_at(&self) -> Option<String> {
+        created_at(&self.files)
+    }
+
+    /// Câu đã chép xong (đã áp câu sửa) kèm giây bắt đầu tính theo cả phiên — cùng mốc với màn hình đọc.
+    pub fn timed_sentences(&self) -> Vec<(f64, &str)> {
+        self.segments
+            .iter()
+            .filter(|seg| seg.status == "done")
+            .flat_map(|seg| seg.sentences.iter().map(move |s| (seg.offset_s + s.start, s.text.trim())))
+            .filter(|(_, text)| !text.is_empty())
+            .collect()
+    }
+}
+
+/// Đọc và ghép một phiên của user; phiên không có bản ghi nào → 404.
+pub(crate) async fn load(state: &AppState, user_id: &str, key: &str) -> Result<Loaded, AppError> {
+    let files = session_files(state, user_id, key).await?;
+    let transcripts: HashMap<ObjectId, TranscriptDoc> = transcript::list_owned(&state.db, user_id, &file_ids(&files))
+        .await?
+        .into_iter()
+        .map(|t| (t.id, t))
+        .collect();
+    let doc = transcript_doc::get(&state.db, user_id, key).await?;
+    let edits = doc.as_ref().map(|d| d.edits.clone()).unwrap_or_default();
+    let segments = assemble(&files, &transcripts, &edits);
+    Ok(Loaded { files, segments, doc })
 }
 
 /// Index đoạn bị nhảy trong một phiên iPhone (đoạn chưa tải lên hoặc đã bị xoá riêng).
@@ -246,28 +294,29 @@ pub async fn list(State(state): State<AppState>, Extension(user): Extension<User
     Ok(Json(json!({ "items": items.into_iter().map(|(_, v)| v).collect::<Vec<_>>() })))
 }
 
-/// `GET /api/transcript-docs/{key}` — toàn bộ transcript của phiên, đoạn theo thứ tự ghi.
+/// `GET /api/transcript-docs/{key}` — toàn bộ transcript của phiên, đoạn theo thứ tự ghi, kèm biên bản
+/// (`stale` khi chữ đã đổi từ lúc tóm tắt) và dấu mốc theo thứ tự thời gian.
 pub async fn get(
     State(state): State<AppState>,
     Extension(user): Extension<UserId>,
     Path(key): Path<String>,
 ) -> Result<Json<Value>, AppError> {
-    let files = session_files(&state, &user.0, &key).await?;
-    let transcripts: HashMap<ObjectId, TranscriptDoc> = transcript::list_owned(&state.db, &user.0, &file_ids(&files))
-        .await?
-        .into_iter()
-        .map(|t| (t.id, t))
-        .collect();
-    let doc = transcript_doc::get(&state.db, &user.0, &key).await?;
-    let edits = doc.as_ref().map(|d| d.edits.clone()).unwrap_or_default();
-    let segments = assemble(&files, &transcripts, &edits);
+    let loaded = load(&state, &user.0, &key).await?;
+    let summary = loaded.doc.as_ref().and_then(|d| d.summary.as_ref()).map(|stored| {
+        let current = crate::summary::source_hash(&crate::summary::build_input(&loaded.timed_sentences()));
+        crate::summary::to_json(stored, &current)
+    });
+    let mut bookmarks = loaded.doc.as_ref().map(|d| d.bookmarks.clone()).unwrap_or_default();
+    bookmarks.sort_by(|a, b| a.at.total_cmp(&b.at));
     Ok(Json(json!({
         "key": key,
-        "title": doc.and_then(|d| d.title),
-        "name": single_name(&key, &files),
-        "createdAt": created_at(&files),
-        "segments": segments.iter().map(SegmentView::to_json).collect::<Vec<_>>(),
-        "missingIndexes": missing_indexes(&key, &files),
+        "title": loaded.doc.as_ref().and_then(|d| d.title.clone()),
+        "name": single_name(&key, &loaded.files),
+        "createdAt": loaded.created_at(),
+        "segments": loaded.segments.iter().map(SegmentView::to_json).collect::<Vec<_>>(),
+        "missingIndexes": missing_indexes(&key, &loaded.files),
+        "summary": summary,
+        "bookmarks": bookmarks,
     })))
 }
 
@@ -459,6 +508,26 @@ mod tests {
         assert_eq!(segments[2].run_id, None);
         assert_eq!(missing_indexes("s:aaaaaaaa-1111", &files), vec![2]);
         assert!(missing_indexes("f:65f0a1b2c3d4e5f60718293a", &files).is_empty());
+    }
+
+    #[test]
+    fn summary_input_uses_whole_session_seconds_and_edits() {
+        let a = recording("bbbbbbbb-2222#0", Some(60.0));
+        let b = recording("bbbbbbbb-2222#1", Some(60.0));
+        let c = recording("bbbbbbbb-2222#2", Some(30.0));
+        let mut transcripts = HashMap::new();
+        transcripts.insert(a.id.expect("a"), done(&a, "run-a", vec![s(1.5, 3.0, "Mở đầu."), s(4.0, 5.0, "  ")]));
+        transcripts.insert(b.id.expect("b"), done(&b, "run-b", vec![s(10.0, 12.0, "Chốt giá.")]));
+        let mut running = done(&c, "run-c", vec![s(0.0, 1.0, "Dở.")]);
+        running.status = "running".into();
+        transcripts.insert(c.id.expect("c"), running);
+        let mut edits = HashMap::new();
+        edits.insert(b.id.expect("b").to_hex(), SegmentEdit { run_id: "run-b".into(), texts: vec!["Chốt giá 5 triệu.".into()] });
+        let files = vec![(0, a), (1, b), (2, c)];
+        let segments = assemble(&files, &transcripts, &edits);
+        let loaded = Loaded { files, segments, doc: None };
+        assert_eq!(loaded.timed_sentences(), vec![(1.5, "Mở đầu."), (70.0, "Chốt giá 5 triệu.")]);
+        assert_eq!(loaded.duration_s(), 150.0);
     }
 
     #[test]

@@ -20,6 +20,9 @@ pub enum AppError {
     /// 403 kèm số — hết phút chép lời (`QUOTA_EXCEEDED`, `DAILY_LIMIT`, `IP_LIMIT`), hạn mức chung
     /// (`CAP_REACHED`) hoặc tài khoản còn mới (`ACCOUNT_TOO_NEW`); `retry_at` = lúc mở lại (RFC 3339).
     Quota { code: &'static str, message: String, used_minutes: i64, limit_minutes: i64, retry_at: Option<String> },
+    /// Lỗi kèm mã máy đọc được (`{error, code}`), cho client rẽ nhánh mà không dò câu chữ
+    /// (vd 409 `CHAT_NOT_LINKED`, `NO_SUMMARY`).
+    Coded { status: StatusCode, code: &'static str, message: String },
     /// 503 — tính năng tạm ngưng (vd key OpenAI của server hỏng).
     Unavailable(String),
     Internal(String),
@@ -36,6 +39,7 @@ impl AppError {
             AppError::TooLarge(m) => (StatusCode::PAYLOAD_TOO_LARGE, m),
             AppError::TooManyRequests(m) => (StatusCode::TOO_MANY_REQUESTS, m),
             AppError::Quota { message, .. } => (StatusCode::FORBIDDEN, message),
+            AppError::Coded { status, message, .. } => (*status, message),
             AppError::Unavailable(m) => (StatusCode::SERVICE_UNAVAILABLE, m),
             AppError::Internal(m) => (StatusCode::INTERNAL_SERVER_ERROR, m),
         }
@@ -53,6 +57,9 @@ impl IntoResponse for AppError {
                 "retryAt": retry_at,
             });
             return (StatusCode::FORBIDDEN, Json(body)).into_response();
+        }
+        if let AppError::Coded { status, code, message } = &self {
+            return (*status, Json(json!({ "error": message, "code": code }))).into_response();
         }
         let (status, msg) = self.parts();
         if status == StatusCode::INTERNAL_SERVER_ERROR {

@@ -6,3 +6,5 @@ pub mod transcript_doc;
 pub mod plan;
 pub mod usage;
 pub mod session;
+pub mod summary;
+pub mod chat_link;

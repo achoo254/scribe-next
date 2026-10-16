@@ -137,7 +137,7 @@ async fn show_usage(config: &Config, db: &Database, args: &[String]) -> Result<V
 }
 
 /// Tính lại sổ tháng: lượt đã quyết toán (`transcribe_runs.sentS`) + lượt còn mở (phần đang giữ,
-/// `chargedS` — quyết toán sau sẽ cộng chênh lệch). In chênh lệch; `apply` cộng chênh lệch bằng `$inc` và
+/// `chargedS` — quyết toán sau sẽ cộng chênh lệch); trần tổng cộng thêm chi phí tóm tắt (`summary_runs.costS`). In chênh lệch; `apply` cộng chênh lệch bằng `$inc` và
 /// chỉ chạy khi tháng không còn lượt nào đang mở (giữ chỗ đang dở sẽ làm số sai).
 async fn recompute(db: &Database, month: &str, apply: bool) -> Result<Value, String> {
     let mut per_user: HashMap<String, i64> = HashMap::new();
@@ -167,6 +167,8 @@ async fn recompute(db: &Database, month: &str, apply: bool) -> Result<Value, Str
         open_runs += 1;
         add(&t.user_id, t.free_pool, t.charged_s);
     }
+    // Chi phí token của tóm tắt chỉ tính vào trần tổng (không vào sổ phút của user hay quỹ free).
+    total += crate::models::summary::month_cost_seconds(db, month).await.map_err(err)?;
     if apply && open_runs > 0 {
         return Err(format!("còn {open_runs} lượt đang chạy trong tháng {month}: chờ hàng đợi rỗng rồi chạy lại --apply"));
     }

@@ -32,6 +32,10 @@ pub struct InitReq {
 pub struct InitResp {
     #[serde(rename = "sessionId")]
     session_id: String,
+    /// Id file của bản ghi khi finalize, giữ trước từ lúc bắt đầu: client biết khoá transcript
+    /// `f:<fileId>` ngay khi đang ghi (để đánh dấu mốc).
+    #[serde(rename = "fileId")]
+    file_id: String,
 }
 
 /// `POST /api/recordings/init` — stream mở (không có size trước); chỉ chặn nếu ĐÃ vượt quota.
@@ -46,6 +50,7 @@ pub async fn init(
         return Err(AppError::TooLarge("đã đầy quota 5GB — xoá bớt để ghi tiếp".into()));
     }
     let session_id = Uuid::new_v4().to_string();
+    let file_id = ObjectId::new();
     tokio::fs::create_dir_all(tmp_dir(&state, &user.0))
         .await
         .map_err(|e| AppError::Internal(format!("tạo tmp dir: {e}")))?;
@@ -56,13 +61,14 @@ pub async fn init(
             "_id": &session_id,
             "userId": &user.0,
             "name": &req.name,
+            "fileId": file_id,
             "createdAt": DateTime::now(),
         })
         .await
         .map_err(|e| AppError::Internal(format!("tạo session ghi: {e}")))?;
     let details = doc! { "session": &session_id, "name": &req.name };
     audit::record(&state, Some(&user.0), "recording.start", details);
-    Ok(Json(InitResp { session_id }))
+    Ok(Json(InitResp { session_id, file_id: file_id.to_hex() }))
 }
 
 #[derive(Deserialize)]
@@ -167,7 +173,8 @@ pub async fn finalize(
     tokio::fs::create_dir_all(&rec_dir)
         .await
         .map_err(|e| AppError::Internal(format!("tạo recordings dir: {e}")))?;
-    let id = ObjectId::new();
+    // Phiên tạo trước khi có `fileId` giữ trước thì sinh id mới.
+    let id = session.get_object_id("fileId").unwrap_or_else(|_| ObjectId::new());
     // Recording MediaRecorder = webm streaming: thiếu Cues (SeekHead) + Duration → player KHÔNG tua
     // được + probe duration 0. Remux `-c copy -f webm` ghi output là FILE seekable → ffmpeg dựng lại
     // Cues + Duration (không re-encode) → tua được + probe đúng. Chỉ EBML (webm/mkv) mới remux; định
@@ -270,6 +277,18 @@ async fn load_session(
         return Err(AppError::Forbidden("session không thuộc bạn".into()));
     }
     Ok(s)
+}
+
+/// User có phiên ghi đang mở giữ trước id file này không (dấu mốc trước khi bản ghi được finalize).
+pub(crate) async fn owns_pending_file(state: &AppState, user_id: &str, file_id: ObjectId) -> Result<bool, AppError> {
+    state
+        .db
+        .collection::<Document>(SESSIONS)
+        .find_one(doc! { "fileId": file_id, "userId": user_id })
+        .projection(doc! { "_id": 1 })
+        .await
+        .map(|d| d.is_some())
+        .map_err(|e| AppError::Internal(format!("tra session ghi: {e}")))
 }
 
 /// Path `.part` — session PHẢI là UUID hợp lệ (chống path-traversal).

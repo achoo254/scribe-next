@@ -8,10 +8,11 @@
 //! Hàng đợi riêng (collection `transcripts`), chạy tuần tự từng file, mỗi file gọi song song
 //! [`PARALLEL`] mảnh — không chặn hàng đợi Cắt file. Backend khởi động lại thì lượt dở chạy lại.
 
+pub mod bookmarks;
 pub mod chunking;
 pub mod docs;
 mod export;
-mod openai;
+pub(crate) mod openai;
 
 use crate::audit;
 use crate::auth::UserId;
@@ -47,7 +48,7 @@ const FILE_TIMEOUT_BASE_S: u64 = 600;
 struct ApiKey(String);
 
 /// Thông báo cho người dùng khi key server không dùng được (không lộ chi tiết key/tài khoản).
-const PAUSED: &str = "Chép lời đang tạm ngưng, quản trị đã được báo. Thử lại sau.";
+pub(crate) const PAUSED: &str = "Chép lời đang tạm ngưng, quản trị đã được báo. Thử lại sau.";
 
 /// Key server + hàng đợi. Key hỏng (OpenAI báo 401 hoặc hết credit) thì ngắt: không nhận lượt mới
 /// cho tới khi khởi động lại với key mới.
@@ -86,6 +87,11 @@ impl Transcriber {
         self.key.is_some() && !self.broken.load(Ordering::Relaxed)
     }
 
+    /// Key server khi còn dùng được (tóm tắt dùng chung key và cờ ngắt với chép lời).
+    pub(crate) fn api_key(&self) -> Option<&str> {
+        self.key.as_ref().filter(|_| self.ready()).map(|k| k.0.as_str())
+    }
+
     /// Lần đầu key hỏng thì trả `true` (để ghi audit một lần).
     fn trip(&self) -> bool {
         !self.broken.swap(true, Ordering::Relaxed)
@@ -117,7 +123,7 @@ async fn billable_seconds(state: &AppState, f: &file::FileDoc) -> Result<i64, Ap
 }
 
 /// Giờ mở lại cho người dùng đọc (giờ Việt Nam).
-fn vn_time(at: chrono::DateTime<chrono::Utc>) -> String {
+pub(crate) fn vn_time(at: chrono::DateTime<chrono::Utc>) -> String {
     at.with_timezone(&usage::vietnam()).format("%H:%M ngày %d/%m").to_string()
 }
 
@@ -269,7 +275,7 @@ pub async fn create(
 
 /// Quỹ free qua 50/80/100% và trần tổng qua 80/100%: ghi `audit_events` và báo qua bot chat, mỗi mốc một
 /// lần mỗi tháng.
-async fn note_cap_levels(state: &AppState, month: &str) {
+pub(crate) async fn note_cap_levels(state: &AppState, month: &str) {
     let Ok(used) = usage::month_usage(&state.db, "-", month).await else { return };
     let limits = state.config.transcribe_limits;
     for (pool, label, used_s, limit_s, levels) in [
@@ -481,6 +487,16 @@ async fn record(db: &mongodb::Database, file_id: ObjectId, run_id: &str, outcome
     }
 }
 
+/// Key server hỏng (401 hoặc hết credit): mọi lượt sau cũng hỏng y vậy ⟹ ngắt chép lời lẫn tóm tắt, ghi
+/// audit và báo chủ sản phẩm một lần; người dùng chỉ thấy thông báo tạm ngưng chung.
+pub(crate) fn report_key_broken(state: &AppState, e: &str) {
+    if state.transcriber.trip() {
+        tracing::error!("key OpenAI của server không dùng được ({e}) — ngắt chép lời tới khi khởi động lại");
+        audit::record(state, None, "transcript.key_invalid", doc! { "reason": e });
+        notify::send(state, format!("Key OpenAI của server không dùng được ({e}); chép lời tạm ngưng tới khi thay key và khởi động lại."));
+    }
+}
+
 async fn run(state: &AppState, t: &transcript::TranscriptDoc) {
     let started = Instant::now();
     let result = match state.transcriber.key.as_ref().filter(|_| state.transcriber.ready()) {
@@ -501,13 +517,8 @@ async fn run(state: &AppState, t: &transcript::TranscriptDoc) {
             };
             audit::record(state, Some(&t.user_id), "transcript.done", details);
         }
-        Err(e) if e == openai::KEY_INVALID || e == openai::NO_CREDIT => {
-            // Key server hỏng: mọi lượt sau cũng hỏng y vậy ⟹ ngắt, báo người dùng chung chung.
-            if state.transcriber.trip() {
-                tracing::error!("key OpenAI của server không dùng được ({e}) — ngắt chép lời tới khi khởi động lại");
-                audit::record(state, None, "transcript.key_invalid", doc! { "reason": &e });
-                notify::send(state, format!("Key OpenAI của server không dùng được ({e}); chép lời tạm ngưng tới khi thay key và khởi động lại."));
-            }
+        Err(e) if openai::is_key_broken(&e) => {
+            report_key_broken(state, &e);
             record(db, t.id, &t.run_id, Outcome::Failed(PAUSED)).await;
         }
         Err(e) => {

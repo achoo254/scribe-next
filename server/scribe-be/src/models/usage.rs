@@ -211,6 +211,17 @@ pub async fn settle(db: &Database, charge: &Charge, delta: i64) -> Result<(), Ap
     first_err.map_or(Ok(()), Err)
 }
 
+/// Giữ `need` giây chỉ trên trần tổng của tháng (chi phí token của tóm tắt quy ra giây). `false` khi
+/// trần không còn đủ chỗ.
+pub async fn reserve_total(db: &Database, month: &str, need: i64, limits: &TranscribeLimits) -> Result<bool, AppError> {
+    take(db, &total_doc(month), need, limits.monthly_cap_seconds).await
+}
+
+/// Điều chỉnh trần tổng của tháng (`delta` âm = hoàn phần giữ dư).
+pub async fn settle_total(db: &Database, month: &str, delta: i64) -> Result<(), AppError> {
+    add(db, &total_doc(month), delta).await
+}
+
 /// Giây đã dùng trên sổ đã chặn lượt `charge` (để báo số cho người dùng).
 pub async fn blocked_usage(db: &Database, charge: &Charge, blocked: &Blocked) -> Result<i64, AppError> {
     match charge.books().into_iter().find(|(_, b)| b == blocked) {

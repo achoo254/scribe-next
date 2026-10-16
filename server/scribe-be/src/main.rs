@@ -4,6 +4,7 @@ mod access_log;
 mod admin;
 mod audit;
 mod auth;
+mod chat_link;
 mod config;
 mod db;
 mod error;
@@ -18,6 +19,7 @@ mod retention;
 mod routes;
 mod session;
 mod state;
+mod summary;
 mod transcribe;
 mod upload;
 mod worker;
@@ -85,6 +87,9 @@ async fn main() {
             if let Err(e) = audit::ensure_indexes(&db).await {
                 tracing::warn!("tạo index audit_events thất bại: {e}");
             }
+            if let Err(e) = models::chat_link::ensure_indexes(&db).await {
+                tracing::warn!("tạo index chat_link_tokens thất bại: {e}");
+            }
         });
     }
 
@@ -118,6 +123,8 @@ async fn main() {
         session_key: Arc::new(session_key),
         rate: Arc::new(RateLimiter::new()),
         transcriber: Arc::new(transcribe::Transcriber::load(config_key_path.as_deref())),
+        summaries: Arc::default(),
+        chat_bot: Arc::default(),
     };
 
     // Hồi phục job kẹt "running" sau crash/restart (red-team) + khởi worker queue nền.
@@ -129,6 +136,8 @@ async fn main() {
     jobs::start_worker(state.clone());
     transcribe::start_worker(state.clone()).await;
     retention::start_sweeper(state.clone()); // sweep purge quá hạn + orphan (red-team #1)
+    chat_link::warm_up(state.clone());
+    chat_link::poll::start(state.clone()); // chỉ khi CHAT_LINK_POLL bật và có token bot
 
     let app = routes::build_router(state);
     let addr = SocketAddr::from(([127, 0, 0, 1], port)); // localhost-only; nginx proxy /api.

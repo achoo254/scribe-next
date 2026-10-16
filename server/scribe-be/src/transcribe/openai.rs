@@ -131,11 +131,11 @@ async fn post(http: &reqwest::Client, api_key: &str, audio: &[u8], temperature: 
     Err("OpenAI: hết số lần thử".into())
 }
 
-async fn backoff(attempt: u32) {
+pub(crate) async fn backoff(attempt: u32) {
     tokio::time::sleep(Duration::from_secs(3 * u64::from(attempt))).await;
 }
 
-fn is_quota(body: &str) -> bool {
+pub(crate) fn is_quota(body: &str) -> bool {
     body.contains("insufficient_quota") || body.contains("credit_balance_exhausted")
 }
 
@@ -158,6 +158,11 @@ pub fn api_error(status: u16, body: &str) -> String {
         return "Không chép được đoạn audio này (OpenAI từ chối dữ liệu).".into();
     }
     format!("Dịch vụ chép lời đang lỗi (HTTP {status}), thử lại sau.")
+}
+
+/// Lỗi "dừng hẳn" của key server: các lượt sau (chép lời hay tóm tắt) cũng sẽ hỏng y vậy.
+pub fn is_key_broken(e: &str) -> bool {
+    e == KEY_INVALID || e == NO_CREDIT
 }
 
 /// Lỗi của key server (chỉ ghi log/audit cho quản trị; người dùng thấy thông báo tạm ngưng chung).
