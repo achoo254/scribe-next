@@ -32,7 +32,7 @@ Hiện người dùng tự dán key OpenAI, đăng nhập bằng Firebase Google
 | 5 | [Backend: OIDC, phiên thu hồi được, chuyển user](./phase-05-backend-oidc-sessions.md) | L | Completed | 4 |
 | 6 | [Web + iPhone: đăng nhập qua IdP, bỏ Firebase](./phase-06-clients-oidc-login.md) | M | Completed | 5 |
 | 7 | [Hạ tầng: 7a DB + service, 7b đăng nhập + domain, 7c mở chép lời](./phase-07-infra-cutover.md) | M | In progress (7a, 7b xong; 7c chờ) | 6 (7a chỉ cần 3) |
-| 8 | [QA iPhone thật + docs](./phase-08-qa-docs.md) | S | In progress (docs xong; QA đăng xuất) | 7 |
+| 8 | [QA iPhone thật + docs](./phase-08-qa-docs.md) | S | Completed | 7 |
 | 9 | [Chống lạm dụng gói free (bắt buộc trước 7c)](./phase-09-free-abuse-guards.md) | M | Completed | 5 |
 
 ## Thiết kế chính
