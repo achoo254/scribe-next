@@ -39,6 +39,15 @@ Thao tác ghi prod; người dùng đã đồng ý các hạng mục phần B. M
 4. Kiểm: đăng nhập web, user cũ được ghép theo email giữ nguyên bản ghi; iPhone đăng nhập, ghi, tải lên; back-channel logout web.
 - Rollback 7b: không quay về Firebase (người dùng chốt); lỗi ⟹ sửa tiến. Trước 7b phải có bằng chứng thử đủ trên dev local (Phase 6).
 
+### Kết quả 7b (2026-10-16 13:27, phần web)
+
+- Điều kiện: người dùng đăng nhập dev thành công 13:24 sau khi sửa lỗi đọc email (hoandat-auth chỉ trả `email`/`email_verified` ở `userinfo` với code flow; commit `4516f28`; tài liệu IdP sửa `d858e7a`). Jev: làm web ngay, cài iPhone sau (0,98).
+- IdP: thêm `SCRIBE_WEB_CLIENT_SECRET` vào `/var/www/hoandat-auth/.env` (sao lưu `.env.bak-*`), `pm2 reload hoandat-auth`; healthz 200, `/auth?client_id=scribe-web` → trang đăng nhập; localman, chat vẫn 200.
+- Build `e44badf`+`4516f28` (`PUBLIC_URL=https://scribe.hoandat.com`, bỏ `FIREBASE_PROJECT_ID`), sha256 `6d325d75…`; FE `index-Co8MngNB.js` (không còn Firebase, không còn domain cũ).
+- Cửa sổ: hàng đợi 0, `firebaseUid: null` 0 → sao lưu `/root/scribe-backup-20261016-132747/` (dump db `scribe` 9 collection, binary, dist, vhost cũ) → thêm `/etc/nginx/conf.d/scribe.conf`, `nginx -t` OK → thay binary + dist, restart 13:27:48 → index `firebaseUid_unique`, `idpSub_unique` → xoá `onescribe.conf`, `nginx -t`, reload.
+- Nghiệm thu ngoài: FE 200, `/api/health` ok, `/api/me` 401, `/api/auth/login` 303 sang IdP (`scribe-web`), cookie `__Host-scribe_login; Secure`, http 301 → https, callback sai → `/login?error=expired`, `/api/auth/native/config` đúng client `scribe-mobile`. Domain cũ không còn tới Scribe (DNS Cloudflare còn bản ghi, rơi vào vòng 301 của vhost khác).
+- Chưa: người dùng đăng nhập trên prod (ghép user cũ theo email, giữ gói plus và dữ liệu), cài app iPhone mới, back-channel logout thật.
+
 ## 7c — Mở chép lời (vài ngày sau 7b)
 
 Bật `TRANSCRIBE_OPEN` (build lại) khi 7b chạy ổn vài ngày (Jev 0,98) **và Phase 9 đã deploy**. Quota `free` 120 phút, quỹ free $10, trần tổng $30 đã có từ phần A. Kiểm một tài khoản mới chép được trong hạn mức, chạm quỹ free bị chặn có số.
