@@ -1,6 +1,7 @@
 //! Liên kết tài khoản Scribe với chat riêng của người dùng và bot Scribe trên chat.hoandat.com.
 //!
-//! - `users.chat = {chatId, linkedAt}`: chat riêng nơi gửi biên bản.
+//! - `users.chat = {chatId, linkedAt, name?}`: chat riêng nơi gửi biên bản; `name` = tên trên chat của
+//!   người bấm xác nhận (liên kết cũ không có).
 //! - `chat_link_tokens`: token một lần trong deep link `…/b/<bot>?start=<token>`. Chỉ lưu băm SHA-256
 //!   (`_id`), hạn [`TOKEN_TTL_MINUTES`] phút; TTL index dọn doc hết hạn. `/start <token>` chưa liên kết
 //!   mà chỉ gắn token với chat đầu tiên gửi nó ([`bind_token`], chờ xác nhận); nút "Xác nhận" từ đúng
@@ -43,6 +44,8 @@ fn user_oid(user_id: &str) -> Result<ObjectId, AppError> {
 pub struct Linked {
     pub chat_id: i64,
     pub linked_at: Option<DateTime>,
+    /// Tên trên chat lúc xác nhận; `None` với liên kết tạo trước khi lưu tên.
+    pub name: Option<String>,
 }
 
 /// Liên kết chat của user (nếu có).
@@ -64,17 +67,23 @@ pub async fn linked_chat(db: &Database, user_id: &str) -> Result<Option<i64>, Ap
 fn linked_of(user: &Document) -> Option<Linked> {
     let chat = user.get_document("chat").ok()?;
     let chat_id = chat.get_i64("chatId").ok().or_else(|| chat.get_i32("chatId").ok().map(i64::from))?;
-    Some(Linked { chat_id, linked_at: chat.get_datetime("linkedAt").ok().copied() })
+    Some(Linked {
+        chat_id,
+        linked_at: chat.get_datetime("linkedAt").ok().copied(),
+        name: chat.get_str("name").ok().filter(|n| !n.is_empty()).map(str::to_string),
+    })
 }
 
-/// Gắn chat với user (thay liên kết cũ nếu có). `None` khi không còn user; `Some(chat cũ)` khi đã gắn.
-pub async fn link(db: &Database, user_id: &str, chat_id: i64) -> Result<Option<Option<i64>>, AppError> {
+/// Gắn chat với user (thay liên kết cũ nếu có), kèm tên trên chat nếu biết. `None` khi không còn user;
+/// `Some(chat cũ)` khi đã gắn.
+pub async fn link(db: &Database, user_id: &str, chat_id: i64, name: Option<&str>) -> Result<Option<Option<i64>>, AppError> {
+    let mut chat = doc! { "chatId": chat_id, "linkedAt": DateTime::now() };
+    if let Some(name) = name {
+        chat.insert("name", name);
+    }
     let before = db
         .collection::<Document>(USERS)
-        .find_one_and_update(
-            doc! { "_id": user_oid(user_id)? },
-            doc! { "$set": { "chat": { "chatId": chat_id, "linkedAt": DateTime::now() } } },
-        )
+        .find_one_and_update(doc! { "_id": user_oid(user_id)? }, doc! { "$set": { "chat": chat } })
         .projection(doc! { "chat": 1 })
         .return_document(mongodb::options::ReturnDocument::Before)
         .await
@@ -206,6 +215,16 @@ pub async fn save_offset(db: &Database, offset: i64) -> Result<(), AppError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn linked_chats_read_their_name_when_saved() {
+        let at = DateTime::from_millis(0);
+        let with_name = doc! { "chat": { "chatId": 12_i64, "linkedAt": at, "name": "An Nguyễn" } };
+        assert_eq!(linked_of(&with_name), Some(Linked { chat_id: 12, linked_at: Some(at), name: Some("An Nguyễn".into()) }));
+        let older = doc! { "chat": { "chatId": 12_i32 } };
+        assert_eq!(linked_of(&older), Some(Linked { chat_id: 12, linked_at: None, name: None }));
+        assert_eq!(linked_of(&doc! {}), None);
+    }
 
     #[test]
     fn tokens_expire_at_their_deadline() {

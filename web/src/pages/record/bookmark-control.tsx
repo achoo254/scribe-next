@@ -22,10 +22,11 @@ export function BookmarkControl({
 	idPrefix,
 }: BookmarkControlProps) {
 	const t = useT();
-	const { marked, waiting, failed, lastError } = bookmarks;
+	const { marked, waiting, failed, dropped, lastError } = bookmarks;
 	const parts = [
 		marked > 0 ? t("record.bookmark.marked", { count: marked }) : "",
 		waiting > 0 ? t("record.bookmark.waiting", { count: waiting }) : "",
+		dropped > 0 ? t("record.bookmark.dropped", { count: dropped }) : "",
 	].filter(Boolean);
 	return (
 		<>

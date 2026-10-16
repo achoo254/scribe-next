@@ -57,9 +57,22 @@ function saved(recorder: Recorder): Promise<void> {
 
 /** Bookmark at the recording clock of the browser recording being made. */
 function markBrowser(rec: RecorderApi, queue: BookmarkQueue): void {
-	const { recording, fileId, elapsedS } = rec.recorder.getState();
+	const { recording, fileId } = rec.recorder.getState();
 	if (!recording || !fileId) return;
-	queue.mark(transcriptKey({ fileId }), elapsedS);
+	queue.mark(transcriptKey({ fileId }), rec.recorder.position());
+}
+
+/**
+ * Bookmark at the session position Swift reports when pressed (the page's
+ * own clock is stale after the phone was locked).
+ */
+async function markNative(
+	rec: NativeRecorderApi,
+	queue: BookmarkQueue,
+	sessionId: string,
+): Promise<void> {
+	const at = await rec.recorder.position();
+	queue.mark(transcriptKey({ session: sessionId }), at);
 }
 
 export interface BrowserRecordState {
@@ -198,11 +211,7 @@ export function NativeRecordProvider({ children }: { children: ReactNode }) {
 	const { sessionId } = rec;
 	const mark =
 		rec.recording && sessionId
-			? () =>
-					queue.mark(
-						transcriptKey({ session: sessionId }),
-						rec.recorder.position(),
-					)
+			? () => void markNative(rec, queue, sessionId)
 			: null;
 
 	return (

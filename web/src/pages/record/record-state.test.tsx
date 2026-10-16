@@ -19,8 +19,17 @@ type Handler = (data: Record<string, unknown>) => void;
 
 const native = vi.hoisted(() => {
 	const handlers = new Map<string, Set<Handler>>();
-	const idle = {
-		state: "idle" as const,
+	interface Status {
+		state: "idle" | "starting" | "recording" | "stopping";
+		elapsedS: number;
+		positionS?: number;
+		sessionId?: string | null;
+		uploadsWaiting: number;
+		uploadsFailed: number;
+		notice: string;
+	}
+	const idle: Status = {
+		state: "idle",
 		elapsedS: 0,
 		uploadsWaiting: 0,
 		uploadsFailed: 0,
@@ -29,7 +38,7 @@ const native = vi.hoisted(() => {
 	const plugin = {
 		start: vi.fn(async () => ({ sessionId: "s1" })),
 		stop: vi.fn(async () => idle),
-		getStatus: vi.fn(async () => idle),
+		getStatus: vi.fn(async (): Promise<Status> => idle),
 		syncUploads: vi.fn(async () => ({ lostSegments: 0, lostSecondsMax: 0 })),
 		signOut: vi.fn(async () => undefined),
 		addListener: vi.fn(async (event: string, handler: Handler) => {
@@ -184,9 +193,9 @@ describe("RecordStateProvider (iOS app)", () => {
 	it("keeps Swift's state and the segment length across visits, syncing uploads once", async () => {
 		const router = renderRoutes(NativeRecordProvider, <NativeRecordCard />);
 		await waitFor(() => expect(native.plugin.syncUploads).toHaveBeenCalled());
-		// Every plugin event is listened to (state … quotaFull), once.
+		// Every plugin event the page uses is listened to (state … quotaFull), once.
 		await waitFor(() =>
-			expect(native.plugin.addListener).toHaveBeenCalledTimes(10),
+			expect(native.plugin.addListener).toHaveBeenCalledTimes(9),
 		);
 		await userEvent.click(screen.getByRole("button", { name: "5 phút" }));
 
@@ -210,10 +219,10 @@ describe("RecordStateProvider (iOS app)", () => {
 		expect(screen.getByText("Đang ghi — 2:05")).toBeInTheDocument();
 		expect(native.plugin.syncUploads).toHaveBeenCalledTimes(1);
 		// Listeners were attached once, not again per visit.
-		expect(native.plugin.addListener).toHaveBeenCalledTimes(10);
+		expect(native.plugin.addListener).toHaveBeenCalledTimes(9);
 	});
 
-	it("bookmarks at the session second across segments, without stopping", async () => {
+	it("bookmarks at the session position Swift reports, without stopping", async () => {
 		const fake = fakeFetch({
 			"POST /api/transcript-docs/s%3As1/bookmarks": [
 				jsonResponse({ error: "Mỗi bản ghi có tối đa 200 dấu mốc." }, 409),
@@ -223,15 +232,26 @@ describe("RecordStateProvider (iOS app)", () => {
 		vi.stubGlobal("fetch", fake.fetcher);
 		renderRoutes(NativeRecordProvider, <NativeRecordCard />);
 		await waitFor(() =>
-			expect(native.plugin.addListener).toHaveBeenCalledTimes(10),
+			expect(native.plugin.addListener).toHaveBeenCalledTimes(9),
 		);
 		await userEvent.click(screen.getByRole("button", { name: "Bắt đầu ghi" }));
 		act(() => {
 			native.emit("state", { state: "recording" });
-			native.emit("elapsed", { elapsedS: 60.4 });
-			native.emit("segment", { index: 0, durationS: 60 });
 			native.emit("elapsed", { elapsedS: 75.4 });
 		});
+		// Swift: 60 s in the closed first segment plus 15 s into the second.
+		const recording: Awaited<ReturnType<typeof native.plugin.getStatus>> = {
+			state: "recording",
+			elapsedS: 75.4,
+			positionS: 75,
+			sessionId: "s1",
+			uploadsWaiting: 0,
+			uploadsFailed: 0,
+			notice: "",
+		};
+		native.plugin.getStatus
+			.mockResolvedValueOnce(recording)
+			.mockResolvedValueOnce(recording);
 
 		const mark = await screen.findByRole("button", { name: "Đánh dấu" });
 		await userEvent.click(mark);
@@ -244,7 +264,7 @@ describe("RecordStateProvider (iOS app)", () => {
 		expect(await screen.findByText("Đã đánh 1 mốc")).toBeInTheDocument();
 		const bodies = fake.calls.map((call) => call.body);
 		expect(bodies).toHaveLength(2);
-		expect((bodies[1] as { at: number }).at).toBeCloseTo(75);
+		expect(bodies[1]).toMatchObject({ at: 75, id: expect.any(String) });
 		expect(native.plugin.stop).not.toHaveBeenCalled();
 		expect(screen.getByText("Đang ghi — 1:15")).toBeInTheDocument();
 	});

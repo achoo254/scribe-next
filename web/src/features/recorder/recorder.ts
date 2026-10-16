@@ -3,7 +3,8 @@ import { activeTranslator } from "../../i18n/active-translator";
  * Browser recording (Mode A), independent of React. MediaRecorder emits a
  * chunk every second; each chunk is uploaded in the background
  * (`RecordingChunkQueue`), so an abrupt stop loses at most a second. The
- * clock is a timer of its own, not a chunk count. Stopping drains the
+ * clock runs from a monotonic start (`RecordingClock`), not a chunk or
+ * tick count; a timer only refreshes the shown seconds. Stopping drains the
  * queue and finalizes even after chunk errors, so the recording is kept.
  *
  * `getState()`/`subscribe()` change a few times per recording; the audio
@@ -18,6 +19,7 @@ import {
 } from "./media-capture";
 import { type RecordSources, startErrorMessage } from "./recorder-messages";
 import { RecordingChunkQueue } from "./recording-chunks";
+import { RecordingClock } from "./recording-clock";
 import { ScreenWakeLock } from "./wake-lock";
 
 export interface RecordResult {
@@ -45,6 +47,8 @@ export interface RecorderState {
 /** Bitrate caps keep a 1 s chunk far below the backend's 8 MB body limit. */
 const SCREEN_VIDEO_BPS = 2_500_000;
 const AUDIO_BPS = 128_000;
+/** How often the shown seconds are refreshed (only changes re-render). */
+const CLOCK_REFRESH_MS = 250;
 
 const IDLE: RecorderState = {
 	recording: false,
@@ -70,6 +74,7 @@ export class Recorder {
 	private sessionId: string | null = null;
 	private chunks: RecordingChunkQueue | null = null;
 	private interruptNote: string | null = null;
+	private readonly clock = new RecordingClock();
 
 	constructor(private readonly fetcher: typeof fetch = fetch) {}
 
@@ -85,6 +90,9 @@ export class Recorder {
 		this.levelListeners.add(listener);
 		return () => this.levelListeners.delete(listener);
 	};
+
+	/** Seconds into the recording being made (fractional), e.g. for bookmarks. */
+	position = (): number => this.clock.seconds();
 
 	/** Starts recording; failures end up in `state.error` (never throws). */
 	start = async (sources: RecordSources): Promise<void> => {
@@ -145,9 +153,8 @@ export class Recorder {
 			recorder.start(1000);
 			this.recorder = recorder;
 
-			this.timer = setInterval(() => {
-				this.set({ ...this.state, elapsedS: this.state.elapsedS + 1 });
-			}, 1000);
+			this.clock.start();
+			this.timer = setInterval(this.refreshClock, CLOCK_REFRESH_MS);
 			void this.wakeLock.acquire();
 			document.addEventListener("visibilitychange", this.onVisibility);
 			this.set({
@@ -173,7 +180,12 @@ export class Recorder {
 		const recorder = this.recorder;
 		if (!recorder || !this.state.recording) return null;
 		this.clearTimer();
-		this.set({ ...this.state, recording: false });
+		this.clock.stop();
+		this.set({
+			...this.state,
+			recording: false,
+			elapsedS: Math.floor(this.clock.seconds()),
+		});
 		// Wait for MediaRecorder to flush its last chunk.
 		await new Promise<void>((resolve) => {
 			recorder.onstop = () => resolve();
@@ -224,9 +236,15 @@ export class Recorder {
 	/** Releases mic/screen and timers (page left mid-recording). */
 	dispose = (): void => {
 		this.clearTimer();
+		this.clock.stop();
 		this.recorder = null;
 		this.releaseMedia();
 		if (this.state.recording) this.set({ ...this.state, recording: false });
+	};
+
+	private refreshClock = (): void => {
+		const elapsedS = Math.floor(this.clock.seconds());
+		if (elapsedS !== this.state.elapsedS) this.set({ ...this.state, elapsedS });
 	};
 
 	private set(next: RecorderState): void {

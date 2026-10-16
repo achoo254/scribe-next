@@ -1,5 +1,6 @@
 import { type Page, expect, test } from "@playwright/test";
 import {
+	LINKED_CHAT_NAME,
 	SIGNED_IN_USER,
 	STUB_IDS,
 	STUB_MINUTES,
@@ -140,6 +141,9 @@ test("links chat.hoandat.com from the account menu, then sends the minutes", asy
 	await page
 		.getByRole("button", { name: `${SIGNED_IN_USER.email} · Tài khoản` })
 		.click();
+	await expect(page.getByTestId("account-menu-chat-name")).toHaveText(
+		`Đã liên kết với ${LINKED_CHAT_NAME}`,
+	);
 	await expect(page.getByTestId("account-menu-chat-since")).toHaveText(
 		"Đã liên kết chat lúc 09:55 16/10",
 	);
@@ -189,6 +193,8 @@ test.describe("bookmarks while recording on the iPhone", () => {
 				...IDLE_RECORDER,
 				state: "recording",
 				elapsedS: 125,
+				// Swift's position of the kept audio, which bookmarks use.
+				positionS: 124.6,
 				sessionId: "e2e-session",
 			});
 			const api = await stubApi(page);
@@ -198,7 +204,13 @@ test.describe("bookmarks while recording on the iPhone", () => {
 			await expect(page.getByTestId("native-record-bookmarks")).toHaveText(
 				"Đã đánh 1 mốc",
 			);
-			expect(api.bookmarks).toEqual([{ key: "s:e2e-session", at: 125 }]);
+			expect(api.bookmarks).toEqual([
+				{
+					key: "s:e2e-session",
+					at: 124.6,
+					id: expect.stringMatching(/^[0-9a-f]{24}$/),
+				},
+			]);
 			await fontsReady(page);
 			await expect(page.getByTestId("native-record")).toHaveScreenshot(
 				`native-recording-${scheme}.png`,

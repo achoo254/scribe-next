@@ -12,6 +12,8 @@ export interface NativeCall {
 export interface NativeRecorderStatus {
 	state: "idle" | "starting" | "recording" | "stopping";
 	elapsedS: number;
+	/** Seconds of audio kept in the session (bookmarks); absent from older builds. */
+	positionS?: number;
 	/** Session being recorded; null when idle. */
 	sessionId?: string | null;
 	uploadsWaiting: number;

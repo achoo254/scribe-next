@@ -37,6 +37,8 @@ export interface AccountMenuChat {
 	linked: boolean;
 	/** When the link was confirmed (ISO), shown above "Gỡ liên kết chat". */
 	linkedAt: string | null;
+	/** Who the chat is (name on chat.hoandat.com), when the server knows. */
+	chatName: string | null;
 	/** The server takes new links. */
 	enabled: boolean;
 	busy: boolean;
@@ -90,6 +92,14 @@ export function AccountMenu({
 				<DropdownMenuSeparator />
 				{chat && (chat.linked || chat.enabled) ? (
 					<>
+						{chat.linked && chat.chatName ? (
+							<DropdownMenuLabel
+								data-id="account-menu-chat-name"
+								className="truncate text-muted text-xs"
+							>
+								{t("chat.menu.linkedWith", { name: chat.chatName })}
+							</DropdownMenuLabel>
+						) : null}
 						{chat.linked && chat.linkedAt ? (
 							<DropdownMenuLabel
 								data-id="account-menu-chat-since"

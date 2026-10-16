@@ -184,28 +184,49 @@ pub async fn set_summary(db: &Database, user_id: &str, key: &str, summary: &Stor
     upsert(db, user_id, key, doc! { "$set": { "summary": value, "updatedAt": DateTime::now() } }).await
 }
 
-/// Thêm một dấu mốc; trả `false` khi doc đã đủ [`MAX_BOOKMARKS`]. Điều kiện "chưa có phần tử thứ 200"
-/// nằm trong filter nên hai lần thêm đồng thời không vượt trần; doc đầy thì upsert đụng unique index.
-pub async fn add_bookmark(db: &Database, user_id: &str, key: &str, bookmark: &Bookmark) -> Result<bool, AppError> {
+/// Kết quả thêm một dấu mốc.
+#[derive(Debug, Clone, PartialEq)]
+pub enum BookmarkAdd {
+    Added,
+    /// Mốc cùng id đã có (client gửi lại sau khi mất trả lời): không thêm lần hai.
+    Exists(Bookmark),
+    /// Doc đã đủ [`MAX_BOOKMARKS`].
+    Full,
+}
+
+/// Thêm một dấu mốc, idempotent theo `bookmark.id`. Điều kiện "chưa có phần tử thứ 200" và "chưa có mốc
+/// cùng id" nằm trong filter nên hai lần thêm đồng thời không vượt trần cũng không nhân đôi; filter không
+/// khớp doc đã có (đầy, hoặc trùng id) thì upsert đụng unique index.
+pub async fn add_bookmark(db: &Database, user_id: &str, key: &str, bookmark: &Bookmark) -> Result<BookmarkAdd, AppError> {
     let coll = db.collection::<Document>(COLL);
     let last_slot = format!("bookmarks.{}", MAX_BOOKMARKS - 1);
-    let filter = doc! { "userId": user_id, "key": key, last_slot: { "$exists": false } };
+    let filter = doc! {
+        "userId": user_id,
+        "key": key,
+        last_slot: { "$exists": false },
+        "bookmarks.id": { "$ne": &bookmark.id },
+    };
     let value = mongodb::bson::to_bson(bookmark).map_err(|e| AppError::Internal(format!("mã hoá dấu mốc: {e}")))?;
     let update = doc! {
         "$push": { "bookmarks": value },
         "$set": { "updatedAt": DateTime::now() },
         "$setOnInsert": { "createdAt": DateTime::now() },
     };
-    match coll.update_one(filter.clone(), update.clone()).upsert(true).await {
-        Ok(_) => Ok(true),
-        // Doc đã có mà không khớp filter (đã đầy), hoặc thua cuộc đua tạo doc: thử lại không upsert.
+    let added = match coll.update_one(filter.clone(), update.clone()).upsert(true).await {
+        Ok(_) => true,
+        // Doc đã có mà không khớp filter (đầy, trùng id), hoặc thua cuộc đua tạo doc: thử lại không upsert.
         Err(e) if is_duplicate_key(&e) => coll
             .update_one(filter, update)
             .await
             .map(|r| r.matched_count > 0)
-            .map_err(|e| AppError::Internal(format!("thêm dấu mốc (lần hai): {e}"))),
-        Err(e) => Err(AppError::Internal(format!("thêm dấu mốc: {e}"))),
+            .map_err(|e| AppError::Internal(format!("thêm dấu mốc (lần hai): {e}")))?,
+        Err(e) => return Err(AppError::Internal(format!("thêm dấu mốc: {e}"))),
+    };
+    if added {
+        return Ok(BookmarkAdd::Added);
     }
+    let existing = get(db, user_id, key).await?.and_then(|d| d.bookmarks.into_iter().find(|b| b.id == bookmark.id));
+    Ok(existing.map_or(BookmarkAdd::Full, BookmarkAdd::Exists))
 }
 
 /// Xoá một dấu mốc; `false` khi không có.
@@ -218,6 +239,58 @@ pub async fn remove_bookmark(db: &Database, user_id: &str, key: &str, id: &str) 
         .await
         .map(|r| r.modified_count > 0)
         .map_err(|e| AppError::Internal(format!("xoá dấu mốc: {e}")))
+}
+
+/// Chia dấu mốc của một bản ghi cho các phần cắt ra từ nó (`durations` = thời lượng từng phần, theo thứ
+/// tự): mốc thuộc phần chứa nó (`đầu ≤ at < cuối`), `at` tính lại từ đầu phần đó; mốc sau phần cuối
+/// (thời lượng làm tròn) về phần cuối. Không có phần nào thì trả rỗng.
+pub fn split_bookmarks(bookmarks: &[Bookmark], durations: &[f64]) -> Vec<Vec<Bookmark>> {
+    let mut out = vec![Vec::new(); durations.len()];
+    let Some(last) = durations.len().checked_sub(1) else { return out };
+    for bookmark in bookmarks {
+        let mut start = 0.0;
+        let mut piece = last;
+        for (i, d) in durations.iter().enumerate() {
+            if bookmark.at < start + d.max(0.0) {
+                piece = i;
+                break;
+            }
+            if i < last {
+                start += d.max(0.0);
+            }
+        }
+        let at = (((bookmark.at - start).max(0.0)) * 10.0).round() / 10.0;
+        if let Some(list) = out.get_mut(piece) {
+            list.push(Bookmark { at, ..bookmark.clone() });
+        }
+    }
+    out
+}
+
+/// Bản ghi `from_key` vừa được cắt thành các phần `pieces` (`(khoá, thời lượng)` theo thứ tự): chép dấu
+/// mốc của nó sang doc của từng phần trước khi doc gốc bị xoá theo file gốc.
+pub async fn move_bookmarks_to_pieces(
+    db: &Database,
+    user_id: &str,
+    from_key: &str,
+    pieces: &[(String, f64)],
+) -> Result<usize, AppError> {
+    let Some(source) = get(db, user_id, from_key).await? else { return Ok(0) };
+    if source.bookmarks.is_empty() {
+        return Ok(0);
+    }
+    let durations: Vec<f64> = pieces.iter().map(|(_, d)| *d).collect();
+    let mut moved = 0;
+    for ((key, _), marks) in pieces.iter().zip(split_bookmarks(&source.bookmarks, &durations)) {
+        if marks.is_empty() {
+            continue;
+        }
+        let values = mongodb::bson::to_bson(&marks).map_err(|e| AppError::Internal(format!("mã hoá dấu mốc: {e}")))?;
+        let update = doc! { "$push": { "bookmarks": { "$each": values } }, "$set": { "updatedAt": DateTime::now() } };
+        upsert(db, user_id, key, update).await?;
+        moved += marks.len();
+    }
+    Ok(moved)
 }
 
 /// Một đoạn của phiên đã bị xoá: bỏ câu sửa của đoạn và biên bản (viết cả từ đoạn đó); phiên không còn
@@ -304,6 +377,19 @@ mod tests {
     use super::*;
 
     #[test]
+    fn bookmarks_follow_the_piece_they_fall_in() {
+        let mark = |id: &str, at: f64| Bookmark { id: id.into(), at, label: Some(id.into()) };
+        let marks = [mark("a", 0.0), mark("b", 59.9), mark("c", 60.0), mark("d", 125.36), mark("e", 200.0)];
+        let pieces = split_bookmarks(&marks, &[60.0, 60.0, 60.0]);
+        assert_eq!(pieces[0], vec![mark("a", 0.0), mark("b", 59.9)]);
+        assert_eq!(pieces[1], vec![mark("c", 0.0)]);
+        // Sau phần cuối (thời lượng làm tròn): về phần cuối, tính từ đầu phần đó.
+        assert_eq!(pieces[2], vec![mark("d", 5.4), mark("e", 80.0)]);
+        assert!(split_bookmarks(&marks, &[]).is_empty());
+        assert_eq!(split_bookmarks(&marks, &[30.0])[0].len(), marks.len());
+    }
+
+    #[test]
     fn edits_apply_only_to_the_same_run_and_sentence_count() {
         let edit = SegmentEdit { run_id: "run-1".into(), texts: vec!["a".into(), "b".into()] };
         assert_eq!(effective_texts(Some(&edit), "run-1", 2), Some(&edit.texts[..]));
@@ -328,15 +414,48 @@ mod tests {
             let (db, user, key) = (db.clone(), user.clone(), key.clone());
             async move { add_bookmark(&db, &user, &key, &mark(i)).await.expect("thêm") }
         });
-        let added = futures_util::future::join_all(tasks).await.into_iter().filter(|ok| *ok).count();
+        let added = futures_util::future::join_all(tasks).await.into_iter().filter(|r| *r == BookmarkAdd::Added).count();
         assert_eq!(added, MAX_BOOKMARKS);
         assert_eq!(get(&db, &user, &key).await.expect("get").expect("doc").bookmarks.len(), MAX_BOOKMARKS);
         let first = get(&db, &user, &key).await.expect("get").expect("doc").bookmarks[0].id.clone();
+        // Gửi lại mốc đã có (trả lời bị mất): trả mốc cũ, không thêm lần hai, kể cả khi doc đã đầy.
+        let second = get(&db, &user, &key).await.expect("get").expect("doc").bookmarks[1].clone();
+        assert_eq!(add_bookmark(&db, &user, &key, &second).await.expect("gửi lại"), BookmarkAdd::Exists(second.clone()));
         assert!(remove_bookmark(&db, &user, &key, &first).await.expect("xoá"));
         assert!(!remove_bookmark(&db, &user, &key, &first).await.expect("xoá lại"));
-        assert!(add_bookmark(&db, &user, &key, &mark(999)).await.expect("thêm sau khi xoá"));
-        assert!(!add_bookmark(&db, &user, &key, &mark(1000)).await.expect("đầy"));
+        assert_eq!(add_bookmark(&db, &user, &key, &mark(999)).await.expect("thêm sau khi xoá"), BookmarkAdd::Added);
+        assert_eq!(add_bookmark(&db, &user, &key, &mark(999)).await.expect("gửi lại"), BookmarkAdd::Exists(mark(999)));
+        assert_eq!(add_bookmark(&db, &user, &key, &mark(1000)).await.expect("đầy"), BookmarkAdd::Full);
         delete(&db, &user, &key).await.expect("dọn");
+    }
+
+    /// Cắt bản ghi trên Mongo thật (DB dev): `TRANSCRIPT_TEST_MONGO_URI=<uri> TRANSCRIPT_TEST_DB_NAME=<db>
+    /// cargo test bookmarks_move -- --ignored`. Mốc của bản ghi gốc sang doc của từng phần, theo vị trí.
+    #[tokio::test]
+    #[ignore]
+    async fn bookmarks_move_to_split_pieces_on_real_mongo() {
+        let uri = std::env::var("TRANSCRIPT_TEST_MONGO_URI").expect("TRANSCRIPT_TEST_MONGO_URI");
+        let db_name = std::env::var("TRANSCRIPT_TEST_DB_NAME").expect("TRANSCRIPT_TEST_DB_NAME");
+        let db = crate::db::connect(&uri, &db_name).await.expect("kết nối Mongo");
+        ensure_indexes(&db).await.expect("index");
+        let user = format!("selftest-{}", uuid::Uuid::new_v4());
+        let key = |id: ObjectId| format!("f:{}", id.to_hex());
+        let (source, first, second) = (ObjectId::new(), ObjectId::new(), ObjectId::new());
+        assert_eq!(move_bookmarks_to_pieces(&db, &user, &key(source), &[(key(first), 60.0)]).await.expect("chưa có doc"), 0);
+        for (id, at) in [("m1", 10.0), ("m2", 75.0), ("m3", 80.5)] {
+            let mark = Bookmark { id: id.into(), at, label: None };
+            assert_eq!(add_bookmark(&db, &user, &key(source), &mark).await.expect("thêm"), BookmarkAdd::Added);
+        }
+        let pieces = [(key(first), 60.0), (key(second), 60.0)];
+        assert_eq!(move_bookmarks_to_pieces(&db, &user, &key(source), &pieces).await.expect("chép"), 3);
+        let at_of = |d: SessionDoc| d.bookmarks.into_iter().map(|b| (b.id, b.at)).collect::<Vec<_>>();
+        let a = get(&db, &user, &key(first)).await.expect("get").expect("doc phần 1");
+        assert_eq!(at_of(a), vec![("m1".to_string(), 10.0)]);
+        let b = get(&db, &user, &key(second)).await.expect("get").expect("doc phần 2");
+        assert_eq!(at_of(b), vec![("m2".to_string(), 15.0), ("m3".to_string(), 20.5)]);
+        for id in [source, first, second] {
+            delete(&db, &user, &key(id)).await.expect("dọn");
+        }
     }
 
     /// Vòng đời trên Mongo thật (DB dev): `TRANSCRIPT_TEST_MONGO_URI=<uri> TRANSCRIPT_TEST_DB_NAME=<db>

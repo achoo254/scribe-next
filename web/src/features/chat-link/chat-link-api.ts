@@ -18,6 +18,11 @@ export interface ChatLinkStatus {
 	linked: boolean;
 	/** When the link was confirmed (ISO); null when not linked. */
 	linkedAt: string | null;
+	/**
+	 * Name on chat.hoandat.com of whoever confirmed the link; null when not
+	 * linked, or for links made before the server kept it.
+	 */
+	chatName: string | null;
 	/** The server takes new links; false: linking is off on this server. */
 	enabled: boolean;
 }
@@ -32,6 +37,7 @@ export async function fetchChatLink(
 	const body = await apiJson<{
 		linked?: unknown;
 		linkedAt?: unknown;
+		chatName?: unknown;
 		enabled?: unknown;
 	}>(
 		"/api/chat/link",
@@ -44,6 +50,10 @@ export async function fetchChatLink(
 		linkedAt:
 			linked && typeof body.linkedAt === "string" && body.linkedAt
 				? body.linkedAt
+				: null,
+		chatName:
+			linked && typeof body.chatName === "string" && body.chatName.trim()
+				? body.chatName.trim()
 				: null,
 		// Older servers do not say; they always took links.
 		enabled: body.enabled !== false,

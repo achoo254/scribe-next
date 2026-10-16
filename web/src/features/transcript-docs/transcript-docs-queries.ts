@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
+import { ApiError } from "../../lib/api";
 import { fileKeys } from "../files/file-queries";
 import { transcriptKeys } from "../transcript/transcript-queries";
 import { isPending, needsReload } from "./reader-model";
@@ -128,7 +129,21 @@ export function useDeleteTranscript() {
 	});
 }
 
-/** "Tóm tắt" / "Tóm tắt lại": the new minutes replace the old in the open doc. */
+/**
+ * The reply was lost rather than refused (no network, 5xx, a proxy timeout
+ * such as 524): the server may still have saved the minutes.
+ */
+export function replyMayBeLost(error: unknown): boolean {
+	return (
+		!(error instanceof ApiError) || error.status === 0 || error.status >= 500
+	);
+}
+
+/**
+ * "Tóm tắt" / "Tóm tắt lại": the new minutes replace the old in the open
+ * doc. The server finishes the minutes even when the reply is lost, so the
+ * doc is read again then, to show them once saved.
+ */
 export function useCreateSummary(key: string) {
 	const queryClient = useQueryClient();
 	return useMutation({
@@ -138,6 +153,12 @@ export function useCreateSummary(key: string) {
 				transcriptDocKeys.detail(key),
 				(doc) => (doc ? { ...doc, summary } : doc),
 			);
+		},
+		onError: (error) => {
+			if (!replyMayBeLost(error)) return;
+			void queryClient.invalidateQueries({
+				queryKey: transcriptDocKeys.detail(key),
+			});
 		},
 	});
 }

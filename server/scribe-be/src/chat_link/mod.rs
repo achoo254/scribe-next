@@ -92,11 +92,12 @@ fn status_json(linked: Option<&chat_link::Linked>, enabled: bool) -> Value {
     json!({
         "linked": linked.is_some(),
         "linkedAt": linked.and_then(|l| l.linked_at).and_then(|at| at.try_to_rfc3339_string().ok()),
+        "chatName": linked.and_then(|l| l.name.as_deref()),
         "enabled": enabled,
     })
 }
 
-/// `GET /api/chat/link` — `{linked, linkedAt, enabled}`.
+/// `GET /api/chat/link` — `{linked, linkedAt, chatName, enabled}` (`chatName` null khi chưa biết tên).
 pub async fn status(State(state): State<AppState>, Extension(user): Extension<UserId>) -> Result<Json<Value>, AppError> {
     let linked = chat_link::linked(&state.db, &user.0).await?;
     Ok(Json(status_json(linked.as_ref(), link_enabled(&state.config))))
@@ -148,8 +149,15 @@ mod tests {
 
     #[test]
     fn status_reports_link_time_and_whether_linking_is_on() {
-        assert_eq!(status_json(None, false), json!({ "linked": false, "linkedAt": null, "enabled": false }));
-        let linked = chat_link::Linked { chat_id: 12, linked_at: Some(mongodb::bson::DateTime::from_millis(0)) };
-        assert_eq!(status_json(Some(&linked), true), json!({ "linked": true, "linkedAt": "1970-01-01T00:00:00Z", "enabled": true }));
+        assert_eq!(status_json(None, false), json!({ "linked": false, "linkedAt": null, "chatName": null, "enabled": false }));
+        let linked = chat_link::Linked {
+            chat_id: 12,
+            linked_at: Some(mongodb::bson::DateTime::from_millis(0)),
+            name: Some("An Nguyễn".into()),
+        };
+        assert_eq!(
+            status_json(Some(&linked), true),
+            json!({ "linked": true, "linkedAt": "1970-01-01T00:00:00Z", "chatName": "An Nguyễn", "enabled": true })
+        );
     }
 }

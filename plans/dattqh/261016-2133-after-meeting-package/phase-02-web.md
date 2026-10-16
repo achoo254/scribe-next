@@ -30,3 +30,11 @@ Dùng khung và pattern đã có: `layout/page-header.tsx`, `components/ui/*`, `
 - `ApiError` mang thêm `code` và `quota` (`usedMinutes`/`limitMinutes`/`retryAt`).
 - **Kiểm tra:** lint 0 lỗi (216 tệp); typecheck 0 lỗi; check:tokens đạt; vitest 50 tệp, 275 test đạt; build đạt, không cảnh báo; e2e 67 đạt, 7 bỏ qua (nhánh chỉ có ở Chromium hoặc ở iPhone). Ảnh chụp cập nhật: `reader-*`, `account-menu-*`; ảnh mới `reader-minutes-*`, `native-recording-*` (sáng/tối, đã xem). axe sạch trên trang đọc có biên bản, hộp liên kết, thẻ ghi iPhone.
 - Chưa thử trên máy thật: bấm deep link trong WebView iPhone, và đánh dấu trong lúc ghi nền trên iPhone.
+
+## Bản vá sau deploy (16/10/2026)
+- **Giây dấu mốc trên iPhone:** bấm "Đánh dấu" thì hỏi Swift `getStatus().positionS` (độ dài audio đã giữ của phiên: các đoạn đã đóng cộng phần đang ghi, `AudioRecorder.recordedSeconds`, tính trong cùng khoá ghi file). Bỏ cách cộng sự kiện `segment` trên trang: lúc khoá máy Swift ngừng gửi `elapsed`, sự kiện `segment` dồn lại và phát lúc mở máy khi đồng hồ trang đã cũ. App cũ không có `positionS` thì dùng `elapsedS` của Swift.
+- **Giây dấu mốc trên trình duyệt:** đồng hồ ghi tính từ mốc `performance.now()` lúc bắt đầu (`features/recorder/recording-clock.ts`); timer chỉ làm mới số giây hiện ra, tab bị ẩn (timer bị bóp) không làm lệch nữa. Ghi trình duyệt không có tạm dừng nên không có phần trừ thời gian dừng.
+- **Không nhân đôi dấu mốc khi thử lại:** hàng đợi sinh id 24 hex cho mỗi mốc và gửi kèm; server dùng id đó, gửi lại id đã có thì trả mốc đã lưu. POST không có id (tab web cũ) vẫn được nhận.
+- **Mốc của bản ghi bị "cắt sau khi ghi":** server chép mốc sang từng phần theo vị trí trước khi xoá bản ghi gốc. Mốc gửi muộn tới bản ghi đã cắt (404) bị bỏ, chỉ đếm trong dòng nhỏ "N mốc bị bỏ vì bản ghi đã được cắt hoặc xoá", không báo lỗi.
+- **Chat đã liên kết:** menu tài khoản hiện "Đã liên kết với <tên>" (`chatName` của `GET /api/chat/link`, tên trên chat của người bấm xác nhận; liên kết cũ không có tên thì không hiện dòng này).
+- **"Tóm tắt" mất trả lời** (mạng, 5xx, 524): đọc lại bản chép lời, để biên bản server đã lưu ở nền hiện ra.

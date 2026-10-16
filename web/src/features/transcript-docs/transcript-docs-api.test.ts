@@ -83,7 +83,7 @@ describe("transcript-docs api", () => {
 			[`POST ${PATH}/summary`]: jsonResponse({ summary: "Tóm tắt." }),
 			[`POST ${PATH}/share`]: jsonResponse({ ok: true }),
 			[`POST ${PATH}/bookmarks`]: jsonResponse({
-				id: "b1",
+				id: "65a1b2c3d4e5f60718293a4b",
 				at: 12.5,
 				label: null,
 			}),
@@ -91,8 +91,10 @@ describe("transcript-docs api", () => {
 		});
 		expect((await createSummary(KEY, fetcher)).summary).toBe("Tóm tắt.");
 		await shareSummary(KEY, fetcher);
-		expect(await addBookmark(KEY, 12.5, fetcher)).toEqual({
-			id: "b1",
+		expect(
+			await addBookmark(KEY, 12.5, "65a1b2c3d4e5f60718293a4b", fetcher),
+		).toEqual({
+			id: "65a1b2c3d4e5f60718293a4b",
 			at: 12.5,
 			label: null,
 		});
@@ -103,7 +105,10 @@ describe("transcript-docs api", () => {
 			"POST",
 			"DELETE",
 		]);
-		expect(calls[2]?.body).toEqual({ at: 12.5 });
+		expect(calls[2]?.body).toEqual({
+			id: "65a1b2c3d4e5f60718293a4b",
+			at: 12.5,
+		});
 	});
 
 	it("keeps the code of a refused share", async () => {

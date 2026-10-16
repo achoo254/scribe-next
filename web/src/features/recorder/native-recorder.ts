@@ -17,6 +17,11 @@ type NativeState = "idle" | "starting" | "recording" | "stopping";
 interface NativeStatus {
 	state: NativeState;
 	elapsedS: number;
+	/**
+	 * Seconds of audio kept in the session (closed segments plus the open
+	 * one): where the transcript is now. Absent from app builds before it.
+	 */
+	positionS?: number;
 	/** Session being recorded; null when idle. */
 	sessionId?: string | null;
 	uploadsWaiting: number;
@@ -132,9 +137,6 @@ export class NativeRecorder {
 	/** Bumped by `dispose`: an `attach` still awaiting listeners from an
 	 * earlier mount drops them instead of leaking them. */
 	private generation = 0;
-	/** Length of the session's closed segments, and the clock when the last closed. */
-	private closedS = 0;
-	private elapsedAtClose = 0;
 
 	constructor(
 		private readonly plugin: RecorderNativePlugin = NativeRecorderPlugin,
@@ -172,10 +174,6 @@ export class NativeRecorder {
 			this.set({ ...this.state, elapsedS: numberOf(data.elapsedS) }),
 		);
 		await on("level", (data) => this.setLevel(numberOf(data.level)));
-		await on("segment", (data) => {
-			this.closedS += numberOf(data.durationS);
-			this.elapsedAtClose = this.state.elapsedS;
-		});
 		await on("notice", (data) =>
 			this.set({ ...this.state, notice: textOf(data.message) }),
 		);
@@ -226,8 +224,6 @@ export class NativeRecorder {
 			elapsedS: 0,
 			sessionId: null,
 		});
-		this.closedS = 0;
-		this.elapsedAtClose = 0;
 		try {
 			const { sessionId } = await this.plugin.start({
 				userKey,
@@ -247,13 +243,24 @@ export class NativeRecorder {
 	};
 
 	/**
-	 * Seconds from the start of the session, as the transcript counts them:
-	 * the closed segments' lengths plus the time into the open one. When
-	 * segment events were missed (WebView suspended) it falls back to the
-	 * recording clock.
+	 * Seconds from the start of the session, as the transcript counts them,
+	 * read from Swift at the moment of asking. The WebView's own copy of the
+	 * clock goes stale while the phone is locked (Swift stops sending
+	 * `elapsed` then, and queued events replay late), so it is not used.
+	 * Older app builds without `positionS`: Swift's recording clock. Never
+	 * throws: if Swift cannot answer, the last clock the page saw.
 	 */
-	position = (): number =>
-		this.closedS + Math.max(0, this.state.elapsedS - this.elapsedAtClose);
+	position = async (): Promise<number> => {
+		try {
+			const status = await this.plugin.getStatus();
+			return typeof status.positionS === "number" &&
+				Number.isFinite(status.positionS)
+				? status.positionS
+				: numberOf(status.elapsedS);
+		} catch {
+			return this.state.elapsedS;
+		}
+	};
 
 	stop = async (): Promise<void> => {
 		if (!this.state.recording) return;

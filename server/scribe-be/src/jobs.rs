@@ -4,6 +4,7 @@ use crate::audit;
 use crate::auth::UserId;
 use crate::error::AppError;
 use crate::models::file::{self, FileDoc};
+use crate::models::transcript_doc;
 use crate::models::job::{self, Job, SegRef};
 use crate::state::AppState;
 use crate::worker::{split_worker::SplitWorker, OutputSeg, Worker};
@@ -260,6 +261,8 @@ async fn finish_recording_split(state: &AppState, job: &Job, job_id: &str, segs:
         }
     }
 
+    move_bookmarks(state, job_id, &input, &segs, &refs).await;
+
     // Mọi đoạn đã lưu → xoá bản ghi gốc (disk trước; chỉ xoá doc khi disk OK để KHÔNG mồ côi file).
     let disk_ok = match tokio::fs::remove_file(&input.path).await {
         Ok(()) => true,
@@ -277,6 +280,34 @@ async fn finish_recording_split(state: &AppState, job: &Job, job_id: &str, segs:
 
     if let Err(e) = job::finish_done(&state.db, job_id, refs).await {
         tracing::error!("finish_done lỗi: {e:?}");
+    }
+}
+
+/// Dấu mốc của bản ghi gốc (một file, `f:<id>`) sang các phần vừa cắt, theo vị trí, trước khi xoá doc
+/// gốc (xoá file gốc kéo theo doc transcript của nó). Lỗi chỉ log: mất mốc không đáng làm hỏng lần cắt.
+/// Đoạn của phiên iPhone (`s:`) giữ mốc ở doc phiên, không chép.
+async fn move_bookmarks(state: &AppState, job_id: &str, input: &FileDoc, segs: &[OutputSeg], refs: &[SegRef]) {
+    let Some(input_id) = input.id else { return };
+    let from_key = file::session_key(&input.name, input_id);
+    if !from_key.starts_with("f:") {
+        return;
+    }
+    let pieces: Vec<(String, f64)> = segs
+        .iter()
+        .zip(refs)
+        .filter_map(|(s, r)| {
+            let id = ObjectId::parse_str(&r.file_id).ok()?;
+            Some((file::session_key(&r.name, id), s.duration_s.unwrap_or(0.0)))
+        })
+        .collect();
+    if pieces.len() != refs.len() {
+        tracing::warn!(job = %job_id, "id đoạn cắt không hợp lệ, không chép dấu mốc");
+        return;
+    }
+    match transcript_doc::move_bookmarks_to_pieces(&state.db, &input.user_id, &from_key, &pieces).await {
+        Ok(0) => {}
+        Ok(moved) => tracing::info!(job = %job_id, moved, "đã chép dấu mốc sang các phần cắt"),
+        Err(e) => tracing::warn!(job = %job_id, "chép dấu mốc sang các phần cắt lỗi: {e:?}"),
     }
 }
 

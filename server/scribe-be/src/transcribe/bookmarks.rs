@@ -13,7 +13,7 @@ use super::docs::check_key;
 use crate::auth::UserId;
 use crate::error::AppError;
 use crate::models::file;
-use crate::models::transcript_doc::{self, Bookmark, MAX_BOOKMARKS};
+use crate::models::transcript_doc::{self, Bookmark, BookmarkAdd, MAX_BOOKMARKS};
 use crate::recordings;
 use crate::state::AppState;
 use axum::extract::{Path, State};
@@ -32,6 +32,10 @@ const MAX_AT_S: f64 = 48.0 * 3600.0;
 
 #[derive(Deserialize)]
 pub struct AddReq {
+    /// Id do client sinh (24 hex như ObjectId): gửi lại sau khi mất trả lời không tạo mốc thứ hai. Thiếu
+    /// (tab web cũ) thì server sinh.
+    #[serde(default)]
+    id: Option<String>,
     at: f64,
     #[serde(default)]
     label: Option<String>,
@@ -47,6 +51,16 @@ fn validate(at: f64, label: Option<&str>) -> Result<(f64, Option<String>), AppEr
         return Err(AppError::BadRequest(format!("nhãn tối đa {MAX_LABEL_CHARS} ký tự")));
     }
     Ok(((at * 10.0).round() / 10.0, label.map(str::to_string)))
+}
+
+/// Id dấu mốc: id client gửi (đúng dạng ObjectId, chuẩn hoá chữ thường) hoặc id mới.
+fn bookmark_id(id: Option<&str>) -> Result<String, AppError> {
+    match id {
+        Some(id) => ObjectId::parse_str(id)
+            .map(|oid| oid.to_hex())
+            .map_err(|_| AppError::BadRequest("id dấu mốc không hợp lệ".into())),
+        None => Ok(ObjectId::new().to_hex()),
+    }
 }
 
 async fn check_owner(state: &AppState, user_id: &str, key: &str) -> Result<(), AppError> {
@@ -65,7 +79,8 @@ async fn check_owner(state: &AppState, user_id: &str, key: &str) -> Result<(), A
     }
 }
 
-/// `POST /api/transcript-docs/{key}/bookmarks` `{at, label?}` → `{id, at, label}`.
+/// `POST /api/transcript-docs/{key}/bookmarks` `{id?, at, label?}` → `{id, at, label}`. Id đã có → trả mốc
+/// đã lưu (thành công, không thêm lần hai).
 pub async fn add(
     State(state): State<AppState>,
     Extension(user): Extension<UserId>,
@@ -73,19 +88,21 @@ pub async fn add(
     Json(req): Json<AddReq>,
 ) -> Result<Json<Value>, AppError> {
     let (at, label) = validate(req.at, req.label.as_deref())?;
+    let id = bookmark_id(req.id.as_deref())?;
     if !state.rate.allow(&format!("bookmark:{}", user.0), ADDS_PER_MINUTE) {
         return Err(AppError::TooManyRequests("đánh dấu quá nhanh, thử lại sau một phút".into()));
     }
     check_owner(&state, &user.0, &key).await?;
-    let bookmark = Bookmark { id: ObjectId::new().to_hex(), at, label };
-    if !transcript_doc::add_bookmark(&state.db, &user.0, &key, &bookmark).await? {
-        return Err(AppError::Coded {
+    let bookmark = Bookmark { id, at, label };
+    match transcript_doc::add_bookmark(&state.db, &user.0, &key, &bookmark).await? {
+        BookmarkAdd::Added => Ok(Json(json!(bookmark))),
+        BookmarkAdd::Exists(saved) => Ok(Json(json!(saved))),
+        BookmarkAdd::Full => Err(AppError::Coded {
             status: StatusCode::CONFLICT,
             code: "BOOKMARKS_FULL",
             message: format!("Mỗi bản ghi có tối đa {MAX_BOOKMARKS} dấu mốc."),
-        });
+        }),
     }
-    Ok(Json(json!(bookmark)))
 }
 
 /// `DELETE /api/transcript-docs/{key}/bookmarks/{id}`.
@@ -117,5 +134,15 @@ mod tests {
         assert!(validate(MAX_AT_S + 1.0, None).is_err());
         assert!(validate(1.0, Some(&"ữ".repeat(200))).is_ok());
         assert!(validate(1.0, Some(&"ữ".repeat(201))).is_err());
+    }
+
+    #[test]
+    fn client_bookmark_ids_must_look_like_object_ids() {
+        assert_eq!(bookmark_id(Some("65A1B2C3D4E5F60718293A4B")).expect("ok"), "65a1b2c3d4e5f60718293a4b");
+        assert!(bookmark_id(Some("khong-hop-le")).is_err());
+        assert!(bookmark_id(Some("")).is_err());
+        assert!(bookmark_id(Some("65a1b2c3d4e5f60718293a4")).is_err());
+        let generated = bookmark_id(None).expect("sinh");
+        assert!(ObjectId::parse_str(&generated).is_ok());
     }
 }

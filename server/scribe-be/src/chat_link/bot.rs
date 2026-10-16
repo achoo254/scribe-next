@@ -43,6 +43,9 @@ impl std::fmt::Display for BotError {
 pub struct User {
     #[serde(default)]
     pub is_bot: bool,
+    /// Tên hiển thị trên chat.
+    #[serde(default)]
+    pub name: Option<String>,
     #[serde(default)]
     pub username: Option<String>,
 }

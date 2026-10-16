@@ -95,27 +95,41 @@ describe("NativeRecorder", () => {
 		expect(recorder.getLevel()).toBe(0);
 	});
 
-	it("counts session seconds over closed segments for bookmarks", async () => {
+	it("asks Swift for the session position when bookmarking, not the page's clock", async () => {
 		const { plugin, emit } = fakePlugin();
 		const recorder = new NativeRecorder(plugin);
 		await recorder.attach();
 		await recorder.start("key1", 1);
 		expect(recorder.getState().sessionId).toBe("s1");
-
 		emit("state", { state: "recording" });
 		emit("elapsed", { elapsedS: 30 });
-		expect(recorder.position()).toBe(30);
-		// The first segment closed at 60.4 s of clock, its file is 60 s long.
-		emit("elapsed", { elapsedS: 60.4 });
-		emit("segment", { index: 0, durationS: 60 });
-		emit("elapsed", { elapsedS: 75.4 });
-		expect(recorder.position()).toBeCloseTo(75);
 
-		// A new session starts from zero.
-		await recorder.stop();
-		await recorder.start("key1", 1);
-		emit("elapsed", { elapsedS: 3 });
-		expect(recorder.position()).toBe(3);
+		// Locked for five minutes: Swift sent no `elapsed`, and the segments
+		// closed meanwhile replay on unlock while the page still shows 30 s.
+		for (let index = 0; index < 5; index += 1) {
+			emit("segment", { index, durationS: 60 });
+		}
+		vi.mocked(plugin.getStatus).mockResolvedValueOnce({
+			state: "recording",
+			elapsedS: 330.6,
+			positionS: 330.2,
+			uploadsWaiting: 0,
+			uploadsFailed: 0,
+			notice: "",
+		});
+		expect(recorder.getState().elapsedS).toBe(30);
+		expect(await recorder.position()).toBe(330.2);
+	});
+
+	it("falls back to Swift's clock, then the page's, for older app builds", async () => {
+		const { plugin, emit } = fakePlugin({ state: "recording", elapsedS: 95 });
+		const recorder = new NativeRecorder(plugin);
+		await recorder.attach();
+		expect(await recorder.position()).toBe(95);
+
+		emit("elapsed", { elapsedS: 97 });
+		vi.mocked(plugin.getStatus).mockRejectedValueOnce(new Error("bridge"));
+		expect(await recorder.position()).toBe(97);
 	});
 
 	it("reads the open session back from Swift's status", async () => {
@@ -127,7 +141,7 @@ describe("NativeRecorder", () => {
 		const recorder = new NativeRecorder(plugin);
 		await recorder.attach();
 		expect(recorder.getState().sessionId).toBe("s-live");
-		expect(recorder.position()).toBe(12);
+		expect(await recorder.position()).toBe(12);
 	});
 
 	it("shows why a start failed and stops on an engine failure", async () => {

@@ -8,6 +8,7 @@ describe("chat link api", () => {
 			"GET /api/chat/link": jsonResponse({
 				linked: true,
 				linkedAt: "2026-10-16T03:00:00Z",
+				chatName: " An Nguyễn ",
 				enabled: true,
 			}),
 			"POST /api/chat/link": jsonResponse({
@@ -19,6 +20,7 @@ describe("chat link api", () => {
 		expect(await fetchChatLink(fetcher)).toEqual({
 			linked: true,
 			linkedAt: "2026-10-16T03:00:00Z",
+			chatName: "An Nguyễn",
 			enabled: true,
 		});
 		expect((await startChatLink(fetcher)).url).toContain("?start=tok");
@@ -29,11 +31,16 @@ describe("chat link api", () => {
 
 	it("treats an odd reply as not linked, and an older server as enabled", async () => {
 		const { fetcher } = fakeFetch({
-			"GET /api/chat/link": jsonResponse({ linked: "yes", linkedAt: 5 }),
+			"GET /api/chat/link": jsonResponse({
+				linked: "yes",
+				linkedAt: 5,
+				chatName: "An",
+			}),
 		});
 		expect(await fetchChatLink(fetcher)).toEqual({
 			linked: false,
 			linkedAt: null,
+			chatName: null,
 			enabled: true,
 		});
 	});

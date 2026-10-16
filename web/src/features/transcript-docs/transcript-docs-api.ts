@@ -238,17 +238,22 @@ export async function shareSummary(
 	);
 }
 
-/** Saves a bookmark; works while recording, before any file is stored. */
+/**
+ * Saves a bookmark; works while recording, before any file is stored. `id`
+ * (24 hex) is made by the caller: sending it again returns the bookmark
+ * already saved instead of adding a second one.
+ */
 export function addBookmark(
 	key: string,
 	at: number,
+	id: string,
 	fetcher: typeof fetch = fetch,
 ): Promise<Bookmark> {
 	return apiJson<Bookmark>(
 		docPath(key, "/bookmarks"),
 		{
 			method: "POST",
-			json: { at },
+			json: { id, at },
 			fallbackError: activeTranslator().t("errors.transcripts.bookmark"),
 		},
 		fetcher,

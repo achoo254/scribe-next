@@ -54,6 +54,9 @@ final class AudioRecorder {
     private var checkedBrand = false
     private var writeErrors = 0
     private var totalFrames: AVAudioFramePosition = 0
+    /// Length of the session's kept (closed, ≥ 0.5 s) segments: with the open
+    /// segment's frames, the session position the transcript counts.
+    private var closedSeconds: Double = 0
     private var recordingFlag = false
 
     private var segmentLimitSeconds: Double = 60
@@ -92,6 +95,7 @@ final class AudioRecorder {
         checkedBrand = false
         writeErrors = 0
         totalFrames = 0
+        closedSeconds = 0
         fileLock.unlock()
         setState(.starting)
         requestPermission { [weak self] granted in
@@ -242,6 +246,19 @@ final class AudioRecorder {
 
     // MARK: - Segments
 
+    /// Shorter tails (a stop right after a rotation) are dropped, not kept.
+    private static let minSegmentSeconds = 0.5
+
+    /// Seconds of audio kept in this session so far: closed segments plus
+    /// the open one. Bookmarks use it — it is what the transcript's
+    /// timeline counts, and unlike the WebView's copy it is never stale.
+    var recordedSeconds: Double {
+        fileLock.lock()
+        defer { fileLock.unlock() }
+        let open = file != nil && currentRate > 0 ? Double(currentFrames) / currentRate : 0
+        return closedSeconds + open
+    }
+
     private func openSegment(format: AVAudioFormat) throws {
         fileLock.lock()
         let dir = segmentDir
@@ -299,14 +316,17 @@ final class AudioRecorder {
         let session = segmentSessionId
         let checkBrand = !checkedBrand && hadFile
         if checkBrand { checkedBrand = true }
+        let seconds = rate > 0 ? Double(frames) / rate : 0
+        // Counted in the same lock that empties the open segment, so
+        // `recordedSeconds` never misses a segment between the two.
+        if hadFile && seconds >= Self.minSegmentSeconds { closedSeconds += seconds }
         file = nil
         currentFrames = 0
         fileLock.unlock()
 
         guard index >= 0, hadFile, let dir, let session else { return }
         let url = dir.appendingPathComponent(String(format: "seg-%03d.m4a", index))
-        let seconds = rate > 0 ? Double(frames) / rate : 0
-        guard seconds >= 0.5 else {
+        guard seconds >= Self.minSegmentSeconds else {
             // An empty tail (stop right after a rotation) is not worth a record.
             try? FileManager.default.removeItem(at: url)
             return

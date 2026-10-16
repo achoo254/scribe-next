@@ -16,7 +16,12 @@ export const LINK_POLL_MS = 3000;
 export function unlinkedStatus(
 	previous: ChatLinkStatus | undefined,
 ): ChatLinkStatus {
-	return { linked: false, linkedAt: null, enabled: previous?.enabled ?? true };
+	return {
+		linked: false,
+		linkedAt: null,
+		chatName: null,
+		enabled: previous?.enabled ?? true,
+	};
 }
 
 /**

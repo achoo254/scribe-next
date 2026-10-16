@@ -42,8 +42,14 @@ pub trait Store {
     fn take_token(&self, token: &str, chat_id: i64) -> impl Future<Output = Result<Option<String>, AppError>> + Send;
     fn drop_token(&self, token: &str, chat_id: i64) -> impl Future<Output = Result<bool, AppError>> + Send;
     fn account(&self, user_id: &str) -> impl Future<Output = Result<Option<Account>, AppError>> + Send;
-    /// `None` khi không còn user; `Some(chat cũ)` khi đã gắn.
-    fn link(&self, user_id: &str, chat_id: i64) -> impl Future<Output = Result<Option<Option<i64>>, AppError>> + Send;
+    /// Gắn chat (kèm tên người bấm xác nhận, để Scribe nêu chat đã liên kết). `None` khi không còn user;
+    /// `Some(chat cũ)` khi đã gắn.
+    fn link(
+        &self,
+        user_id: &str,
+        chat_id: i64,
+        chat_name: Option<&str>,
+    ) -> impl Future<Output = Result<Option<Option<i64>>, AppError>> + Send;
     /// Gỡ mọi liên kết tới chat; trả user đã gỡ.
     fn unlink_chat(&self, chat_id: i64) -> impl Future<Output = Result<Vec<String>, AppError>> + Send;
 }
@@ -112,8 +118,21 @@ pub async fn on_start(store: &impl Store, chat_id: i64, token: Option<&str>) -> 
     vec![Effect::Reply { chat_id, text, buttons }]
 }
 
-/// Lần bấm nút trên tin hỏi xác nhận. `seq` là tin có nút (để gỡ nút).
-pub async fn on_press(store: &impl Store, callback_id: &str, chat_id: i64, seq: Option<i64>, data: &str) -> Vec<Effect> {
+/// Một lần bấm nút trên tin hỏi xác nhận.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Press<'a> {
+    pub callback_id: &'a str,
+    pub chat_id: i64,
+    /// Tin có nút (để gỡ nút).
+    pub seq: Option<i64>,
+    pub data: &'a str,
+    /// Tên trên chat của người bấm (đã làm sạch), lưu cùng liên kết.
+    pub chat_name: Option<&'a str>,
+}
+
+/// Lần bấm nút trên tin hỏi xác nhận.
+pub async fn on_press(store: &impl Store, press: Press<'_>) -> Vec<Effect> {
+    let Press { callback_id, chat_id, seq, data, chat_name } = press;
     let clear = seq.map(|seq| Effect::ClearButtons { chat_id, seq });
     if let Some(token) = data.strip_prefix(CANCEL_PREFIX) {
         if let Err(e) = store.drop_token(token, chat_id).await {
@@ -157,7 +176,7 @@ pub async fn on_press(store: &impl Store, callback_id: &str, chat_id: i64, seq: 
             return failed(RETRY_NEW);
         }
     }
-    let previous = match store.link(&user_id, chat_id).await {
+    let previous = match store.link(&user_id, chat_id, chat_name).await {
         Ok(Some(previous)) => previous,
         Ok(None) => return failed(GUIDE),
         Err(e) => {
@@ -206,6 +225,7 @@ mod tests {
     struct Fake {
         tokens: Mutex<HashMap<String, (String, Option<i64>)>>,
         users: Mutex<HashMap<String, (Account, Option<i64>)>>,
+        names: Mutex<HashMap<String, Option<String>>>,
         fail: bool,
     }
 
@@ -270,9 +290,13 @@ mod tests {
             Ok(self.users.lock().expect("khoá").get(user_id).map(|(a, _)| a.clone()))
         }
 
-        async fn link(&self, user_id: &str, chat_id: i64) -> Result<Option<Option<i64>>, AppError> {
+        async fn link(&self, user_id: &str, chat_id: i64, chat_name: Option<&str>) -> Result<Option<Option<i64>>, AppError> {
             let mut users = self.users.lock().expect("khoá");
-            Ok(users.get_mut(user_id).map(|(_, chat)| chat.replace(chat_id)))
+            let previous = users.get_mut(user_id).map(|(_, chat)| chat.replace(chat_id));
+            if previous.is_some() {
+                self.names.lock().expect("khoá").insert(user_id.to_string(), chat_name.map(str::to_string));
+            }
+            Ok(previous)
         }
 
         async fn unlink_chat(&self, chat_id: i64) -> Result<Vec<String>, AppError> {
@@ -286,6 +310,10 @@ mod tests {
             }
             Ok(out)
         }
+    }
+
+    fn press<'a>(callback_id: &'a str, chat_id: i64, seq: Option<i64>, data: &'a str) -> Press<'a> {
+        Press { callback_id, chat_id, seq, data, chat_name: None }
     }
 
     fn texts(effects: &[Effect]) -> Vec<(i64, &str)> {
@@ -324,45 +352,46 @@ mod tests {
         let store = Fake::with(&[("tok", "u1")], &[("u1", "an@inet.vn", false, Some(7))]);
         on_start(&store, 12, Some("tok")).await;
         // Bấm từ chat khác (không thể với nút thật, nhưng callback giả mạo): không liên kết.
-        let other = on_press(&store, "cb0", 99, Some(1), "link:tok").await;
+        let other = on_press(&store, press("cb0", 99, Some(1), "link:tok")).await;
         assert_eq!(store.chat_of("u1"), Some(7));
         assert!(matches!(&other[0], Effect::Answer { .. }));
 
-        let effects = on_press(&store, "cb1", 12, Some(40), "link:tok").await;
+        let effects = on_press(&store, Press { chat_name: Some("An Nguyễn"), ..press("cb1", 12, Some(40), "link:tok") }).await;
         assert_eq!(store.chat_of("u1"), Some(12));
+        assert_eq!(store.names.lock().expect("khoá").get("u1"), Some(&Some("An Nguyễn".to_string())), "lưu tên chat");
         assert_eq!(effects[0], Effect::Answer { callback_id: "cb1".into(), text: "Đã liên kết.".into() });
         assert_eq!(effects[1], Effect::ClearButtons { chat_id: 12, seq: 40 });
         assert_eq!(texts(&effects), vec![(12, LINKED), (7, MOVED)], "chat cũ được báo");
         assert!(LINKED.contains("/unlink"));
         assert!(effects.iter().any(|e| matches!(e, Effect::Audit { action: "chat.link", .. })));
         // Token đã dùng: bấm lại không liên kết lần nữa.
-        assert_eq!(texts(&on_press(&store, "cb2", 12, None, "link:tok").await), vec![(12, GUIDE)]);
+        assert_eq!(texts(&on_press(&store, press("cb2", 12, None, "link:tok")).await), vec![(12, GUIDE)]);
     }
 
     #[tokio::test]
     async fn relinking_the_same_chat_does_not_notify_it() {
         let store = Fake::with(&[("tok", "u1")], &[("u1", "an@inet.vn", false, Some(12))]);
         on_start(&store, 12, Some("tok")).await;
-        assert_eq!(texts(&on_press(&store, "cb", 12, None, "link:tok").await), vec![(12, LINKED)]);
+        assert_eq!(texts(&on_press(&store, press("cb", 12, None, "link:tok")).await), vec![(12, LINKED)]);
     }
 
     #[tokio::test]
     async fn cancel_drops_the_pending_token() {
         let store = Fake::with(&[("tok", "u1")], &[("u1", "an@inet.vn", false, None)]);
         on_start(&store, 12, Some("tok")).await;
-        let effects = on_press(&store, "cb", 12, Some(5), "cancel:tok").await;
+        let effects = on_press(&store, press("cb", 12, Some(5), "cancel:tok")).await;
         assert_eq!(texts(&effects), vec![(12, CANCELLED)]);
         assert!(effects.contains(&Effect::ClearButtons { chat_id: 12, seq: 5 }));
-        on_press(&store, "cb", 12, None, "link:tok").await;
+        on_press(&store, press("cb", 12, None, "link:tok")).await;
         assert_eq!(store.chat_of("u1"), None);
-        assert_eq!(on_press(&store, "cb", 12, None, "rác").await, vec![answer("cb", STALE_BUTTON)]);
+        assert_eq!(on_press(&store, press("cb", 12, None, "rác")).await, vec![answer("cb", STALE_BUTTON)]);
     }
 
     #[tokio::test]
     async fn blocked_accounts_are_not_linked() {
         let store = Fake::with(&[("tok", "u1")], &[("u1", "an@inet.vn", true, None)]);
         assert_eq!(texts(&on_start(&store, 12, Some("tok")).await), vec![(12, BLOCKED)]);
-        assert_eq!(texts(&on_press(&store, "cb", 12, None, "link:tok").await), vec![(12, BLOCKED)]);
+        assert_eq!(texts(&on_press(&store, press("cb", 12, None, "link:tok")).await), vec![(12, BLOCKED)]);
         assert_eq!(store.chat_of("u1"), None);
     }
 
@@ -370,7 +399,7 @@ mod tests {
     async fn failures_before_the_token_is_used_say_retry_later() {
         let store = Fake { fail: true, ..Fake::with(&[("tok", "u1")], &[("u1", "an@inet.vn", false, None)]) };
         assert_eq!(texts(&on_start(&store, 12, Some("tok")).await), vec![(12, LATER)]);
-        assert_eq!(on_press(&store, "cb", 12, None, "link:tok").await, vec![answer("cb", LATER)]);
+        assert_eq!(on_press(&store, press("cb", 12, None, "link:tok")).await, vec![answer("cb", LATER)]);
     }
 
     #[tokio::test]
@@ -390,7 +419,7 @@ mod tests {
             async fn account(&self, u: &str) -> Result<Option<Account>, AppError> {
                 self.0.account(u).await
             }
-            async fn link(&self, _: &str, _: i64) -> Result<Option<Option<i64>>, AppError> {
+            async fn link(&self, _: &str, _: i64, _: Option<&str>) -> Result<Option<Option<i64>>, AppError> {
                 Err(AppError::Internal("ghi lỗi".into()))
             }
             async fn unlink_chat(&self, c: i64) -> Result<Vec<String>, AppError> {
@@ -399,7 +428,7 @@ mod tests {
         }
         let store = LinkFails(Fake::with(&[("tok", "u1")], &[("u1", "an@inet.vn", false, None)]));
         on_start(&store, 12, Some("tok")).await;
-        let effects = on_press(&store, "cb", 12, None, "link:tok").await;
+        let effects = on_press(&store, press("cb", 12, None, "link:tok")).await;
         assert_eq!(texts(&effects), vec![(12, RETRY_NEW)]);
         assert!(RETRY_NEW.contains("Tạo đường dẫn mới trong Scribe"));
     }

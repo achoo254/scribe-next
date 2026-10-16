@@ -40,6 +40,7 @@ export const record = {
 		marked: { other: "Đã đánh {count} mốc" },
 		waiting: { other: "{count} mốc đang chờ lưu, tự thử lại" },
 		failed: { other: "{count} mốc không lưu được: {reason}" },
+		dropped: { other: "{count} mốc bị bỏ vì bản ghi đã được cắt hoặc xoá" },
 		unknownReason: "không rõ lý do",
 	},
 	native: {

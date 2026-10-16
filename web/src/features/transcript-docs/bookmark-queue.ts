@@ -5,8 +5,11 @@ import { addBookmark } from "./transcript-docs-api";
  * Bookmarks pressed while recording. They must never get in the way of the
  * recording: `mark` returns at once, requests go one at a time in the
  * background, and a failure the server may get over (no network, 429,
- * 5xx) is retried with a growing delay. A refusal (400, 404, 409 full) is
- * kept as "failed" with the server's reason, so the user knows.
+ * 5xx) is retried with a growing delay. Each bookmark carries an id made
+ * here, so a retry after a lost reply does not save it twice. A refusal
+ * (400, 409 full) is kept as "failed" with the server's reason, so the
+ * user knows. 404 means the recording is gone (cut into parts right after
+ * recording, or deleted): the bookmark is dropped and only counted.
  *
  * Counts are of the current recording (`reset` when one starts); items of
  * an earlier one keep retrying in the background.
@@ -22,6 +25,8 @@ export interface BookmarkQueueState {
 	waiting: number;
 	/** Refused by the server for good. */
 	failed: number;
+	/** Dropped because the recording no longer exists (cut, deleted). */
+	dropped: number;
 	/** Reason of the last refusal; empty when none. */
 	lastError: string;
 }
@@ -30,24 +35,42 @@ const EMPTY: BookmarkQueueState = {
 	marked: 0,
 	waiting: 0,
 	failed: 0,
+	dropped: 0,
 	lastError: "",
 };
 
-type ItemStatus = "pending" | "sent" | "failed";
+type ItemStatus = "pending" | "sent" | "failed" | "dropped";
 
 interface Item {
+	/** Made here (24 hex, like the server's ids): the server saves it once. */
+	id: string;
 	key: string;
 	at: number;
 	recording: number;
 	status: ItemStatus;
 }
 
-export type SendBookmark = (key: string, at: number) => Promise<unknown>;
+export type SendBookmark = (
+	key: string,
+	at: number,
+	id: string,
+) => Promise<unknown>;
+
+/** A new bookmark id: 12 random bytes as 24 hex digits (ObjectId-shaped). */
+export function newBookmarkId(): string {
+	const bytes = crypto.getRandomValues(new Uint8Array(12));
+	return [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
 
 /** True when trying again later may work. */
 function isTransient(error: unknown): boolean {
 	if (!(error instanceof ApiError)) return true;
 	return error.status === 0 || error.status === 429 || error.status >= 500;
+}
+
+/** The transcript is gone: the recording was cut into parts or deleted. */
+function isGone(error: unknown): boolean {
+	return error instanceof ApiError && error.status === 404;
 }
 
 export class BookmarkQueue {
@@ -62,7 +85,8 @@ export class BookmarkQueue {
 	private readonly listeners = new Set<() => void>();
 
 	constructor(
-		private readonly send: SendBookmark = (key, at) => addBookmark(key, at),
+		private readonly send: SendBookmark = (key, at, id) =>
+			addBookmark(key, at, id),
 		private readonly delays: readonly number[] = RETRY_DELAYS_MS,
 	) {}
 
@@ -85,6 +109,7 @@ export class BookmarkQueue {
 	mark = (key: string, at: number): void => {
 		if (this.disposed || !Number.isFinite(at)) return;
 		this.items.push({
+			id: newBookmarkId(),
 			key,
 			at: Math.max(0, at),
 			recording: this.recording,
@@ -119,13 +144,19 @@ export class BookmarkQueue {
 				const next = this.items.find((item) => item.status === "pending");
 				if (!next || this.disposed) return;
 				try {
-					await this.send(next.key, next.at);
+					await this.send(next.key, next.at, next.id);
 					next.status = "sent";
 					this.attempt = 0;
 				} catch (cause) {
 					if (isTransient(cause)) {
 						this.retryLater();
 						return;
+					}
+					this.attempt = 0;
+					if (isGone(cause)) {
+						next.status = "dropped";
+						this.publish();
+						continue;
 					}
 					next.status = "failed";
 					if (next.recording === this.recording) {
@@ -164,6 +195,7 @@ export class BookmarkQueue {
 			marked: count("sent") + count("pending"),
 			waiting: count("pending"),
 			failed: count("failed"),
+			dropped: count("dropped"),
 			lastError: this.lastError,
 		};
 		for (const listener of this.listeners) listener();

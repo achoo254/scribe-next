@@ -6,6 +6,7 @@ export const chat = {
 		unlinked: "Đã gỡ liên kết chat",
 		unlinkFailed: "Không gỡ được liên kết chat",
 		linkedSince: "Đã liên kết chat lúc {time}",
+		linkedWith: "Đã liên kết với {name}",
 	},
 	dialog: {
 		title: "Liên kết chat.hoandat.com",

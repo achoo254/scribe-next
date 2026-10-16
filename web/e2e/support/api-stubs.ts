@@ -57,6 +57,8 @@ export const CHAT_LINK: ChatLinkStart = {
 
 /** `linkedAt` of a linked account. */
 const LINKED_AT = "2026-10-16T09:55:00+07:00";
+/** `chatName` of a linked account: who confirmed the link in the chat. */
+export const LINKED_CHAT_NAME = "An Nguyễn";
 
 export const STUB_MINUTES: TranscriptMinutes = {
 	model: "gpt-4.1-mini",
@@ -186,7 +188,7 @@ export interface ApiStub {
 	/** Chunks of browser recordings, in the order they arrived. */
 	readonly recordingChunks: RecordingChunk[];
 	/** `POST /api/transcript-docs/:key/bookmarks`, by decoded key. */
-	readonly bookmarks: Array<{ key: string; at: number }>;
+	readonly bookmarks: Array<{ key: string; at: number; id: string | null }>;
 	/** Stands in for the user sending `/start` to the bot on chat.hoandat.com. */
 	linkChat: () => void;
 }
@@ -201,6 +203,12 @@ const DOC_ACTION =
 	/^\/api\/transcript-docs\/([^/]+)\/(summary|share|bookmarks)(?:\/([^/]+))?$/;
 
 /** A number field of a JSON body, or NaN. */
+function stringField(body: unknown, name: string): string | null {
+	if (typeof body !== "object" || body === null) return null;
+	const value: unknown = Reflect.get(body, name);
+	return typeof value === "string" ? value : null;
+}
+
 function numberField(body: unknown, name: string): number {
 	if (typeof body !== "object" || body === null) return Number.NaN;
 	const value: unknown = Reflect.get(body, name);
@@ -272,10 +280,12 @@ export async function stubApi(
 							});
 				}
 				if (request.method() === "POST" && action === "bookmarks" && !id) {
-					const at = numberField(request.postDataJSON(), "at");
-					stub.bookmarks.push({ key, at });
+					const body: unknown = request.postDataJSON();
+					const at = numberField(body, "at");
+					const clientId = stringField(body, "id");
+					stub.bookmarks.push({ key, at, id: clientId });
 					const saved: Bookmark = {
-						id: `b-${stub.bookmarks.length}`,
+						id: clientId ?? `b-${stub.bookmarks.length}`,
 						at,
 						label: null,
 					};
@@ -327,6 +337,7 @@ export async function stubApi(
 					const status: ChatLinkStatus = {
 						linked: chatLinked,
 						linkedAt: chatLinked ? LINKED_AT : null,
+						chatName: chatLinked ? LINKED_CHAT_NAME : null,
 						enabled: true,
 					};
 					return json(route, 200, status);

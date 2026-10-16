@@ -209,6 +209,8 @@ public class RecorderPlugin: CAPPlugin, CAPBridgedPlugin {
         [
             "state": recorder.state.rawValue,
             "elapsedS": elapsed,
+            // Session position of the audio kept so far (bookmarks).
+            "positionS": recorder.recordedSeconds,
             "sessionId": recorder.sessionId ?? NSNull(),
             "uploadsWaiting": waiting,
             "uploadsFailed": failed,

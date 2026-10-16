@@ -77,6 +77,7 @@ export function AccountControls({
 						? {
 								linked: chatLink.data?.linked === true,
 								linkedAt: chatLink.data?.linkedAt ?? null,
+								chatName: chatLink.data?.chatName ?? null,
 								// Unknown (loading, failed): offer linking; the dialog says why not.
 								enabled: chatLink.data?.enabled ?? true,
 								busy: unlink.isPending,

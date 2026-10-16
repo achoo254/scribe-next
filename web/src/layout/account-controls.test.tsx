@@ -206,6 +206,7 @@ describe("account menu", () => {
 					jsonResponse({
 						linked: true,
 						linkedAt: "2026-10-16T02:30:00Z",
+						chatName: "An Nguyễn",
 						enabled: true,
 					}),
 				],
@@ -216,6 +217,7 @@ describe("account menu", () => {
 		window.dispatchEvent(new Event("focus"));
 		await waitFor(() => expect(calls).toHaveLength(2));
 		const menu = await openMenu();
+		expect(menu).toHaveTextContent("Đã liên kết với An Nguyễn");
 		expect(menu).toHaveTextContent("Đã liên kết chat lúc 09:30 16/10");
 		await userEvent.click(
 			await screen.findByRole("menuitem", { name: "Gỡ liên kết chat" }),

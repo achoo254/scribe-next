@@ -317,8 +317,32 @@ describe("TranscriptReader minutes", () => {
 		expect(screen.getByRole("button", { name: /c hai\./ })).toHaveFocus();
 	});
 
+	it("reads the doc again when the reply is lost, to show minutes saved meanwhile", async () => {
+		const fake = renderReader({
+			[`GET ${PATH}`]: [
+				jsonResponse(DETAIL),
+				jsonResponse({ ...DETAIL, summary: MINUTES }),
+			],
+			[`POST ${PATH}/summary`]: jsonResponse(
+				{ error: "A timeout occurred" },
+				524,
+			),
+			"GET /api/chat/link": jsonResponse({ linked: false }),
+		});
+		await userEvent.click(
+			await screen.findByRole("button", { name: "Tóm tắt" }),
+		);
+		expect(
+			await screen.findByText("Nhóm thống nhất lịch ra mắt."),
+		).toBeInTheDocument();
+		const docReads = fake.calls.filter(
+			(c) => c.method === "GET" && c.url.endsWith(PATH),
+		);
+		expect(docReads).toHaveLength(2);
+	});
+
 	it("says when the daily allowance opens again", async () => {
-		renderReader({
+		const fake = renderReader({
 			[`POST ${PATH}/summary`]: jsonResponse(
 				{
 					error: "Hôm nay đã dùng 10/10 lượt tóm tắt. Mở lại lúc 0 giờ.",
@@ -338,6 +362,10 @@ describe("TranscriptReader minutes", () => {
 				"Hôm nay đã dùng 10/10 lượt tóm tắt. Mở lại lúc 00:00 17/10.",
 			),
 		).toBeInTheDocument();
+		// A refusal is an answer: nothing was saved, the doc is not read again.
+		expect(
+			fake.calls.filter((c) => c.method === "GET" && c.url.endsWith(PATH)),
+		).toHaveLength(1);
 	});
 
 	it("says when the account's monthly summary allowance opens again", async () => {

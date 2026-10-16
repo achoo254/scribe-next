@@ -3,11 +3,12 @@
 //!
 //! Chỉ chạy khi bật `CHAT_LINK_POLL` và có token bot: dev và prod dùng chung token, mà mỗi bot chỉ có một
 //! poll (poll mới làm poll cũ nhận 409), nên backend dev mặc định không poll. Offset lưu trong Mongo (`kv`)
-//! sau mỗi update: khởi động lại không xử lý lại; update có `update_id` dưới offset bị bỏ (bỏ trùng).
+//! TRƯỚC khi xử lý mỗi update: một update làm task panic không bị giao lại mãi sau mỗi lần chạy lại (đổi
+//! lại, update đang xử lý dở lúc sập bị bỏ); update có `update_id` dưới offset bị bỏ (bỏ trùng).
 //! Mỗi update đọc riêng: update sai dạng chỉ bị bỏ (offset vẫn tiến), không chặn cả hàng đợi. Tin cũ hơn
 //! hạn token bị bỏ qua (lần poll đầu với offset 0 không trả lời cả đống `/start` tồn từ trước).
 
-use super::bot::{BotApi, BotError, Update};
+use super::bot::{BotApi, BotError, Update, User};
 use super::flow::{self, Account, Effect, Store};
 use crate::audit;
 use crate::error::AppError;
@@ -50,22 +51,46 @@ pub fn is_unlink(text: &str) -> bool {
     rest.is_some_and(|r| r.is_empty() || (r.starts_with('@') && !r.contains(char::is_whitespace)))
 }
 
+/// Tên chat dài nhất được lưu cùng liên kết (ký tự).
+const MAX_CHAT_NAME_CHARS: usize = 64;
+
+/// Tên để Scribe nêu chat đã liên kết: tên hiển thị, không có thì `@username`. Bỏ ký tự điều khiển, cắt
+/// khoảng trắng hai đầu, tối đa [`MAX_CHAT_NAME_CHARS`] ký tự.
+pub fn chat_name(user: &User) -> Option<String> {
+    let clean = |raw: &str| -> Option<String> {
+        let text: String = raw.chars().filter(|c| !c.is_control()).collect();
+        let text = text.trim();
+        (!text.is_empty()).then(|| text.chars().take(MAX_CHAT_NAME_CHARS).collect())
+    };
+    user.name
+        .as_deref()
+        .and_then(clean)
+        .or_else(|| user.username.as_deref().and_then(clean).map(|u| format!("@{u}")))
+}
+
 /// Việc cần xử lý của một update, đã lọc: chỉ chat riêng, người thật, tin chưa quá cũ.
 #[derive(Debug, PartialEq)]
 pub enum Event<'a> {
     Start { chat_id: i64, token: Option<&'a str> },
     Unlink { chat_id: i64 },
-    Press { callback_id: &'a str, chat_id: i64, seq: Option<i64>, data: &'a str },
+    Press { callback_id: &'a str, chat_id: i64, seq: Option<i64>, data: &'a str, chat_name: Option<String> },
 }
 
 /// Đọc update thành việc cần làm ở thời điểm `now` (giây Unix). Loại khác, nhóm, bot, tin cũ → `None`.
 pub fn event_of(update: &Update, now: i64) -> Option<Event<'_>> {
     if let Some(cb) = &update.callback {
         let msg = cb.message.as_ref()?;
-        if msg.chat.kind != "private" || cb.from.as_ref().is_none_or(|f| f.is_bot) {
+        let from = cb.from.as_ref().filter(|f| !f.is_bot)?;
+        if msg.chat.kind != "private" {
             return None;
         }
-        return Some(Event::Press { callback_id: &cb.id, chat_id: msg.chat.id, seq: msg.seq, data: cb.data.as_deref()? });
+        return Some(Event::Press {
+            callback_id: &cb.id,
+            chat_id: msg.chat.id,
+            seq: msg.seq,
+            data: cb.data.as_deref()?,
+            chat_name: chat_name(from),
+        });
     }
     let msg = update.message.as_ref()?;
     if msg.chat.kind != "private" || msg.from.as_ref().is_none_or(|f| f.is_bot) {
@@ -156,13 +181,14 @@ async fn run(state: AppState) {
                     if id < offset {
                         continue; // đã xử lý (giao lại)
                     }
-                    match update {
-                        Ok(update) => handle(&state, &api, &update).await,
-                        Err(e) => tracing::warn!(update_id = id, "liên kết chat: bỏ update sai dạng: {e}"),
-                    }
+                    // Lưu trước khi xử lý: update làm panic không được giao lại sau khi task chạy lại.
                     offset = id + 1;
                     if let Err(e) = chat_link::save_offset(&state.db, offset).await {
                         tracing::warn!(offset, "liên kết chat: lưu offset lỗi: {e:?}");
+                    }
+                    match update {
+                        Ok(update) => handle(&state, &api, &update).await,
+                        Err(e) => tracing::warn!(update_id = id, "liên kết chat: bỏ update sai dạng: {e}"),
                     }
                 }
             }
@@ -201,8 +227,8 @@ impl Store for Mongo<'_> {
     async fn account(&self, user_id: &str) -> Result<Option<Account>, AppError> {
         Ok(user::find_profile(self.0, user_id).await?.map(|p| Account { email: p.email, blocked: p.blocked }))
     }
-    async fn link(&self, user_id: &str, chat_id: i64) -> Result<Option<Option<i64>>, AppError> {
-        chat_link::link(self.0, user_id, chat_id).await
+    async fn link(&self, user_id: &str, chat_id: i64, chat_name: Option<&str>) -> Result<Option<Option<i64>>, AppError> {
+        chat_link::link(self.0, user_id, chat_id, chat_name).await
     }
     async fn unlink_chat(&self, chat_id: i64) -> Result<Vec<String>, AppError> {
         chat_link::unlink_chat(self.0, chat_id).await
@@ -217,7 +243,10 @@ async fn handle(state: &AppState, api: &BotApi<'_>, update: &Update) {
     let effects = match event {
         Event::Start { chat_id, token } => flow::on_start(&store, chat_id, token).await,
         Event::Unlink { chat_id } => flow::on_unlink(&store, chat_id).await,
-        Event::Press { callback_id, chat_id, seq, data } => flow::on_press(&store, callback_id, chat_id, seq, data).await,
+        Event::Press { callback_id, chat_id, seq, data, chat_name } => {
+            let press = flow::Press { callback_id, chat_id, seq, data, chat_name: chat_name.as_deref() };
+            flow::on_press(&store, press).await
+        }
     };
     for effect in effects {
         let sent = match effect {
@@ -283,7 +312,24 @@ mod tests {
         let press = update(serde_json::json!({ "update_id": 2, "callback": { "id": "cb", "data": "link:tok",
             "from": { "id": 3, "is_bot": false, "name": "A" },
             "message": { "chat": { "id": 12, "type": "private" }, "seq": 40, "date": 0 } } }));
-        assert_eq!(event_of(&press, now), Some(Event::Press { callback_id: "cb", chat_id: 12, seq: Some(40), data: "link:tok" }));
+        assert_eq!(
+            event_of(&press, now),
+            Some(Event::Press { callback_id: "cb", chat_id: 12, seq: Some(40), data: "link:tok", chat_name: Some("A".into()) })
+        );
+    }
+
+    #[test]
+    fn chat_names_are_cleaned_and_bounded() {
+        let user = |name: Option<&str>, username: Option<&str>| User {
+            is_bot: false,
+            name: name.map(str::to_string),
+            username: username.map(str::to_string),
+        };
+        assert_eq!(chat_name(&user(Some("  An Nguyễn "), Some("an"))), Some("An Nguyễn".into()));
+        assert_eq!(chat_name(&user(Some(" \n "), Some("an_ng"))), Some("@an_ng".into()));
+        assert_eq!(chat_name(&user(None, None)), None);
+        assert_eq!(chat_name(&user(Some("A\u{0007}n"), None)), Some("An".into()));
+        assert_eq!(chat_name(&user(Some(&"ữ".repeat(80)), None)).map(|n| n.chars().count()), Some(MAX_CHAT_NAME_CHARS));
     }
 
     #[test]
