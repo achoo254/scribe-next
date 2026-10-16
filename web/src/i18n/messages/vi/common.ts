@@ -5,5 +5,7 @@ export const common = {
 		cancel: "Huỷ",
 		delete: "Xoá",
 		retry: "Thử lại",
+		edit: "Sửa",
+		save: "Lưu",
 	},
 } as const;

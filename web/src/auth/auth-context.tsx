@@ -9,6 +9,7 @@ import {
 	useState,
 } from "react";
 import { NativeRecorderPlugin } from "../features/recorder/native-recorder";
+import { activeTranslator } from "../i18n/active-translator";
 import { apiUrl, isNativeShell } from "../lib/api";
 import { HoandatAuth, NativeFiles, Secrets } from "../lib/native";
 import {
@@ -68,10 +69,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 		}
 		await HoandatAuth.signIn();
 		const user = await fetchCurrentUser();
-		if (!user)
-			throw new Error(
-				"Đăng nhập xong nhưng máy chủ chưa nhận phiên — thử lại.",
-			);
+		if (!user) throw new Error(activeTranslator().t("login.noSession"));
 		setState({ ready: true, user });
 	}, []);
 

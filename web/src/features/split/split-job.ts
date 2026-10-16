@@ -1,3 +1,4 @@
+import { activeTranslator } from "../../i18n/active-translator";
 /**
  * Split job (Mode B, and "cắt bản ghi" in Mode A): create it, poll its
  * status until done or failed. Transient poll failures (network, 5xx) are
@@ -78,7 +79,7 @@ export class SplitJob {
 				{
 					method: "POST",
 					json: { recordingSplit: false, ...request },
-					fallbackError: "Không thể tạo công việc cắt file",
+					fallbackError: activeTranslator().t("errors.split.create"),
 				},
 				this.fetcher,
 			);
@@ -89,7 +90,7 @@ export class SplitJob {
 			if (generation !== this.generation) return;
 			this.set({
 				...IDLE_JOB,
-				error: errorMessage(cause, "Không thể tạo công việc cắt file"),
+				error: errorMessage(cause, activeTranslator().t("errors.split.create")),
 			});
 		}
 	}
@@ -132,7 +133,7 @@ export class SplitJob {
 		try {
 			const body = await apiJson<JobStatusBody>(
 				`/api/jobs/${encodeURIComponent(jobId)}`,
-				{ fallbackError: "Không thể lấy tiến độ công việc" },
+				{ fallbackError: activeTranslator().t("errors.split.progress") },
 				this.fetcher,
 			);
 			if (generation !== this.generation) return;
@@ -146,7 +147,10 @@ export class SplitJob {
 				return;
 			}
 			if (body.status === "failed") {
-				this.set({ ...base, error: body.error ?? "Cắt file thất bại" });
+				this.set({
+					...base,
+					error: body.error ?? activeTranslator().t("errors.split.failed"),
+				});
 				return;
 			}
 			this.set(base);
@@ -157,7 +161,10 @@ export class SplitJob {
 			if (next >= MAX_POLL_FAILS) {
 				this.set({
 					...this.state,
-					error: errorMessage(cause, "Lỗi khi theo dõi tiến độ"),
+					error: errorMessage(
+						cause,
+						activeTranslator().t("errors.split.watch"),
+					),
 				});
 				return;
 			}

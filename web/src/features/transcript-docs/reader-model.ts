@@ -1,3 +1,4 @@
+import { activeTranslator } from "../../i18n/active-translator";
 import { sessionTitle } from "../files/recording-groups";
 import type {
 	SegmentRunStatus,
@@ -126,7 +127,7 @@ export function transcriptTitle(
 	if (doc.title) return doc.title;
 	if (doc.key.startsWith("s:"))
 		return sessionTitle(doc.createdAt, { withDate: true });
-	return doc.name || "Bản ghi";
+	return doc.name || activeTranslator().t("transcript.defaultName");
 }
 
 export type SummaryTone = "info" | "danger" | "warning" | "success";
@@ -136,15 +137,27 @@ export function summaryStatus(item: TranscriptSummary): {
 	label: string;
 	tone: SummaryTone;
 } {
+	const { t } = activeTranslator();
 	const sent = item.segments - item.untranscribed;
-	if (item.pending > 0)
-		return { label: `Đang chép ${item.done}/${sent}`, tone: "info" };
-	if (item.failed > 0)
-		return { label: `Lỗi ${item.failed} đoạn`, tone: "danger" };
-	if (item.untranscribed > 0)
+	if (item.pending > 0) {
 		return {
-			label: `Còn ${item.untranscribed} đoạn chưa chép`,
+			label: t("transcript.status.running", { done: item.done, sent }),
+			tone: "info",
+		};
+	}
+	if (item.failed > 0) {
+		return {
+			label: t("transcript.status.failed", { count: item.failed }),
+			tone: "danger",
+		};
+	}
+	if (item.untranscribed > 0) {
+		return {
+			label: t("transcript.status.untranscribed", {
+				count: item.untranscribed,
+			}),
 			tone: "warning",
 		};
-	return { label: "Đã chép xong", tone: "success" };
+	}
+	return { label: t("transcript.status.done"), tone: "success" };
 }

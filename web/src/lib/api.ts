@@ -1,3 +1,4 @@
+import { activeTranslator } from "../i18n/active-translator";
 /**
  * The one way the app talks to the backend. Paths start with `/api/`; on
  * the web they stay relative (same origin as nginx), in a native shell they
@@ -11,9 +12,6 @@
  */
 export const NATIVE_API_ORIGIN: string =
 	import.meta.env.VITE_NATIVE_API_ORIGIN ?? "";
-
-const NETWORK_ERROR_MESSAGE =
-	"Không kết nối được máy chủ — kiểm tra mạng rồi thử lại.";
 
 /** HTTP or network failure; `status` 0 means the request never got a reply. */
 export class ApiError extends Error {
@@ -82,7 +80,7 @@ export async function apiFetch(
 	path: string,
 	{
 		json,
-		fallbackError = "Yêu cầu thất bại",
+		fallbackError = activeTranslator().t("errors.requestFailed"),
 		headers,
 		...init
 	}: ApiRequest = {},
@@ -106,7 +104,7 @@ export async function apiFetch(
 		if (cause instanceof DOMException && cause.name === "AbortError") {
 			throw cause;
 		}
-		throw new ApiError(0, NETWORK_ERROR_MESSAGE);
+		throw new ApiError(0, activeTranslator().t("errors.network"));
 	}
 	if (!res.ok) throw await errorFrom(res, fallbackError);
 	return res;
@@ -125,7 +123,7 @@ export async function apiJson<T>(
 /** Text to show for a caught error. */
 export function errorMessage(
 	error: unknown,
-	fallback = "Đã có lỗi xảy ra.",
+	fallback: string = activeTranslator().t("errors.generic"),
 ): string {
 	if (error instanceof Error && error.message) return error.message;
 	return fallback;

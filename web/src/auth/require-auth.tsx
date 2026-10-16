@@ -1,10 +1,12 @@
 import type { ReactNode } from "react";
 import { Navigate } from "react-router";
 import { BrandMark } from "../components/brand/wordmark";
+import { useT } from "../i18n/i18n-context";
 import { useAuth } from "./auth-context";
 
 /** Full-page wait while `/api/me` answers, so no route flashes. */
 function SessionCheck() {
+	const t = useT();
 	return (
 		<output
 			data-id="session-check"
@@ -12,7 +14,7 @@ function SessionCheck() {
 		>
 			<span className="grid justify-items-center gap-3">
 				<BrandMark size={40} className="motion-safe:animate-pulse" />
-				Đang kiểm tra phiên đăng nhập…
+				{t("login.sessionCheck")}
 			</span>
 		</output>
 	);

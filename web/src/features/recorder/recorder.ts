@@ -1,3 +1,4 @@
+import { activeTranslator } from "../../i18n/active-translator";
 /**
  * Browser recording (Mode A), independent of React. MediaRecorder emits a
  * chunk every second; each chunk is uploaded in the background
@@ -15,14 +16,7 @@ import {
 	pickMimeType,
 	watchLevel,
 } from "./media-capture";
-import {
-	CHUNKS_LOST,
-	INTERRUPT_HIDDEN,
-	INTERRUPT_MIC_ENDED,
-	NO_SOURCE,
-	type RecordSources,
-	startErrorMessage,
-} from "./recorder-messages";
+import { type RecordSources, startErrorMessage } from "./recorder-messages";
 import { RecordingChunkQueue } from "./recording-chunks";
 import { ScreenWakeLock } from "./wake-lock";
 
@@ -91,22 +85,30 @@ export class Recorder {
 		if (recording || starting || finalizing) return;
 		this.set({ ...IDLE, starting: true });
 		this.interruptNote = null;
-		const name = `Bản ghi ${new Date().toLocaleString("vi-VN")}`;
+		const name = activeTranslator().t("recorder.defaultName", {
+			date: new Date().toLocaleString("vi-VN"),
+		});
 		try {
 			// Media first, inside the click's user activation: on iOS WebKit
 			// any await before getUserMedia loses it (NotAllowedError). The
 			// backend session comes after, so a denied permission leaves none.
 			this.capture = await captureSources(sources, {
 				onShareEnded: () => void this.stop(),
-				onMicEnded: () => this.interrupt(INTERRUPT_MIC_ENDED),
+				onMicEnded: () =>
+					this.interrupt(activeTranslator().t("recorder.interrupt.micEnded")),
 			});
 			const { stream, analyser } = this.capture;
 			if (analyser) this.stopMeter = watchLevel(analyser, this.setLevel);
-			if (stream.getTracks().length === 0) throw new Error(NO_SOURCE);
+			if (stream.getTracks().length === 0)
+				throw new Error(activeTranslator().t("recorder.noSource"));
 
 			const { sessionId } = await apiJson<{ sessionId: string }>(
 				"/api/recordings/init",
-				{ method: "POST", json: { name }, fallbackError: "Yêu cầu thất bại" },
+				{
+					method: "POST",
+					json: { name },
+					fallbackError: activeTranslator().t("errors.requestFailed"),
+				},
 				this.fetcher,
 			);
 			this.sessionId = sessionId;
@@ -124,7 +126,10 @@ export class Recorder {
 				if (event.data.size > 0) chunks.enqueue(event.data);
 			};
 			recorder.onerror = () => {
-				this.set({ ...this.state, error: "Lỗi ghi (MediaRecorder) — đã dừng" });
+				this.set({
+					...this.state,
+					error: activeTranslator().t("recorder.mediaError"),
+				});
 				void this.stop();
 			};
 			recorder.start(1000);
@@ -164,25 +169,32 @@ export class Recorder {
 		this.set({ ...this.state, finalizing: true });
 		try {
 			await this.chunks?.drain();
-			if (!this.sessionId) throw new Error("Phiên ghi không hợp lệ");
+			if (!this.sessionId)
+				throw new Error(activeTranslator().t("recorder.invalidSession"));
 			// The client clock goes along: MediaRecorder webm often lacks a duration.
 			const result = await apiJson<RecordResult>(
 				"/api/recordings/finalize",
 				{
 					method: "POST",
 					json: { session: this.sessionId, durationS: this.state.elapsedS },
-					fallbackError: "Yêu cầu thất bại",
+					fallbackError: activeTranslator().t("errors.requestFailed"),
 				},
 				this.fetcher,
 			);
 			const note =
-				this.interruptNote ?? (this.chunks?.error ? CHUNKS_LOST : null);
+				this.interruptNote ??
+				(this.chunks?.error
+					? activeTranslator().t("recorder.chunksLost")
+					: null);
 			if (note) this.set({ ...this.state, error: note });
 			return result;
 		} catch (cause) {
 			this.set({
 				...this.state,
-				error: errorMessage(cause, "Không hoàn tất bản ghi"),
+				error: errorMessage(
+					cause,
+					activeTranslator().t("recorder.finalizeFailed"),
+				),
 			});
 			return null;
 		} finally {
@@ -238,7 +250,7 @@ export class Recorder {
 			audio.length > 0 &&
 			audio.every((track) => track.readyState === "ended")
 		) {
-			this.interrupt(INTERRUPT_HIDDEN);
+			this.interrupt(activeTranslator().t("recorder.interrupt.hidden"));
 		} else {
 			void this.wakeLock.acquire();
 		}

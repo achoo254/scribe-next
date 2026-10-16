@@ -1,3 +1,4 @@
+import { activeTranslator } from "../../i18n/active-translator";
 import { apiFetch, apiJson } from "../../lib/api";
 import type { Sentence } from "../transcript/transcript-api";
 
@@ -81,7 +82,7 @@ export async function listTranscriptDocs(
 ): Promise<TranscriptSummary[]> {
 	const body = await apiJson<{ items?: TranscriptSummary[] }>(
 		"/api/transcript-docs",
-		{ fallbackError: "Không tải được danh sách transcript" },
+		{ fallbackError: activeTranslator().t("errors.transcripts.list") },
 		fetcher,
 	);
 	return body.items ?? [];
@@ -93,7 +94,7 @@ export function fetchTranscriptDoc(
 ): Promise<TranscriptDetail> {
 	return apiJson<TranscriptDetail>(
 		docPath(key),
-		{ fallbackError: "Không tải được transcript" },
+		{ fallbackError: activeTranslator().t("errors.transcripts.doc") },
 		fetcher,
 	);
 }
@@ -105,7 +106,7 @@ export async function fetchTranscriptStatus(
 ): Promise<SegmentRunStatus[]> {
 	const body = await apiJson<{ items?: SegmentRunStatus[] }>(
 		docPath(key, "/status"),
-		{ fallbackError: "Không tải được tiến độ chép lời" },
+		{ fallbackError: activeTranslator().t("errors.transcripts.progress") },
 		fetcher,
 	);
 	return body.items ?? [];
@@ -122,7 +123,7 @@ export async function renameTranscript(
 		{
 			method: "PATCH",
 			json: { title: title.trim() || null },
-			fallbackError: "Không đổi được tên",
+			fallbackError: activeTranslator().t("errors.transcripts.rename"),
 		},
 		fetcher,
 	);
@@ -146,7 +147,7 @@ export async function saveSegmentTexts(
 		{
 			method: "PUT",
 			json: { runId, texts },
-			fallbackError: "Không lưu được câu đã sửa",
+			fallbackError: activeTranslator().t("errors.transcripts.saveSegment"),
 		},
 		fetcher,
 	);
@@ -159,7 +160,10 @@ export async function deleteTranscript(
 ): Promise<void> {
 	await apiFetch(
 		docPath(key),
-		{ method: "DELETE", fallbackError: "Không xoá được transcript" },
+		{
+			method: "DELETE",
+			fallbackError: activeTranslator().t("errors.transcripts.delete"),
+		},
 		fetcher,
 	);
 }

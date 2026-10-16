@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from "react";
+import { activeTranslator } from "../../i18n/active-translator";
 import { errorMessage } from "../../lib/api";
 import { ChunkedUpload, type UploadResult } from "./chunked-upload";
 
@@ -31,7 +32,9 @@ export function useChunkedUpload(): ChunkedUploadState {
 			setResult(done);
 			return done;
 		} catch (cause) {
-			setError(errorMessage(cause, "Tải lên thất bại"));
+			setError(
+				errorMessage(cause, activeTranslator().t("errors.upload.failed")),
+			);
 			return null;
 		} finally {
 			setUploading(false);

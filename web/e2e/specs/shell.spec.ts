@@ -49,7 +49,7 @@ for (const scheme of COLOR_SCHEMES) {
 			await expect(nav.getByRole("link")).toHaveText([
 				"Ghi âm",
 				"Cắt file",
-				"Transcript",
+				"Lời đã chép",
 			]);
 			// The phone gets the compact row under the bar, not the wide nav.
 			await expect(

@@ -41,7 +41,7 @@ Khảo sát 16/10 (hai báo cáo Explore, đo lại bằng `diff`):
 | 2 | [Khung app: top bar, account menu, footer, layout](./phase-02-app-shell.md) | M | Completed | 1 |
 | 3 | [Điều hướng URL + provider giữ trạng thái](./phase-03-routes-and-state.md) | L | Completed | 2 |
 | 4 | [Dựng lại các trang theo pattern Localman](./phase-04-pages.md) | L | Completed | 3 |
-| 5 | [Từ điển tiếng Việt, rà chuỗi, a11y](./phase-05-strings-a11y.md) | M | Pending | 4 |
+| 5 | [Từ điển tiếng Việt, rà chuỗi, a11y](./phase-05-strings-a11y.md) | M | Completed | 4 |
 | 6 | [QA iPhone + đóng plan](./phase-06-iphone-qa-close.md) | S | Pending | 5 |
 
 ## Bất biến (mọi phase)

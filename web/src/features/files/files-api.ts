@@ -1,3 +1,4 @@
+import { activeTranslator } from "../../i18n/active-translator";
 import { apiFetch, apiJson } from "../../lib/api";
 import type { TranscriptStatus } from "../transcript/transcript-api";
 
@@ -40,7 +41,11 @@ export async function listRecordings(
 	const body = await apiJson<{
 		items?: RecordingItem[];
 		retentionDays?: number;
-	}>("/api/files", { fallbackError: "Không tải được lịch sử ghi" }, fetcher);
+	}>(
+		"/api/files",
+		{ fallbackError: activeTranslator().t("errors.files.history") },
+		fetcher,
+	);
 	return {
 		items: body.items ?? [],
 		retentionDays:
@@ -53,7 +58,7 @@ export async function listManagedFiles(
 ): Promise<ManagedFile[]> {
 	const body = await apiJson<{ items?: ManagedFile[] }>(
 		"/api/files/manage",
-		{ fallbackError: "Không tải được danh sách tệp" },
+		{ fallbackError: activeTranslator().t("errors.files.list") },
 		fetcher,
 	);
 	return body.items ?? [];
@@ -66,7 +71,10 @@ export async function deleteFile(
 ): Promise<void> {
 	await apiFetch(
 		`/api/files/${encodeURIComponent(id)}`,
-		{ method: "DELETE", fallbackError: "Không xoá được tệp" },
+		{
+			method: "DELETE",
+			fallbackError: activeTranslator().t("errors.files.delete"),
+		},
 		fetcher,
 	);
 }
@@ -74,7 +82,7 @@ export async function deleteFile(
 export function fetchUsage(fetcher: typeof fetch = fetch): Promise<Usage> {
 	return apiJson<Usage>(
 		"/api/me/usage",
-		{ fallbackError: "Không tải được dung lượng" },
+		{ fallbackError: activeTranslator().t("errors.files.usage") },
 		fetcher,
 	);
 }

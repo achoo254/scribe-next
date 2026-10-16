@@ -5,7 +5,12 @@ import { Modal, ModalClose } from "../../components/ui/modal";
 import { ModalFooter } from "../../components/ui/modal-footer";
 import { useToast } from "../../components/ui/toast";
 import { useRequestTranscripts } from "../../features/transcript/transcript-queries";
+import { useT } from "../../i18n/i18n-context";
+import { type TagRenderers, renderRich } from "../../i18n/rich-text";
 import { errorMessage } from "../../lib/api";
+
+/** `<strong>` in the confirmation texts: the minutes stand out. */
+const STRONG: TagRenderers = { strong: (chunk) => <strong>{chunk}</strong> };
 
 /** Above this many minutes, say how much of the month it uses before sending. */
 const CONFIRM_ABOVE_MINUTES = 10;
@@ -27,6 +32,7 @@ export interface Transcribe {
  * the minutes left are re-read afterwards.
  */
 export function useTranscribe(onSent?: () => void): Transcribe {
+	const t = useT();
 	const toast = useToast();
 	const { user, refresh } = useAuth();
 	const request = useRequestTranscripts();
@@ -46,7 +52,7 @@ export function useTranscribe(onSent?: () => void): Transcribe {
 		} catch (cause) {
 			toast.show({
 				tone: "error",
-				title: "Không chép lời được",
+				title: t("transcript.transcribe.failed"),
 				description: errorMessage(cause),
 			});
 		} finally {
@@ -66,24 +72,25 @@ export function useTranscribe(onSent?: () => void): Transcribe {
 		await send(fileIds);
 	}
 
+	const confirmMinutes = pendingConfirm?.minutes ?? 0;
 	const dialog = (
 		<Modal
 			open={pendingConfirm !== null}
 			onOpenChange={(next) => {
 				if (!next) setPendingConfirm(null);
 			}}
-			title="Chép lời bản ghi dài"
+			title={t("transcript.transcribe.confirmTitle")}
 			size="sm"
 			data-id="transcribe-confirm"
 			footer={
 				<ModalFooter>
 					<ModalClose asChild>
-						<Button variant="ghost">Huỷ</Button>
+						<Button variant="ghost">{t("common.actions.cancel")}</Button>
 					</ModalClose>
 					<Button
 						variant="primary"
 						data-id="transcribe-confirm-send"
-						disabled={left !== null && (pendingConfirm?.minutes ?? 0) > left}
+						disabled={left !== null && confirmMinutes > left}
 						loading={request.isPending}
 						onClick={() => {
 							const next = pendingConfirm;
@@ -91,26 +98,25 @@ export function useTranscribe(onSent?: () => void): Transcribe {
 							if (next) void send(next.fileIds);
 						}}
 					>
-						Chép lời
+						{t("transcript.transcribe.send")}
 					</Button>
 				</ModalFooter>
 			}
 		>
 			<p className="m-0 text-sm">
-				Bản ghi này dùng khoảng{" "}
-				<strong>{pendingConfirm?.minutes ?? 0} phút</strong>
-				{left !== null ? (
-					<>
-						{" "}
-						trong <strong>{left} phút</strong> còn lại của tháng này.
-					</>
-				) : (
-					"."
+				{renderRich(
+					left !== null
+						? t("transcript.transcribe.usageOfLeft", {
+								minutes: confirmMinutes,
+								left,
+							})
+						: t("transcript.transcribe.usage", { minutes: confirmMinutes }),
+					STRONG,
 				)}
 			</p>
-			{left !== null && (pendingConfirm?.minutes ?? 0) > left ? (
+			{left !== null && confirmMinutes > left ? (
 				<p className="m-0 mt-2 text-error-text text-sm">
-					Không đủ phút còn lại cho bản ghi này.
+					{t("transcript.transcribe.notEnough")}
 				</p>
 			) : null}
 		</Modal>

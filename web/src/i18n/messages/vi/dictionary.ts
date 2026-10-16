@@ -1,7 +1,9 @@
 import { common } from "./common";
+import { errors } from "./errors";
 import { layout } from "./layout";
 import { login } from "./login";
 import { record } from "./record";
+import { recorder } from "./recorder";
 import { split } from "./split";
 import { transcript } from "./transcript";
 import { ui } from "./ui";
@@ -13,9 +15,11 @@ import { ui } from "./ui";
  */
 export const vi = {
 	common,
+	errors,
 	layout,
 	login,
 	record,
+	recorder,
 	split,
 	transcript,
 	ui,

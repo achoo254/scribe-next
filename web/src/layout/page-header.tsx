@@ -6,7 +6,7 @@ export interface PageHeaderProps {
 	title: ReactNode;
 	/**
 	 * Link or button back to the parent page: the title becomes the end of a
-	 * breadcrumb ("Transcript / <name>"), as on localman-next's detail pages.
+	 * breadcrumb ("Lời đã chép / <name>"), as on localman-next's detail pages.
 	 */
 	parent?: ReactNode;
 	/** One or two sentences under the title. */
@@ -38,7 +38,7 @@ export function PageHeader({
 				{parent ? (
 					<nav
 						aria-label={t("layout.breadcrumb")}
-						// Wraps on phones: a long title moves under "Transcript /"
+						// Wraps on phones: a long title moves under "Lời đã chép /"
 						// instead of shrinking to one word per line.
 						className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2"
 					>

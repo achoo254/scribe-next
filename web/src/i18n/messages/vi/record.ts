@@ -10,6 +10,23 @@ export const record = {
 		"Tiếng hệ thống và ghi màn hình cần chia sẻ màn hình — tốt nhất trên <b>Chrome/Edge</b>: chọn “Toàn màn hình” và bật “Chia sẻ âm thanh” để có tiếng hệ thống. Firefox/Safari có thể không hỗ trợ tiếng hệ thống. Chọn nhiều nguồn → trộn chung vào 1 bản ghi.",
 	noScreenCapture:
 		"Trình duyệt này không hỗ trợ chia sẻ màn hình (chỉ ghi được mic).",
+	sources: {
+		legend: "Nguồn",
+		mic: "Micro",
+		systemAudio: "Tiếng hệ thống",
+		screen: "Ghi kèm màn hình (video)",
+	},
+	splitAfter: {
+		toggle: "Cắt thành đoạn theo phút",
+		minutes: "Số phút mỗi đoạn",
+		invalid: "Nhập số phút lớn hơn 0.",
+	},
+	live: {
+		level: "Mức âm thanh",
+		monitor: "Toàn màn hình",
+		window: "Cửa sổ",
+		browser: "Tab trình duyệt",
+	},
 	start: "Bắt đầu ghi",
 	stop: "Dừng ghi",
 	timer: "Đang ghi — {clock}",
@@ -28,6 +45,11 @@ export const record = {
 		uploadsFailed: {
 			other: "{count} đoạn bị máy chủ từ chối — vẫn giữ trên máy.",
 		},
+	},
+	groups: {
+		expiresSoon: "sắp tự xoá",
+		expiresIn: "tự xoá sau {days} ngày",
+		iphoneSession: "Bản ghi trên iPhone",
 	},
 	history: {
 		title: "Lịch sử ghi",

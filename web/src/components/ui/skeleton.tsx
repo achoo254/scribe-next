@@ -1,4 +1,5 @@
 import { type ComponentProps, useEffect, useState } from "react";
+import { useT } from "../../i18n/i18n-context";
 import { cn } from "../../lib/cn";
 
 export type SkeletonVariant = "block" | "text" | "circle";
@@ -85,12 +86,13 @@ export function SkeletonRegion({
 	children,
 	...rest
 }: SkeletonRegionProps) {
+	const t = useT();
 	const [mounted, setMounted] = useState(false);
 	useEffect(() => setMounted(true), []);
 	return (
 		<>
 			<output className="sr-only" data-skeleton-status="">
-				{mounted ? (label ?? "Đang tải…") : null}
+				{mounted ? (label ?? t("ui.loading")) : null}
 			</output>
 			<div aria-busy="true" className={className} {...rest}>
 				{children}

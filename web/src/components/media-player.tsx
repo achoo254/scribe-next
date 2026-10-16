@@ -5,6 +5,7 @@ import {
 	IconVolumeOff,
 } from "@tabler/icons-react";
 import { type RefObject, useEffect, useRef, useState } from "react";
+import { useT } from "../i18n/i18n-context";
 import { useMediaSource } from "../lib/download";
 import { formatClock } from "../lib/format";
 import { IconButton } from "./ui/icon-button";
@@ -64,18 +65,19 @@ export function MediaPlayer({
 	seek,
 	"data-id": dataId,
 }: MediaPlayerProps) {
+	const t = useT();
 	const { src, error } = useMediaSource(fileId);
 	if (error) {
 		return (
 			<p data-id={dataId} role="alert" className="m-0 text-error text-sm">
-				Không phát được: {error}
+				{t("ui.player.playFailed", { error })}
 			</p>
 		);
 	}
 	if (!src) {
 		return (
 			<p data-id={dataId} aria-live="polite" className="m-0 text-muted text-sm">
-				Đang tải bản ghi để phát…
+				{t("ui.player.loadingRecording")}
 			</p>
 		);
 	}
@@ -131,6 +133,7 @@ export function AudioPlayer({
 	onEnded,
 	"data-id": dataId,
 }: AudioPlayerProps) {
+	const t = useT();
 	const audio = useRef<HTMLAudioElement>(null);
 	useSeek(audio, seek);
 	const [playing, setPlaying] = useState(false);
@@ -187,7 +190,7 @@ export function AudioPlayer({
 			/>
 			<IconButton
 				size="sm"
-				label={playing ? "Tạm dừng" : "Phát"}
+				label={playing ? t("ui.player.pause") : t("ui.player.play")}
 				data-id={dataId ? `${dataId}-play` : undefined}
 				icon={
 					playing ? (
@@ -203,7 +206,7 @@ export function AudioPlayer({
 			</span>
 			<input
 				type="range"
-				aria-label="Tua"
+				aria-label={t("ui.player.seek")}
 				data-id={dataId ? `${dataId}-seek` : undefined}
 				min={0}
 				max={hasDuration ? duration : 0}
@@ -219,7 +222,7 @@ export function AudioPlayer({
 			<div className="group relative flex flex-none items-center">
 				<IconButton
 					size="sm"
-					label={muted ? "Bật tiếng" : "Tắt tiếng"}
+					label={muted ? t("ui.player.unmute") : t("ui.player.mute")}
 					data-id={dataId ? `${dataId}-mute` : undefined}
 					icon={
 						muted || volume === 0 ? (
@@ -235,7 +238,7 @@ export function AudioPlayer({
 				<div className="invisible absolute bottom-full left-1/2 z-10 mb-1.5 -translate-x-1/2 rounded-sm border border-border bg-surface px-1.5 py-2.5 opacity-0 shadow-md transition-opacity group-focus-within:visible group-focus-within:opacity-100 group-hover:visible group-hover:opacity-100">
 					<input
 						type="range"
-						aria-label="Âm lượng"
+						aria-label={t("ui.player.volume")}
 						data-id={dataId ? `${dataId}-volume` : undefined}
 						min={0}
 						max={1}

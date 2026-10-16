@@ -42,7 +42,7 @@ describe("TranscriptList", () => {
 	it("has a page heading and sends an empty list to the record page", async () => {
 		renderList([jsonResponse({ items: [] })]);
 		expect(
-			screen.getByRole("heading", { level: 1, name: "Transcript" }),
+			screen.getByRole("heading", { level: 1, name: "Lời đã chép" }),
 		).toBeInTheDocument();
 		expect(
 			await screen.findByRole("link", { name: "Mở trang Ghi âm" }),
@@ -64,7 +64,7 @@ describe("TranscriptList", () => {
 			jsonResponse({ items: [DOC] }),
 		]);
 		expect(
-			await screen.findByText("Không tải được danh sách transcript"),
+			await screen.findByText("Không tải được danh sách bản chép lời"),
 		).toBeInTheDocument();
 		await userEvent.click(screen.getByRole("button", { name: "Thử lại" }));
 		expect(

@@ -7,7 +7,7 @@ export const layout = {
 		nav: "Chức năng",
 		record: "Ghi âm",
 		split: "Cắt file",
-		transcript: "Transcript",
+		transcript: "Lời đã chép",
 	},
 	accountMenu: {
 		trigger: "{email} · Tài khoản",

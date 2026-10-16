@@ -5,12 +5,15 @@ import {
 	type LevelSource,
 	useRecorderLevel,
 } from "../../features/recorder/use-recorder";
+import { activeTranslator } from "../../i18n/active-translator";
+import { useT } from "../../i18n/i18n-context";
+import type { MessageKey } from "../../i18n/message-types";
 
-const SURFACES: Record<string, string> = {
-	monitor: "Toàn màn hình",
-	window: "Cửa sổ",
-	browser: "Tab trình duyệt",
-};
+const SURFACES = {
+	monitor: "record.live.monitor",
+	window: "record.live.window",
+	browser: "record.live.browser",
+} as const satisfies Readonly<Record<string, MessageKey>>;
 
 /** "Toàn màn hình · 1920×1080 · 30fps" from the screen track. */
 export function describeScreen(stream: MediaStream | null): string {
@@ -18,7 +21,12 @@ export function describeScreen(stream: MediaStream | null): string {
 		| (MediaTrackSettings & { displaySurface?: string })
 		| undefined;
 	if (!settings) return "";
-	const parts = [SURFACES[settings.displaySurface ?? ""] ?? ""];
+	const surface = settings.displaySurface ?? "";
+	const parts = [
+		Object.hasOwn(SURFACES, surface)
+			? activeTranslator().t(SURFACES[surface as keyof typeof SURFACES])
+			: "",
+	];
 	if (settings.width && settings.height)
 		parts.push(`${settings.width}×${settings.height}`);
 	if (settings.frameRate) parts.push(`${Math.round(settings.frameRate)}fps`);
@@ -37,13 +45,14 @@ export function levelTone(percent: number): MeterTone {
 }
 
 export function LevelMeter({ recorder }: { recorder: LevelSource }) {
+	const t = useT();
 	const percent = levelPercent(useRecorderLevel(recorder));
 	return (
 		<div className="flex items-center gap-2 text-icon-muted">
 			<IconMicrophone size={18} aria-hidden="true" />
 			<MeterBar
 				role="meter"
-				label="Mức âm thanh"
+				label={t("record.live.level")}
 				value={percent}
 				tone={levelTone(percent)}
 				animate={false}

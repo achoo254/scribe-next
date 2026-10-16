@@ -1,3 +1,4 @@
+import { activeTranslator } from "../../i18n/active-translator";
 import type { ManagedFile, RecordingItem } from "./files-api";
 
 const DAY_MS = 86_400_000;
@@ -63,8 +64,9 @@ export function daysUntilExpiry(
 /** "tự xoá sau 3 ngày"; empty when the retention is unknown. */
 export function expiryLabel(days: number | null): string {
 	if (days === null) return "";
-	if (days <= 0) return "sắp tự xoá";
-	return `tự xoá sau ${days} ngày`;
+	const { t } = activeTranslator();
+	if (days <= 0) return t("record.groups.expiresSoon");
+	return t("record.groups.expiresIn", { days });
 }
 
 /** Three days or less: highlighted so the user downloads in time. */
@@ -175,8 +177,6 @@ export function groupSessions(items: readonly RecordingItem[]): HistoryRow[] {
 	return rows;
 }
 
-const IPHONE_SESSION = "Bản ghi trên iPhone";
-
 /**
  * Default name of an iPhone session: "Bản ghi trên iPhone 09:41", with the
  * date too (`withDate`) where sessions of different days sit together, as in
@@ -186,18 +186,19 @@ export function sessionTitle(
 	createdAt?: string | null,
 	{ withDate = false }: { withDate?: boolean } = {},
 ): string {
-	if (!createdAt) return IPHONE_SESSION;
+	const iphoneSession = activeTranslator().t("record.groups.iphoneSession");
+	if (!createdAt) return iphoneSession;
 	const date = new Date(createdAt);
-	if (Number.isNaN(date.getTime())) return IPHONE_SESSION;
+	if (Number.isNaN(date.getTime())) return iphoneSession;
 	const time = date.toLocaleTimeString("vi-VN", {
 		hour: "2-digit",
 		minute: "2-digit",
 	});
-	if (!withDate) return `${IPHONE_SESSION} ${time}`;
+	if (!withDate) return `${iphoneSession} ${time}`;
 	const day = date.toLocaleDateString("vi-VN", {
 		day: "2-digit",
 		month: "2-digit",
 		year: "numeric",
 	});
-	return `${IPHONE_SESSION} ${time} ${day}`;
+	return `${iphoneSession} ${time} ${day}`;
 }

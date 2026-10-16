@@ -98,7 +98,7 @@ for (const scheme of COLOR_SCHEMES) {
 			const api = await stubApi(page, FIXTURES);
 			await page.goto("/transcripts");
 			await expect(
-				page.getByRole("heading", { level: 1, name: "Transcript" }),
+				page.getByRole("heading", { level: 1, name: "Lời đã chép" }),
 			).toBeVisible();
 			await expect(
 				page.getByTestId(`transcripts-item-${DOC_KEY}`),
@@ -122,7 +122,7 @@ for (const scheme of COLOR_SCHEMES) {
 			await page.getByTestId("reader-menu").click();
 			const menu = page.getByRole("menu");
 			await expect(
-				menu.getByRole("menuitem", { name: "Xoá transcript" }),
+				menu.getByRole("menuitem", { name: "Xoá bản chép lời" }),
 			).toBeVisible();
 			await expect(menu).toHaveScreenshot(`reader-menu-${scheme}.png`);
 			expect(

@@ -1,5 +1,6 @@
 import { IconAlertTriangle } from "@tabler/icons-react";
 import { type ReactNode, useRef, useState } from "react";
+import { useT } from "../../i18n/i18n-context";
 import { errorMessage } from "../../lib/api";
 import { Alert } from "./alert";
 import { Button } from "./button";
@@ -40,6 +41,7 @@ export function ConfirmModal({
 	onCloseAutoFocus,
 	"data-id": dataId,
 }: ConfirmModalProps) {
+	const t = useT();
 	const [busy, setBusy] = useState(false);
 	// Destructive dialogs open on the safe choice.
 	const cancel = useRef<HTMLButtonElement>(null);
@@ -77,7 +79,7 @@ export function ConfirmModal({
 				<ModalFooter>
 					<ModalClose asChild>
 						<Button ref={cancel} variant="ghost" disabled={busy}>
-							Huỷ
+							{t("common.actions.cancel")}
 						</Button>
 					</ModalClose>
 					<Button

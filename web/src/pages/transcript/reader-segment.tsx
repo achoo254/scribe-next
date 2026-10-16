@@ -5,6 +5,8 @@ import { Button } from "../../components/ui/button";
 import { controlClassName } from "../../components/ui/input";
 import { isPending } from "../../features/transcript-docs/reader-model";
 import type { TranscriptSegment } from "../../features/transcript-docs/transcript-docs-api";
+import { useT } from "../../i18n/i18n-context";
+import type { Translate } from "../../i18n/translate";
 import { errorMessage } from "../../lib/api";
 import { cn } from "../../lib/cn";
 import { formatClock } from "../../lib/format";
@@ -32,18 +34,26 @@ function rowsFor(text: string): number {
 	return Math.min(6, Math.max(1, Math.ceil(text.length / 42)));
 }
 
-function statusLine(segment: TranscriptSegment, progress: number): string {
+function statusLine(
+	t: Translate,
+	segment: TranscriptSegment,
+	progress: number,
+): string {
 	switch (segment.status) {
 		case "none":
-			return "Đoạn này chưa chép lời.";
+			return t("transcript.segment.none");
 		case "queued":
-			return "Đang chờ chép…";
+			return t("transcript.segment.queued");
 		case "running":
-			return `Đang chép… ${Math.floor(progress)}%`;
+			return t("transcript.segment.running", {
+				percent: Math.floor(progress),
+			});
 		case "failed":
-			return `Chép lỗi: ${segment.error || "không rõ lý do"}`;
+			return t("transcript.segment.failed", {
+				reason: segment.error || t("transcript.segment.unknownReason"),
+			});
 		default:
-			return "Đoạn này không có lời nói.";
+			return t("transcript.segment.empty");
 	}
 }
 
@@ -64,6 +74,7 @@ export const ReaderSegment = memo(function ReaderSegment({
 	onSave,
 	onRerun,
 }: ReaderSegmentProps) {
+	const t = useT();
 	const [drafts, setDrafts] = useState<string[] | null>(null);
 	// The run the draft was made from. If the segment is transcribed again
 	// meanwhile, these texts belong to other sentences and must not be saved.
@@ -109,12 +120,15 @@ export const ReaderSegment = memo(function ReaderSegment({
 			<div className="flex flex-wrap items-center gap-x-2 gap-y-1">
 				{numbered ? (
 					<h3 className="m-0 mr-auto font-mono font-semibold text-muted text-[0.8125rem]">
-						Đoạn {segment.index + 1} · {formatClock(segment.offsetS)}
-						{segment.edited ? " · đã sửa" : ""}
+						{t("transcript.segment.heading", {
+							number: segment.index + 1,
+							offset: formatClock(segment.offsetS),
+						})}
+						{segment.edited ? t("transcript.segment.editedSuffix") : ""}
 					</h3>
 				) : (
 					<span className="mr-auto font-mono text-muted text-[0.8125rem]">
-						{segment.edited ? "Đã sửa" : ""}
+						{segment.edited ? t("transcript.segment.edited") : ""}
 					</span>
 				)}
 				{drafts ? null : (
@@ -128,7 +142,7 @@ export const ReaderSegment = memo(function ReaderSegment({
 								leadingIcon={<IconPencil size={16} aria-hidden="true" />}
 								onClick={startEdit}
 							>
-								Sửa
+								{t("common.actions.edit")}
 							</Button>
 						) : null}
 						{canTranscribe && !busy && segment.status !== "none" ? (
@@ -140,7 +154,7 @@ export const ReaderSegment = memo(function ReaderSegment({
 								leadingIcon={<IconRefresh size={16} aria-hidden="true" />}
 								onClick={() => onRerun(segment)}
 							>
-								Chép lại đoạn này
+								{t("transcript.segment.rerun")}
 							</Button>
 						) : null}
 					</>
@@ -163,7 +177,9 @@ export const ReaderSegment = memo(function ReaderSegment({
 								</span>
 								<textarea
 									data-id={`${id}-draft-${index}`}
-									aria-label={`Câu ${index + 1}`}
+									aria-label={t("transcript.segment.sentence", {
+										number: index + 1,
+									})}
 									value={text}
 									rows={rowsFor(text)}
 									maxLength={2000}
@@ -179,8 +195,7 @@ export const ReaderSegment = memo(function ReaderSegment({
 					})}
 					{stale ? (
 						<Alert tone="warning" data-id={`${id}-stale`}>
-							Đoạn này vừa được chép lại nên bản đang sửa không còn khớp. Huỷ
-							rồi sửa lại trên bản mới.
+							{t("transcript.segment.stale")}
 						</Alert>
 					) : error ? (
 						<Alert tone="danger" data-id={`${id}-error`}>
@@ -194,7 +209,7 @@ export const ReaderSegment = memo(function ReaderSegment({
 							disabled={saving}
 							onClick={stopEdit}
 						>
-							Huỷ
+							{t("common.actions.cancel")}
 						</Button>
 						<Button
 							variant="primary"
@@ -203,7 +218,7 @@ export const ReaderSegment = memo(function ReaderSegment({
 							disabled={stale}
 							onClick={() => void save()}
 						>
-							Lưu
+							{t("common.actions.save")}
 						</Button>
 					</div>
 				</div>
@@ -246,7 +261,7 @@ export const ReaderSegment = memo(function ReaderSegment({
 						{formatClock(segment.offsetS)}
 					</span>
 					<span aria-live={busy ? "polite" : undefined}>
-						{statusLine(segment, progress)}
+						{statusLine(t, segment, progress)}
 					</span>
 				</button>
 			)}

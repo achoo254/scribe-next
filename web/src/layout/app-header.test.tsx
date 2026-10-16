@@ -50,7 +50,7 @@ describe("AppHeader", () => {
 		expect(navs()).toHaveLength(2);
 		for (const nav of navs()) {
 			expect(
-				within(nav).getByRole("link", { name: "Transcript" }),
+				within(nav).getByRole("link", { name: "Lời đã chép" }),
 			).toHaveAttribute("aria-current", "page");
 			expect(
 				within(nav).getByRole("link", { name: "Ghi âm" }),
@@ -68,7 +68,7 @@ describe("AppHeader", () => {
 			within(wide).getByRole("link", { name: "Cắt file" }),
 		).toHaveAttribute("aria-current", "page");
 		await userEvent.click(
-			within(wide).getByRole("link", { name: "Transcript" }),
+			within(wide).getByRole("link", { name: "Lời đã chép" }),
 		);
 		expect(location()).toBe("/transcripts");
 	});
@@ -78,7 +78,7 @@ describe("AppHeader", () => {
 		for (const nav of navs()) {
 			expect(within(nav).getAllByRole("link")).toHaveLength(2);
 			expect(
-				within(nav).queryByRole("link", { name: "Transcript" }),
+				within(nav).queryByRole("link", { name: "Lời đã chép" }),
 			).toBeNull();
 		}
 	});

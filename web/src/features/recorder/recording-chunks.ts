@@ -1,3 +1,4 @@
+import { activeTranslator } from "../../i18n/active-translator";
 /**
  * Streams MediaRecorder chunks of one recording session to the backend,
  * strictly one after another, each at the offset the backend last
@@ -60,7 +61,7 @@ export class RecordingChunkQueue {
 						method: "POST",
 						headers: { "Content-Type": "application/octet-stream" },
 						body,
-						fallbackError: "Tải chunk thất bại",
+						fallbackError: activeTranslator().t("recorder.chunkFailed"),
 					},
 					this.fetcher,
 				);
@@ -68,7 +69,10 @@ export class RecordingChunkQueue {
 				return;
 			} catch (cause) {
 				if (attempt === CHUNK_RETRIES - 1) {
-					this.failure = errorMessage(cause, "Lỗi tải bản ghi");
+					this.failure = errorMessage(
+						cause,
+						activeTranslator().t("recorder.uploadFailed"),
+					);
 				} else {
 					await this.sleep(300 * (attempt + 1));
 				}

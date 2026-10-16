@@ -44,7 +44,7 @@ test.describe("a browser recording across route changes", () => {
 
 		await goTo(page, "Cắt file", /\/split$/);
 		await expect(page.getByTestId("split")).toBeVisible();
-		await goTo(page, "Transcript", /\/transcripts$/);
+		await goTo(page, "Lời đã chép", /\/transcripts$/);
 		await expect(page.getByTestId("transcripts")).toBeVisible();
 		await goTo(page, "Ghi âm", /\/record$/);
 
@@ -148,7 +148,7 @@ test("nav, browser history and the reader's back button follow the URL", async (
 	await expect(page).toHaveURL(/\/record$/);
 
 	await goTo(page, "Cắt file", /\/split$/);
-	await goTo(page, "Transcript", /\/transcripts$/);
+	await goTo(page, "Lời đã chép", /\/transcripts$/);
 	await page.goBack();
 	await expect(page).toHaveURL(/\/split$/);
 	await expect(page.getByTestId("split")).toBeVisible();

@@ -1,6 +1,7 @@
 import { FormField } from "../../components/ui/form-field";
 import { Input } from "../../components/ui/input";
 import { SwitchField } from "../../components/ui/switch-field";
+import { useT } from "../../i18n/i18n-context";
 import { parsePositiveNumber } from "../../lib/format";
 
 export interface SplitAfterRecordingProps {
@@ -19,6 +20,7 @@ export function SplitAfterRecording({
 	onMinutesChange,
 	disabled,
 }: SplitAfterRecordingProps) {
+	const t = useT();
 	const invalid = enabled && parsePositiveNumber(minutes) === null;
 	return (
 		<div
@@ -26,7 +28,7 @@ export function SplitAfterRecording({
 			className="flex flex-wrap items-start gap-x-6 gap-y-3"
 		>
 			<SwitchField
-				label="Cắt thành đoạn theo phút"
+				label={t("record.splitAfter.toggle")}
 				checked={enabled}
 				disabled={disabled}
 				data-id="record-split-toggle"
@@ -34,8 +36,8 @@ export function SplitAfterRecording({
 			/>
 			{enabled ? (
 				<FormField
-					label="Số phút mỗi đoạn"
-					error={invalid ? "Nhập số phút lớn hơn 0." : undefined}
+					label={t("record.splitAfter.minutes")}
+					error={invalid ? t("record.splitAfter.invalid") : undefined}
 					className="w-full max-w-50"
 					data-id="record-split-minutes"
 				>

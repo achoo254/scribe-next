@@ -1,3 +1,4 @@
+import { activeTranslator } from "../../i18n/active-translator";
 import { apiJson } from "../../lib/api";
 
 export type TranscriptStatus = "queued" | "running" | "done" | "failed";
@@ -44,7 +45,7 @@ export async function requestTranscripts(
 			{
 				method: "POST",
 				json: { fileIds: batch },
-				fallbackError: "Không gửi được yêu cầu chép lời",
+				fallbackError: activeTranslator().t("errors.transcripts.request"),
 			},
 			fetcher,
 		);
@@ -62,7 +63,7 @@ export async function fetchTranscripts(
 		batches(fileIds).map((batch) =>
 			apiJson<{ items?: Transcript[] }>(
 				`/api/transcripts?ids=${encodeURIComponent(batch.join(","))}`,
-				{ fallbackError: "Không tải được bản chép lời" },
+				{ fallbackError: activeTranslator().t("errors.transcripts.load") },
 				fetcher,
 			),
 		),

@@ -144,7 +144,7 @@ describe("app routes", () => {
 		expect(await screen.findByText("record page")).toBeInTheDocument();
 		await waitFor(() => expect(router.state.location.pathname).toBe("/record"));
 		expect(screen.queryByRole("button", { name: "Mở transcript" })).toBeNull();
-		expect(screen.queryByRole("link", { name: "Transcript" })).toBeNull();
+		expect(screen.queryByRole("link", { name: "Lời đã chép" })).toBeNull();
 		await act(() => router.navigate("/transcripts"));
 		await waitFor(() => expect(router.state.location.pathname).toBe("/record"));
 	});

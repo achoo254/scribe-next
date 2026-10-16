@@ -17,6 +17,7 @@ import {
 } from "../../features/transcript/merge-transcripts";
 import type { ExportScope } from "../../features/transcript/transcript-api";
 import { useTranscriptsQuery } from "../../features/transcript/transcript-queries";
+import { useT } from "../../i18n/i18n-context";
 import { useOpenTranscript } from "../../layout/transcript-nav";
 import { errorMessage, isNativeShell } from "../../lib/api";
 import { downloadPaths, useDownload } from "../../lib/download";
@@ -49,6 +50,7 @@ export function TranscriptPanel({
 	onSeek,
 	"data-id": dataId,
 }: TranscriptPanelProps) {
+	const t = useT();
 	const toast = useToast();
 	const download = useDownload();
 	const queryClient = useQueryClient();
@@ -109,7 +111,7 @@ export function TranscriptPanel({
 		} catch (cause) {
 			toast.show({
 				tone: "error",
-				title: "Không kiểm được phần đã sửa",
+				title: t("transcript.panel.checkEditsFailed"),
 				description: errorMessage(cause),
 			});
 			return;
@@ -120,11 +122,14 @@ export function TranscriptPanel({
 	const status = merged.untouched
 		? null
 		: busy
-			? `Đang chép lời… ${merged.progress}%`
+			? t("transcript.progress", { percent: merged.progress })
 			: allDone
-				? "Đã chép lời"
+				? t("transcript.panel.done")
 				: merged.done > 0
-					? `Đã chép ${merged.done}/${merged.total} đoạn`
+					? t("transcript.panel.partial", {
+							done: merged.done,
+							total: merged.total,
+						})
 					: "";
 
 	return (
@@ -147,7 +152,7 @@ export function TranscriptPanel({
 						leadingIcon={<IconArrowRight size={16} aria-hidden="true" />}
 						onClick={() => openTranscript(docKey)}
 					>
-						Mở transcript
+						{t("transcript.panel.open")}
 					</Button>
 				) : null}
 				{merged.lines.length > 0 ? (
@@ -159,7 +164,9 @@ export function TranscriptPanel({
 						leadingIcon={<IconFileText size={16} aria-hidden="true" />}
 						onClick={() => setOpen((value) => !value)}
 					>
-						{open ? "Ẩn chữ" : "Xem chữ"}
+						{open
+							? t("transcript.panel.hideText")
+							: t("transcript.panel.showText")}
 					</Button>
 				) : null}
 				{!busy && toSend.length > 0 ? (
@@ -175,10 +182,10 @@ export function TranscriptPanel({
 						onClick={() => void start()}
 					>
 						{merged.untouched
-							? "Chép lời"
+							? t("transcript.transcribe.send")
 							: allDone
-								? "Chép lại"
-								: "Chép phần còn thiếu"}
+								? t("transcript.panel.rerun")
+								: t("transcript.panel.resume")}
 					</Button>
 				) : null}
 				{merged.done > 0 && !busy ? (
@@ -191,7 +198,9 @@ export function TranscriptPanel({
 								download(downloadPaths.transcript(scope, "txt", name))
 							}
 						>
-							{isNativeShell() ? "Lưu .txt" : "Tải .txt"}
+							{isNativeShell()
+								? t("transcript.reader.saveTxt")
+								: t("transcript.reader.downloadTxt")}
 						</Button>
 						<Button
 							size="sm"
@@ -201,7 +210,9 @@ export function TranscriptPanel({
 								download(downloadPaths.transcript(scope, "srt", name))
 							}
 						>
-							{isNativeShell() ? "Lưu .srt" : "Tải .srt"}
+							{isNativeShell()
+								? t("transcript.reader.saveSrt")
+								: t("transcript.reader.downloadSrt")}
 						</Button>
 					</>
 				) : null}
@@ -209,7 +220,7 @@ export function TranscriptPanel({
 
 			{merged.failed > 0 && !busy ? (
 				<Alert tone="danger" data-id={`${dataId}-error`}>
-					{merged.error || "Chép lời thất bại."}
+					{merged.error || t("transcript.panel.failed")}
 				</Alert>
 			) : null}
 
@@ -242,14 +253,16 @@ export function TranscriptPanel({
 				onOpenChange={(next) => {
 					if (!next) setLostEdits(null);
 				}}
-				title="Chép lại"
-				question={`Bỏ phần đã sửa ở ${lostEdits?.segments ?? 0} đoạn (${lostEdits?.sentences ?? 0} câu)?`}
-				confirmLabel="Chép lại"
+				title={t("transcript.panel.rerun")}
+				question={t("transcript.panel.rerunQuestion", {
+					segments: lostEdits?.segments ?? 0,
+					sentences: lostEdits?.sentences ?? 0,
+				})}
+				confirmLabel={t("transcript.panel.rerun")}
 				onConfirm={() => transcribe.start(toSend, secondsOf(toSend))}
 				data-id={`${dataId}-rerun`}
 			>
-				Chép lại cả bản ghi thay mọi câu bằng bản chép mới. Muốn giữ phần đã
-				sửa, hãy chép lại từng đoạn trong tab Transcript.
+				{t("transcript.panel.rerunBody")}
 			</ConfirmModal>
 		</div>
 	);

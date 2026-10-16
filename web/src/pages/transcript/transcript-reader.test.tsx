@@ -252,23 +252,23 @@ describe("TranscriptReader header", () => {
 		).toHaveAttribute("aria-current", "page");
 		expect(
 			screen.getByRole("navigation", { name: "Đường dẫn" }),
-		).toHaveTextContent(`Transcript/${title}`);
+		).toHaveTextContent(`Lời đã chép/${title}`);
 
-		screen.getByRole("button", { name: "Thao tác với transcript" }).focus();
+		screen.getByRole("button", { name: "Thao tác với bản chép lời" }).focus();
 		await userEvent.keyboard("{Enter}");
 		expect(
 			await screen.findByRole("menuitem", { name: "Tải .txt" }),
 		).toBeInTheDocument();
 		await userEvent.click(
-			screen.getByRole("menuitem", { name: "Xoá transcript" }),
+			screen.getByRole("menuitem", { name: "Xoá bản chép lời" }),
 		);
 		const dialog = await screen.findByRole("dialog", {
-			name: "Xoá transcript",
+			name: "Xoá bản chép lời",
 		});
 		await userEvent.click(within(dialog).getByRole("button", { name: "Xoá" }));
 
 		expect(
-			await screen.findByText(`Đã xoá transcript “${title}”`),
+			await screen.findByText(`Đã xoá bản chép lời “${title}”`),
 		).toBeVisible();
 		await waitFor(() => expect(onBack).toHaveBeenCalledWith({ replace: true }));
 		expect(fake.calls.some((c) => c.method === "DELETE")).toBe(true);

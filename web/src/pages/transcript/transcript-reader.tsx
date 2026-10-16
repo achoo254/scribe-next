@@ -330,12 +330,14 @@ export function TranscriptReader({
 			<Card data-id="reader-body" className="grid gap-4 p-4 sm:p-6">
 				{pending > 0 ? (
 					<Alert tone="info" data-id="reader-progress">
-						Đang chép lời… {overallProgress(segments, statuses)}%
+						{t("transcript.progress", {
+							percent: overallProgress(segments, statuses),
+						})}
 					</Alert>
 				) : null}
 				{canTranscribe && pending === 0 && toSend.length > 0 ? (
 					<Alert tone="warning" data-id="reader-unsent">
-						Còn {toSend.length} đoạn chưa chép.
+						{t("transcript.reader.unsent", { count: toSend.length })}
 						<Button
 							size="sm"
 							variant="ghost"
@@ -349,7 +351,7 @@ export function TranscriptReader({
 								)
 							}
 						>
-							Chép {toSend.length} đoạn còn lại
+							{t("transcript.reader.sendRest", { count: toSend.length })}
 						</Button>
 					</Alert>
 				) : null}
@@ -363,7 +365,7 @@ export function TranscriptReader({
 									data-id={`reader-missing-${missing}`}
 									className="m-0 rounded-sm border border-border border-dashed px-2 py-2 text-muted text-sm"
 								>
-									Thiếu đoạn {missing + 1}
+									{t("transcript.reader.missing", { number: missing + 1 })}
 								</p>
 							))}
 							<ReaderSegment
@@ -392,7 +394,9 @@ export function TranscriptReader({
 					<div className="sticky bottom-0 z-10 -mx-4 border-border-subtle border-t bg-surface px-4 pt-2 pb-[max(var(--space-2),env(safe-area-inset-bottom))] sm:-mx-6 sm:px-6">
 						{segments.length > 1 ? (
 							<div className="pb-1 font-mono text-muted text-xs">
-								Đang ở đoạn {current.index + 1}
+								{t("transcript.reader.playing", {
+									number: current.index + 1,
+								})}
 							</div>
 						) : null}
 						<ReaderPlayer
@@ -416,15 +420,18 @@ export function TranscriptReader({
 				onOpenChange={(next) => {
 					if (!next) setRerun(null);
 				}}
-				title="Chép lại đoạn"
-				question={`Bỏ ${rerun?.editedSentences ?? 0} câu đã sửa ở đoạn ${(rerun?.index ?? 0) + 1}?`}
-				confirmLabel="Chép lại"
+				title={t("transcript.reader.rerunTitle")}
+				question={t("transcript.reader.rerunQuestion", {
+					count: rerun?.editedSentences ?? 0,
+					number: (rerun?.index ?? 0) + 1,
+				})}
+				confirmLabel={t("transcript.panel.rerun")}
 				onConfirm={() =>
 					transcribe.start(rerun ? [rerun.fileId] : [], rerun?.durationS ?? 0)
 				}
 				data-id="reader-rerun"
 			>
-				Đoạn này sẽ về câu máy mới; các đoạn khác giữ phần đã sửa.
+				{t("transcript.reader.rerunBody")}
 			</ConfirmModal>
 			<ConfirmModal
 				open={confirmDelete}
@@ -500,18 +507,19 @@ function ReaderPlayer({
 	onTime,
 	onEnded,
 }: ReaderPlayerProps) {
+	const t = useT();
 	const { src, error } = useMediaSource(segment.fileId);
 	if (error) {
 		return (
 			<p role="alert" className="m-0 text-error text-sm">
-				Không phát được: {error}
+				{t("ui.player.playFailed", { error })}
 			</p>
 		);
 	}
 	if (!src) {
 		return (
 			<p aria-live="polite" className="m-0 text-muted text-sm">
-				Đang tải audio…
+				{t("ui.player.loadingAudio")}
 			</p>
 		);
 	}

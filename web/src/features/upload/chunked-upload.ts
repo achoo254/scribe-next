@@ -1,3 +1,4 @@
+import { activeTranslator } from "../../i18n/active-translator";
 /**
  * Uploads one file in 5 MB chunks that the backend appends straight to
  * disk. Flow: init (backend creates a session) → status (bytes already
@@ -42,7 +43,7 @@ export class ChunkedUpload {
 
 		const status = await apiJson<{ written: number }>(
 			`/api/upload/status?session=${session}`,
-			{ fallbackError: "Không thể lấy trạng thái upload" },
+			{ fallbackError: activeTranslator().t("errors.upload.status") },
 			this.fetcher,
 		);
 		let offset = status.written;
@@ -59,12 +60,12 @@ export class ChunkedUpload {
 					method: "POST",
 					headers: { "Content-Type": "application/octet-stream" },
 					body: chunk,
-					fallbackError: "Tải lên thất bại, có thể thử lại",
+					fallbackError: activeTranslator().t("errors.upload.chunk"),
 				},
 				this.fetcher,
 			);
 			if (written.written <= offset) {
-				throw new Error("Máy chủ không ghi thêm dữ liệu — thử tải lên lại.");
+				throw new Error(activeTranslator().t("errors.upload.noProgress"));
 			}
 			offset = written.written;
 			onProgress(percentOf(offset, file.size));
@@ -75,7 +76,7 @@ export class ChunkedUpload {
 			{
 				method: "POST",
 				json: { session },
-				fallbackError: "Không thể hoàn tất upload",
+				fallbackError: activeTranslator().t("errors.upload.complete"),
 			},
 			this.fetcher,
 		);
@@ -100,8 +101,7 @@ export class ChunkedUpload {
 			{
 				method: "POST",
 				json: { name: file.name, size: file.size },
-				fallbackError:
-					"Không thể khởi tạo upload (file quá lớn hoặc vượt hạn mức)",
+				fallbackError: activeTranslator().t("errors.upload.init"),
 			},
 			this.fetcher,
 		);

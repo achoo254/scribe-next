@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useToast } from "../components/ui/toast";
 import { transcriptExportPath } from "../features/transcript/transcript-api";
+import { useT } from "../i18n/i18n-context";
 import { apiUrl, errorMessage, isNativeShell } from "./api";
 import { NativeFiles } from "./native";
 
@@ -22,17 +23,18 @@ export async function download(path: string): Promise<void> {
 /** `download` that reports failures as a toast; for buttons. */
 export function useDownload(): (path: string) => void {
 	const toast = useToast();
+	const t = useT();
 	return useCallback(
 		(path: string) => {
 			download(path).catch((cause: unknown) =>
 				toast.show({
 					tone: "error",
-					title: "Không tải được tệp",
+					title: t("errors.files.download"),
 					description: errorMessage(cause),
 				}),
 			);
 		},
-		[toast],
+		[toast, t],
 	);
 }
 

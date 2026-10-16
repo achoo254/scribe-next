@@ -2,6 +2,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useSyncExternalStore } from "react";
 import { useAuth } from "../../auth/auth-context";
 import { useToast } from "../../components/ui/toast";
+import { activeTranslator } from "../../i18n/active-translator";
 import { errorMessage } from "../../lib/api";
 import { refreshStorage } from "../files/file-queries";
 import {
@@ -39,8 +40,8 @@ export function useNativeRecorder(): NativeRecorderApi {
 		onNeedsSignIn: () => {
 			latest.current.toast.show({
 				tone: "info",
-				title: "Phiên đăng nhập đã hết",
-				description: "Đăng nhập lại để tải nốt các đoạn đang chờ trên máy.",
+				title: activeTranslator().t("recorder.native.signInTitle"),
+				description: activeTranslator().t("recorder.native.signInBody"),
 			});
 			// Never interrupt a recording: segments wait on the phone, and
 			// signing out (which stops the recorder) can happen after it ends.
@@ -49,8 +50,10 @@ export function useNativeRecorder(): NativeRecorderApi {
 		onQuotaFull: (message) =>
 			latest.current.toast.show({
 				tone: "error",
-				title: "Hết dung lượng",
-				description: `${message} Các đoạn vẫn giữ trên máy và tự tải lên khi có chỗ.`,
+				title: activeTranslator().t("recorder.native.quotaTitle"),
+				description: activeTranslator().t("recorder.native.quotaBody", {
+					message,
+				}),
 			}),
 	});
 	const recorder = ref.current;
@@ -81,8 +84,10 @@ export function useNativeRecorder(): NativeRecorderApi {
 				if (lostSegments > 0) {
 					latest.current.toast.show({
 						tone: "error",
-						title: "Mất phần cuối của một bản ghi",
-						description: `Ứng dụng bị đóng khi đang ghi: mất tối đa ${Math.round(lostSecondsMax)} giây của đoạn đang mở.`,
+						title: activeTranslator().t("recorder.native.lostTitle"),
+						description: activeTranslator().t("recorder.native.lostBody", {
+							seconds: String(Math.round(lostSecondsMax)),
+						}),
 						duration: 10_000,
 					});
 				}
@@ -90,8 +95,11 @@ export function useNativeRecorder(): NativeRecorderApi {
 			.catch((cause: unknown) =>
 				latest.current.toast.show({
 					tone: "error",
-					title: "Chưa đồng bộ được các đoạn ghi trên máy",
-					description: errorMessage(cause, "Mở lại ứng dụng để thử lại."),
+					title: activeTranslator().t("recorder.native.syncTitle"),
+					description: errorMessage(
+						cause,
+						activeTranslator().t("recorder.native.syncRetry"),
+					),
 				}),
 			);
 		return () => {

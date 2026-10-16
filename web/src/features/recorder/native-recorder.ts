@@ -9,6 +9,7 @@
  * `getLevel`, `subscribeLevel`) so the UI reads both the same way.
  */
 import { registerPlugin } from "@capacitor/core";
+import { activeTranslator } from "../../i18n/active-translator";
 import { errorMessage } from "../../lib/api";
 
 type NativeState = "idle" | "starting" | "recording" | "stopping";
@@ -211,7 +212,10 @@ export class NativeRecorder {
 			this.set({
 				...this.state,
 				starting: false,
-				error: errorMessage(cause, "Không bắt đầu ghi được."),
+				error: errorMessage(
+					cause,
+					activeTranslator().t("recorder.startError.failed"),
+				),
 			});
 		}
 	};
