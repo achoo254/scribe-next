@@ -54,3 +54,5 @@ dependencies: [1]
 - Ảnh mốc đã cập nhật có chủ đích: 6 ảnh `record-*` (thanh mới, nav, container 1120 px, footer). Ảnh `login-*` không đổi.
 
 **Còn mở**: chưa thử trên iPhone thật; app đang cài vẫn là bản build cũ cho tới khi cài lại ở Phase 3 (M6). `docs/deploy-web-production.md` và `docs/ios-app.md` chưa nhắc tới `VITE_IDP_ORIGIN`; biến này không bắt buộc vì đã có mặc định.
+
+- Deploy web prod 2026-10-16 15:13: hàng đợi 0, không phiên ghi/tải mở; sao lưu `/root/scribe-backup-20261016-151337/web`; giữ `assets/` cũ; prod phục vụ `index-ch3ZoJBv.js` (khớp build), `/record` 200, `/api/health` ok. App iPhone đang cài chưa đổi (cài lại ở Phase 3).
