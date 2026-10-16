@@ -1,7 +1,7 @@
 ---
 title: "Bước 2: key server + đo phút, rồi đăng nhập hoandat-auth"
 description: "Bỏ key người dùng tự nhập: key OpenAI của chủ sản phẩm trên server, đo phút theo user, quota tháng, trần chi phí; sau đó chuyển đăng nhập sang hoandat-auth, đổi domain và database, mở chép lời cho mọi người."
-status: in-progress
+status: completed
 priority: P1
 effort: "XL (A: M+S+S, B: M+L+M+M+S)"
 branch: main
@@ -31,7 +31,7 @@ Hiện người dùng tự dán key OpenAI, đăng nhập bằng Firebase Google
 | 4 | [hoandat-auth: client `scribe-web` + `scribe-mobile`](./phase-04-idp-scribe-clients.md) | M | Completed | 3 |
 | 5 | [Backend: OIDC, phiên thu hồi được, chuyển user](./phase-05-backend-oidc-sessions.md) | L | Completed | 4 |
 | 6 | [Web + iPhone: đăng nhập qua IdP, bỏ Firebase](./phase-06-clients-oidc-login.md) | M | Completed | 5 |
-| 7 | [Hạ tầng: 7a DB + service, 7b đăng nhập + domain, 7c mở chép lời](./phase-07-infra-cutover.md) | M | In progress (7a, 7b xong; 7c chờ) | 6 (7a chỉ cần 3) |
+| 7 | [Hạ tầng: 7a DB + service, 7b đăng nhập + domain, 7c mở chép lời](./phase-07-infra-cutover.md) | M | Completed | 6 (7a chỉ cần 3) |
 | 8 | [QA iPhone thật + docs](./phase-08-qa-docs.md) | S | Completed | 7 |
 | 9 | [Chống lạm dụng gói free (bắt buộc trước 7c)](./phase-09-free-abuse-guards.md) | M | Completed | 5 |
 

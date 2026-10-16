@@ -49,7 +49,7 @@ Web hóa Scribe làm ghi + cắt media (BỎ AI transcribe — box .65 không GP
 - ✅ **Bỏ mảnh im lặng**: mảnh hoàn toàn im lặng (đỉnh < −30 dB) không gửi OpenAI, không tính phút.
 - ✅ **7a — đổi tên hạ tầng**: service `scribe-be`, user `scribe`, `/opt/scribe-be`, `/var/www/scribe/dist`, db `scribe` (user Mongo riêng). Bản `onescribe*` đã xoá.
 - ✅ **7b — đăng nhập hoandat-auth + domain**: web (`scribe-web`) và iPhone (`scribe-mobile`) đăng nhập qua `auth.hoandat.com`, user cũ ghép theo email, phiên lưu Mongo thu hồi được; prod ở `scribe.hoandat.com` (Cloudflare SSL Full); bỏ Firebase và domain `scribe.inetdev.io.vn`. iPhone mới đã cài và kiểm trên máy thật.
-- ⏳ **7c — mở chép lời cho mọi người** (`TRANSCRIBE_OPEN`): bật vài ngày sau 7b khi đăng nhập chạy ổn; điều kiện Phase 9 đã xong. Tới lúc đó chép lời vẫn chỉ cho email trong `TRANSCRIBE_EMAILS`.
+- ✅ **7c — mở chép lời cho mọi người** (`TRANSCRIBE_OPEN=1`): bật 16/10 14:19 theo quyết định của chủ sản phẩm (Jev khuyên chờ vài ngày, 0,78). Gói free: 120 phút/tháng, 30 phút/ngày, tài khoản mới chờ 24 giờ, quỹ free $10, trần tổng $30.
 
 ## Scribe iOS — lộ trình App Store (chưa thực thi)
 
@@ -63,15 +63,14 @@ Chi tiết và lập luận: phase 4 của plan iOS. Tóm tắt:
 
 ## Trạng thái hiện tại
 
-- **Web**: LIVE bản React tại `scribe.hoandat.com`, đăng nhập hoandat-auth. Ghi (mic + màn hình/system) · Cắt file · lịch sử/phát lại · chép lời bằng key server có hạn mức (email được phép, chờ 7c) · retention/quota/rate-limit · xoá thủ công.
+- **Web**: LIVE bản React tại `scribe.hoandat.com`, đăng nhập hoandat-auth. Ghi (mic + màn hình/system) · Cắt file · lịch sử/phát lại · chép lời bằng key server có hạn mức (mở cho mọi người từ 16/10) · retention/quota/rate-limit · xoá thủ công.
 - **iPhone**: bản `com.hoandat.scribe` đăng nhập hoandat-auth, đã kiểm trên máy thật (ghi khoá màn hình, tải lên, chép lời); còn cuộc gọi đến, AirPods, chế độ máy bay.
 
 ## Backlog / Next
 
 | Ưu tiên | Hạng mục | Ghi chú |
 |---------|----------|---------|
-| P1 | **7c — mở chép lời cho mọi người** (`TRANSCRIBE_OPEN=1`, build lại) | Vài ngày sau 7b (16/10), khi đăng nhập ổn |
-| P1 | **QA app iPhone còn lại** — cuộc gọi đến, AirPods, máy bay; đăng xuất ở `auth.hoandat.com` làm app mất phiên | Cần máy thứ hai + AirPods |
+| P1 | **QA app iPhone còn lại** — cuộc gọi đến, AirPods, máy bay | Cần máy thứ hai + AirPods |
 | P1 | **Realtime transcript trên iPhone** (Phase 5 plan iOS) | Gate 0 bước 1 đo xong từ Mac; bước 2 (WebSocket khi khoá màn hình) cần iPhone |
 | P2 | **QA thủ công web** — ghi mic + màn hình/system thật (Chrome), cắt file thật | getUserMedia/getDisplayMedia không automate được |
 | P3 | **Unit test** `RateLimiter` (window reset) | logic pure, dễ test; bắt regression |

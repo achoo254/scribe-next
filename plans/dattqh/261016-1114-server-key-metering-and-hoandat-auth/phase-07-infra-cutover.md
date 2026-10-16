@@ -1,7 +1,7 @@
 ---
 phase: 7
 title: "Hạ tầng: tách 7a (DB + service), 7b (đăng nhập + domain), 7c (mở chép lời)"
-status: in-progress
+status: completed
 priority: P1
 effort: "M"
 dependencies: [6]
@@ -56,6 +56,12 @@ Thao tác ghi prod; người dùng đã đồng ý các hạng mục phần B. M
 ## 7c — Mở chép lời (vài ngày sau 7b)
 
 Bật `TRANSCRIBE_OPEN` (build lại) khi 7b chạy ổn vài ngày (Jev 0,98) **và Phase 9 đã deploy**. Quota `free` 120 phút, quỹ free $10, trần tổng $30 đã có từ phần A. Kiểm một tài khoản mới chép được trong hạn mức, chạm quỹ free bị chặn có số.
+
+### Kết quả 7c (2026-10-16 14:19)
+
+- Người dùng chọn mở ngay (Jev khuyên chờ vài ngày 0,78; mở ngay 0,14; mai 0,08). Build `TRANSCRIBE_OPEN=1`, sha `056eb1a8…`; hàng đợi 0, sao lưu binary `scribe-be.before-open`; restart 14:19:55, health ok, NRestarts 0, journal "chép lời bật (key server)".
+- `admin usage`: quỹ free 0/3333 phút, tổng 0/10000 phút. Đường mở + chặn đã kiểm trên dev E2E (`TRANSCRIBE_OPEN=1`: tài khoản mới chờ 24 giờ, `DAILY_LIMIT`, `TOO_LONG_FOR_FREE`, plus không bị giới hạn ngày). Chưa có tài khoản mới nào trên prod; tài khoản mới chỉ chép được sau 24 giờ.
+- Đường lùi: build lại không có cờ (vài phút).
 
 ## Dọn (mỗi bước hỏi trước)
 

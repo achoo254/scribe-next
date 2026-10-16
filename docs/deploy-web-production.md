@@ -114,7 +114,7 @@ Tất cả trong `/opt/scribe-be`, chủ `scribe`, quyền 600, ghi bằng stdin
 | `OIDC_ISSUER`, `OIDC_WEB_CLIENT_ID`, `OIDC_MOBILE_CLIENT_ID`, `OIDC_MOBILE_REDIRECT_URI` | Prod dùng mặc định: `https://auth.hoandat.com`, `scribe-web`, `scribe-mobile`, `com.hoandat.scribe:/auth/callback` |
 | `OPENAI_KEY_PATH` | `/opt/scribe-be/.openai-key` |
 | `TRANSCRIBE_EMAILS` | Email được dùng "Chép lời" (cách nhau dấu phẩy) khi chưa bật `TRANSCRIBE_OPEN` |
-| `TRANSCRIBE_OPEN` | `1`/`true` = mọi user đăng nhập được chép lời trong hạn mức gói. **Chưa bật trên prod** |
+| `TRANSCRIBE_OPEN` | `1`/`true` = mọi user đăng nhập được chép lời trong hạn mức gói. **Bật trên prod từ 2026-10-16 14:19** |
 | `TRANSCRIBE_FREE_MINUTES`, `TRANSCRIBE_PLUS_MINUTES`, `TRANSCRIBE_FREE_POOL_USD`, `TRANSCRIBE_MONTHLY_CAP_USD`, `TRANSCRIBE_FREE_DAILY_MINUTES`, `TRANSCRIBE_FREE_DELAY_HOURS` | Hạn mức chép lời (§Deploy); prod dùng mặc định |
 | `NOTIFY_BOT_API`, `NOTIFY_BOT_TOKEN_PATH`, `NOTIFY_CHAT_ID` | Báo động qua bot (§Deploy) |
 
@@ -187,7 +187,7 @@ nginx -t && systemctl reload nginx
 >
 > **Gói và sổ phút** (chạy trên `.65` bằng user của service, cấu hình nhúng trong binary):
 > `sudo -u $DEPLOY_USER $DEPLOY_APP_DIR/$DEPLOY_SERVICE admin set-plan <email> <free|plus> [--until YYYY-MM-DD]`;
-> `… admin usage [--email <email>] [--month YYYY-MM] [--recompute [--apply]]` (đối soát sổ từ `transcribe_runs`). Hạn mức: biến build `TRANSCRIBE_FREE_MINUTES` (120), `TRANSCRIBE_PLUS_MINUTES` (3000), `TRANSCRIBE_FREE_POOL_USD` (10), `TRANSCRIBE_MONTHLY_CAP_USD` (30); `TRANSCRIBE_OPEN=1` mở chép lời cho mọi user đăng nhập (chưa bật). Phút được giữ chỗ khi xếp hàng rồi quyết toán theo số giây thật sự gửi OpenAI. Mảnh hoàn toàn im lặng (đỉnh < −30 dB, đo bằng `volumedetect` trong lần nén) không gửi và không tính phút (`server/scribe-be/src/transcribe/mod.rs`).
+> `… admin usage [--email <email>] [--month YYYY-MM] [--recompute [--apply]]` (đối soát sổ từ `transcribe_runs`). Hạn mức: biến build `TRANSCRIBE_FREE_MINUTES` (120), `TRANSCRIBE_PLUS_MINUTES` (3000), `TRANSCRIBE_FREE_POOL_USD` (10), `TRANSCRIBE_MONTHLY_CAP_USD` (30); `TRANSCRIBE_OPEN=1` mở chép lời cho mọi user đăng nhập (bật từ 16/10). Phút được giữ chỗ khi xếp hàng rồi quyết toán theo số giây thật sự gửi OpenAI. Mảnh hoàn toàn im lặng (đỉnh < −30 dB, đo bằng `volumedetect` trong lần nén) không gửi và không tính phút (`server/scribe-be/src/transcribe/mod.rs`).
 >
 > **Chống lạm dụng gói free** (chỉ áp cho gói `free`): mỗi tài khoản `TRANSCRIBE_FREE_DAILY_MINUTES` (30) phút/ngày (ngày theo giờ Việt Nam, sổ `d:<userId>:<ngày>` trong `transcribe_usage`; không giới hạn theo IP vì người dùng 4G chung IP nhà mạng), tài khoản mới chờ `TRANSCRIBE_FREE_DELAY_HOURS` (24) giờ từ `createdAt`. Lỗi trả `DAILY_LIMIT`, `ACCOUNT_TOO_NEW` kèm `retryAt`; lượt dài hơn giới hạn ngày trả `TOO_LONG_FOR_FREE` (không có `retryAt`). Worker không gửi audio của tài khoản đã bị khoá (lượt đang xếp hàng đóng, hoàn đủ phút). Khoá tài khoản: `… admin block <email> [--reason <lý do>]` (chặn đăng nhập và chép lời, xoá phiên; server đang chạy còn nhớ phiên tối đa 30 giây) / `… admin unblock <email>`.
 >
