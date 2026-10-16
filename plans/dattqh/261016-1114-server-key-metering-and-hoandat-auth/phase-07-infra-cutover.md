@@ -46,7 +46,10 @@ Thao tác ghi prod; người dùng đã đồng ý các hạng mục phần B. M
 - Build `e44badf`+`4516f28` (`PUBLIC_URL=https://scribe.hoandat.com`, bỏ `FIREBASE_PROJECT_ID`), sha256 `6d325d75…`; FE `index-Co8MngNB.js` (không còn Firebase, không còn domain cũ).
 - Cửa sổ: hàng đợi 0, `firebaseUid: null` 0 → sao lưu `/root/scribe-backup-20261016-132747/` (dump db `scribe` 9 collection, binary, dist, vhost cũ) → thêm `/etc/nginx/conf.d/scribe.conf`, `nginx -t` OK → thay binary + dist, restart 13:27:48 → index `firebaseUid_unique`, `idpSub_unique` → xoá `onescribe.conf`, `nginx -t`, reload.
 - Nghiệm thu ngoài: FE 200, `/api/health` ok, `/api/me` 401, `/api/auth/login` 303 sang IdP (`scribe-web`), cookie `__Host-scribe_login; Secure`, http 301 → https, callback sai → `/login?error=expired`, `/api/auth/native/config` đúng client `scribe-mobile`. Domain cũ không còn tới Scribe (DNS Cloudflare còn bản ghi, rơi vào vòng 301 của vhost khác).
-- Chưa: người dùng đăng nhập trên prod (ghép user cũ theo email, giữ gói plus và dữ liệu), cài app iPhone mới, back-channel logout thật.
+- 13:30 người dùng đăng nhập prod: user cũ được ghép theo email (`idpSub` gắn vào user Firebase), giữ gói plus, đủ 53 file.
+- 13:4x báo động qua bot chat.hoandat.com `@bot_scribe_bot` (chat riêng id 12): token `/opt/scribe-be/.notify-bot-token` (600, chủ scribe), build `c24bb6a` sha `4a2e6114…`, hàng đợi 0 trước restart, `admin notify-test` gửi được.
+- App iPhone mới (origin `https://scribe.hoandat.com`, đăng nhập hoandat-auth) cài qua cáp: BUILD SUCCEEDED, đã cài; người dùng mở app thủ công (máy đang khoá).
+- Chưa: người dùng thử đăng nhập/ghi/tải lên trên iPhone, back-channel logout thật, xoá bản ghi DNS `scribe.inetdev.io.vn` ở Cloudflare (chờ người dùng).
 
 ## 7c — Mở chép lời (vài ngày sau 7b)
 
