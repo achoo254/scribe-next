@@ -1,7 +1,7 @@
 ---
 phase: 3
 title: "Điều hướng URL + provider giữ trạng thái"
-status: pending
+status: completed
 priority: P1
 effort: "L"
 dependencies: [2]
@@ -62,3 +62,7 @@ Hiện `layout/app-shell.tsx` force-mount cả ba tab để phiên ghi, lượt 
 - **Ảnh mốc: không cập nhật ảnh nào.** Nav đổi từ `<button>` sang `<a>` nhưng 22 ảnh vẫn khớp.
 
 **Còn mở**: cài lại app iPhone qua cáp và thử tay (ghi → đổi trang → khoá màn hình 2 phút → dừng; vuốt lùi); deploy web prod theo điều kiện của plan. Câu chữ "tab Ghi âm" ở trạng thái rỗng của danh sách transcript để Phase 5 sửa.
+
+- Review `plans/dattqh/reports/code-reviewer-261016-1535-phase-3-routes-review.md`: 0 Critical/High; sửa M1 (`errorElement` ở layout route không path, `PageError`, test không remount `SignedInState`), M2 (`replace` sau khi xoá transcript), L1 (`*` nằm trong layout). Bỏ L5 (memo vô ích khi giá trị đổi mỗi giây); L2, L3, L4, L6 để sau.
+- iPhone thật 2026-10-16 15:48–15:51: ghi đoạn 1 phút, đổi trang + vuốt lùi + khoá màn hình ⟹ một phiên, 3 đoạn `#0` 60 s, `#1` 60 s, `#2` 48 s, 3 `init`/`finalize` 200, 0 ERROR, không phiên treo.
+- Deploy web prod 15:51: điều kiện đạt, sao lưu `/root/scribe-backup-20261016-155138/web`, giữ `assets/` cũ, prod `index-D2gCVYQm.js`, `/record` `/split` `/transcripts` `/transcripts/s%3Aabc` 200.
