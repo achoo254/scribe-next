@@ -1,8 +1,0 @@
-# OneScribe transcriber sidecar — pin theo version đã verify (Python 3.14, 2026-06-13).
-# ctranslate2/tokenizers/onnxruntime/numpy kéo theo bởi faster-whisper.
-faster-whisper==1.2.1
-huggingface_hub==1.19.0
-av==17.1.0
-# MLX Whisper large-v3 — CHỈ macOS Apple Silicon (Metal GPU). Windows/Intel: pip bỏ qua (marker).
-# Kéo theo torch nhưng KHÔNG cần lúc transcribe → transcriber.spec excludes torch khỏi bundle.
-mlx-whisper==0.4.3; sys_platform == "darwin" and platform_machine == "arm64"
