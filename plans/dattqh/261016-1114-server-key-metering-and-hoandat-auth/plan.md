@@ -110,5 +110,5 @@ Bán gói / thanh toán; trang admin web (CLI là đủ); Sign in with Apple; t�
 | Mongo prod | đo: standalone 7.0.28 | Không transaction |
 | Chống lạm dụng free trước 7c | Jev 0,72–0,79 từng biện pháp | Người dùng: bộ đầy đủ, giữ quỹ $10 ⟹ Phase 9 |
 | Bỏ giới hạn theo IP (16/10) | Jev 0,75 bỏ hẳn | Người dùng: bỏ quy tắc IP (4G chung IP nhà mạng chặn nhầm) |
-| Không gửi đoạn hoàn toàn im lặng sang OpenAI (16/10, ngoài plan này) | Phiên one-scribe-c9 đo: đỉnh < −30 dB; chỉ bỏ cả đoạn, không cắt im lặng giữa đoạn có lời; báo cáo `reports/research-261016-1316-groq-vietnamese-stt-eval.md` | Người dùng: giữ OpenAI, không Groq; **đoạn bị bỏ không tính vào phút của người dùng** (16/10 13:38). Chưa triển khai |
+| Không gửi đoạn hoàn toàn im lặng sang OpenAI (16/10, ngoài plan này) | Phiên one-scribe-c9 đo: đỉnh < −30 dB; chỉ bỏ cả đoạn, không cắt im lặng giữa đoạn có lời; báo cáo `reports/research-261016-1316-groq-vietnamese-stt-eval.md` | Người dùng: giữ OpenAI, không Groq; **đoạn bị bỏ không tính vào phút của người dùng** (16/10 13:38). Xong `1ff8a15`, deploy 13:5x: đỉnh mảnh đo bằng `volumedetect` trong lần nén, < −30 dB thì không gửi, không cộng `sentS`; 146 cửa sổ 40 giây của hai bản họp thật đỉnh thấp nhất −19 dB (không bỏ nhầm) |
 | iOS target | đo: 15.0 | Callback scheme riêng, ghi nhận rủi ro |
