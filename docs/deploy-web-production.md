@@ -25,7 +25,7 @@ Scribe web có đúng **hai** môi trường (chốt 2026-10-15; khái niệm st
 
 | Môi trường | Ở đâu | Dùng để |
 |---|---|---|
-| **Dev local** | Máy dev: BE `127.0.0.1:8787` + `cd web && npm run dev` (`:5173`, proxy `/api` → BE) | Phát triển và kiểm chứng trước khi đẩy prod |
+| **Dev local** | Máy dev: BE `127.0.0.1:8787` + `cd web && pnpm run dev` (`:5173`, proxy `/api` → BE) | Phát triển và kiểm chứng trước khi đẩy prod |
 | **Prod** | Box `.65`, `https://scribe.hoandat.com` | Người dùng thật — mọi deploy hay đổi cấu hình ở đây là thay đổi prod |
 
 Không dựng thêm môi trường xem trước (tunnel, preview) trên `.65`.
@@ -38,7 +38,7 @@ Không dựng thêm môi trường xem trước (tunnel, preview) trên `.65`.
   ```bash
   set -a; . ./.env.development; set +a
   cargo run -p scribe-be             # → 127.0.0.1:8787, kiểm: curl 127.0.0.1:8787/api/health
-  cd web && npm run dev              # → http://localhost:5173
+  cd web && pnpm run dev              # → http://localhost:5173
   ```
 - **Đăng nhập ở dev:** qua hoandat-auth với client confidential riêng `scribe-web-dev` (IdP bật bằng `SCRIBE_WEB_DEV_URL` + `SCRIBE_WEB_DEV_CLIENT_SECRET` trong `.env` của hoandat-auth). Redirect loopback phải khớp **đúng cổng**, nên `PUBLIC_URL` trong `.env.development` phải bằng origin đã khai ở IdP. Secret dev nằm trong tệp `OIDC_WEB_CLIENT_SECRET_PATH` trên máy dev (600).
 
@@ -77,7 +77,7 @@ Cloudflare (DNS proxied, SSL "Full")
 | BE binary | `/opt/scribe-be/scribe-be` | `cargo zigbuild` (xem §Deploy) → `x86_64-unknown-linux-musl/release/scribe-be` trong thư mục target |
 | systemd unit | `/etc/systemd/system/scribe-be.service` | `deploy/scribe-be.service` |
 | nginx vhost | `/etc/nginx/conf.d/scribe.conf` | `deploy/nginx-scribe.conf` |
-| FE static | `/var/www/scribe/dist` | `web/` → `npm run build` → `web/dist` |
+| FE static | `/var/www/scribe/dist` | `web/` → `pnpm run build` → `web/dist` |
 
 ### Tệp bí mật trên server
 
@@ -133,12 +133,12 @@ Hai client trên IdP `https://auth.hoandat.com` (chỉ tenant chính):
 
 ### FE build env
 
-FE đọc **lúc build** từ `web/.env` (không có trong git, mẫu ở `web/.env.example`): chỉ `VITE_NATIVE_API_ORIGIN=https://scribe.hoandat.com` (origin backend mà app iPhone gọi, `web/src/lib/api.ts`; trang web dùng cùng origin nên không cần). `npm run ios:device` cũng nhúng giá trị này vào Info.plist của app. Thiếu biến thì `vite build` dừng và báo tên biến (`web/vite.config.ts`).
+FE đọc **lúc build** từ `web/.env` (không có trong git, mẫu ở `web/.env.example`): chỉ `VITE_NATIVE_API_ORIGIN=https://scribe.hoandat.com` (origin backend mà app iPhone gọi, `web/src/lib/api.ts`; trang web dùng cùng origin nên không cần). `pnpm run ios:device` cũng nhúng giá trị này vào Info.plist của app. Thiếu biến thì `vite build` dừng và báo tên biến (`web/vite.config.ts`).
 
 ## CI và repo
 
 - **Repo duy nhất là GitHub** (`origin` = `achoo254/scribe-next`, private). GitLab đã bỏ hoàn toàn ngày 2026-10-16.
-- **CI** `.github/workflows/ci.yml` chạy mỗi lần push `main` và mỗi pull request, **chỉ kiểm, không deploy**: job `web` (`npm ci`, `lint`, `typecheck`, `check:tokens`, `test`) và job `rust` (`cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`, có ffmpeg cho test cắt file thật).
+- **CI** `.github/workflows/ci.yml` chạy mỗi lần push `main` và mỗi pull request, **chỉ kiểm, không deploy**: job `web` (`ppnpm install --frozen-lockfile`, `lint`, `typecheck`, `check:tokens`, `test`) và job `rust` (`cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`, có ffmpeg cho test cắt file thật).
 
 ### SSH source-IP allowlist
 
@@ -207,7 +207,7 @@ cargo zigbuild --release --target x86_64-unknown-linux-musl -p scribe-be
 #    → target/x86_64-unknown-linux-musl/release/scribe-be
 
 # 2) Build FE
-cd web && npm ci && npm run build && cd ..   # → web/dist
+cd web && ppnpm install --frozen-lockfile && pnpm run build && cd ..   # → web/dist
 
 # 3) Đẩy lên .65 (KEY = file tạm chứa private key, xem mục Server)
 rsync -avz -e "ssh -i $KEY -p 24700" target/x86_64-unknown-linux-musl/release/scribe-be root@103.72.98.65:/tmp/scribe-be.new

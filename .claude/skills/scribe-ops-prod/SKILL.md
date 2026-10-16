@@ -1,6 +1,6 @@
 ---
 name: scribe-ops-prod
-description: Tra cứu thông tin và vận hành Scribe (one-scribe) trên PRODUCTION (scribe.hoandat.com, server dùng chung 103.72.98.65 cổng SSH 24700, systemd scribe-be cổng 127.0.0.1:8787, binary /opt/scribe-be, FE /var/www/scribe/dist, database scribe trên mongod chung 27017). Chỉ đường đọc docs/deploy-web-production.md — credential ở $ALL_IN_ONE_STAGING_DEV entry SSH_SERVER_STAGING, cấu hình prod ở .env.production (không commit), SSH/mongosh qua scripts/ của skill, deploy bằng cargo zigbuild + npm run build theo §6. Kích hoạt khi user nhắc "prod", "production", "scribe.hoandat.com", "server .65", "SSH prod", "mongosh prod", "log prod", "journal prod", "deploy prod", "rollback", "scribe-be", "đăng nhập prod", "backup Scribe", "audit_events", "hàng đợi chép lời prod". KHÔNG dùng cho dev local (localhost:5173/8787, Mongo dev lab 176, cargo run, npm run dev) và không dùng cho app iPhone cài qua cáp (docs/ios-app.md).
+description: Tra cứu thông tin và vận hành Scribe (one-scribe) trên PRODUCTION (scribe.hoandat.com, server dùng chung 103.72.98.65 cổng SSH 24700, systemd scribe-be cổng 127.0.0.1:8787, binary /opt/scribe-be, FE /var/www/scribe/dist, database scribe trên mongod chung 27017). Chỉ đường đọc docs/deploy-web-production.md — credential ở $ALL_IN_ONE_STAGING_DEV entry SSH_SERVER_STAGING, cấu hình prod ở .env.production (không commit), SSH/mongosh qua scripts/ của skill, deploy bằng cargo zigbuild + pnpm run build theo §6. Kích hoạt khi user nhắc "prod", "production", "scribe.hoandat.com", "server .65", "SSH prod", "mongosh prod", "log prod", "journal prod", "deploy prod", "rollback", "scribe-be", "đăng nhập prod", "backup Scribe", "audit_events", "hàng đợi chép lời prod". KHÔNG dùng cho dev local (localhost:5173/8787, Mongo dev lab 176, cargo run, pnpm run dev) và không dùng cho app iPhone cài qua cáp (docs/ios-app.md).
 ---
 
 # Scribe Ops — Production
@@ -53,8 +53,8 @@ của máy edge iNET, không phải môi trường của Scribe).
 | Dấu hiệu | Môi trường | Ai lo |
 |---|---|---|
 | `scribe.hoandat.com`, `103.72.98.65`, `scribe-be`, `/opt/scribe-be`, `/var/www/scribe`, db `scribe` trên `.65` (tên cũ `onescribe*` từ trước 16/10/2026) | **Scribe prod** | skill này |
-| `localhost:5173` / `:8787`, `.env.development`, Mongo `192.168.122.176` (lab 176), `cargo run`, `npm run dev` | Dev local | `README.md` §Chạy dev, skill `inet-lab-ops` cho box lab |
-| App iPhone cài qua cáp (`npm run ios:device`) | Bản build trên máy người dùng, nói chuyện với prod | `docs/ios-app.md` |
+| `localhost:5173` / `:8787`, `.env.development`, Mongo `192.168.122.176` (lab 176), `cargo run`, `pnpm run dev` | Dev local | `README.md` §Chạy dev, skill `inet-lab-ops` cho box lab |
+| App iPhone cài qua cáp (`pnpm run ios:device`) | Bản build trên máy người dùng, nói chuyện với prod | `docs/ios-app.md` |
 | `localman.hoandat.com`, `auth.hoandat.com`, pm2 `localman-api`/`hoandat-auth`, `tunelo`, mongod `27018` | Repo khác trên cùng máy | skill của repo đó; không đụng |
 
 Máy .65 là **máy dùng chung** (CentOS Stream 9, ~15 vhost nginx, mongod chung): một thao tác sai ở đó ảnh hưởng mọi
@@ -73,7 +73,7 @@ app trên máy, không chỉ Scribe.
 4. **Restart backend khi đang chép lời làm tốn tiền:** lượt dở không mất (key OpenAI nằm ở server, lượt `running`
    được xếp lại) nhưng chạy lại từ đầu, audio gửi lại bị OpenAI tính lần nữa. Trước mọi restart: hàng đợi nên rỗng
    (§6); khác 0 thì chờ nếu được.
-5. **KHÔNG build trên server.** Build ở máy dev (`cargo zigbuild` cho backend musl, `npm run build` cho FE), đẩy
+5. **KHÔNG build trên server.** Build ở máy dev (`cargo zigbuild` cho backend musl, `pnpm run build` cho FE), đẩy
    artifact lên.
 6. **Cấu hình nằm trong binary.** `MONGO_URI`, `DB_NAME`, `TRANSCRIBE_EMAILS`, allowlist… nhúng lúc build từ
    `.env.production` (`option_env!`), server không có `.env`. Đổi danh sách email chép lời = sửa `.env.production` +
@@ -180,7 +180,7 @@ Báo phép đo đã làm trước, rồi mới tới kết quả. Còn mắt xí
 ## 6. Khi chuẩn bị thao tác GHI (chỉ khi user đã yêu cầu tường minh)
 
 - **Trước deploy:** `cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace`,
-  `cd web && npm run lint && npm run typecheck && npm run check:tokens && npm test` sạch; `git status` sạch, đã push.
+  `cd web && pnpm run lint && pnpm run typecheck && pnpm run check:tokens && pnpm test` sạch; `git status` sạch, đã push.
   Đổi dữ liệu `transcripts` ⟹ chạy `scripts/transcripts-audit.js` trước.
 - **Build** (từ gốc repo):
 
@@ -188,7 +188,7 @@ Báo phép đo đã làm trước, rồi mới tới kết quả. Còn mắt xí
   set -a; . ./.env.production; set +a
   B="$(mktemp -d)"   # thư mục build riêng
   CARGO_TARGET_DIR="$B" cargo zigbuild --release --target x86_64-unknown-linux-musl -p scribe-be
-  (cd web && npm run build)
+  (cd web && pnpm run build)
   ```
 
 - **Ngay trước khi thay bản đang chạy** (một lệnh SSH, dừng nếu hàng đợi khác 0):

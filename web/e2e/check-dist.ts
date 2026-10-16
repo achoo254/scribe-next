@@ -1,5 +1,5 @@
 /**
- * `npm run check:dist` (also the last step of `npm run build`): the
+ * `pnpm run check:dist` (also the last step of `pnpm run build`): the
  * production build must not contain the e2e stubs (API stubs, Capacitor
  * stub). Fails when any stub marker from support/stub-markers.ts appears
  * in `dist/`, or when there is no build to check.
@@ -29,12 +29,12 @@ async function listFiles(dir: string): Promise<string[]> {
 
 async function main(): Promise<number> {
 	const files = await listFiles(DIST).catch((error: unknown) => {
-		throw new Error(`No build at ${DIST}: run npm run build first`, {
+		throw new Error(`No build at ${DIST}: run pnpm run build first`, {
 			cause: error,
 		});
 	});
 	if (!files.some((file) => file.endsWith(".js"))) {
-		console.error(`✗ ${DIST} has no JavaScript: run npm run build first`);
+		console.error(`✗ ${DIST} has no JavaScript: run pnpm run build first`);
 		return 1;
 	}
 	const leaks: string[] = [];

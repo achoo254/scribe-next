@@ -3,12 +3,13 @@
 	"private": true,
 	"version": "0.2.0",
 	"type": "module",
+	"packageManager": "pnpm@11.9.0",
 	"engines": {
 		"node": ">=22.12"
 	},
 	"scripts": {
 		"dev": "vite",
-		"build": "tsc --noEmit && vite build && npm run check:dist",
+		"build": "tsc --noEmit && vite build && pnpm run check:dist",
 		"preview": "vite preview",
 		"lint": "biome check .",
 		"lint:fix": "biome check --fix .",
@@ -19,7 +20,7 @@
 		"check:tokens": "tsx scripts/check-tokens.ts",
 		"check:dist": "tsx e2e/check-dist.ts",
 		"ios:device": "scripts/ios-device.sh",
-		"ios:sync": "npm run build && cap sync ios"
+		"ios:sync": "pnpm run build && cap sync ios"
 	},
 	"dependencies": {
 		"@capacitor/core": "8.5.3",

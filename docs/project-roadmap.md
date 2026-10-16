@@ -32,7 +32,7 @@ Web hóa Scribe làm ghi + cắt media (BỎ AI transcribe — box .65 không GP
 - ✅ **Audit**: access log mọi request + `audit_events` (TTL 180 ngày).
 - ✅ **Chép lời bằng OpenAI** `gpt-4o-mini-transcribe`, key người dùng tự nhập, chỉ email trong `TRANSCRIBE_EMAILS` (hiện: `quocdat254@gmail.com`). Đoạn 10–15' buổi họp tham chiếu khớp TurboScribe 84,9%. Đã lên prod.
 - ✅ **Sửa cắt "Số phần"** trong `core-split` (trước đây luôn ra thêm một đoạn cuối ~800 byte hỏng), áp cho cả web và desktop.
-- 🟡 **App iPhone** (plan `260728-1609-scribe-ios-app-ghi-nen-khoa-man-hinh`): code Phase 1–3 xong, self-test Simulator đạt; QA trên iPhone thật đang chờ. Cài bằng `cd web && npm run ios:device` (free provisioning, cài lại mỗi 7 ngày). Chi tiết: [ios-app.md](./ios-app.md).
+- 🟡 **App iPhone** (plan `260728-1609-scribe-ios-app-ghi-nen-khoa-man-hinh`): code Phase 1–3 xong, self-test Simulator đạt; QA trên iPhone thật đang chờ. Cài bằng `cd web && pnpm run ios:device` (free provisioning, cài lại mỗi 7 ngày). Chi tiết: [ios-app.md](./ios-app.md).
 
 ## 2026-10-16 — QA iPhone, dọn repo, CI
 

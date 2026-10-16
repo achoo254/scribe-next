@@ -14,7 +14,7 @@ Scribe = app ghi/cắt/transcribe media trong hệ sinh thái hoandat. Repo có 
 
 ## Web app — Frontend (`web/`)
 
-React 19 + Vite 7 + Tailwind 4 + TanStack Query + Radix. Token màu lấy từ localman-next (`styles/tokens.css`, kiểm tương phản bằng `npm run check:tokens`).
+React 19 + Vite 7 + Tailwind 4 + TanStack Query + Radix. Token màu lấy từ localman-next (`styles/tokens.css`, kiểm tương phản bằng `pnpm run check:tokens`).
 
 - **Shell** (`layout/`): top bar + tab Ghi âm / Cắt file / Transcript (tab Transcript chỉ hiện khi `me.canTranscribe`; `transcript-nav.ts` cho trang khác mở một transcript).
 - **pages/**: `login-page`, `record/` (nguồn ghi, theo dõi mức âm, thẻ ghi native trên iPhone, Lịch sử ghi gom theo ngày và theo phiên iPhone, panel "Chép lời", hộp xác nhận bản ghi dài), `split/` (cắt file), `transcript/` (danh sách transcript theo phiên + màn hình đọc: chạm câu để phát, tự sang đoạn kế, sửa câu theo đoạn, đổi tên, chép lại từng đoạn, xuất, xoá).

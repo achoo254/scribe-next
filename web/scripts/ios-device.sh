@@ -3,8 +3,8 @@
 # Also the fix when the free provisioning profile expires (every 7 days):
 # rebuilding with -allowProvisioningUpdates signs it again.
 #
-#   npm run ios:device            # first connected iPhone
-#   IOS_DEVICE=<udid> npm run ios:device
+#   pnpm run ios:device            # first connected iPhone
+#   IOS_DEVICE=<udid> pnpm run ios:device
 #
 # Needs: Xcode (any path; DEVELOPER_DIR defaults to /Applications/Xcode.app),
 # the Apple ID of team AM5C55N339 signed in to Xcode, web/.env, the phone
@@ -28,8 +28,8 @@ if [ -z "$DEVICE" ]; then
 fi
 echo "→ iPhone $DEVICE"
 
-npm run build
-npx cap sync ios
+pnpm run build
+pnpm exec cap sync ios
 
 # Backend origin của app (nhúng vào Info.plist), lấy cùng nguồn với bản web: web/.env.
 ORIGIN=$(grep -E '^VITE_NATIVE_API_ORIGIN=' .env | tail -1 | cut -d= -f2-)

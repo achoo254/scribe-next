@@ -16,7 +16,7 @@ import { E2E_STUB_MARKER } from "./stub-markers";
 
 /**
  * What the stubbed backend answers. Shapes come from the app's own types,
- * so a change of the API contract fails `npm run typecheck` here too.
+ * so a change of the API contract fails `pnpm run typecheck` here too.
  */
 export interface ApiFixtures {
 	/** null: no session (`/api/me` answers 401). */

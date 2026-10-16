@@ -9,11 +9,11 @@ import Foundation
 /// URLSession.shared both use.
 enum SessionAuth {
     /// Backend origin, set at build time (`SCRIBE_BACKEND_ORIGIN` → Info.plist
-    /// `ScribeBackendOrigin`; `npm run ios:device` fills it from web/.env).
+    /// `ScribeBackendOrigin`; `pnpm run ios:device` fills it from web/.env).
     static let backendOrigin: String = {
         guard let origin = Bundle.main.object(forInfoDictionaryKey: "ScribeBackendOrigin") as? String,
               let host = URL(string: origin)?.host, !host.isEmpty else {
-            fatalError("ScribeBackendOrigin is missing: build with SCRIBE_BACKEND_ORIGIN set (npm run ios:device)")
+            fatalError("ScribeBackendOrigin is missing: build with SCRIBE_BACKEND_ORIGIN set (pnpm run ios:device)")
         }
         return origin
     }()

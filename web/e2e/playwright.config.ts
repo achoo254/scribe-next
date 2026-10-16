@@ -48,7 +48,7 @@ export default defineConfig({
 		{ name: "webkit-iphone", use: { ...devices["iPhone 15"] } },
 	],
 	webServer: {
-		command: `npx vite --host 127.0.0.1 --port ${E2E_PORT} --strictPort`,
+		command: `pnpm exec vite --host 127.0.0.1 --port ${E2E_PORT} --strictPort`,
 		cwd: "..",
 		url: E2E_ORIGIN,
 		// Never attach to someone else's server on this port.

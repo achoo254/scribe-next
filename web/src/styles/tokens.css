@@ -2,7 +2,7 @@
    SCRIBE DESIGN TOKENS (same system as localman-next)
    The ONLY file in the repo allowed to hold colour literals and raw px
    spacing values. Every other stylesheet and component references these
-   custom properties (enforced by `npm run check:tokens`).
+   custom properties (enforced by `pnpm run check:tokens`).
 
    Colour source: Radix Colors v3 (@radix-ui/colors@3.0.0, MIT).
      accent violet · neutral slate · secondary accent plum
@@ -32,7 +32,7 @@
 
    Blocks: [1] light (default) · [2] dark via OS preference unless
    data-theme="light" · [3] dark forced by data-theme="dark".
-   Blocks [2] and [3] must stay identical; `npm run check:tokens` fails
+   Blocks [2] and [3] must stay identical; `pnpm run check:tokens` fails
    when they drift apart.
    ===================================================================== */
 

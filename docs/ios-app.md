@@ -8,7 +8,7 @@ Cắm iPhone vào Mac, mở khoá, rồi:
 
 ```bash
 cd web
-npm run ios:device
+pnpm run ios:device
 ```
 
 Script `web/scripts/ios-device.sh` build web → `cap sync ios` → `xcodebuild` (Release, Personal Team `AM5C55N339`, tự cấp provisioning) → cài → mở app. Chạy lại đúng lệnh này khi profile miễn phí hết hạn (7 ngày): app lại mở được, dữ liệu trên máy giữ nguyên.

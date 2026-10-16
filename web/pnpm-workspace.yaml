@@ -1,0 +1,5 @@
+allowBuilds:
+  '@biomejs/biome': true
+  esbuild: true
+minimumReleaseAgeExclude:
+  - '@axe-core/playwright@4.14.0'

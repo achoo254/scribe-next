@@ -19,16 +19,20 @@ jobs:
         working-directory: web
     steps:
       - uses: actions/checkout@v4
+      # Phiên bản pnpm lấy từ trường packageManager trong web/package.json.
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: web/package.json
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-          cache-dependency-path: web/package-lock.json
-      - run: npm ci
-      - run: npm run lint
-      - run: npm run typecheck
-      - run: npm run check:tokens
-      - run: npm test
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run lint
+      - run: pnpm run typecheck
+      - run: pnpm run check:tokens
+      - run: pnpm test
 
   rust:
     runs-on: ubuntu-latest

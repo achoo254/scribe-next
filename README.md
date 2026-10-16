@@ -23,13 +23,13 @@ set -a; . ./.env.development; set +a
 cargo run -p scribe-be                 # → 127.0.0.1:8787
 
 # Web (cần web/.env, mẫu ở web/.env.example)
-cd web && npm install && npm run dev   # → http://localhost:5173, proxy /api → backend
+cd web && pnpm install && pnpm run dev   # → http://localhost:5173, proxy /api → backend
 ```
 
 ## Kiểm tra
 
 ```bash
-cd web && npm run lint && npm run typecheck && npm run check:tokens && npm test
+cd web && pnpm run lint && pnpm run typecheck && pnpm run check:tokens && pnpm test
 cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace
 ```
 
@@ -38,7 +38,7 @@ CI GitHub Actions (`.github/workflows/ci.yml`) chạy đúng các lệnh này ch
 ## Cài app lên iPhone
 
 ```bash
-cd web && npm run ios:device
+cd web && pnpm run ios:device
 ```
 
 Chi tiết: [docs/ios-app.md](./docs/ios-app.md).
