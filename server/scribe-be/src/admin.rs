@@ -143,7 +143,8 @@ async fn show_usage(config: &Config, db: &Database, args: &[String]) -> Result<V
 }
 
 /// Tính lại sổ tháng: lượt đã quyết toán (`transcribe_runs.sentS`) + lượt còn mở (phần đang giữ,
-/// `chargedS` — quyết toán sau sẽ cộng chênh lệch); trần tổng cộng thêm chi phí tóm tắt (`summary_runs.costS`). In chênh lệch; `apply` cộng chênh lệch bằng `$inc` và
+/// `chargedS` — quyết toán sau sẽ cộng chênh lệch); trần tổng cộng thêm chi phí tóm tắt và hỏi đáp
+/// (`summary_runs.costS`, `ask_runs.costS`). In chênh lệch; `apply` cộng chênh lệch bằng `$inc` và
 /// chỉ chạy khi tháng không còn lượt nào đang mở (giữ chỗ đang dở sẽ làm số sai).
 async fn recompute(db: &Database, month: &str, apply: bool) -> Result<Value, String> {
     let mut per_user: HashMap<String, i64> = HashMap::new();
@@ -173,15 +174,25 @@ async fn recompute(db: &Database, month: &str, apply: bool) -> Result<Value, Str
         open_runs += 1;
         add(&t.user_id, t.free_pool, t.charged_s);
     }
-    // Chi phí token của tóm tắt chỉ tính vào trần tổng (không vào sổ phút của user hay quỹ free); lượt
-    // đang gọi model giữ chỗ theo ước lượng và quyết toán sau, nên cũng chặn `--apply` như lượt chép.
-    total += crate::models::summary::month_cost_seconds(db, month).await.map_err(err)?;
-    let running_summaries = crate::models::summary::running_count(db, month).await.map_err(err)?;
+    // Chi phí token của tóm tắt và hỏi đáp chỉ tính vào trần tổng (không vào sổ phút của user hay quỹ
+    // free); lượt đang gọi model giữ chỗ theo ước lượng và quyết toán sau, nên cũng chặn `--apply` như
+    // lượt chép.
+    let (mut running_summaries, mut running_asks) = (0, 0);
+    for feature in crate::models::summary::Feature::ALL {
+        total += crate::models::summary::month_cost_seconds(db, feature, month).await.map_err(err)?;
+        let running = crate::models::summary::running_count(db, feature, month).await.map_err(err)?;
+        match feature {
+            crate::models::summary::Feature::Summary => running_summaries = running,
+            crate::models::summary::Feature::Ask => running_asks = running,
+        }
+    }
     if apply && open_runs > 0 {
         return Err(format!("còn {open_runs} lượt đang chạy trong tháng {month}: chờ hàng đợi rỗng rồi chạy lại --apply"));
     }
-    if apply && running_summaries > 0 {
-        return Err(format!("còn {running_summaries} lượt tóm tắt đang chạy trong tháng {month}: chờ ít phút rồi chạy lại --apply"));
+    if apply && running_summaries + running_asks > 0 {
+        return Err(format!(
+            "còn {running_summaries} lượt tóm tắt và {running_asks} lượt hỏi đáp đang chạy trong tháng {month}: chờ ít phút rồi chạy lại --apply"
+        ));
     }
     for user_id in usage::user_ids_with_ledger(db, month).await.map_err(err)? {
         per_user.entry(user_id).or_default();
@@ -208,6 +219,7 @@ async fn recompute(db: &Database, month: &str, apply: bool) -> Result<Value, Str
         "applied": apply,
         "openRuns": open_runs,
         "runningSummaries": running_summaries,
+        "runningAsks": running_asks,
         "userDiffs": diffs,
         "freePool": { "ledgerSeconds": current.free_pool_seconds, "recomputedSeconds": free_pool },
         "total": { "ledgerSeconds": current.total_seconds, "recomputedSeconds": total },

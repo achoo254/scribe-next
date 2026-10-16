@@ -8,3 +8,4 @@ pub mod usage;
 pub mod session;
 pub mod summary;
 pub mod chat_link;
+pub mod sentence;

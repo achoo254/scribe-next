@@ -1,8 +1,9 @@
-//! Sổ của tính năng tóm tắt (`summary_usage`): lượt mỗi ngày giờ Việt Nam của từng tài khoản (doc
-//! `<userId>:<YYYY-MM-DD>`, trường `count`) và chi phí tháng của từng tài khoản (doc
-//! `cost:<userId>:<YYYY-MM>`, trường `costS` — giây chép lời tương đương). Nhật ký mỗi lượt gọi model ở
-//! `summary_runs`: mở (`open: true`, kèm phần đã giữ `reservedS`) trước khi gọi, đóng khi quyết toán
-//! (token, `costS`). Lượt còn mở cho lệnh đối soát biết có tóm tắt đang chạy.
+//! Sổ của các tính năng gọi model chữ (`summary_usage`): tóm tắt và hỏi đáp ([`Feature`]). Lượt mỗi ngày
+//! giờ Việt Nam của từng tài khoản tính riêng theo tính năng (doc `<userId>:<YYYY-MM-DD>` cho tóm tắt,
+//! `ask:<userId>:<YYYY-MM-DD>` cho hỏi đáp, trường `count`); chi phí tháng của từng tài khoản dùng chung
+//! một doc `cost:<userId>:<YYYY-MM>` (trường `costS` — giây chép lời tương đương). Nhật ký mỗi lượt gọi
+//! model ở `summary_runs` / `ask_runs`: mở (`open: true`, kèm phần đã giữ `reservedS`) trước khi gọi, đóng
+//! khi quyết toán (token, `costS`). Lượt còn mở cho lệnh đối soát biết có lượt đang chạy.
 //!
 //! Như sổ phút chép lời: Mongo prod là standalone, mỗi bước là một lệnh nguyên tử trên một doc.
 
@@ -12,12 +13,42 @@ use mongodb::bson::{doc, oid::ObjectId, DateTime, Document};
 use mongodb::Database;
 
 const USAGE_COLL: &str = "summary_usage";
-pub const RUNS_COLL: &str = "summary_runs";
 /// Lượt mở lâu hơn chừng này là lượt bỏ dở (máy chủ tắt giữa chừng): một lượt thật xong trong ~90 giây.
 pub const OPEN_RUN_STALE_MINUTES: i64 = 10;
 
-fn day_doc(user_id: &str, day: &str) -> String {
-    format!("{user_id}:{day}")
+/// Tính năng có sổ lượt ngày riêng; chi phí tháng của tài khoản và trần tổng dùng chung.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Feature {
+    Summary,
+    Ask,
+}
+
+impl Feature {
+    /// Tất cả tính năng (lệnh đối soát cộng chi phí của từng cái).
+    pub const ALL: [Feature; 2] = [Feature::Summary, Feature::Ask];
+
+    fn day_doc(self, user_id: &str, day: &str) -> String {
+        match self {
+            Feature::Summary => format!("{user_id}:{day}"),
+            Feature::Ask => format!("ask:{user_id}:{day}"),
+        }
+    }
+
+    /// Nhật ký lượt gọi model của tính năng.
+    pub fn runs_coll(self) -> &'static str {
+        match self {
+            Feature::Summary => "summary_runs",
+            Feature::Ask => "ask_runs",
+        }
+    }
+
+    /// Tiền tố tên sự kiện audit (`summary.blocked`, `ask.create`…).
+    pub fn name(self) -> &'static str {
+        match self {
+            Feature::Summary => "summary",
+            Feature::Ask => "ask",
+        }
+    }
 }
 
 fn month_doc(user_id: &str, month: &str) -> String {
@@ -29,12 +60,12 @@ fn read_i64(d: &Document, field: &str) -> i64 {
 }
 
 /// Lấy một lượt của ngày nếu chưa đủ `limit`. `false` = hết lượt.
-pub async fn take_daily(db: &Database, user_id: &str, day: &str, limit: i64) -> Result<bool, AppError> {
+pub async fn take_daily(db: &Database, feature: Feature, user_id: &str, day: &str, limit: i64) -> Result<bool, AppError> {
     if limit <= 0 {
         return Ok(false);
     }
     let coll = db.collection::<Document>(USAGE_COLL);
-    let id = day_doc(user_id, day);
+    let id = feature.day_doc(user_id, day);
     let created = coll
         .update_one(doc! { "_id": &id }, doc! { "$setOnInsert": { "count": 0_i64, "updatedAt": DateTime::now() } })
         .upsert(true)
@@ -56,11 +87,11 @@ pub async fn take_daily(db: &Database, user_id: &str, day: &str, limit: i64) -> 
 }
 
 /// Trả lại một lượt (OpenAI chưa xử lý gì, người dùng không nhận được gì).
-pub async fn refund_daily(db: &Database, user_id: &str, day: &str) {
+pub async fn refund_daily(db: &Database, feature: Feature, user_id: &str, day: &str) {
     let res = db
         .collection::<Document>(USAGE_COLL)
         .update_one(
-            doc! { "_id": day_doc(user_id, day), "count": { "$gt": 0 } },
+            doc! { "_id": feature.day_doc(user_id, day), "count": { "$gt": 0 } },
             doc! { "$inc": { "count": -1_i64 }, "$set": { "updatedAt": DateTime::now() } },
         )
         .await;
@@ -70,10 +101,10 @@ pub async fn refund_daily(db: &Database, user_id: &str, day: &str) {
 }
 
 /// Số lượt đã dùng trong ngày (để báo cho người dùng).
-pub async fn used_daily(db: &Database, user_id: &str, day: &str) -> Result<i64, AppError> {
+pub async fn used_daily(db: &Database, feature: Feature, user_id: &str, day: &str) -> Result<i64, AppError> {
     let d = db
         .collection::<Document>(USAGE_COLL)
-        .find_one(doc! { "_id": day_doc(user_id, day) })
+        .find_one(doc! { "_id": feature.day_doc(user_id, day) })
         .await
         .map_err(|e| AppError::Internal(format!("đọc sổ tóm tắt: {e}")))?;
     Ok(d.map(|d| read_i64(&d, "count")).unwrap_or(0))
@@ -131,7 +162,8 @@ pub async fn used_monthly(db: &Database, user_id: &str, month: &str) -> Result<i
 /// Một lượt sắp gọi model; `reserved_s` là phần đã giữ trên trần tổng và sổ tháng của user.
 pub struct Run<'a> {
     pub user_id: &'a str,
-    pub key: &'a str,
+    /// Phiên của lượt; hỏi đáp trên cả kho thì không có.
+    pub key: Option<&'a str>,
     pub model: &'a str,
     pub month: &'a str,
     pub day: &'a str,
@@ -148,7 +180,7 @@ pub struct Closing {
 }
 
 /// Mở lượt trước khi gọi model. Lỗi thì không gọi (lệnh đối soát phải thấy mọi lượt đang chạy).
-pub async fn open_run(db: &Database, run: &Run<'_>) -> Result<ObjectId, AppError> {
+pub async fn open_run(db: &Database, feature: Feature, run: &Run<'_>) -> Result<ObjectId, AppError> {
     let id = ObjectId::new();
     let d = doc! {
         "_id": id,
@@ -161,15 +193,15 @@ pub async fn open_run(db: &Database, run: &Run<'_>) -> Result<ObjectId, AppError
         "reservedS": run.reserved_s,
         "startedAt": DateTime::now(),
     };
-    db.collection::<Document>(RUNS_COLL)
+    db.collection::<Document>(feature.runs_coll())
         .insert_one(d)
         .await
         .map(|_| id)
-        .map_err(|e| AppError::Internal(format!("mở lượt tóm tắt: {e}")))
+        .map_err(|e| AppError::Internal(format!("mở lượt {}: {e}", feature.runs_coll())))
 }
 
 /// Đóng lượt với số thật. Lỗi chỉ log: sổ đã quyết toán; lượt còn mở được đối soát tính theo `reservedS`.
-pub async fn close_run(db: &Database, id: ObjectId, closing: &Closing) {
+pub async fn close_run(db: &Database, feature: Feature, id: ObjectId, closing: &Closing) {
     let update = doc! {
         "$set": {
             "open": false,
@@ -180,36 +212,37 @@ pub async fn close_run(db: &Database, id: ObjectId, closing: &Closing) {
             "at": DateTime::now(),
         },
     };
-    if let Err(e) = db.collection::<Document>(RUNS_COLL).update_one(doc! { "_id": id }, update).await {
-        tracing::error!(run = %id, "đóng lượt summary_runs lỗi: {e}");
+    if let Err(e) = db.collection::<Document>(feature.runs_coll()).update_one(doc! { "_id": id }, update).await {
+        tracing::error!(run = %id, "đóng lượt {} lỗi: {e}", feature.runs_coll());
     }
 }
 
-/// Số lượt tóm tắt của tháng đang chạy (mở chưa quá [`OPEN_RUN_STALE_MINUTES`] phút).
-pub async fn running_count(db: &Database, month: &str) -> Result<u64, AppError> {
+/// Số lượt của tính năng trong tháng đang chạy (mở chưa quá [`OPEN_RUN_STALE_MINUTES`] phút).
+pub async fn running_count(db: &Database, feature: Feature, month: &str) -> Result<u64, AppError> {
     let since = DateTime::from_millis(DateTime::now().timestamp_millis() - OPEN_RUN_STALE_MINUTES * 60_000);
-    db.collection::<Document>(RUNS_COLL)
+    db.collection::<Document>(feature.runs_coll())
         .count_documents(doc! { "month": month, "open": true, "startedAt": { "$gte": since } })
         .await
-        .map_err(|e| AppError::Internal(format!("đếm lượt tóm tắt đang chạy: {e}")))
+        .map_err(|e| AppError::Internal(format!("đếm lượt {} đang chạy: {e}", feature.runs_coll())))
 }
 
-/// Tổng giây tương đương của các lượt tóm tắt trong tháng (lệnh đối soát trần tổng). Lượt còn mở tính
-/// theo phần đã giữ, đúng như sổ đang ghi.
-pub async fn month_cost_seconds(db: &Database, month: &str) -> Result<i64, AppError> {
+/// Tổng giây tương đương của các lượt của tính năng trong tháng (lệnh đối soát trần tổng). Lượt còn mở
+/// tính theo phần đã giữ, đúng như sổ đang ghi.
+pub async fn month_cost_seconds(db: &Database, feature: Feature, month: &str) -> Result<i64, AppError> {
     use futures_util::StreamExt;
     let charged = doc! { "$cond": [{ "$eq": ["$open", true] }, { "$ifNull": ["$reservedS", 0] }, { "$ifNull": ["$costS", 0] }] };
     let pipeline = vec![
         doc! { "$match": { "month": month } },
         doc! { "$group": { "_id": null, "total": { "$sum": charged } } },
     ];
+    let coll = feature.runs_coll();
     let mut cur = db
-        .collection::<Document>(RUNS_COLL)
+        .collection::<Document>(coll)
         .aggregate(pipeline)
         .await
-        .map_err(|e| AppError::Internal(format!("cộng summary_runs: {e}")))?;
+        .map_err(|e| AppError::Internal(format!("cộng {coll}: {e}")))?;
     let Some(d) = cur.next().await else { return Ok(0) };
-    let d = d.map_err(|e| AppError::Internal(format!("cộng summary_runs: {e}")))?;
+    let d = d.map_err(|e| AppError::Internal(format!("cộng {coll}: {e}")))?;
     Ok(read_i64(&d, "total"))
 }
 
@@ -227,14 +260,19 @@ mod tests {
         let db = crate::db::connect(&uri, &db_name).await.expect("kết nối Mongo");
         let user = format!("selftest-{}", uuid::Uuid::new_v4().simple());
         let day = "test-day";
-        let tasks = (0..25).map(|_| take_daily(&db, &user, day, 10));
+        let s = Feature::Summary;
+        let tasks = (0..25).map(|_| take_daily(&db, s, &user, day, 10));
         let ok = futures_util::future::join_all(tasks).await.into_iter().filter(|r| matches!(r, Ok(true))).count();
         assert_eq!(ok, 10);
-        assert_eq!(used_daily(&db, &user, day).await.expect("đọc"), 10);
-        refund_daily(&db, &user, day).await;
-        assert!(take_daily(&db, &user, day, 10).await.expect("lấy lại"));
-        assert!(!take_daily(&db, &user, day, 10).await.expect("hết"));
-        assert!(!take_daily(&db, &user, "other-day", 0).await.expect("giới hạn 0"));
+        assert_eq!(used_daily(&db, s, &user, day).await.expect("đọc"), 10);
+        refund_daily(&db, s, &user, day).await;
+        assert!(take_daily(&db, s, &user, day, 10).await.expect("lấy lại"));
+        assert!(!take_daily(&db, s, &user, day, 10).await.expect("hết"));
+        assert!(!take_daily(&db, s, &user, "other-day", 0).await.expect("giới hạn 0"));
+        // Hỏi đáp có sổ ngày riêng: tóm tắt hết lượt không chặn hỏi đáp.
+        assert_eq!(used_daily(&db, Feature::Ask, &user, day).await.expect("đọc"), 0);
+        assert!(take_daily(&db, Feature::Ask, &user, day, 1).await.expect("hỏi"));
+        assert!(!take_daily(&db, Feature::Ask, &user, day, 1).await.expect("hết lượt hỏi"));
 
         // Sổ chi phí tháng: giữ đồng thời không vượt trần; quyết toán trả phần dư.
         let month = "test-month";

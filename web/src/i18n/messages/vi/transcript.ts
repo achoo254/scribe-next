@@ -89,7 +89,7 @@ export const transcript = {
 		dailyLimit:
 			"Hôm nay đã dùng {used}/{limit} lượt tóm tắt. Mở lại lúc {time}.",
 		monthlyLimit:
-			"Tháng này tài khoản đã dùng hết hạn mức tóm tắt ({used}/{limit} phút quy đổi). Mở lại lúc {time}.",
+			"Tháng này tài khoản đã dùng hết hạn mức tóm tắt và hỏi đáp ({used}/{limit} phút quy đổi). Mở lại lúc {time}.",
 		capReached:
 			"Tóm tắt đã dùng hết hạn mức chung của tháng này, mở lại lúc {time}.",
 		failed: "Không tóm tắt được",

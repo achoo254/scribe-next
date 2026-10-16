@@ -1,18 +1,20 @@
-//! Gọi OpenAI Chat Completions với structured output (JSON schema strict) để viết biên bản.
+//! Gọi OpenAI Chat Completions với structured output (JSON schema strict): viết biên bản (`summarize`) và
+//! trả lời câu hỏi trên bản chép lời (`crate::search::ask`), cùng một đường gọi [`complete`].
 //!
 //! Key của server chỉ đi qua header `Authorization` (như `transcribe::openai`): không vào thông báo lỗi,
 //! log hay audit. Thông điệp lỗi của OpenAI có thể nêu tổ chức của tài khoản: chỉ ghi log.
 
 use crate::models::transcript_doc::{Action, Decision};
 use crate::transcribe::openai::{backoff, is_quota, KEY_INVALID, NO_CREDIT};
+use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::time::{Duration, Instant};
 
 const API_URL: &str = "https://api.openai.com/v1/chat/completions";
 const HTTP_RETRIES: u32 = 3;
-/// Tổng thời gian cho mọi lần thử: request `POST …/summary` trả kết quả đồng bộ qua Cloudflare (cắt ở
-/// ~100 giây), nên lượt gọi model phải xong dưới mức đó kèm phần đọc/ghi Mongo.
+/// Tổng thời gian cho mọi lần thử: request `POST …/summary` và `POST /api/ask` trả kết quả đồng bộ qua
+/// Cloudflare (cắt ở ~100 giây), nên lượt gọi model phải xong dưới mức đó kèm phần đọc/ghi Mongo.
 const DEADLINE: Duration = Duration::from_secs(80);
 /// Chỉ thử lại khi còn ít nhất chừng này giây (sau thời gian chờ lùi) cho lần thử mới.
 const MIN_ATTEMPT: Duration = Duration::from_secs(25);
@@ -37,23 +39,38 @@ pub struct Draft {
 }
 
 /// Một lượt OpenAI đã xử lý (đã tính tiền); `draft` lỗi khi nội dung không đọc được.
-pub struct Completion {
+pub struct Completion<T> {
     pub input_tokens: i64,
     pub output_tokens: i64,
-    pub draft: Result<Draft, String>,
+    pub draft: Result<T, String>,
 }
 
 /// Kết quả gọi model. `Err` kèm `maybe_billed`: OpenAI có thể đã xử lý (và tính tiền) mà không trả được
 /// số token — quá thời gian chờ sau khi đã gửi, đứt kết nối giữa chừng, trả 2xx không đọc được.
-pub struct Call {
-    pub result: Result<Completion, String>,
+pub struct Call<T> {
+    pub result: Result<Completion<T>, String>,
     pub maybe_billed: bool,
 }
 
-impl Call {
-    fn failed(e: impl Into<String>, maybe_billed: bool) -> Call {
+impl<T> Call<T> {
+    fn failed(e: impl Into<String>, maybe_billed: bool) -> Call<T> {
         Call { result: Err(e.into()), maybe_billed }
     }
+
+    /// Token đã dùng (0 khi OpenAI không trả số).
+    pub fn tokens(&self) -> (i64, i64) {
+        self.result.as_ref().map_or((0, 0), |c| (c.input_tokens, c.output_tokens))
+    }
+}
+
+/// Một yêu cầu structured output: hướng dẫn (system), đầu vào (user) và JSON schema strict của kết quả.
+pub struct Prompt<'a> {
+    pub model: &'a str,
+    pub instructions: &'a str,
+    pub input: &'a str,
+    pub schema_name: &'a str,
+    pub schema: Value,
+    pub max_output_tokens: i64,
 }
 
 fn schema() -> Value {
@@ -86,37 +103,49 @@ fn schema() -> Value {
     })
 }
 
-fn request_body(model: &str, input: &str) -> Value {
+/// Yêu cầu viết biên bản cho chữ đầu vào `input`.
+pub fn summary_prompt<'a>(model: &'a str, input: &'a str) -> Prompt<'a> {
+    Prompt {
+        model,
+        instructions: INSTRUCTIONS,
+        input,
+        schema_name: "bien_ban",
+        schema: schema(),
+        max_output_tokens: super::MAX_OUTPUT_TOKENS,
+    }
+}
+
+fn request_body(prompt: &Prompt<'_>) -> Value {
     json!({
-        "model": model,
+        "model": prompt.model,
         "temperature": 0.2,
-        "max_completion_tokens": super::MAX_OUTPUT_TOKENS,
+        "max_completion_tokens": prompt.max_output_tokens,
         "messages": [
-            { "role": "system", "content": INSTRUCTIONS },
-            { "role": "user", "content": input },
+            { "role": "system", "content": prompt.instructions },
+            { "role": "user", "content": prompt.input },
         ],
         "response_format": {
             "type": "json_schema",
-            "json_schema": { "name": "bien_ban", "strict": true, "schema": schema() },
+            "json_schema": { "name": prompt.schema_name, "strict": true, "schema": prompt.schema },
         },
     })
 }
 
-/// Đọc câu trả lời 2xx: token đã dùng (luôn có khi OpenAI đã xử lý) và biên bản.
-fn parse_response(body: &str) -> Result<Completion, String> {
+/// Đọc câu trả lời 2xx: token đã dùng (luôn có khi OpenAI đã xử lý) và nội dung theo schema.
+fn parse_response<T: DeserializeOwned>(body: &str) -> Result<Completion<T>, String> {
     let v: Value = serde_json::from_str(body).map_err(|_| "OpenAI trả dữ liệu không đọc được".to_string())?;
     let tokens = |name: &str| v["usage"][name].as_i64().unwrap_or(0);
     let choice = &v["choices"][0];
     let draft = if choice["finish_reason"] == "length" {
-        Err("biên bản dài quá trần token, bị cắt".to_string())
+        Err("kết quả dài quá trần token, bị cắt".to_string())
     } else if let Some(refusal) = choice["message"]["refusal"].as_str() {
-        tracing::warn!("model từ chối tóm tắt: {refusal}");
-        Err("model từ chối tóm tắt bản ghi này".to_string())
+        tracing::warn!("model từ chối yêu cầu: {refusal}");
+        Err("model từ chối yêu cầu này".to_string())
     } else {
         choice["message"]["content"]
             .as_str()
             .ok_or_else(|| "OpenAI không trả nội dung".to_string())
-            .and_then(|c| serde_json::from_str::<Draft>(c).map_err(|e| format!("biên bản sai dạng: {e}")))
+            .and_then(|c| serde_json::from_str::<T>(c).map_err(|e| format!("kết quả sai dạng: {e}")))
     };
     Ok(Completion { input_tokens: tokens("prompt_tokens"), output_tokens: tokens("completion_tokens"), draft })
 }
@@ -133,15 +162,15 @@ fn api_error(status: u16, body: &str) -> String {
         .ok()
         .and_then(|v| v["error"]["message"].as_str().map(str::to_string))
         .unwrap_or_else(|| body.chars().take(200).collect());
-    tracing::warn!(status, "OpenAI từ chối lượt tóm tắt: {message}");
-    format!("Dịch vụ tóm tắt đang lỗi (HTTP {status})")
+    tracing::warn!(status, "OpenAI từ chối lượt gọi model chữ: {message}");
+    format!("Dịch vụ OpenAI đang lỗi (HTTP {status})")
 }
 
 /// Gọi model trong [`DEADLINE`]. Chỉ thử lại khi chắc OpenAI chưa xử lý gì (không kết nối được, 429
 /// không phải hết credit, 5xx) và còn đủ thời gian; quá thời gian chờ thì không thử lại (lượt chậm có
 /// thể đã bị tính tiền, thử lại vừa tốn gấp đôi vừa vượt hạn của request).
-pub async fn summarize(http: &reqwest::Client, api_key: &str, model: &str, input: &str) -> Call {
-    let body = request_body(model, input);
+pub async fn complete<T: DeserializeOwned>(http: &reqwest::Client, api_key: &str, prompt: &Prompt<'_>) -> Call<T> {
+    let body = request_body(prompt);
     let started = Instant::now();
     for attempt in 1..=HTTP_RETRIES {
         let remaining = DEADLINE.saturating_sub(started.elapsed());
@@ -155,7 +184,7 @@ pub async fn summarize(http: &reqwest::Client, api_key: &str, model: &str, input
             Ok(r) => r,
             Err(e) if e.is_timeout() => return Call::failed("OpenAI: quá thời gian chờ phản hồi", true),
             Err(e) if e.is_connect() && can_retry(wait) => {
-                tracing::warn!(attempt, "gọi OpenAI (tóm tắt) không kết nối được, thử lại");
+                tracing::warn!(attempt, schema = prompt.schema_name, "gọi OpenAI không kết nối được, thử lại");
                 backoff(attempt).await;
                 continue;
             }
@@ -186,13 +215,18 @@ pub async fn summarize(http: &reqwest::Client, api_key: &str, model: &str, input
     Call::failed("OpenAI: hết số lần thử", false)
 }
 
+/// Viết biên bản cho chữ đầu vào.
+pub async fn summarize(http: &reqwest::Client, api_key: &str, model: &str, input: &str) -> Call<Draft> {
+    complete(http, api_key, &summary_prompt(model, input)).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn request_asks_for_strict_json_in_vietnamese() {
-        let body = request_body("gpt-4.1-mini", "[0] Xin chào.\n");
+        let body = request_body(&summary_prompt("gpt-4.1-mini", "[0] Xin chào.\n"));
         assert_eq!(body["model"], "gpt-4.1-mini");
         assert_eq!(body["response_format"]["json_schema"]["strict"], true);
         assert_eq!(body["messages"][1]["content"], "[0] Xin chào.\n");
@@ -214,7 +248,7 @@ mod tests {
             "usage": { "prompt_tokens": 1200, "completion_tokens": 300 },
         })
         .to_string();
-        let c = parse_response(&body).expect("đọc được");
+        let c = parse_response::<Draft>(&body).expect("đọc được");
         assert_eq!((c.input_tokens, c.output_tokens), (1200, 300));
         let d = c.draft.expect("biên bản");
         assert_eq!(d.decisions, vec![Decision { text: "Chốt ngày ra mắt".into(), at: 61.0 }]);
@@ -228,12 +262,12 @@ mod tests {
             "choices": [{ "finish_reason": "length", "message": { "content": "{\"summary\": \"Họ" } }],
             "usage": { "prompt_tokens": 50, "completion_tokens": 4000 },
         });
-        let c = parse_response(&cut.to_string()).expect("đọc được");
+        let c = parse_response::<Draft>(&cut.to_string()).expect("đọc được");
         assert_eq!(c.output_tokens, 4000);
         assert!(c.draft.is_err());
         let refused = json!({ "choices": [{ "message": { "refusal": "no", "content": null } }], "usage": {} });
-        assert!(parse_response(&refused.to_string()).expect("đọc được").draft.is_err());
-        assert!(parse_response("không phải json").is_err());
+        assert!(parse_response::<Draft>(&refused.to_string()).expect("đọc được").draft.is_err());
+        assert!(parse_response::<Draft>("không phải json").is_err());
     }
 
     #[test]

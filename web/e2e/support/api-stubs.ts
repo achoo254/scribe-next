@@ -9,6 +9,10 @@ import type {
 	RecordingList,
 	Usage,
 } from "../../src/features/files/files-api";
+import type {
+	AskReply,
+	SearchReply,
+} from "../../src/features/search/search-api";
 import type { JobSegment } from "../../src/features/split/split-job";
 import type {
 	Bookmark,
@@ -40,6 +44,10 @@ export interface ApiFixtures {
 	chatLinked: boolean;
 	/** What `POST /api/transcript-docs/:key/summary` makes. */
 	minutes: TranscriptMinutes;
+	/** What `GET /api/search` finds, whatever the query. */
+	search: SearchReply;
+	/** What `POST /api/ask` answers, whatever the question. */
+	answer: AskReply;
 	/** Replies that win over the stub's own, by `METHOD /path` (e.g. an error). */
 	replies: Record<string, StubReply>;
 }
@@ -153,6 +161,8 @@ export function apiFixtures(overrides: Partial<ApiFixtures> = {}): ApiFixtures {
 		],
 		chatLinked: false,
 		minutes: STUB_MINUTES,
+		search: { results: [], total: 0 },
+		answer: { answer: "Không tìm thấy trong bản ghi.", citations: [] },
 		replies: {},
 		...overrides,
 	};
@@ -189,6 +199,10 @@ export interface ApiStub {
 	readonly recordingChunks: RecordingChunk[];
 	/** `POST /api/transcript-docs/:key/bookmarks`, by decoded key. */
 	readonly bookmarks: Array<{ key: string; at: number; id: string | null }>;
+	/** `q` of every `GET /api/search`, in order. */
+	readonly searches: string[];
+	/** Body of every `POST /api/ask`, in order. */
+	readonly questions: Array<{ question: string | null; key: string | null }>;
 	/** Stands in for the user sending `/start` to the bot on chat.hoandat.com. */
 	linkChat: () => void;
 }
@@ -238,6 +252,8 @@ export async function stubApi(
 		requests: [],
 		recordingChunks: [],
 		bookmarks: [],
+		searches: [],
+		questions: [],
 		linkChat: () => {
 			chatLinked = true;
 		},
@@ -312,6 +328,17 @@ export async function stubApi(
 						: json(route, 401, { error: "Chưa đăng nhập" });
 				case "GET /api/me/usage":
 					return json(route, 200, fixtures.usage);
+				case "GET /api/search":
+					stub.searches.push(url.searchParams.get("q") ?? "");
+					return json(route, 200, fixtures.search);
+				case "POST /api/ask": {
+					const body: unknown = request.postDataJSON();
+					stub.questions.push({
+						question: stringField(body, "question"),
+						key: stringField(body, "key"),
+					});
+					return json(route, 200, fixtures.answer);
+				}
 				case "GET /api/files":
 					return json(route, 200, fixtures.recordings);
 				case "GET /api/files/manage":

@@ -2,6 +2,8 @@
 //! (`transcripts`, mỗi file một doc) với phần người dùng tạo ra (`transcript_docs`: tiêu đề, câu sửa).
 //! Danh sách và chi tiết tính lúc đọc, không lưu trùng.
 //!
+//! Lưu câu sửa hay xoá transcript thì dựng lại index tìm kiếm của phiên (`search::index`).
+//!
 //! Đọc/sửa/xoá transcript của chính mình chỉ cần đăng nhập (như `GET /api/transcripts`); chỉ việc
 //! xếp chép lời cần quyền `TRANSCRIBE_EMAILS`. Audit không ghi tiêu đề hay câu (giữ 180 ngày).
 
@@ -11,11 +13,14 @@ use crate::auth::UserId;
 use crate::error::AppError;
 use crate::models::file::{self, FileDoc};
 use crate::models::transcript::{self, TranscriptDoc};
+use crate::models::sentence::NewSentence;
 use crate::models::transcript_doc::{self, SegmentEdit};
+use crate::search;
 use crate::state::AppState;
 use axum::extract::{Path, State};
 use axum::{Extension, Json};
 use mongodb::bson::{doc, oid::ObjectId};
+use mongodb::Database;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
@@ -37,9 +42,9 @@ pub(crate) fn check_key(key: &str) -> Result<(), AppError> {
 }
 
 /// Các đoạn của phiên; phiên không có bản ghi nào của user → 404.
-async fn session_files(state: &AppState, user_id: &str, key: &str) -> Result<Vec<(u32, FileDoc)>, AppError> {
+async fn session_files(db: &Database, user_id: &str, key: &str) -> Result<Vec<(u32, FileDoc)>, AppError> {
     check_key(key)?;
-    let files = file::list_session(&state.db, user_id, key).await?;
+    let files = file::list_session(db, user_id, key).await?;
     if files.is_empty() {
         return Err(AppError::NotFound("transcript không tồn tại".into()));
     }
@@ -172,6 +177,25 @@ impl Loaded {
         created_at(&self.files)
     }
 
+    /// Câu cho index tìm kiếm: như [`Self::timed_sentences`], kèm file chứa câu và hạn của file đó.
+    pub fn index_sentences(&self) -> Vec<NewSentence> {
+        let expiry: HashMap<String, mongodb::bson::DateTime> =
+            self.files.iter().filter_map(|(_, f)| f.id.map(|id| (id.to_hex(), f.expires_at))).collect();
+        self.segments
+            .iter()
+            .filter(|seg| seg.status == "done")
+            .filter_map(|seg| Some((seg, ObjectId::parse_str(&seg.file_id).ok()?, *expiry.get(&seg.file_id)?)))
+            .flat_map(|(seg, file_id, expires_at)| {
+                seg.sentences.iter().filter(|s| !s.text.trim().is_empty()).map(move |s| NewSentence {
+                    file_id,
+                    at: seg.offset_s + s.start,
+                    text: s.text.trim().to_string(),
+                    expires_at,
+                })
+            })
+            .collect()
+    }
+
     /// Câu đã chép xong (đã áp câu sửa) kèm giây bắt đầu tính theo cả phiên — cùng mốc với màn hình đọc.
     pub fn timed_sentences(&self) -> Vec<(f64, &str)> {
         self.segments
@@ -185,13 +209,18 @@ impl Loaded {
 
 /// Đọc và ghép một phiên của user; phiên không có bản ghi nào → 404.
 pub(crate) async fn load(state: &AppState, user_id: &str, key: &str) -> Result<Loaded, AppError> {
-    let files = session_files(state, user_id, key).await?;
-    let transcripts: HashMap<ObjectId, TranscriptDoc> = transcript::list_owned(&state.db, user_id, &file_ids(&files))
+    load_db(&state.db, user_id, key).await
+}
+
+/// Như [`load`], chỉ cần database (dựng lại index tìm kiếm chạy ngoài request).
+pub(crate) async fn load_db(db: &Database, user_id: &str, key: &str) -> Result<Loaded, AppError> {
+    let files = session_files(db, user_id, key).await?;
+    let transcripts: HashMap<ObjectId, TranscriptDoc> = transcript::list_owned(db, user_id, &file_ids(&files))
         .await?
         .into_iter()
         .map(|t| (t.id, t))
         .collect();
-    let doc = transcript_doc::get(&state.db, user_id, key).await?;
+    let doc = transcript_doc::get(db, user_id, key).await?;
     let edits = doc.as_ref().map(|d| d.edits.clone()).unwrap_or_default();
     let segments = assemble(&files, &transcripts, &edits);
     Ok(Loaded { files, segments, doc })
@@ -326,7 +355,7 @@ pub async fn status(
     Extension(user): Extension<UserId>,
     Path(key): Path<String>,
 ) -> Result<Json<Value>, AppError> {
-    let files = session_files(&state, &user.0, &key).await?;
+    let files = session_files(&state.db, &user.0, &key).await?;
     let runs: HashMap<ObjectId, transcript::RunStatus> =
         transcript::statuses_for_files(&state.db, &user.0, &file_ids(&files))
             .await?
@@ -366,7 +395,7 @@ pub async fn rename(
     Json(req): Json<RenameReq>,
 ) -> Result<Json<Value>, AppError> {
     let title = normalize_title(req.title.as_deref())?;
-    session_files(&state, &user.0, &key).await?;
+    session_files(&state.db, &user.0, &key).await?;
     transcript_doc::set_title(&state.db, &user.0, &key, title.as_deref()).await?;
     let title_len = title.as_ref().map_or(0, |t| t.chars().count() as i64);
     audit::record(&state, Some(&user.0), "transcript.rename", doc! { "key": &key, "titleLen": title_len });
@@ -404,7 +433,7 @@ pub async fn save_segment(
 ) -> Result<Json<Value>, AppError> {
     let oid = ObjectId::parse_str(&file_id).map_err(|_| AppError::BadRequest("id đoạn không hợp lệ".into()))?;
     check_texts(&req.texts)?;
-    let files = session_files(&state, &user.0, &key).await?;
+    let files = session_files(&state.db, &user.0, &key).await?;
     if !files.iter().any(|(_, f)| f.id == Some(oid)) {
         return Err(AppError::NotFound("đoạn không thuộc transcript này".into()));
     }
@@ -426,6 +455,7 @@ pub async fn save_segment(
     }
     let details = doc! { "key": &key, "fileId": &file_id, "sentences": edit.texts.len() as i64 };
     audit::record(&state, Some(&user.0), "transcript.edit", details);
+    search::index::schedule(&state.db, &user.0, &key);
     Ok(Json(json!({ "ok": true })))
 }
 
@@ -436,9 +466,10 @@ pub async fn delete(
     Extension(user): Extension<UserId>,
     Path(key): Path<String>,
 ) -> Result<Json<Value>, AppError> {
-    let files = session_files(&state, &user.0, &key).await?;
+    let files = session_files(&state.db, &user.0, &key).await?;
     let removed = transcript::delete_owned(&state.db, &user.0, &file_ids(&files)).await?;
     transcript_doc::delete(&state.db, &user.0, &key).await?;
+    search::index::schedule(&state.db, &user.0, &key);
     let details = doc! { "key": &key, "segments": files.len() as i64, "transcripts": removed as i64 };
     audit::record(&state, Some(&user.0), "transcript.delete", details);
     Ok(Json(json!({ "ok": true })))
@@ -528,6 +559,11 @@ mod tests {
         let loaded = Loaded { files, segments, doc: None };
         assert_eq!(loaded.timed_sentences(), vec![(1.5, "Mở đầu."), (70.0, "Chốt giá 5 triệu.")]);
         assert_eq!(loaded.duration_s(), 150.0);
+        // Index tìm kiếm: cùng câu, cùng giây theo cả phiên, kèm file chứa câu và hạn của file.
+        let indexed = loaded.index_sentences();
+        let b_file = &loaded.files[1].1;
+        assert_eq!(indexed.iter().map(|s| (s.at, s.text.as_str())).collect::<Vec<_>>(), vec![(1.5, "Mở đầu."), (70.0, "Chốt giá 5 triệu.")]);
+        assert_eq!((indexed[1].file_id, indexed[1].expires_at), (b_file.id.expect("b"), b_file.expires_at));
     }
 
     #[test]

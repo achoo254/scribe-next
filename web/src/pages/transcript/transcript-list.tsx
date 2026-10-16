@@ -22,6 +22,7 @@ import { PageHeader } from "../../layout/page-header";
 import { cn } from "../../lib/cn";
 import { formatDateTime, formatDuration } from "../../lib/format";
 import { useDelayedFlag } from "../../lib/use-delayed-flag";
+import { SearchEntry } from "../search/search-entry";
 import { TranscriptionQuota } from "./transcription-quota";
 
 /**
@@ -52,6 +53,7 @@ export function TranscriptList({ onOpen }: TranscriptListProps) {
 				title={t("transcript.list.title")}
 				description={t("transcript.list.description")}
 			/>
+			<SearchEntry />
 			<TranscriptionQuota />
 			{skeleton ? (
 				<SkeletonRegion

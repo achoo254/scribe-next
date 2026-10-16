@@ -1,7 +1,7 @@
 //! Lắp router: public (health/auth) + protected (guard middleware + upload/jobs).
 
 use crate::state::AppState;
-use crate::{access_log, auth, chat_link, files, jobs, rate_limit, recordings, summary, transcribe, upload};
+use crate::{access_log, auth, chat_link, files, jobs, rate_limit, recordings, search, summary, transcribe, upload};
 use axum::extract::DefaultBodyLimit;
 use axum::middleware::{from_fn, from_fn_with_state};
 use axum::routing::{delete, get, post, put};
@@ -9,8 +9,8 @@ use axum::{Json, Router};
 use serde_json::{json, Value};
 
 pub fn build_router(state: AppState) -> Router {
-    // Transcript theo phiên + liên kết chat: body chỉ là chữ (tiêu đề, câu sửa, dấu mốc) → trần riêng 1 MiB
-    // thay vì 8 MiB.
+    // Transcript theo phiên + liên kết chat + tìm kiếm/hỏi đáp: body chỉ là chữ (tiêu đề, câu sửa, dấu mốc,
+    // câu hỏi) → trần riêng 1 MiB thay vì 8 MiB.
     let transcript_docs = Router::new()
         .route("/api/transcript-docs", get(transcribe::docs::list))
         .route(
@@ -24,6 +24,8 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/transcript-docs/{key}/bookmarks", post(transcribe::bookmarks::add))
         .route("/api/transcript-docs/{key}/bookmarks/{id}", delete(transcribe::bookmarks::remove))
         .route("/api/chat/link", get(chat_link::status).post(chat_link::create).delete(chat_link::remove))
+        .route("/api/search", get(search::search))
+        .route("/api/ask", post(search::ask::ask))
         .layer(DefaultBodyLimit::max(1024 * 1024));
 
     // Route cần đăng nhập → guard verify session; rate-limit chung (ngưỡng cao, không cản recording).

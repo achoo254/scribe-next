@@ -5,6 +5,7 @@ import { layout } from "./layout";
 import { login } from "./login";
 import { record } from "./record";
 import { recorder } from "./recorder";
+import { search } from "./search";
 import { split } from "./split";
 import { transcript } from "./transcript";
 import { ui } from "./ui";
@@ -22,6 +23,7 @@ export const vi = {
 	login,
 	record,
 	recorder,
+	search,
 	split,
 	transcript,
 	ui,

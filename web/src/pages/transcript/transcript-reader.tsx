@@ -56,12 +56,15 @@ import {
 import { formatDateTime, formatDuration } from "../../lib/format";
 import { useDelayedFlag } from "../../lib/use-delayed-flag";
 import { useTranscribe } from "../record/use-transcribe";
+import { AskCard } from "../search/ask-card";
 import { BookmarkList } from "./bookmark-list";
 import { MinutesCard } from "./minutes-card";
 import { ReaderSegment } from "./reader-segment";
 
 export interface TranscriptReaderProps {
 	transcriptKey: string;
+	/** Seconds of the session to show and play once loaded (`?t=` of a search result). */
+	startAt?: number;
 	canTranscribe: boolean;
 	/** `replace` after a delete, so back/swipe does not reopen the deleted doc. */
 	onBack: (options?: { replace?: boolean }) => void;
@@ -112,6 +115,7 @@ function exportScope(detail: TranscriptDetail): ExportScope {
  */
 export function TranscriptReader({
 	transcriptKey,
+	startAt,
 	canTranscribe,
 	onBack,
 }: TranscriptReaderProps) {
@@ -181,6 +185,17 @@ export function TranscriptReader({
 		},
 		[segments, play],
 	);
+
+	// Opened at a time (search result, source of an answer): jump once, as
+	// soon as the sentences are on screen.
+	const startedAt = useRef(false);
+	useEffect(() => {
+		if (startedAt.current || startAt === undefined || segments.length === 0) {
+			return;
+		}
+		startedAt.current = true;
+		jumpTo(startAt);
+	}, [startAt, segments.length, jumpTo]);
 
 	function deleteBookmark(bookmark: Bookmark): void {
 		removeBookmark.mutate(bookmark.id, {
@@ -395,6 +410,12 @@ export function TranscriptReader({
 					summary={doc.summary ?? null}
 					canSummarize={anyDone}
 					onJump={jumpTo}
+				/>
+			) : null}
+			{canTranscribe && anyDone ? (
+				<AskCard
+					transcriptKey={transcriptKey}
+					onCite={(citation) => jumpTo(citation.at)}
 				/>
 			) : null}
 			<BookmarkList

@@ -103,6 +103,28 @@ describe("TranscriptReader", () => {
 		expect(screen.getByText(/Còn 1 đoạn chưa chép/)).toBeInTheDocument();
 	});
 
+	it("opened at a second (a search result), shows and plays it", async () => {
+		const fake = fakeFetch({ [`GET ${PATH}`]: jsonResponse(DETAIL) });
+		vi.stubGlobal("fetch", fake.fetcher);
+		renderWithProviders(
+			<TranscriptReader
+				transcriptKey={KEY}
+				startAt={61}
+				canTranscribe
+				onBack={() => undefined}
+			/>,
+		);
+		// 1:01 of the session is 0:01 into the third segment.
+		expect(await screen.findByText("Đang ở đoạn 3")).toBeInTheDocument();
+		await waitFor(() =>
+			expect(
+				document.querySelector('[data-id="reader-segment-2-line-0"]'),
+			).toHaveFocus(),
+		);
+		// "Hỏi Scribe" asks about this transcript only.
+		expect(screen.getByText(/Hỏi về bản ghi này/)).toBeInTheDocument();
+	});
+
 	it("plays the tapped sentence's segment", async () => {
 		renderReader();
 		expect(await screen.findByText("Đang ở đoạn 1")).toBeInTheDocument();
@@ -386,7 +408,7 @@ describe("TranscriptReader minutes", () => {
 		);
 		expect(
 			await screen.findByText(
-				"Tháng này tài khoản đã dùng hết hạn mức tóm tắt (60/60 phút quy đổi). Mở lại lúc 00:00 01/11.",
+				"Tháng này tài khoản đã dùng hết hạn mức tóm tắt và hỏi đáp (60/60 phút quy đổi). Mở lại lúc 00:00 01/11.",
 			),
 		).toBeInTheDocument();
 	});

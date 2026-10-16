@@ -8,6 +8,7 @@ import { PageError } from "./layout/page-error";
 import { SignedInState } from "./layout/signed-in-state";
 import { LoginPage } from "./pages/login-page";
 import { RecordPage } from "./pages/record/record-page";
+import { SearchPage } from "./pages/search/search-page";
 import { SplitPage } from "./pages/split/split-page";
 import {
 	TranscriptListPage,
@@ -60,6 +61,14 @@ export const appRoutes: RouteObject[] = [
 						element: (
 							<RequireTranscribe>
 								<TranscriptListPage />
+							</RequireTranscribe>
+						),
+					},
+					{
+						path: PATHS.search,
+						element: (
+							<RequireTranscribe>
+								<SearchPage />
 							</RequireTranscribe>
 						),
 					},

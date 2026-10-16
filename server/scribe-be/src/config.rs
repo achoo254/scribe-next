@@ -32,6 +32,25 @@ const DEFAULT_SUMMARY_PAID_DAILY: i64 = 50;
 const DEFAULT_SUMMARY_FREE_MONTHLY_MINUTES: i64 = 60;
 const DEFAULT_SUMMARY_PAID_MONTHLY_MINUTES: i64 = 600;
 const DEFAULT_SUMMARY_MODEL: &str = "gpt-4.1-mini";
+/// Hỏi đáp trên bản chép lời: lượt mỗi ngày giờ Việt Nam (Jev chốt 16/10/2026). Trần chi phí tháng của
+/// tài khoản dùng chung với tóm tắt.
+const DEFAULT_ASK_FREE_DAILY: i64 = 30;
+const DEFAULT_ASK_PAID_DAILY: i64 = 200;
+
+/// Lượt hỏi đáp mỗi ngày (giờ Việt Nam) theo gói.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct AskLimits {
+    pub free_daily: i64,
+    pub paid_daily: i64,
+}
+
+impl AskLimits {
+    /// Sai dạng hoặc âm thì dùng mặc định.
+    fn from_parts(free: Option<&str>, paid: Option<&str>) -> Self {
+        let num = |v: Option<&str>, default: i64| v.and_then(|s| s.trim().parse().ok()).filter(|n: &i64| *n >= 0).unwrap_or(default);
+        AskLimits { free_daily: num(free, DEFAULT_ASK_FREE_DAILY), paid_daily: num(paid, DEFAULT_ASK_PAID_DAILY) }
+    }
+}
 
 /// Hạn mức tóm tắt của một tài khoản theo gói: lượt mỗi ngày (giờ Việt Nam) và trần chi phí mỗi tháng
 /// (giây chép lời tương đương).
@@ -139,8 +158,9 @@ pub struct Config {
     pub notify_bot_token_path: Option<String>,
     pub notify_chat_id: Option<String>,
     pub summary_limits: SummaryLimits,
-    /// Model OpenAI viết biên bản (`SUMMARY_MODEL`). Giá token để quy ra trần chi phí là giá của
-    /// `gpt-4.1-mini` (`summary::cost`): đổi model thì cập nhật giá ở đó.
+    pub ask_limits: AskLimits,
+    /// Model OpenAI viết biên bản và trả lời hỏi đáp (`SUMMARY_MODEL`). Giá token để quy ra trần chi phí
+    /// là giá của `gpt-4.1-mini` (`summary::meter`): đổi model thì cập nhật giá ở đó.
     pub summary_model: String,
     /// `CHAT_LINK_POLL=1`: chạy task long-poll của bot để liên kết chat. Mặc định tắt: dev và prod dùng
     /// chung token bot, backend dev bật poll sẽ lấy mất update của prod.
@@ -211,6 +231,7 @@ impl Config {
                 option_env!("SUMMARY_FREE_MONTHLY_MINUTES"),
                 option_env!("SUMMARY_PAID_MONTHLY_MINUTES"),
             ]),
+            ask_limits: AskLimits::from_parts(option_env!("ASK_FREE_DAILY"), option_env!("ASK_PAID_DAILY")),
             summary_model: option_env!("SUMMARY_MODEL")
                 .map(str::trim)
                 .filter(|m| !m.is_empty())
@@ -281,6 +302,12 @@ mod tests {
         let g = d.with_free_guards(Some("10"), Some("0"));
         assert_eq!((g.free_daily_seconds, g.free_delay_hours), (600, 0));
         assert_eq!(d.with_free_guards(Some("bad"), Some("-1")).free_daily_seconds, 1800);
+    }
+
+    #[test]
+    fn ask_limits_default_to_thirty_and_two_hundred() {
+        assert_eq!(AskLimits::from_parts(None, None), AskLimits { free_daily: 30, paid_daily: 200 });
+        assert_eq!(AskLimits::from_parts(Some(" 5 "), Some("-1")), AskLimits { free_daily: 5, paid_daily: 200 });
     }
 
     #[test]

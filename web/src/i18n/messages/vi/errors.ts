@@ -24,6 +24,10 @@ export const errors = {
 		bookmark: "Không lưu được dấu mốc",
 		deleteBookmark: "Không xoá được dấu mốc",
 	},
+	search: {
+		search: "Không tìm được trong bản chép lời",
+		ask: "Không hỏi được Scribe",
+	},
 	chat: {
 		status: "Không kiểm được liên kết chat",
 		link: "Không tạo được đường dẫn liên kết",

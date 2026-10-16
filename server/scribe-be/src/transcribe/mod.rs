@@ -509,6 +509,7 @@ async fn run(state: &AppState, t: &transcript::TranscriptDoc) {
     match result {
         Err(e) if e == CANCELLED => {
             tracing::info!(file = %t.file_id(), "lượt chép lời bị thay hoặc file bị xoá, dừng");
+            return;
         }
         Ok((text, sentences, chunks)) => {
             record(db, t.id, &t.run_id, Outcome::Done { text: &text, sentences: &sentences }).await;
@@ -529,6 +530,8 @@ async fn run(state: &AppState, t: &transcript::TranscriptDoc) {
             audit::record(state, Some(&t.user_id), "transcript.failed", doc! { "fileId": t.file_id(), "error": &e });
         }
     }
+    // Lượt kết thúc (xong hay lỗi): câu của đoạn đổi ⟹ dựng lại index tìm kiếm của phiên.
+    crate::search::index::schedule_file(db, &t.user_id, t.id);
 }
 
 async fn transcribe_file(

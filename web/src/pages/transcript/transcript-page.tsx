@@ -1,6 +1,11 @@
 import { useCallback } from "react";
-import { Navigate, useNavigate, useParams } from "react-router";
-import { PATHS, transcriptPath } from "../../layout/app-paths";
+import {
+	Navigate,
+	useNavigate,
+	useParams,
+	useSearchParams,
+} from "react-router";
+import { PATHS, parseStartAt, transcriptPath } from "../../layout/app-paths";
 import { TranscriptList } from "./transcript-list";
 import { TranscriptReader } from "./transcript-reader";
 
@@ -11,12 +16,14 @@ export function TranscriptListPage() {
 }
 
 /**
- * `/transcripts/:key`: one transcript. The router hands over the decoded
- * key (`s:<id>` arrives as `s%3A<id>`). Only routed for users who may
- * transcribe.
+ * `/transcripts/:key[?t=<seconds>]`: one transcript, jumping to `t` (a
+ * search result, a source of "Hỏi Scribe"). The router hands over the
+ * decoded key (`s:<id>` arrives as `s%3A<id>`). Only routed for users who
+ * may transcribe.
  */
 export function TranscriptReaderPage() {
 	const { key } = useParams();
+	const [params] = useSearchParams();
 	const navigate = useNavigate();
 	const back = useCallback(
 		(options?: { replace?: boolean }) => navigate(PATHS.transcripts, options),
@@ -27,6 +34,7 @@ export function TranscriptReaderPage() {
 		<TranscriptReader
 			key={key}
 			transcriptKey={key}
+			startAt={parseStartAt(params.get("t"))}
 			canTranscribe
 			onBack={back}
 		/>

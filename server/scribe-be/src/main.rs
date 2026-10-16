@@ -17,6 +17,7 @@ mod rate_limit;
 mod recordings;
 mod retention;
 mod routes;
+mod search;
 mod session;
 mod state;
 mod summary;
@@ -136,6 +137,7 @@ async fn main() {
     jobs::start_worker(state.clone());
     transcribe::start_worker(state.clone()).await;
     retention::start_sweeper(state.clone()); // sweep purge quá hạn + orphan (red-team #1)
+    search::index::start_backfill(state.db.clone()); // index tìm kiếm + đưa dữ liệu cũ vào một lần
     chat_link::warm_up(state.clone());
     chat_link::poll::start(state.clone()); // chỉ khi CHAT_LINK_POLL bật và có token bot
 
