@@ -63,7 +63,7 @@ Chi tiết và lập luận: phase 4 của plan iOS. Tóm tắt:
 
 ## Trạng thái hiện tại
 
-- **Web**: LIVE bản React tại `scribe.hoandat.com`, đăng nhập hoandat-auth, giao diện theo khung Localman. Ghi (mic + màn hình/system) · Cắt file · lịch sử/phát lại · chép lời bằng key server có hạn mức (mở cho mọi người từ 16/10) · retention/quota/rate-limit · xoá thủ công.
+- **Web**: LIVE bản React tại `scribe.hoandat.com`, đăng nhập hoandat-auth, giao diện theo khung Localman. Ghi (mic + màn hình/system) · Cắt file · lịch sử/phát lại · chép lời bằng key server có hạn mức (mở cho mọi người từ 16/10) · biên bản, dấu mốc, gửi biên bản sang chat (từ 16/10 22:31) · retention/quota/rate-limit · xoá thủ công.
 - **iPhone**: bản `com.hoandat.scribe` đăng nhập hoandat-auth, đã kiểm trên máy thật (ghi khoá màn hình, tải lên, chép lời); còn cuộc gọi đến, AirPods, chế độ máy bay.
 
 ## Backlog / Next
@@ -71,7 +71,7 @@ Chi tiết và lập luận: phase 4 của plan iOS. Tóm tắt:
 | Ưu tiên | Hạng mục | Ghi chú |
 |---------|----------|---------|
 | ✅ P0 | **Refactor UI/UX theo format hệ sinh thái hoandat** (plan `dattqh/261016-1426-ui-ux-hoandat-ecosystem-refactor`) | Xong phase 1–5, web đã lên prod 16/10: khung Localman (top bar, account menu, footer), URL cho từng trang, từ điển tiếng Việt, Playwright sáng/tối. Plan đóng 16/10; QA tay trên iPhone bản cuối hoãn tới lần cắm máy sau |
-| P1 | **Gói "Sau cuộc họp"**: tóm tắt + quyết định + việc cần làm (LLM trên transcript), đánh dấu khoảnh khắc khi đang ghi (cả màn hình khoá iPhone), gửi biên bản sang chat.hoandat.com qua bot | Người dùng chốt 16/10 sau refactor UI; Jev chấm giá trị/công sức 2,34/1,08 · 1,80/0,69 · 1,99/0,81 (thang 0–3). Mọi tính năng LLM đi qua quota + trần chi phí như chép lời |
+| ✅ P1 | **Gói "Sau cuộc họp"** (plan `dattqh/261016-2133-after-meeting-package`): biên bản (tóm tắt + quyết định + việc cần làm, mốc giây) bằng `gpt-4.1-mini` khi bấm "Tóm tắt", đánh dấu khoảnh khắc khi đang ghi, liên kết chat.hoandat.com (xác nhận trong chat) và gửi biên bản tới chat riêng | **Lên prod 16/10 22:31.** Lượt ngày + trần tháng riêng, chi phí tính vào trần tổng như chép lời. Còn lại: đánh dấu từ màn hình khoá / AirPods (cần iPhone, ngoài phạm vi đợt này); chủ sản phẩm tự thử đầu cuối bấm deep link → xác nhận liên kết → gửi biên bản (cả trong WebView iPhone); đánh dấu khi ghi nền trên iPhone thật |
 | P1 | **Gói "Kho bản ghi"**: tìm kiếm toàn văn mọi transcript (nhảy tới đúng giây), rồi hỏi đáp trên bản ghi có trích mốc thời gian | Sau gói "Sau cuộc họp"; Jev 1,96/1,27 · 2,37/1,53 |
 | P2 | **Xuất phụ đề SRT/VTT, DOCX/Markdown**; sau đó **dịch transcript Việt ↔ Anh** | Jev 1,79/1,09 · 1,68/1,05 |
 | P3 | **Phân biệt người nói** (Người 1/2, đổi tên được) | Cần nghiên cứu khả năng của model chép lời trước; Jev 1,54/1,00 (công sức có thể bị đánh giá thấp) |
