@@ -53,3 +53,24 @@ export function parsePositiveNumber(
 	if (integer && !Number.isInteger(value)) return null;
 	return value;
 }
+
+/**
+ * "00:00 17/10" in Vietnam time: when a limit opens again or a link
+ * expires. Empty for a missing or invalid timestamp.
+ */
+export function formatTimeAndDay(iso?: string | null): string {
+	if (!iso) return "";
+	const date = new Date(iso);
+	if (Number.isNaN(date.getTime())) return "";
+	const parts = new Intl.DateTimeFormat("vi-VN", {
+		hour: "2-digit",
+		minute: "2-digit",
+		day: "2-digit",
+		month: "2-digit",
+		hourCycle: "h23",
+		timeZone: "Asia/Saigon",
+	}).formatToParts(date);
+	const part = (type: Intl.DateTimeFormatPartTypes) =>
+		parts.find((p) => p.type === type)?.value ?? "";
+	return `${part("hour")}:${part("minute")} ${part("day")}/${part("month")}`;
+}

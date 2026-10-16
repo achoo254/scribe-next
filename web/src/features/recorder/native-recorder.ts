@@ -17,6 +17,8 @@ type NativeState = "idle" | "starting" | "recording" | "stopping";
 interface NativeStatus {
 	state: NativeState;
 	elapsedS: number;
+	/** Session being recorded; null when idle. */
+	sessionId?: string | null;
 	uploadsWaiting: number;
 	uploadsFailed: number;
 	notice: string;
@@ -38,6 +40,7 @@ export interface RecorderNativePlugin {
 			| "state"
 			| "elapsed"
 			| "level"
+			| "segment"
 			| "notice"
 			| "failure"
 			| "uploads"
@@ -56,6 +59,8 @@ export interface NativeRecorderState {
 	starting: boolean;
 	finalizing: boolean;
 	elapsedS: number;
+	/** Session being recorded (its transcript is `s:<sessionId>`); null when idle. */
+	sessionId: string | null;
 	/** Segments recorded but not uploaded yet (kept on the phone meanwhile). */
 	uploadsWaiting: number;
 	/** Segments the server refused for good; their files stay on the phone. */
@@ -70,6 +75,7 @@ const IDLE: NativeRecorderState = {
 	starting: false,
 	finalizing: false,
 	elapsedS: 0,
+	sessionId: null,
 	uploadsWaiting: 0,
 	uploadsFailed: 0,
 	notice: "",
@@ -82,6 +88,11 @@ function numberOf(value: unknown): number {
 
 function textOf(value: unknown): string {
 	return typeof value === "string" ? value : "";
+}
+
+/** A session id from the plugin, or null for anything else. */
+function sessionOf(value: unknown): string | null {
+	return typeof value === "string" && value ? value : null;
 }
 
 function flagsOf(
@@ -121,6 +132,9 @@ export class NativeRecorder {
 	/** Bumped by `dispose`: an `attach` still awaiting listeners from an
 	 * earlier mount drops them instead of leaking them. */
 	private generation = 0;
+	/** Length of the session's closed segments, and the clock when the last closed. */
+	private closedS = 0;
+	private elapsedAtClose = 0;
 
 	constructor(
 		private readonly plugin: RecorderNativePlugin = NativeRecorderPlugin,
@@ -158,6 +172,10 @@ export class NativeRecorder {
 			this.set({ ...this.state, elapsedS: numberOf(data.elapsedS) }),
 		);
 		await on("level", (data) => this.setLevel(numberOf(data.level)));
+		await on("segment", (data) => {
+			this.closedS += numberOf(data.durationS);
+			this.elapsedAtClose = this.state.elapsedS;
+		});
 		await on("notice", (data) =>
 			this.set({ ...this.state, notice: textOf(data.message) }),
 		);
@@ -191,6 +209,7 @@ export class NativeRecorder {
 			...this.state,
 			...flagsOf(status.state),
 			elapsedS: numberOf(status.elapsedS),
+			sessionId: sessionOf(status.sessionId),
 			uploadsWaiting: numberOf(status.uploadsWaiting),
 			uploadsFailed: numberOf(status.uploadsFailed),
 			notice: textOf(status.notice),
@@ -205,9 +224,16 @@ export class NativeRecorder {
 			error: "",
 			notice: "",
 			elapsedS: 0,
+			sessionId: null,
 		});
+		this.closedS = 0;
+		this.elapsedAtClose = 0;
 		try {
-			await this.plugin.start({ userKey, segmentMinutes });
+			const { sessionId } = await this.plugin.start({
+				userKey,
+				segmentMinutes,
+			});
+			this.set({ ...this.state, sessionId: sessionOf(sessionId) });
 		} catch (cause) {
 			this.set({
 				...this.state,
@@ -219,6 +245,15 @@ export class NativeRecorder {
 			});
 		}
 	};
+
+	/**
+	 * Seconds from the start of the session, as the transcript counts them:
+	 * the closed segments' lengths plus the time into the open one. When
+	 * segment events were missed (WebView suspended) it falls back to the
+	 * recording clock.
+	 */
+	position = (): number =>
+		this.closedS + Math.max(0, this.state.elapsedS - this.elapsedAtClose);
 
 	stop = async (): Promise<void> => {
 		if (!this.state.recording) return;

@@ -1,13 +1,19 @@
 import type { Page, Route } from "@playwright/test";
 import type { CurrentUser } from "../../src/auth/auth-api";
 import type {
+	ChatLinkStart,
+	ChatLinkStatus,
+} from "../../src/features/chat-link/chat-link-api";
+import type {
 	ManagedFile,
 	RecordingList,
 	Usage,
 } from "../../src/features/files/files-api";
 import type { JobSegment } from "../../src/features/split/split-job";
 import type {
+	Bookmark,
 	TranscriptDetail,
+	TranscriptMinutes,
 	TranscriptSummary,
 } from "../../src/features/transcript-docs/transcript-docs-api";
 import type { Transcript } from "../../src/features/transcript/transcript-api";
@@ -30,7 +36,45 @@ export interface ApiFixtures {
 	transcripts: Transcript[];
 	/** Result of every split job (`GET /api/jobs/:id` answers "done"). */
 	splitSegments: JobSegment[];
+	/** `GET /api/chat/link` until the spec links or unlinks. */
+	chatLinked: boolean;
+	/** What `POST /api/transcript-docs/:key/summary` makes. */
+	minutes: TranscriptMinutes;
+	/** Replies that win over the stub's own, by `METHOD /path` (e.g. an error). */
+	replies: Record<string, StubReply>;
 }
+
+export interface StubReply {
+	status: number;
+	body: unknown;
+}
+
+/** The deep link `POST /api/chat/link` answers. */
+export const CHAT_LINK: ChatLinkStart = {
+	url: "https://chat.hoandat.com/b/bot_scribe_bot?start=e2e-token",
+	expiresAt: "2026-10-16T10:10:00+07:00",
+};
+
+/** `linkedAt` of a linked account. */
+const LINKED_AT = "2026-10-16T09:55:00+07:00";
+
+export const STUB_MINUTES: TranscriptMinutes = {
+	model: "gpt-4.1-mini",
+	createdAt: "2026-10-16T09:50:00+07:00",
+	summary:
+		"Khách hàng muốn bản dùng thử trong tháng này; nhóm sẽ gửi báo giá và lịch triển khai.",
+	decisions: [{ text: "Bắt đầu dùng thử từ thứ Hai tuần sau.", at: 62 }],
+	actions: [
+		{
+			text: "Gửi báo giá gói doanh nghiệp",
+			owner: "Lan",
+			due: "thứ Sáu",
+			at: 8,
+		},
+		{ text: "Chuẩn bị tài khoản dùng thử", owner: null, due: null, at: 95 },
+	],
+	stale: false,
+};
 
 /** Every date in the fixtures is this day (Asia/Saigon); specs freeze the clock to it. */
 export const FIXED_NOW = new Date("2026-10-16T10:00:00+07:00");
@@ -105,6 +149,9 @@ export function apiFixtures(overrides: Partial<ApiFixtures> = {}): ApiFixtures {
 			{ name: "phong-van-phan-1.m4a", fileId: "f-seg-1" },
 			{ name: "phong-van-phan-2.m4a", fileId: "f-seg-2" },
 		],
+		chatLinked: false,
+		minutes: STUB_MINUTES,
+		replies: {},
 		...overrides,
 	};
 }
@@ -118,6 +165,8 @@ const UPLOAD_CHUNK_SIZE = 5 * 1024 * 1024;
 /** Ids the stubbed backend hands out for new sessions and jobs. */
 export const STUB_IDS = {
 	recordingSession: "e2e-recording",
+	/** File id `POST /api/recordings/init` keeps for the browser recording. */
+	recordingFile: "6710e2e0a1b2c3d4e5f60718",
 	uploadSession: "e2e-upload",
 	job: "e2e-job",
 } as const;
@@ -136,11 +185,26 @@ export interface ApiStub {
 	readonly requests: string[];
 	/** Chunks of browser recordings, in the order they arrived. */
 	readonly recordingChunks: RecordingChunk[];
+	/** `POST /api/transcript-docs/:key/bookmarks`, by decoded key. */
+	readonly bookmarks: Array<{ key: string; at: number }>;
+	/** Stands in for the user sending `/start` to the bot on chat.hoandat.com. */
+	linkChat: () => void;
 }
 
 /** Number of `METHOD /path` calls the stub answered. */
 export function countOf(stub: ApiStub, call: string): number {
 	return stub.requests.filter((request) => request === call).length;
+}
+
+/** `/api/transcript-docs/<key>/<summary|share|bookmarks>[/<id>]`. */
+const DOC_ACTION =
+	/^\/api\/transcript-docs\/([^/]+)\/(summary|share|bookmarks)(?:\/([^/]+))?$/;
+
+/** A number field of a JSON body, or NaN. */
+function numberField(body: unknown, name: string): number {
+	if (typeof body !== "object" || body === null) return Number.NaN;
+	const value: unknown = Reflect.get(body, name);
+	return typeof value === "number" ? value : Number.NaN;
 }
 
 function json(route: Route, status: number, body: unknown): Promise<void> {
@@ -160,7 +224,16 @@ export async function stubApi(
 	page: Page,
 	fixtures: ApiFixtures = apiFixtures(),
 ): Promise<ApiStub> {
-	const stub: ApiStub = { unexpected: [], requests: [], recordingChunks: [] };
+	let chatLinked = fixtures.chatLinked;
+	const stub: ApiStub = {
+		unexpected: [],
+		requests: [],
+		recordingChunks: [],
+		bookmarks: [],
+		linkChat: () => {
+			chatLinked = true;
+		},
+	};
 	// Bytes the stubbed backend holds per upload session ("Cắt file"), and
 	// the size announced at init.
 	const uploaded = new Map<string, number>();
@@ -181,6 +254,37 @@ export async function stubApi(
 			const session = url.searchParams.get("session") ?? "";
 			const offset = Number(url.searchParams.get("offset") ?? "0");
 			const bodySize = request.postDataBuffer()?.length ?? 0;
+			const override = fixtures.replies[call];
+			if (override) return json(route, override.status, override.body);
+			const docAction = DOC_ACTION.exec(url.pathname);
+			if (docAction) {
+				const [, rawKey = "", action, id] = docAction;
+				const key = decodeURIComponent(rawKey);
+				if (request.method() === "POST" && action === "summary") {
+					return json(route, 200, fixtures.minutes);
+				}
+				if (request.method() === "POST" && action === "share") {
+					return chatLinked
+						? json(route, 200, { ok: true })
+						: json(route, 409, {
+								error: "Chưa liên kết chat.hoandat.com.",
+								code: "CHAT_NOT_LINKED",
+							});
+				}
+				if (request.method() === "POST" && action === "bookmarks" && !id) {
+					const at = numberField(request.postDataJSON(), "at");
+					stub.bookmarks.push({ key, at });
+					const saved: Bookmark = {
+						id: `b-${stub.bookmarks.length}`,
+						at,
+						label: null,
+					};
+					return json(route, 200, saved);
+				}
+				if (request.method() === "DELETE" && action === "bookmarks" && id) {
+					return json(route, 200, { ok: true });
+				}
+			}
 			if (
 				request.method() === "GET" &&
 				url.pathname.startsWith("/api/transcript-docs/")
@@ -219,10 +323,26 @@ export async function stubApi(
 						contentType: "text/html; charset=utf-8",
 						body: `<!doctype html><html lang="vi"><title>${E2E_STUB_MARKER}</title><p>Trang đăng nhập hoandat (giả lập)</p></html>`,
 					});
+				case "GET /api/chat/link": {
+					const status: ChatLinkStatus = {
+						linked: chatLinked,
+						linkedAt: chatLinked ? LINKED_AT : null,
+						enabled: true,
+					};
+					return json(route, 200, status);
+				}
+				case "POST /api/chat/link":
+					return json(route, 200, CHAT_LINK);
+				case "DELETE /api/chat/link":
+					chatLinked = false;
+					return json(route, 200, { linked: false });
 				case "POST /api/auth/logout":
 					return json(route, 200, { endSessionUrl: null });
 				case "POST /api/recordings/init":
-					return json(route, 200, { sessionId: STUB_IDS.recordingSession });
+					return json(route, 200, {
+						sessionId: STUB_IDS.recordingSession,
+						fileId: STUB_IDS.recordingFile,
+					});
 				case "POST /api/recordings/chunk":
 					stub.recordingChunks.push({ session, offset, size: bodySize });
 					return json(route, 200, { written: offset + bodySize });

@@ -1,8 +1,10 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, useLocation } from "react-router";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CurrentUser } from "../auth/auth-api";
+import { fakeFetch, jsonResponse } from "../test/fake-fetch";
+import { TestProviders } from "../test/test-providers";
 
 vi.mock("../auth/auth-context", () => ({
 	useAuth: () => ({ logout: async () => undefined }),
@@ -20,10 +22,12 @@ function Location() {
 
 function renderHeader(canTranscribe = true, path = "/record") {
 	return render(
-		<MemoryRouter initialEntries={[path]}>
-			<AppHeader user={user(canTranscribe)} />
-			<Location />
-		</MemoryRouter>,
+		<TestProviders>
+			<MemoryRouter initialEntries={[path]}>
+				<AppHeader user={user(canTranscribe)} />
+				<Location />
+			</MemoryRouter>
+		</TestProviders>,
 	);
 }
 
@@ -35,6 +39,18 @@ function location(): string | null {
 function navs() {
 	return screen.getAllByRole("navigation", { name: "Chức năng" });
 }
+
+beforeEach(() => {
+	vi.stubGlobal(
+		"fetch",
+		fakeFetch({ "GET /api/chat/link": jsonResponse({ linked: false }) })
+			.fetcher,
+	);
+});
+
+afterEach(() => {
+	vi.unstubAllGlobals();
+});
 
 describe("AppHeader", () => {
 	it("links the wordmark to Ghi âm", async () => {

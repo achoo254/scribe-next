@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
 	activeSentence,
+	bookmarksBySegment,
 	editedCounts,
 	gapsBefore,
 	needsReload,
 	nextSegment,
 	overallProgress,
+	placeOf,
+	sentenceAt,
 	shouldPreload,
 	summaryStatus,
 	transcriptTitle,
@@ -53,6 +56,42 @@ describe("reader model", () => {
 		expect(activeSentence({ ...s, sentences: s.sentences.slice(1) }, 5)).toBe(
 			-1,
 		);
+	});
+
+	it("puts a moment beside the sentence said then, or the first", () => {
+		const s = segment("a", 0);
+		expect(sentenceAt({ ...s, sentences: s.sentences.slice(1) }, 5)).toBe(0);
+		expect(sentenceAt(s, 45)).toBe(2);
+		expect(sentenceAt({ ...s, sentences: [] }, 5)).toBe(-1);
+	});
+
+	it("places a session time in its segment, across gaps and past the end", () => {
+		// Segment index 2 is missing: "c" (index 3) starts at 180 s.
+		const segments = [segment("a", 0), segment("b", 1), segment("c", 3)];
+		expect(placeOf(segments, 75)).toMatchObject({
+			segment: { fileId: "b" },
+			seconds: 15,
+		});
+		expect(placeOf(segments, 150)).toMatchObject({
+			segment: { fileId: "b" },
+			seconds: 60,
+		});
+		expect(placeOf(segments, 999)).toMatchObject({
+			segment: { fileId: "c" },
+			seconds: 60,
+		});
+		expect(placeOf([], 5)).toBeNull();
+	});
+
+	it("groups bookmarks by segment in time order", () => {
+		const segments = [segment("a", 0), segment("b", 1)];
+		const grouped = bookmarksBySegment(segments, [
+			{ id: "3", at: 90, label: null },
+			{ id: "1", at: 10, label: "mở đầu" },
+			{ id: "2", at: 5, label: null },
+		]);
+		expect(grouped.get("a")?.map((b) => b.id)).toEqual(["2", "1"]);
+		expect(grouped.get("b")?.map((b) => b.id)).toEqual(["3"]);
 	});
 
 	it("moves to the next segment and stops after the last", () => {

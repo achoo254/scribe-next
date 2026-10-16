@@ -4,13 +4,17 @@ import { fileKeys } from "../files/file-queries";
 import { transcriptKeys } from "../transcript/transcript-queries";
 import { isPending, needsReload } from "./reader-model";
 import {
+	type TranscriptDetail,
 	type TranscriptSummary,
+	createSummary,
+	deleteBookmark,
 	deleteTranscript,
 	fetchTranscriptDoc,
 	fetchTranscriptStatus,
 	listTranscriptDocs,
 	renameTranscript,
 	saveSegmentTexts,
+	shareSummary,
 } from "./transcript-docs-api";
 
 /** Status poll of an open transcript while segments are being transcribed. */
@@ -121,5 +125,46 @@ export function useDeleteTranscript() {
 				queryClient.invalidateQueries({ queryKey: fileKeys.recordings }),
 				queryClient.invalidateQueries({ queryKey: transcriptKeys.all }),
 			]),
+	});
+}
+
+/** "Tóm tắt" / "Tóm tắt lại": the new minutes replace the old in the open doc. */
+export function useCreateSummary(key: string) {
+	const queryClient = useQueryClient();
+	return useMutation({
+		mutationFn: () => createSummary(key),
+		onSuccess: (summary) => {
+			queryClient.setQueryData<TranscriptDetail>(
+				transcriptDocKeys.detail(key),
+				(doc) => (doc ? { ...doc, summary } : doc),
+			);
+		},
+	});
+}
+
+export function useShareSummary(key: string) {
+	return useMutation({ mutationFn: () => shareSummary(key) });
+}
+
+export function useDeleteBookmark(key: string) {
+	const queryClient = useQueryClient();
+	return useMutation({
+		mutationFn: (id: string) => deleteBookmark(key, id),
+		onSuccess: (_, id) => {
+			queryClient.setQueryData<TranscriptDetail>(
+				transcriptDocKeys.detail(key),
+				(doc) =>
+					doc
+						? {
+								...doc,
+								bookmarks: (doc.bookmarks ?? []).filter((b) => b.id !== id),
+							}
+						: doc,
+			);
+		},
+		onSettled: () =>
+			queryClient.invalidateQueries({
+				queryKey: transcriptDocKeys.detail(key),
+			}),
 	});
 }

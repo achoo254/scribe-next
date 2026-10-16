@@ -1,3 +1,4 @@
+import { chat } from "./chat";
 import { common } from "./common";
 import { errors } from "./errors";
 import { layout } from "./layout";
@@ -14,6 +15,7 @@ import { ui } from "./ui";
  * is typed `Messages` and must fill exactly these keys.
  */
 export const vi = {
+	chat,
 	common,
 	errors,
 	layout,

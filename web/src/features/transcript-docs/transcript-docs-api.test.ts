@@ -2,12 +2,16 @@ import { describe, expect, it } from "vitest";
 import { ApiError } from "../../lib/api";
 import { fakeFetch, jsonResponse } from "../../test/fake-fetch";
 import {
+	addBookmark,
+	createSummary,
+	deleteBookmark,
 	deleteTranscript,
 	fetchTranscriptDoc,
 	fetchTranscriptStatus,
 	listTranscriptDocs,
 	renameTranscript,
 	saveSegmentTexts,
+	shareSummary,
 	transcriptKey,
 } from "./transcript-docs-api";
 
@@ -72,5 +76,46 @@ describe("transcript-docs api", () => {
 		});
 		await deleteTranscript(KEY, fetcher);
 		expect(calls[0]?.method).toBe("DELETE");
+	});
+
+	it("summarises, shares, and adds and deletes bookmarks under the doc", async () => {
+		const { fetcher, calls } = fakeFetch({
+			[`POST ${PATH}/summary`]: jsonResponse({ summary: "Tóm tắt." }),
+			[`POST ${PATH}/share`]: jsonResponse({ ok: true }),
+			[`POST ${PATH}/bookmarks`]: jsonResponse({
+				id: "b1",
+				at: 12.5,
+				label: null,
+			}),
+			[`DELETE ${PATH}/bookmarks/b1`]: jsonResponse({ ok: true }),
+		});
+		expect((await createSummary(KEY, fetcher)).summary).toBe("Tóm tắt.");
+		await shareSummary(KEY, fetcher);
+		expect(await addBookmark(KEY, 12.5, fetcher)).toEqual({
+			id: "b1",
+			at: 12.5,
+			label: null,
+		});
+		await deleteBookmark(KEY, "b1", fetcher);
+		expect(calls.map((call) => call.method)).toEqual([
+			"POST",
+			"POST",
+			"POST",
+			"DELETE",
+		]);
+		expect(calls[2]?.body).toEqual({ at: 12.5 });
+	});
+
+	it("keeps the code of a refused share", async () => {
+		const { fetcher } = fakeFetch({
+			[`POST ${PATH}/share`]: jsonResponse(
+				{ error: "Chưa liên kết chat.hoandat.com.", code: "CHAT_NOT_LINKED" },
+				409,
+			),
+		});
+		await expect(shareSummary(KEY, fetcher)).rejects.toMatchObject({
+			status: 409,
+			code: "CHAT_NOT_LINKED",
+		});
 	});
 });

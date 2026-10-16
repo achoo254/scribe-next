@@ -67,6 +67,47 @@ export const transcript = {
 		capReached:
 			"Chép lời đã dùng hết hạn mức chung của tháng này, sẽ mở lại đầu tháng sau.",
 	},
+	minutes: {
+		title: "Biên bản",
+		intro:
+			"Tóm tắt bản chép lời thành biên bản: nội dung chính, các quyết định và việc cần làm, mỗi mục kèm mốc giây để nghe lại.",
+		needsTranscript: "Chép lời xong ít nhất một đoạn để tóm tắt.",
+		create: "Tóm tắt",
+		recreate: "Tóm tắt lại",
+		running: "Đang tóm tắt… có thể mất tới một phút.",
+		stale: "Đã cũ",
+		staleBody:
+			"Bản chép lời đã đổi sau lần tóm tắt này. Bấm “Tóm tắt lại” để có biên bản mới.",
+		decisions: "Quyết định",
+		noDecisions: "Không có quyết định nào được nhắc tới.",
+		actions: "Việc cần làm",
+		noActions: "Không có việc cần làm nào được nhắc tới.",
+		owner: "Người làm: {owner}",
+		due: "Hạn: {due}",
+		createdAt: "Tạo lúc {date}",
+		jump: "Nghe từ {time}",
+		dailyLimit:
+			"Hôm nay đã dùng {used}/{limit} lượt tóm tắt. Mở lại lúc {time}.",
+		monthlyLimit:
+			"Tháng này tài khoản đã dùng hết hạn mức tóm tắt ({used}/{limit} phút quy đổi). Mở lại lúc {time}.",
+		capReached:
+			"Tóm tắt đã dùng hết hạn mức chung của tháng này, mở lại lúc {time}.",
+		failed: "Không tóm tắt được",
+		send: "Gửi sang chat",
+		link: "Liên kết chat",
+		sent: "Đã gửi biên bản sang chat",
+		sendFailed: "Không gửi được biên bản",
+	},
+	bookmarks: {
+		title: "Dấu mốc",
+		count: { other: "{count} mốc" },
+		unnamed: "Dấu mốc {number}",
+		inline: "Dấu mốc {time}",
+		inlineLabel: "Dấu mốc {time} · {label}",
+		delete: "Xoá dấu mốc {time}",
+		deleted: "Đã xoá dấu mốc",
+		deleteFailed: "Không xoá được dấu mốc",
+	},
 	reader: {
 		back: "Lời đã chép",
 		loading: "Đang tải bản chép lời…",

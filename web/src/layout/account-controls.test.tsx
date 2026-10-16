@@ -3,6 +3,8 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CurrentUser } from "../auth/auth-api";
+import { fakeFetch, jsonResponse } from "../test/fake-fetch";
+import { TestProviders } from "../test/test-providers";
 import type { SessionActivity } from "./session-activity";
 
 const auth = vi.hoisted(() => ({
@@ -24,25 +26,36 @@ const USER: CurrentUser = {
 function renderControls(
 	activity: SessionActivity = IDLE_ACTIVITY,
 	beforeSignOut = vi.fn<() => Promise<void>>(async () => undefined),
+	{
+		user = USER,
+		routes = { "GET /api/chat/link": jsonResponse({ linked: false }) },
+	}: {
+		user?: CurrentUser;
+		routes?: Parameters<typeof fakeFetch>[0];
+	} = {},
 ) {
+	const fake = fakeFetch(routes);
+	vi.stubGlobal("fetch", fake.fetcher);
 	render(
-		<MemoryRouter initialEntries={["/"]}>
-			<Routes>
-				<Route
-					path="/"
-					element={
-						<AccountControls
-							user={USER}
-							activity={activity}
-							beforeSignOut={beforeSignOut}
-						/>
-					}
-				/>
-				<Route path="/login" element={<p>trang đăng nhập</p>} />
-			</Routes>
-		</MemoryRouter>,
+		<TestProviders>
+			<MemoryRouter initialEntries={["/"]}>
+				<Routes>
+					<Route
+						path="/"
+						element={
+							<AccountControls
+								user={user}
+								activity={activity}
+								beforeSignOut={beforeSignOut}
+							/>
+						}
+					/>
+					<Route path="/login" element={<p>trang đăng nhập</p>} />
+				</Routes>
+			</MemoryRouter>
+		</TestProviders>,
 	);
-	return { beforeSignOut };
+	return { beforeSignOut, calls: fake.calls };
 }
 
 async function openMenu() {
@@ -59,6 +72,7 @@ async function chooseSignOut() {
 }
 
 afterEach(() => {
+	vi.unstubAllGlobals();
 	vi.restoreAllMocks();
 	auth.logout.mockClear();
 });
@@ -74,8 +88,140 @@ describe("account menu", () => {
 		expect(items).toEqual([
 			"account-menu-account",
 			"account-menu-apps",
+			"account-menu-chat-link",
 			"topbar-logout",
 		]);
+	});
+
+	it("has no chat entry for an account that cannot transcribe", async () => {
+		const { calls } = renderControls(undefined, undefined, {
+			user: { email: USER.email, canTranscribe: false },
+			routes: {},
+		});
+		await openMenu();
+		expect(screen.queryByRole("menuitem", { name: /chat/ })).toBeNull();
+		expect(calls).toEqual([]);
+	});
+
+	it("offers no linking when the server takes no links", async () => {
+		renderControls(undefined, undefined, {
+			routes: {
+				"GET /api/chat/link": jsonResponse({
+					linked: false,
+					linkedAt: null,
+					enabled: false,
+				}),
+			},
+		});
+		await waitFor(async () => {
+			const menu = await openMenu();
+			expect(menu).not.toHaveTextContent("Liên kết chat.hoandat.com");
+		});
+	});
+
+	it("polls after the deep link opened until the link is confirmed in chat", async () => {
+		vi.spyOn(window, "open").mockReturnValue(null);
+		renderControls(undefined, undefined, {
+			routes: {
+				"GET /api/chat/link": [
+					jsonResponse({ linked: false, linkedAt: null, enabled: true }),
+					jsonResponse({ linked: false, linkedAt: null, enabled: true }),
+					jsonResponse({
+						linked: true,
+						linkedAt: "2026-10-16T02:30:00Z",
+						enabled: true,
+					}),
+				],
+				"POST /api/chat/link": jsonResponse({
+					url: "https://chat.hoandat.com/b/bot_scribe_bot?start=tok1",
+					expiresAt: new Date(Date.now() + 600_000).toISOString(),
+				}),
+			},
+		});
+		await openMenu();
+		await userEvent.click(
+			await screen.findByRole("menuitem", {
+				name: "Liên kết chat.hoandat.com",
+			}),
+		);
+		const open = await screen.findByRole("button", {
+			name: /^Mở chat\.hoandat\.com/,
+		});
+		await waitFor(() => expect(open).toBeEnabled());
+		await userEvent.click(open);
+		expect(
+			await screen.findByText(/bấm “Xác nhận liên kết” trong chat/),
+		).toBeInTheDocument();
+		// Two polls, 3 s apart, without any focus change.
+		expect(
+			await screen.findByText(
+				"Đã liên kết. Biên bản sẽ được gửi vào chat riêng của bạn với bot Scribe.",
+				undefined,
+				{ timeout: 8000 },
+			),
+		).toBeInTheDocument();
+	}, 12_000);
+
+	it("opens the linking steps and the deep link from the button's click", async () => {
+		const open = vi.spyOn(window, "open").mockReturnValue(null);
+		renderControls(undefined, undefined, {
+			routes: {
+				"GET /api/chat/link": jsonResponse({ linked: false }),
+				"POST /api/chat/link": jsonResponse({
+					url: "https://chat.hoandat.com/b/bot_scribe_bot?start=tok1",
+					expiresAt: "2026-10-16T03:10:00Z",
+				}),
+			},
+		});
+		await openMenu();
+		await userEvent.click(
+			await screen.findByRole("menuitem", {
+				name: "Liên kết chat.hoandat.com",
+			}),
+		);
+		const dialog = await screen.findByRole("dialog", {
+			name: "Liên kết chat.hoandat.com",
+		});
+		expect(dialog).toHaveTextContent("Gửi /start");
+		expect(
+			await screen.findByText(
+				"Đường dẫn chỉ dùng một lần, hết hạn lúc 10:10 16/10.",
+			),
+		).toBeInTheDocument();
+		await userEvent.click(
+			screen.getByRole("button", { name: /^Mở chat\.hoandat\.com/ }),
+		);
+		expect(open).toHaveBeenCalledWith(
+			"https://chat.hoandat.com/b/bot_scribe_bot?start=tok1",
+			"_blank",
+			"noopener,noreferrer",
+		);
+	});
+
+	it("re-reads the link when the window gets the focus back", async () => {
+		const { calls } = renderControls(undefined, undefined, {
+			routes: {
+				"GET /api/chat/link": [
+					jsonResponse({ linked: false, linkedAt: null, enabled: true }),
+					jsonResponse({
+						linked: true,
+						linkedAt: "2026-10-16T02:30:00Z",
+						enabled: true,
+					}),
+				],
+				"DELETE /api/chat/link": jsonResponse({ linked: false }),
+			},
+		});
+		await waitFor(() => expect(calls).toHaveLength(1));
+		window.dispatchEvent(new Event("focus"));
+		await waitFor(() => expect(calls).toHaveLength(2));
+		const menu = await openMenu();
+		expect(menu).toHaveTextContent("Đã liên kết chat lúc 09:30 16/10");
+		await userEvent.click(
+			await screen.findByRole("menuitem", { name: "Gỡ liên kết chat" }),
+		);
+		expect(await screen.findByText("Đã gỡ liên kết chat")).toBeInTheDocument();
+		expect(calls.map((call) => call.method)).toContain("DELETE");
 	});
 
 	it.each([

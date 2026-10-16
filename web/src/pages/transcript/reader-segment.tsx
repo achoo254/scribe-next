@@ -1,10 +1,16 @@
-import { IconPencil, IconRefresh } from "@tabler/icons-react";
+import { IconBookmark, IconPencil, IconRefresh } from "@tabler/icons-react";
 import { memo, useState } from "react";
 import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
 import { controlClassName } from "../../components/ui/input";
-import { isPending } from "../../features/transcript-docs/reader-model";
-import type { TranscriptSegment } from "../../features/transcript-docs/transcript-docs-api";
+import {
+	isPending,
+	sentenceAt,
+} from "../../features/transcript-docs/reader-model";
+import type {
+	Bookmark,
+	TranscriptSegment,
+} from "../../features/transcript-docs/transcript-docs-api";
 import { useT } from "../../i18n/i18n-context";
 import type { Translate } from "../../i18n/translate";
 import { errorMessage } from "../../lib/api";
@@ -22,11 +28,32 @@ export interface ReaderSegmentProps {
 	/** Another segment is being edited: one at a time. */
 	editLocked: boolean;
 	canTranscribe: boolean;
+	/** Bookmarks inside this segment (session times), in order. */
+	bookmarks?: readonly Bookmark[];
 	onPlay: (fileId: string, seconds: number) => void;
 	onEditingChange: (fileId: string, editing: boolean) => void;
 	/** Saves against `runId`, the run the draft was started on. */
 	onSave: (fileId: string, runId: string, texts: string[]) => Promise<void>;
 	onRerun: (segment: TranscriptSegment) => void;
+}
+
+const NO_BOOKMARKS: readonly Bookmark[] = [];
+
+/** "Dấu mốc 1:23 · label" beside the sentence it was pressed during. */
+function BookmarkMark({ bookmark }: { bookmark: Bookmark }) {
+	const t = useT();
+	const time = formatClock(bookmark.at);
+	return (
+		<p
+			data-id={`reader-mark-${bookmark.id}`}
+			className="m-0 flex items-center gap-1.5 px-2 pt-1 font-mono text-primary text-xs"
+		>
+			<IconBookmark size={14} aria-hidden="true" />
+			{bookmark.label
+				? t("transcript.bookmarks.inlineLabel", { time, label: bookmark.label })
+				: t("transcript.bookmarks.inline", { time })}
+		</p>
+	);
 }
 
 /** Rows of a textarea for a sentence, so short ones stay one line. */
@@ -69,6 +96,7 @@ export const ReaderSegment = memo(function ReaderSegment({
 	activeIndex,
 	editLocked,
 	canTranscribe,
+	bookmarks = NO_BOOKMARKS,
 	onPlay,
 	onEditingChange,
 	onSave,
@@ -229,6 +257,13 @@ export const ReaderSegment = memo(function ReaderSegment({
 							// biome-ignore lint/suspicious/noArrayIndexKey: fixed-order list
 							key={index}
 						>
+							{bookmarks
+								.filter(
+									(b) => sentenceAt(segment, b.at - segment.offsetS) === index,
+								)
+								.map((b) => (
+									<BookmarkMark key={b.id} bookmark={b} />
+								))}
 							<button
 								type="button"
 								data-id={`${id}-line-${index}`}
@@ -248,22 +283,27 @@ export const ReaderSegment = memo(function ReaderSegment({
 					))}
 				</ol>
 			) : (
-				<button
-					type="button"
-					data-id={`${id}-status`}
-					onClick={() => onPlay(segment.fileId, 0)}
-					className={cn(
-						"flex min-h-11 w-full cursor-pointer gap-3 rounded-sm px-2 py-2 text-left text-sm hover:bg-surface-subtle focus-visible:shadow-focus-primary focus-visible:outline-none",
-						segment.status === "failed" ? "text-error-text" : "text-muted",
-					)}
-				>
-					<span className="flex-none font-mono tabular-nums">
-						{formatClock(segment.offsetS)}
-					</span>
-					<span aria-live={busy ? "polite" : undefined}>
-						{statusLine(t, segment, progress)}
-					</span>
-				</button>
+				<>
+					{bookmarks.map((b) => (
+						<BookmarkMark key={b.id} bookmark={b} />
+					))}
+					<button
+						type="button"
+						data-id={`${id}-status`}
+						onClick={() => onPlay(segment.fileId, 0)}
+						className={cn(
+							"flex min-h-11 w-full cursor-pointer gap-3 rounded-sm px-2 py-2 text-left text-sm hover:bg-surface-subtle focus-visible:shadow-focus-primary focus-visible:outline-none",
+							segment.status === "failed" ? "text-error-text" : "text-muted",
+						)}
+					>
+						<span className="flex-none font-mono tabular-nums">
+							{formatClock(segment.offsetS)}
+						</span>
+						<span aria-live={busy ? "polite" : undefined}>
+							{statusLine(t, segment, progress)}
+						</span>
+					</button>
+				</>
 			)}
 		</section>
 	);

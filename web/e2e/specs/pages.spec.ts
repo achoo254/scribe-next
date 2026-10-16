@@ -1,5 +1,10 @@
 import { type Page, expect, test } from "@playwright/test";
-import { type ApiFixtures, apiFixtures, stubApi } from "../support/api-stubs";
+import {
+	type ApiFixtures,
+	STUB_MINUTES,
+	apiFixtures,
+	stubApi,
+} from "../support/api-stubs";
 import {
 	COLOR_SCHEMES,
 	fontsReady,
@@ -128,6 +133,36 @@ for (const scheme of COLOR_SCHEMES) {
 			expect(
 				await seriousA11yViolations(page, '[data-id="reader-menu-content"]'),
 			).toEqual([]);
+			expect(api.unexpected).toEqual([]);
+		});
+
+		test("Transcript reader with minutes and bookmarks", async ({ page }) => {
+			const api = await stubApi(page, {
+				...FIXTURES,
+				chatLinked: true,
+				transcriptDetails: {
+					[DOC_KEY]: {
+						...DOC_DETAIL,
+						summary: { ...STUB_MINUTES, stale: true },
+						bookmarks: [
+							{ id: "b-1", at: 3, label: "Khách hỏi giá" },
+							{ id: "b-2", at: 64, label: null },
+						],
+					},
+				},
+			});
+			await page.goto(`/transcripts/${encodeURIComponent(DOC_KEY)}`);
+			await expect(page.getByTestId("minutes")).toContainText(
+				STUB_MINUTES.summary,
+			);
+			await expect(page.getByTestId("minutes-send")).toHaveText(
+				"Gửi sang chat",
+			);
+			await expect(page.getByTestId("reader-mark-b-1")).toHaveText(
+				"Dấu mốc 0:03 · Khách hỏi giá",
+			);
+			await snapshot(page, `reader-minutes-${scheme}.png`);
+			expect(await seriousA11yViolations(page)).toEqual([]);
 			expect(api.unexpected).toEqual([]);
 		});
 

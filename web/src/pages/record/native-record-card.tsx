@@ -4,6 +4,7 @@ import { Button } from "../../components/ui/button";
 import { Card } from "../../components/ui/card";
 import { SegmentedControl } from "../../components/ui/segmented-control";
 import { useT } from "../../i18n/i18n-context";
+import { BookmarkControl } from "./bookmark-control";
 import { LevelMeter } from "./live-monitor";
 import { useNativeRecordState } from "./record-state";
 import { RecordTimer } from "./record-timer";
@@ -18,7 +19,8 @@ const SEGMENT_MINUTES = ["1", "5", "10"] as const;
  */
 export function NativeRecordCard() {
 	const t = useT();
-	const { rec, minutes, setMinutes, toggle } = useNativeRecordState();
+	const { rec, minutes, setMinutes, toggle, bookmarks, mark } =
+		useNativeRecordState();
 	const busy = rec.recording || rec.starting || rec.finalizing;
 	const options = SEGMENT_MINUTES.map((value) => ({
 		value,
@@ -68,6 +70,13 @@ export function NativeRecordCard() {
 						<RecordTimer
 							data-id="native-record-timer"
 							elapsedS={rec.elapsedS}
+						/>
+					) : null}
+					{rec.recording ? (
+						<BookmarkControl
+							idPrefix="native-record"
+							onMark={mark}
+							bookmarks={bookmarks}
 						/>
 					) : null}
 				</div>

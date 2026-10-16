@@ -18,20 +18,25 @@ import { Skeleton, SkeletonRegion } from "../../components/ui/skeleton";
 import { useToast } from "../../components/ui/toast";
 import {
 	activeSentence,
+	bookmarksBySegment,
 	gapsBefore,
 	isPending,
 	nextSegment,
 	overallProgress,
+	placeOf,
+	sentenceAt,
 	shouldPreload,
 	transcriptTitle,
 	untranscribed,
 } from "../../features/transcript-docs/reader-model";
 import type {
+	Bookmark,
 	TranscriptDetail,
 	TranscriptSegment,
 } from "../../features/transcript-docs/transcript-docs-api";
 import {
 	transcriptDocKeys,
+	useDeleteBookmark,
 	useDeleteTranscript,
 	useRenameTranscript,
 	useSaveSegment,
@@ -51,6 +56,8 @@ import {
 import { formatDateTime, formatDuration } from "../../lib/format";
 import { useDelayedFlag } from "../../lib/use-delayed-flag";
 import { useTranscribe } from "../record/use-transcribe";
+import { BookmarkList } from "./bookmark-list";
+import { MinutesCard } from "./minutes-card";
 import { ReaderSegment } from "./reader-segment";
 
 export interface TranscriptReaderProps {
@@ -64,6 +71,32 @@ interface Playback {
 	fileId: string;
 	seek: MediaSeek | null;
 	autoPlay: boolean;
+}
+
+const NO_BOOKMARKS: Bookmark[] = [];
+
+/**
+ * Brings the sentence at `seconds` of `segment` into view and focuses it
+ * (the segment itself when it has no sentences yet).
+ */
+function revealSentence(segment: TranscriptSegment, seconds: number): void {
+	const index = sentenceAt(segment, seconds);
+	const id =
+		index >= 0
+			? `reader-segment-${segment.index}-line-${index}`
+			: `reader-segment-${segment.index}`;
+	const target = document.querySelector<HTMLElement>(`[data-id="${id}"]`);
+	if (!target) return;
+	const reduce = window.matchMedia?.(
+		"(prefers-reduced-motion: reduce)",
+	).matches;
+	if (typeof target.scrollIntoView === "function") {
+		target.scrollIntoView({
+			block: "center",
+			behavior: reduce ? "auto" : "smooth",
+		});
+	}
+	target.focus({ preventScroll: true });
 }
 
 /** What `.txt`/`.srt` export covers: the whole session, or the one file. */
@@ -91,6 +124,7 @@ export function TranscriptReader({
 	const rename = useRenameTranscript();
 	const save = useSaveSegment();
 	const remove = useDeleteTranscript();
+	const removeBookmark = useDeleteBookmark(transcriptKey);
 	const transcribe = useTranscribe(() => {
 		void queryClient.invalidateQueries({ queryKey: transcriptDocKeys.all });
 	});
@@ -124,6 +158,11 @@ export function TranscriptReader({
 		() => new Map((statuses ?? []).map((s) => [s.fileId, s])),
 		[statuses],
 	);
+	const bookmarks = doc?.bookmarks ?? NO_BOOKMARKS;
+	const marks = useMemo(
+		() => bookmarksBySegment(segments, bookmarks),
+		[segments, bookmarks],
+	);
 	const toSend = untranscribed(segments);
 	const pending = segments.filter((s) => isPending(s.status)).length;
 
@@ -131,6 +170,29 @@ export function TranscriptReader({
 		setPlayback({ fileId, seek: { time: seconds }, autoPlay: false });
 		setTime(seconds);
 	}, []);
+
+	/** A time of the minutes or a bookmark (session seconds): show and play it. */
+	const jumpTo = useCallback(
+		(at: number) => {
+			const place = placeOf(segments, at);
+			if (!place) return;
+			play(place.segment.fileId, place.seconds);
+			revealSentence(place.segment, place.seconds);
+		},
+		[segments, play],
+	);
+
+	function deleteBookmark(bookmark: Bookmark): void {
+		removeBookmark.mutate(bookmark.id, {
+			onSuccess: () => toast.show({ title: t("transcript.bookmarks.deleted") }),
+			onError: (cause) =>
+				toast.show({
+					tone: "error",
+					title: t("transcript.bookmarks.deleteFailed"),
+					description: errorMessage(cause),
+				}),
+		});
+	}
 
 	const onEditingChange = useCallback((fileId: string, on: boolean) => {
 		setEditing((value) => (on ? fileId : value === fileId ? null : value));
@@ -327,6 +389,23 @@ export function TranscriptReader({
 				</Card>
 			) : null}
 
+			{canTranscribe ? (
+				<MinutesCard
+					transcriptKey={transcriptKey}
+					summary={doc.summary ?? null}
+					canSummarize={anyDone}
+					onJump={jumpTo}
+				/>
+			) : null}
+			<BookmarkList
+				bookmarks={bookmarks}
+				deleting={
+					removeBookmark.isPending ? (removeBookmark.variables ?? null) : null
+				}
+				onJump={jumpTo}
+				onDelete={deleteBookmark}
+			/>
+
 			<Card data-id="reader-body" className="grid gap-4 p-4 sm:p-6">
 				{pending > 0 ? (
 					<Alert tone="info" data-id="reader-progress">
@@ -381,6 +460,7 @@ export function TranscriptReader({
 								}
 								editLocked={editing !== null && editing !== segment.fileId}
 								canTranscribe={canTranscribe}
+								bookmarks={marks.get(segment.fileId)}
 								onPlay={play}
 								onEditingChange={onEditingChange}
 								onSave={saveSegment}

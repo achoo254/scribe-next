@@ -19,6 +19,15 @@ export const errors = {
 		rename: "Không đổi được tên",
 		saveSegment: "Không lưu được câu đã sửa",
 		delete: "Không xoá được bản chép lời",
+		summary: "Không tóm tắt được",
+		share: "Không gửi được sang chat",
+		bookmark: "Không lưu được dấu mốc",
+		deleteBookmark: "Không xoá được dấu mốc",
+	},
+	chat: {
+		status: "Không kiểm được liên kết chat",
+		link: "Không tạo được đường dẫn liên kết",
+		unlink: "Không gỡ được liên kết chat",
 	},
 	split: {
 		create: "Không thể tạo công việc cắt file",

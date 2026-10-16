@@ -2,7 +2,9 @@ import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { RouterProvider, createMemoryRouter } from "react-router";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { fakeFetch, jsonResponse } from "./test/fake-fetch";
+import { TestProviders } from "./test/test-providers";
 
 const auth = vi.hoisted(() => ({
 	canTranscribe: true,
@@ -79,11 +81,25 @@ const { appRoutes } = await import("./routes");
 
 function renderAt(path: string) {
 	const router = createMemoryRouter(appRoutes, { initialEntries: [path] });
-	render(<RouterProvider router={router} />);
+	render(
+		<TestProviders>
+			<RouterProvider router={router} />
+		</TestProviders>,
+	);
 	return router;
 }
 
+beforeEach(() => {
+	// The account menu reads the chat.hoandat.com link.
+	vi.stubGlobal(
+		"fetch",
+		fakeFetch({ "GET /api/chat/link": jsonResponse({ linked: false }) })
+			.fetcher,
+	);
+});
+
 afterEach(() => {
+	vi.unstubAllGlobals();
 	auth.canTranscribe = true;
 	auth.splitThrows = false;
 	auth.stateMounts = 0;

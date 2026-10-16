@@ -24,6 +24,12 @@ import {
 	type SplitJobApi,
 	useSplitJob,
 } from "../../features/split/use-split-job";
+import type {
+	BookmarkQueue,
+	BookmarkQueueState,
+} from "../../features/transcript-docs/bookmark-queue";
+import { transcriptKey } from "../../features/transcript-docs/transcript-docs-api";
+import { useBookmarkQueue } from "../../features/transcript-docs/use-bookmark-queue";
 import { isNativeShell } from "../../lib/api";
 import { parsePositiveNumber } from "../../lib/format";
 
@@ -49,6 +55,13 @@ function saved(recorder: Recorder): Promise<void> {
 	});
 }
 
+/** Bookmark at the recording clock of the browser recording being made. */
+function markBrowser(rec: RecorderApi, queue: BookmarkQueue): void {
+	const { recording, fileId, elapsedS } = rec.recorder.getState();
+	if (!recording || !fileId) return;
+	queue.mark(transcriptKey({ fileId }), elapsedS);
+}
+
 export interface BrowserRecordState {
 	rec: RecorderApi;
 	/** The cut after a recording; independent of the "Cắt file" page's job. */
@@ -66,6 +79,10 @@ export interface BrowserRecordState {
 	 * first, so no chunk is sent after the session is gone.
 	 */
 	stopAndSave: () => Promise<void>;
+	/** Bookmarks of the current recording. */
+	bookmarks: BookmarkQueueState;
+	/** Null when this recording cannot take bookmarks (backend gave no file id). */
+	mark: (() => void) | null;
 }
 
 export type SegmentMinutes = "1" | "5" | "10";
@@ -76,6 +93,9 @@ export interface NativeRecordState {
 	minutes: SegmentMinutes;
 	setMinutes: (minutes: SegmentMinutes) => void;
 	toggle: () => Promise<void>;
+	bookmarks: BookmarkQueueState;
+	/** Null while no session is known yet. */
+	mark: (() => void) | null;
 }
 
 const BrowserRecordContext = createContext<BrowserRecordState | null>(null);
@@ -85,6 +105,7 @@ export function BrowserRecordProvider({ children }: { children: ReactNode }) {
 	const queryClient = useQueryClient();
 	const rec = useRecorder();
 	const split = useSplitJob();
+	const { queue, ...bookmarks } = useBookmarkQueue();
 	const { recorder } = rec;
 	const [sources, setSources] = useState<RecordSources>({
 		mic: true,
@@ -110,6 +131,7 @@ export function BrowserRecordProvider({ children }: { children: ReactNode }) {
 	async function toggle(): Promise<void> {
 		if (!recorder.getState().recording) {
 			split.reset();
+			queue.reset();
 			await recorder.start(sources);
 			return;
 		}
@@ -144,6 +166,9 @@ export function BrowserRecordProvider({ children }: { children: ReactNode }) {
 				setSplitMinutes,
 				toggle,
 				stopAndSave,
+				bookmarks,
+				mark:
+					rec.recording && rec.fileId ? () => markBrowser(rec, queue) : null,
 			}}
 		>
 			{children}
@@ -157,6 +182,7 @@ export function NativeRecordProvider({ children }: { children: ReactNode }) {
 	const rec = useNativeRecorder();
 	const { user } = useAuth();
 	const [minutes, setMinutes] = useState<SegmentMinutes>("1");
+	const { queue, ...bookmarks } = useBookmarkQueue();
 
 	async function toggle(): Promise<void> {
 		if (rec.recorder.getState().recording) {
@@ -165,11 +191,24 @@ export function NativeRecordProvider({ children }: { children: ReactNode }) {
 		}
 		if (!user) return;
 		const key = rec.userKey ?? (await userKeyOf(user.email));
+		queue.reset();
 		await rec.recorder.start(key, Number(minutes));
 	}
 
+	const { sessionId } = rec;
+	const mark =
+		rec.recording && sessionId
+			? () =>
+					queue.mark(
+						transcriptKey({ session: sessionId }),
+						rec.recorder.position(),
+					)
+			: null;
+
 	return (
-		<NativeRecordContext.Provider value={{ rec, minutes, setMinutes, toggle }}>
+		<NativeRecordContext.Provider
+			value={{ rec, minutes, setMinutes, toggle, bookmarks, mark }}
+		>
 			{children}
 		</NativeRecordContext.Provider>
 	);

@@ -95,6 +95,41 @@ describe("NativeRecorder", () => {
 		expect(recorder.getLevel()).toBe(0);
 	});
 
+	it("counts session seconds over closed segments for bookmarks", async () => {
+		const { plugin, emit } = fakePlugin();
+		const recorder = new NativeRecorder(plugin);
+		await recorder.attach();
+		await recorder.start("key1", 1);
+		expect(recorder.getState().sessionId).toBe("s1");
+
+		emit("state", { state: "recording" });
+		emit("elapsed", { elapsedS: 30 });
+		expect(recorder.position()).toBe(30);
+		// The first segment closed at 60.4 s of clock, its file is 60 s long.
+		emit("elapsed", { elapsedS: 60.4 });
+		emit("segment", { index: 0, durationS: 60 });
+		emit("elapsed", { elapsedS: 75.4 });
+		expect(recorder.position()).toBeCloseTo(75);
+
+		// A new session starts from zero.
+		await recorder.stop();
+		await recorder.start("key1", 1);
+		emit("elapsed", { elapsedS: 3 });
+		expect(recorder.position()).toBe(3);
+	});
+
+	it("reads the open session back from Swift's status", async () => {
+		const { plugin } = fakePlugin({
+			state: "recording",
+			elapsedS: 12,
+			sessionId: "s-live",
+		});
+		const recorder = new NativeRecorder(plugin);
+		await recorder.attach();
+		expect(recorder.getState().sessionId).toBe("s-live");
+		expect(recorder.position()).toBe(12);
+	});
+
 	it("shows why a start failed and stops on an engine failure", async () => {
 		const { plugin, emit } = fakePlugin();
 		vi.mocked(plugin.start).mockRejectedValueOnce(

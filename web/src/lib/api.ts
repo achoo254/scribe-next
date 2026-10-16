@@ -13,15 +13,60 @@ import { activeTranslator } from "../i18n/active-translator";
 export const NATIVE_API_ORIGIN: string =
 	import.meta.env.VITE_NATIVE_API_ORIGIN ?? "";
 
+/**
+ * Numbers of a refused request that counts against an allowance (`403`
+ * `{code, usedMinutes, limitMinutes, retryAt}`): what was used, the limit,
+ * and when it opens again (ISO time; null when the backend does not say).
+ */
+export interface QuotaRefusal {
+	used: number;
+	limit: number;
+	retryAt: string | null;
+}
+
 /** HTTP or network failure; `status` 0 means the request never got a reply. */
 export class ApiError extends Error {
 	readonly status: number;
+	/** Machine-readable reason (`{code}` of the reply), e.g. `CHAT_NOT_LINKED`. */
+	readonly code: string | null;
+	readonly quota: QuotaRefusal | null;
 
-	constructor(status: number, message: string) {
+	constructor(
+		status: number,
+		message: string,
+		{
+			code = null,
+			quota = null,
+		}: { code?: string | null; quota?: QuotaRefusal | null } = {},
+	) {
 		super(message);
 		this.name = "ApiError";
 		this.status = status;
+		this.code = code;
+		this.quota = quota;
 	}
+}
+
+/** `code` of a caught `ApiError`, else null. */
+export function errorCode(error: unknown): string | null {
+	return error instanceof ApiError ? error.code : null;
+}
+
+function field(body: object, name: string): unknown {
+	return Reflect.get(body, name);
+}
+
+/** The quota numbers of a refusal body, or null when it carries none. */
+function quotaOf(body: object): QuotaRefusal | null {
+	const used = field(body, "usedMinutes");
+	const limit = field(body, "limitMinutes");
+	if (typeof used !== "number" || typeof limit !== "number") return null;
+	const retryAt = field(body, "retryAt");
+	return {
+		used,
+		limit,
+		retryAt: typeof retryAt === "string" && retryAt ? retryAt : null,
+	};
 }
 
 interface CapacitorGlobal {
@@ -49,18 +94,25 @@ export function apiUrl(path: string, base: string = apiBase()): string {
 	return `${base}${path}`;
 }
 
-/** Reads `{ error }` from a failed response; the backend's text is Vietnamese. */
+/**
+ * Reads `{ error, code? }` (and the quota numbers) from a failed response;
+ * the backend's text is Vietnamese.
+ */
 async function errorFrom(res: Response, fallback: string): Promise<ApiError> {
 	const body: unknown = await res.json().catch(() => null);
-	const message =
-		typeof body === "object" &&
-		body !== null &&
-		"error" in body &&
-		typeof body.error === "string" &&
-		body.error.length > 0
-			? body.error
-			: fallback;
-	return new ApiError(res.status, message);
+	if (typeof body !== "object" || body === null) {
+		return new ApiError(res.status, fallback);
+	}
+	const error = field(body, "error");
+	const code = field(body, "code");
+	return new ApiError(
+		res.status,
+		typeof error === "string" && error.length > 0 ? error : fallback,
+		{
+			code: typeof code === "string" && code ? code : null,
+			quota: quotaOf(body),
+		},
+	);
 }
 
 export interface ApiRequest extends Omit<RequestInit, "body"> {

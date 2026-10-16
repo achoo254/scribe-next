@@ -1,7 +1,9 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { RouterProvider, createMemoryRouter } from "react-router";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { fakeFetch, jsonResponse } from "../test/fake-fetch";
+import { TestProviders } from "../test/test-providers";
 
 const auth = vi.hoisted(() => ({
 	recording: false,
@@ -42,11 +44,24 @@ function renderShell() {
 		],
 		{ initialEntries: ["/record"] },
 	);
-	render(<RouterProvider router={router} />);
+	render(
+		<TestProviders>
+			<RouterProvider router={router} />
+		</TestProviders>,
+	);
 	return router;
 }
 
+beforeEach(() => {
+	vi.stubGlobal(
+		"fetch",
+		fakeFetch({ "GET /api/chat/link": jsonResponse({ linked: false }) })
+			.fetcher,
+	);
+});
+
 afterEach(() => {
+	vi.unstubAllGlobals();
 	auth.recording = false;
 	auth.logout.mockClear();
 	auth.stop.mockClear();

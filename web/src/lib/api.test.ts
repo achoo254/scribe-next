@@ -65,6 +65,37 @@ describe("apiFetch", () => {
 		await expect(failure).rejects.toEqual(new ApiError(413, "Vượt hạn mức"));
 	});
 
+	it("keeps the machine code and the quota numbers of a refusal", async () => {
+		const { fetcher } = fakeFetch({
+			"POST /api/x": jsonResponse(
+				{
+					error: "Hết lượt",
+					code: "SUMMARY_DAILY_LIMIT",
+					usedMinutes: 10,
+					limitMinutes: 10,
+					retryAt: "2026-10-16T17:00:00+00:00",
+				},
+				403,
+			),
+		});
+		const failure = apiFetch("/api/x", { method: "POST" }, fetcher);
+		await expect(failure).rejects.toMatchObject({
+			status: 403,
+			message: "Hết lượt",
+			code: "SUMMARY_DAILY_LIMIT",
+			quota: { used: 10, limit: 10, retryAt: "2026-10-16T17:00:00+00:00" },
+		});
+	});
+
+	it("has no code or quota when the reply carries none", async () => {
+		const { fetcher } = fakeFetch({
+			"POST /api/x": jsonResponse({ error: "Sai", retryAt: null }, 400),
+		});
+		await expect(
+			apiFetch("/api/x", { method: "POST" }, fetcher),
+		).rejects.toMatchObject({ code: null, quota: null });
+	});
+
 	it("falls back to the given message when the body has none", async () => {
 		const { fetcher } = fakeFetch({
 			"GET /api/files": new Response("oops", { status: 502 }),

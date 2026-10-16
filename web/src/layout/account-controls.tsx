@@ -1,11 +1,18 @@
 /* Copied from localman-next apps/web/src/components/layout/account-controls.tsx.
    Scribe change: signs out through auth-context (`useSignOut`) instead of
    Localman's logout form, and asks first while a recording or an upload
-   would be cut short. */
+   would be cut short; links and unlinks chat.hoandat.com. */
 import { useState } from "react";
 import type { CurrentUser } from "../auth/auth-api";
+import { ChatLinkDialog } from "../components/chat-link-dialog";
 import { ConfirmModal } from "../components/ui/confirm-modal";
+import { useToast } from "../components/ui/toast";
+import {
+	useChatLinkQuery,
+	useUnlinkChat,
+} from "../features/chat-link/chat-link-queries";
 import { useT } from "../i18n/i18n-context";
+import { errorMessage } from "../lib/api";
 import { AccountMenu } from "./account-menu";
 import {
 	IDLE_ACTIVITY,
@@ -32,8 +39,26 @@ export function AccountControls({
 	compact = false,
 }: AccountControlsProps) {
 	const t = useT();
+	const toast = useToast();
 	const session = useSignOut();
 	const [confirming, setConfirming] = useState(false);
+	// Minutes are made only by accounts that may transcribe; others have nothing to send.
+	const canSend = user.canTranscribe === true;
+	const chatLink = useChatLinkQuery(canSend);
+	const unlink = useUnlinkChat();
+	const [linking, setLinking] = useState(false);
+
+	function unlinkChat(): void {
+		unlink.mutate(undefined, {
+			onSuccess: () => toast.show({ title: t("chat.menu.unlinked") }),
+			onError: (cause) =>
+				toast.show({
+					tone: "error",
+					title: t("chat.menu.unlinkFailed"),
+					description: errorMessage(cause),
+				}),
+		});
+	}
 
 	function requestSignOut(): void {
 		if (isSessionBusy(activity)) {
@@ -47,10 +72,26 @@ export function AccountControls({
 		<>
 			<AccountMenu
 				user={user}
+				chat={
+					canSend
+						? {
+								linked: chatLink.data?.linked === true,
+								linkedAt: chatLink.data?.linkedAt ?? null,
+								// Unknown (loading, failed): offer linking; the dialog says why not.
+								enabled: chatLink.data?.enabled ?? true,
+								busy: unlink.isPending,
+								onLink: () => setLinking(true),
+								onUnlink: unlinkChat,
+							}
+						: undefined
+				}
 				logoutBusy={session.busy}
 				onLogout={requestSignOut}
 				compact={compact}
 			/>
+			{canSend ? (
+				<ChatLinkDialog open={linking} onOpenChange={setLinking} />
+			) : null}
 			<ConfirmModal
 				open={confirming}
 				onOpenChange={setConfirming}

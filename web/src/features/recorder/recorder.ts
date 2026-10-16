@@ -33,6 +33,12 @@ export interface RecorderState {
 	elapsedS: number;
 	/** Screen preview stream while recording a screen; null otherwise. */
 	previewStream: MediaStream | null;
+	/**
+	 * Id the backend keeps for the file being recorded (its transcript is
+	 * `f:<fileId>`, so bookmarks can be saved before it exists); null when
+	 * not recording or when the backend does not say.
+	 */
+	fileId: string | null;
 	error: string;
 }
 
@@ -46,6 +52,7 @@ const IDLE: RecorderState = {
 	finalizing: false,
 	elapsedS: 0,
 	previewStream: null,
+	fileId: null,
 	error: "",
 };
 
@@ -102,7 +109,10 @@ export class Recorder {
 			if (stream.getTracks().length === 0)
 				throw new Error(activeTranslator().t("recorder.noSource"));
 
-			const { sessionId } = await apiJson<{ sessionId: string }>(
+			const { sessionId, fileId } = await apiJson<{
+				sessionId: string;
+				fileId?: string;
+			}>(
 				"/api/recordings/init",
 				{
 					method: "POST",
@@ -140,7 +150,12 @@ export class Recorder {
 			}, 1000);
 			void this.wakeLock.acquire();
 			document.addEventListener("visibilitychange", this.onVisibility);
-			this.set({ ...this.state, recording: true, previewStream: stream });
+			this.set({
+				...this.state,
+				recording: true,
+				previewStream: stream,
+				fileId: typeof fileId === "string" && fileId ? fileId : null,
+			});
 		} catch (cause) {
 			this.releaseMedia();
 			this.chunks?.close();

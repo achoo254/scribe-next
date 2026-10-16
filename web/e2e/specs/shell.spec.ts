@@ -73,6 +73,7 @@ for (const scheme of COLOR_SCHEMES) {
 			await expect(menu.getByRole("menuitem")).toHaveText([
 				"Tài khoản hoandat, mở trang hoandat ở thẻ mới",
 				"Ứng dụng, mở trang hoandat ở thẻ mới",
+				"Liên kết chat.hoandat.com",
 				"Đăng xuất",
 			]);
 			await expect(page).toHaveScreenshot(`account-menu-${scheme}.png`);

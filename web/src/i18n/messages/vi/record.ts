@@ -35,6 +35,13 @@ export const record = {
 	splitDone: {
 		other: "Đã cắt thành {count} đoạn — xem trong <b>Lịch sử ghi</b> bên dưới.",
 	},
+	bookmark: {
+		mark: "Đánh dấu",
+		marked: { other: "Đã đánh {count} mốc" },
+		waiting: { other: "{count} mốc đang chờ lưu, tự thử lại" },
+		failed: { other: "{count} mốc không lưu được: {reason}" },
+		unknownReason: "không rõ lý do",
+	},
 	native: {
 		segmentLength: "Độ dài mỗi đoạn",
 		segmentOption: { other: "{count} phút" },

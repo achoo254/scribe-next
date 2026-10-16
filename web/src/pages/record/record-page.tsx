@@ -10,6 +10,7 @@ import { renderRich } from "../../i18n/rich-text";
 import { PageHeader } from "../../layout/page-header";
 import { isNativeShell } from "../../lib/api";
 import { parsePositiveNumber } from "../../lib/format";
+import { BookmarkControl } from "./bookmark-control";
 import { LiveMonitor } from "./live-monitor";
 import { NativeRecordCard } from "./native-record-card";
 import { RecordSourcesField } from "./record-sources";
@@ -55,6 +56,8 @@ function BrowserRecordCard() {
 		splitMinutes,
 		setSplitMinutes,
 		toggle,
+		bookmarks,
+		mark,
 	} = useBrowserRecordState();
 
 	const locked = rec.recording || rec.finalizing;
@@ -115,6 +118,13 @@ function BrowserRecordCard() {
 					</Button>
 					{rec.recording ? (
 						<RecordTimer data-id="record-timer" elapsedS={rec.elapsedS} />
+					) : null}
+					{rec.recording ? (
+						<BookmarkControl
+							idPrefix="record"
+							onMark={mark}
+							bookmarks={bookmarks}
+						/>
 					) : null}
 					{rec.finalizing ? (
 						<p className="m-0 text-muted text-sm">{t("record.saving")}</p>

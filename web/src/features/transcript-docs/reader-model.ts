@@ -1,6 +1,7 @@
 import { activeTranslator } from "../../i18n/active-translator";
 import { sessionTitle } from "../files/recording-groups";
 import type {
+	Bookmark,
 	SegmentRunStatus,
 	TranscriptDetail,
 	TranscriptSegment,
@@ -23,6 +24,62 @@ export function activeSentence(
 		if (sentence.start <= time) active = index;
 	});
 	return active;
+}
+
+/**
+ * Sentence a moment of the segment belongs to (bookmarks sit beside it):
+ * the one being said then, or the first when the moment comes before it;
+ * -1 when the segment has no sentences.
+ */
+export function sentenceAt(segment: TranscriptSegment, time: number): number {
+	if (segment.sentences.length === 0) return -1;
+	return Math.max(0, activeSentence(segment, time));
+}
+
+/** Where a session time (seconds from its start) is: segment and time in its file. */
+export interface SessionPlace {
+	segment: TranscriptSegment;
+	/** Seconds inside the segment's own file. */
+	seconds: number;
+}
+
+/**
+ * The segment holding `at` (seconds from the session start) and the time
+ * inside it. A moment in a missing segment or past the end goes to the
+ * segment before it (clamped to its end); before the first, to its start.
+ */
+export function placeOf(
+	segments: readonly TranscriptSegment[],
+	at: number,
+): SessionPlace | null {
+	const first = segments[0];
+	if (!first) return null;
+	let segment = first;
+	for (const candidate of segments) {
+		if (candidate.offsetS <= at) segment = candidate;
+	}
+	const inside = Math.max(0, at - segment.offsetS);
+	return {
+		segment,
+		seconds:
+			segment.durationS > 0 ? Math.min(inside, segment.durationS) : inside,
+	};
+}
+
+/** Bookmarks of each segment (by file id), in time order. */
+export function bookmarksBySegment(
+	segments: readonly TranscriptSegment[],
+	bookmarks: readonly Bookmark[],
+): Map<string, Bookmark[]> {
+	const out = new Map<string, Bookmark[]>();
+	for (const bookmark of [...bookmarks].sort((a, b) => a.at - b.at)) {
+		const place = placeOf(segments, bookmark.at);
+		if (!place) continue;
+		const list = out.get(place.segment.fileId) ?? [];
+		list.push(bookmark);
+		out.set(place.segment.fileId, list);
+	}
+	return out;
 }
 
 /** Segment that plays after `fileId`; null after the last one. */

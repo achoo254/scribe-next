@@ -6,6 +6,7 @@ import { Outlet, RouterProvider, createMemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ToastProvider } from "../../components/ui/toast";
 import type { RecorderNativePlugin } from "../../features/recorder/native-recorder";
+import { fakeFetch, jsonResponse } from "../../test/fake-fetch";
 
 type Handler = (data: Record<string, unknown>) => void;
 
@@ -161,6 +162,7 @@ afterEach(() => {
 	browser.disposed = 0;
 	native.handlers.clear();
 	vi.clearAllMocks();
+	vi.unstubAllGlobals();
 });
 
 describe("RecordStateProvider (browser)", () => {
@@ -184,7 +186,7 @@ describe("RecordStateProvider (iOS app)", () => {
 		await waitFor(() => expect(native.plugin.syncUploads).toHaveBeenCalled());
 		// Every plugin event is listened to (state … quotaFull), once.
 		await waitFor(() =>
-			expect(native.plugin.addListener).toHaveBeenCalledTimes(9),
+			expect(native.plugin.addListener).toHaveBeenCalledTimes(10),
 		);
 		await userEvent.click(screen.getByRole("button", { name: "5 phút" }));
 
@@ -208,6 +210,42 @@ describe("RecordStateProvider (iOS app)", () => {
 		expect(screen.getByText("Đang ghi — 2:05")).toBeInTheDocument();
 		expect(native.plugin.syncUploads).toHaveBeenCalledTimes(1);
 		// Listeners were attached once, not again per visit.
-		expect(native.plugin.addListener).toHaveBeenCalledTimes(9);
+		expect(native.plugin.addListener).toHaveBeenCalledTimes(10);
+	});
+
+	it("bookmarks at the session second across segments, without stopping", async () => {
+		const fake = fakeFetch({
+			"POST /api/transcript-docs/s%3As1/bookmarks": [
+				jsonResponse({ error: "Mỗi bản ghi có tối đa 200 dấu mốc." }, 409),
+				jsonResponse({ id: "b1", at: 75, label: null }),
+			],
+		});
+		vi.stubGlobal("fetch", fake.fetcher);
+		renderRoutes(NativeRecordProvider, <NativeRecordCard />);
+		await waitFor(() =>
+			expect(native.plugin.addListener).toHaveBeenCalledTimes(10),
+		);
+		await userEvent.click(screen.getByRole("button", { name: "Bắt đầu ghi" }));
+		act(() => {
+			native.emit("state", { state: "recording" });
+			native.emit("elapsed", { elapsedS: 60.4 });
+			native.emit("segment", { index: 0, durationS: 60 });
+			native.emit("elapsed", { elapsedS: 75.4 });
+		});
+
+		const mark = await screen.findByRole("button", { name: "Đánh dấu" });
+		await userEvent.click(mark);
+		expect(
+			await screen.findByText(
+				"1 mốc không lưu được: Mỗi bản ghi có tối đa 200 dấu mốc.",
+			),
+		).toBeInTheDocument();
+		await userEvent.click(mark);
+		expect(await screen.findByText("Đã đánh 1 mốc")).toBeInTheDocument();
+		const bodies = fake.calls.map((call) => call.body);
+		expect(bodies).toHaveLength(2);
+		expect((bodies[1] as { at: number }).at).toBeCloseTo(75);
+		expect(native.plugin.stop).not.toHaveBeenCalled();
+		expect(screen.getByText("Đang ghi — 1:15")).toBeInTheDocument();
 	});
 });
