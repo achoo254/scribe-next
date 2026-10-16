@@ -27,6 +27,21 @@ pub struct Discovery {
     pub end_session_endpoint: Option<String>,
     #[serde(default)]
     pub revocation_endpoint: Option<String>,
+    #[serde(default)]
+    pub userinfo_endpoint: Option<String>,
+}
+
+/// Hồ sơ từ `userinfo`: hoandat-auth chỉ đưa `email`/`email_verified`/`name` ra đây với code flow, không
+/// đưa vào ID token.
+#[derive(Debug, Deserialize)]
+struct UserInfo {
+    sub: String,
+    #[serde(default)]
+    email: Option<String>,
+    #[serde(default)]
+    email_verified: bool,
+    #[serde(default)]
+    name: Option<String>,
 }
 
 /// Claim cần từ ID token.
@@ -67,12 +82,16 @@ pub struct LogoutClaims {
 /// Token nhận từ IdP. Không `Debug` để khỏi in refresh token ra log.
 pub struct TokenSet {
     pub id_token: String,
+    /// Access token opaque, chỉ dùng gọi `userinfo`.
+    pub access_token: String,
     pub refresh_token: Option<String>,
 }
 
 #[derive(Deserialize)]
 struct TokenResponse {
     id_token: Option<String>,
+    #[serde(default)]
+    access_token: String,
     refresh_token: Option<String>,
 }
 
@@ -262,7 +281,7 @@ impl Oidc {
             let tokens: TokenResponse =
                 serde_json::from_str(&body).map_err(|_| GrantError::Unavailable("đọc token không được".into()))?;
             let id_token = tokens.id_token.ok_or_else(|| GrantError::Rejected("IdP không trả ID token".into()))?;
-            return Ok(TokenSet { id_token, refresh_token: tokens.refresh_token });
+            return Ok(TokenSet { id_token, access_token: tokens.access_token, refresh_token: tokens.refresh_token });
         }
         let error = serde_json::from_str::<TokenError>(&body).map(|e| e.error).unwrap_or_default();
         if error == "invalid_grant" {
@@ -270,6 +289,42 @@ impl Oidc {
         } else {
             Err(GrantError::Unavailable(format!("HTTP {status} {error}")))
         }
+    }
+
+    /// Danh tính của một lần đăng nhập/làm mới: xác minh ID token (`nonce` khi đăng nhập), rồi lấy email,
+    /// trạng thái xác minh và tên từ `userinfo` bằng access token đi kèm. `sub` của hai nguồn phải khớp.
+    pub async fn identify(
+        &self,
+        http: &reqwest::Client,
+        tokens: &TokenSet,
+        client_id: &str,
+        nonce: Option<&str>,
+    ) -> Result<IdClaims, AppError> {
+        let mut claims = self.verify_id_token(http, &tokens.id_token, client_id, nonce).await?;
+        let endpoint = self
+            .discovery(http)
+            .await?
+            .userinfo_endpoint
+            .clone()
+            .ok_or_else(|| AppError::Unavailable("IdP không có userinfo endpoint".into()))?;
+        let resp = http
+            .get(&endpoint)
+            .bearer_auth(&tokens.access_token)
+            .timeout(Duration::from_secs(10))
+            .send()
+            .await
+            .map_err(|e| AppError::Unavailable(format!("gọi userinfo: {}", e.without_url())))?;
+        if !resp.status().is_success() {
+            return Err(AppError::Unavailable(format!("userinfo trả {}", resp.status())));
+        }
+        let info: UserInfo = resp.json().await.map_err(|_| AppError::Unavailable("đọc userinfo không được".into()))?;
+        if info.sub != claims.sub {
+            return Err(AppError::Unauthorized("userinfo không khớp ID token".into()));
+        }
+        claims.email = info.email;
+        claims.email_verified = info.email_verified;
+        claims.name = info.name.or(claims.name);
+        Ok(claims)
     }
 
     /// Đổi authorization code (PKCE). `secret` có khi là client confidential.
@@ -344,11 +399,19 @@ mod tests {
             "token_endpoint": format!("{issuer}/token"),
             "jwks_uri": format!("{issuer}/jwks"),
             "end_session_endpoint": format!("{issuer}/session/end"),
+            "userinfo_endpoint": format!("{issuer}/me"),
         });
+        // userinfo giả: token "at-1" là của acc_1, token khác là của acc_2.
+        let me = |headers: axum::http::HeaderMap| async move {
+            let own = headers.get("authorization").and_then(|v| v.to_str().ok()) == Some("Bearer at-1");
+            let sub = if own { "acc_1" } else { "acc_2" };
+            Json(json!({ "sub": sub, "email": "a@b.vn", "email_verified": true, "name": "A" }))
+        };
         let jwks = json!({ "keys": [{ "kty": "EC", "crv": "P-256", "kid": "k1", "alg": "ES256", "use": "sig", "x": x, "y": y }] });
         let app = Router::new()
             .route("/.well-known/openid-configuration", get(move || async move { Json(meta) }))
-            .route("/jwks", get(move || async move { Json(jwks) }));
+            .route("/jwks", get(move || async move { Json(jwks) }))
+            .route("/me", get(me));
         tokio::spawn(async move { axum::serve(listener, app).await });
         FakeIdp { issuer, key: EncodingKey::from_ec_der(pkcs8.as_ref()) }
     }
@@ -396,6 +459,21 @@ mod tests {
         multi["azp"] = json!("other");
         let multi = sign(&idp, None, "k1", multi);
         assert!(oidc.verify_id_token(&http, &multi, "scribe-web", Some("n1")).await.is_err(), "azp");
+    }
+
+    #[tokio::test]
+    async fn identity_takes_email_from_userinfo_of_the_same_account() {
+        let idp = fake_idp().await;
+        let oidc = Oidc::new(&idp.issuer);
+        let http = reqwest::Client::new();
+        // Như hoandat-auth với code flow: ID token không có email.
+        let id_token = sign(&idp, None, "k1", json!({ "iss": idp.issuer, "aud": "scribe-web", "sub": "acc_1", "nonce": "n1",
+                                                    "exp": now() + 300, "iat": now() }));
+        let tokens = |at: &str| TokenSet { id_token: id_token.clone(), access_token: at.into(), refresh_token: None };
+        let who = oidc.identify(&http, &tokens("at-1"), "scribe-web", Some("n1")).await.expect("hợp lệ");
+        assert_eq!((who.sub.as_str(), who.email.as_deref(), who.email_verified, who.name.as_deref()), ("acc_1", Some("a@b.vn"), true, Some("A")));
+        // Access token của tài khoản khác: từ chối.
+        assert!(oidc.identify(&http, &tokens("at-2"), "scribe-web", Some("n1")).await.is_err());
     }
 
     #[tokio::test]

@@ -217,7 +217,7 @@ async fn finish_web_login(state: &AppState, code: &str, login_state: &str) -> Re
         .exchange_code(&state.http, client_id, Some(&state.oidc_web_secret), code, &saved.code_verifier, &callback_url(state))
         .await
         .map_err(grant_error)?;
-    let claims = state.oidc.verify_id_token(&state.http, &tokens.id_token, client_id, Some(&saved.nonce)).await?;
+    let claims = state.oidc.identify(&state.http, &tokens, client_id, Some(&saved.nonce)).await?;
     let user_id = admit(state, &claims).await?;
     let (token, _) = sessions::create(&state.db, &user_id, Client::Web, claims.sid.as_deref(), None).await?;
     audit::record(state, Some(&user_id), "auth.login", doc! { "client": "web" });
@@ -276,7 +276,7 @@ pub async fn native_exchange(
         .exchange_code(&state.http, client_id, None, &body.code, &body.code_verifier, &state.config.oidc_mobile_redirect_uri)
         .await
         .map_err(grant_error)?;
-    let claims = state.oidc.verify_id_token(&state.http, &tokens.id_token, client_id, Some(&body.nonce)).await?;
+    let claims = state.oidc.identify(&state.http, &tokens, client_id, Some(&body.nonce)).await?;
     let refresh = tokens
         .refresh_token
         .ok_or_else(|| AppError::Internal("IdP không cấp refresh token cho app".into()))?;
@@ -347,7 +347,7 @@ pub async fn native_refresh(
     sessions::unlock_device(&state.db, &device, sealed.as_deref()).await?;
 
     // Tài khoản vẫn phải là của máy này và vẫn được phép (allowlist có thể đã đổi).
-    let claims = state.oidc.verify_id_token(&state.http, &tokens.id_token, client_id, None).await?;
+    let claims = state.oidc.identify(&state.http, &tokens, client_id, None).await?;
     let owner = user::find_id_by_sub(&state.db, &claims.sub).await?;
     if owner.as_deref() != Some(device.user_id.as_str()) || admit(&state, &claims).await.is_err() {
         revoke(&state, &device).await?;
