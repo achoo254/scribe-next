@@ -267,7 +267,7 @@ pub async fn create(
     Ok(Json(json!({ "queued": queued, "skipped": files.len() - queued })))
 }
 
-/// Quỹ free qua 50/80/100% và trần tổng qua 80/100%: ghi `audit_events` và báo Telegram, mỗi mốc một
+/// Quỹ free qua 50/80/100% và trần tổng qua 80/100%: ghi `audit_events` và báo qua bot chat, mỗi mốc một
 /// lần mỗi tháng.
 async fn note_cap_levels(state: &AppState, month: &str) {
     let Ok(used) = usage::month_usage(&state.db, "-", month).await else { return };

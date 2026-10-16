@@ -99,9 +99,11 @@ pub struct Config {
     /// `TRANSCRIBE_OPEN=1`: mọi user đăng nhập được chép lời (trong hạn mức gói), không chỉ `TRANSCRIBE_EMAILS`.
     pub transcribe_open: bool,
     pub transcribe_limits: TranscribeLimits,
-    /// Báo chủ sản phẩm qua Telegram: tệp token bot (600) và chat id. Thiếu một trong hai thì chỉ log.
-    pub telegram_token_path: Option<String>,
-    pub telegram_chat_id: Option<String>,
+    /// Báo chủ sản phẩm qua bot chat.hoandat.com: gốc Bot API, tệp token bot (600) và chat id. Thiếu token
+    /// hoặc chat id thì chỉ log.
+    pub notify_bot_api: String,
+    pub notify_bot_token_path: Option<String>,
+    pub notify_chat_id: Option<String>,
     /// File lưu session signing key (tự sinh runtime, KHÔNG bake).
     pub session_key_path: String,
     /// Thư mục lưu upload/output ({data_dir}/{userId}/...).
@@ -157,8 +159,9 @@ impl Config {
                 option_env!("TRANSCRIBE_FREE_DAILY_MINUTES"),
                 option_env!("TRANSCRIBE_FREE_DELAY_HOURS"),
             ),
-            telegram_token_path: option_env!("TELEGRAM_TOKEN_PATH").filter(|p| !p.is_empty()).map(str::to_string),
-            telegram_chat_id: option_env!("TELEGRAM_CHAT_ID").filter(|c| !c.is_empty()).map(str::to_string),
+            notify_bot_api: option_env!("NOTIFY_BOT_API").unwrap_or("https://chat.hoandat.com/bot/v1").trim_end_matches('/').to_string(),
+            notify_bot_token_path: option_env!("NOTIFY_BOT_TOKEN_PATH").filter(|p| !p.is_empty()).map(str::to_string),
+            notify_chat_id: option_env!("NOTIFY_CHAT_ID").filter(|c| !c.is_empty()).map(str::to_string),
             session_key_path: get(2),
             data_dir: get(3),
             ffmpeg_path: option_env!("FFMPEG_PATH").unwrap_or("ffmpeg").to_string(),
