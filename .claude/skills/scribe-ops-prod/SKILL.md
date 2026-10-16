@@ -1,6 +1,6 @@
 ---
 name: scribe-ops-prod
-description: Tra cứu thông tin và vận hành Scribe (one-scribe) trên PRODUCTION (scribe.hoandat.com, server dùng chung 103.72.98.65 cổng SSH 24700, systemd scribe-be cổng 127.0.0.1:8787, binary /opt/scribe-be, FE /var/www/scribe/dist, database scribe trên mongod chung 27017). Chỉ đường đọc docs/deploy-web-production.md — credential ở $ALL_IN_ONE_STAGING_DEV entry SSH_SERVER_STAGING, cấu hình prod ở .env.production (không commit), SSH/mongosh qua scripts/ của skill, deploy bằng cargo zigbuild + npm run build theo §6. Kích hoạt khi user nhắc "prod", "production", "scribe.hoandat.com", "scribe.inetdev.io.vn", "server .65", "SSH prod", "mongosh prod", "log prod", "journal prod", "deploy prod", "rollback", "scribe-be", "scribe-be", "backup Scribe", "audit_events", "hàng đợi chép lời prod". KHÔNG dùng cho dev local (localhost:5173/8787, Mongo dev lab 176, cargo run, npm run dev) và không dùng cho app iPhone cài qua cáp (docs/ios-app.md).
+description: Tra cứu thông tin và vận hành Scribe (one-scribe) trên PRODUCTION (scribe.hoandat.com, server dùng chung 103.72.98.65 cổng SSH 24700, systemd scribe-be cổng 127.0.0.1:8787, binary /opt/scribe-be, FE /var/www/scribe/dist, database scribe trên mongod chung 27017). Chỉ đường đọc docs/deploy-web-production.md — credential ở $ALL_IN_ONE_STAGING_DEV entry SSH_SERVER_STAGING, cấu hình prod ở .env.production (không commit), SSH/mongosh qua scripts/ của skill, deploy bằng cargo zigbuild + npm run build theo §6. Kích hoạt khi user nhắc "prod", "production", "scribe.hoandat.com", "server .65", "SSH prod", "mongosh prod", "log prod", "journal prod", "deploy prod", "rollback", "scribe-be", "đăng nhập prod", "backup Scribe", "audit_events", "hàng đợi chép lời prod". KHÔNG dùng cho dev local (localhost:5173/8787, Mongo dev lab 176, cargo run, npm run dev) và không dùng cho app iPhone cài qua cáp (docs/ios-app.md).
 ---
 
 # Scribe Ops — Production
@@ -70,8 +70,9 @@ app trên máy, không chỉ Scribe.
 3. **DB `scribe` nằm trên mongod CHUNG cổng 27017** (cùng các db của app khác). Chỉ truy vấn db `scribe` qua
    `scripts/prod-mongosh.sh`; không `dropDatabase`, không đụng db khác, không đổi cấu hình mongod. Cổng 27017 mở ra
    ngoài và mật khẩu chia sẻ là **cố ý** (team kết nối trực tiếp) — không tự firewall/rotate.
-4. **Restart backend khi đang chép lời làm tốn tiền:** lượt dở chạy lại từ đầu và audio gửi lại bị OpenAI tính lần
-   nữa. Trước mọi restart: hàng đợi nên rỗng (§6); khác 0 thì chờ nếu được.
+4. **Restart backend khi đang chép lời làm tốn tiền:** lượt dở không mất (key OpenAI nằm ở server, lượt `running`
+   được xếp lại) nhưng chạy lại từ đầu, audio gửi lại bị OpenAI tính lần nữa. Trước mọi restart: hàng đợi nên rỗng
+   (§6); khác 0 thì chờ nếu được.
 5. **KHÔNG build trên server.** Build ở máy dev (`cargo zigbuild` cho backend musl, `npm run build` cho FE), đẩy
    artifact lên.
 6. **Cấu hình nằm trong binary.** `MONGO_URI`, `DB_NAME`, `TRANSCRIBE_EMAILS`, allowlist… nhúng lúc build từ
@@ -79,8 +80,9 @@ app trên máy, không chỉ Scribe.
    build + deploy lại. Không `strings` binary để đọc cấu hình.
 7. **KHÔNG xử lý dữ liệu nặng trên .65**: ~7,5 GB RAM, còn trống khoảng 3 GB cho cả máy (đo 16/10/2026); unit có
    `MemoryMax=1G`. Truy vấn có projection/`limit`, log lọc tại nguồn (`journalctl … | grep`).
-8. **Không in bí mật** (`MONGO_URI`, private key SSH, session key `/opt/scribe-be/.session-key`, key OpenAI của
-   server ở tệp `OPENAI_KEY_PATH`, chủ sở hữu giữ bản gốc ở `$ACCESS_TOKENS_JSON` mục `api.openai.com`): đọc vào biến, truyền qua env/stdin chứ không qua argv; `.env.production` chỉ liệt kê tên biến
+8. **Không in bí mật** (`MONGO_URI`, private key SSH, các tệp 600 trong `/opt/scribe-be`: `.session-key`,
+   `.oidc-web-secret`, `.openai-key` — chủ sở hữu giữ bản gốc ở `$ACCESS_TOKENS_JSON` mục `api.openai.com` —,
+   `.notify-bot-token`; `SCRIBE_WEB_CLIENT_SECRET` trong `/var/www/hoandat-auth/.env`): đọc vào biến, truyền qua env/stdin chứ không qua argv; `.env.production` chỉ liệt kê tên biến
    (`sed 's/=.*//' .env.production`).
 9. **Chọn đúng tệp credential:** máy .65 nằm trong `$ALL_IN_ONE_STAGING_DEV`, entry `SSH_SERVER_STAGING`; **không** có
    trong `$ALL_IN_ONE_PROD`. Cổng 24700 có allowlist IP (`CP_SSH_ACL`) — SSH bị chặn thì báo user, không gỡ chain.
@@ -92,7 +94,8 @@ Tìm nhanh tiêu đề: `grep -n '^#' docs/deploy-web-production.md`.
 
 | Cần biết | Đọc ở đâu | Ghi chú |
 |---|---|---|
-| Tên thật trên prod (domain, service, thư mục) | `docs/deploy-web-production.md` **§Tên trên prod nằm ngoài repo** | giá trị trong `.env.production` (`DEPLOY_*`) |
+| Tên thật trên prod (domain, service, thư mục, db) | `docs/deploy-web-production.md` **§Tên trên prod** | khớp `.env.production` (`DEPLOY_*`) |
+| Tệp bí mật trên server, đăng nhập hoandat-auth | **§Tệp bí mật trên server**, **§Đăng nhập hoandat-auth** | |
 | Máy, cổng SSH, credential | **§Server**, **§SSH source-IP allowlist** | |
 | nginx, thư mục, luồng request | **§Deploy topology** | |
 | Biến build, vì sao cấu hình nằm trong binary | **§Ràng buộc then chốt — cấu hình bake compile-time** | |
@@ -133,8 +136,8 @@ Tìm nhanh tiêu đề: `grep -n '^#' docs/deploy-web-production.md`.
 
 ## 4. Sự thật dễ nhầm
 
-- **Định danh user:** `userId` trong mọi collection là `_id` hex của `users`, không phải email hay
-  `firebaseUid`. Tra theo email ⟹ tìm `users` trước.
+- **Định danh user:** `userId` trong mọi collection là `_id` hex của `users`, không phải email, `idpSub` (tài
+  khoản hoandat-auth) hay `firebaseUid` (chỉ còn ở user cũ). Tra theo email ⟹ tìm `users` trước.
 - **Collection:** `files` (`kind` upload|output|recording, hạn 14 ngày theo `expiresAt`, sweep mỗi giờ xoá đĩa trước
   rồi doc), `transcripts` (kết quả máy + hàng đợi chép lời, `_id` = id file), `transcript_docs` (tiêu đề + câu sửa theo
   phiên, `{userId, key}` unique), `jobs`, `upload_sessions`/`recording_sessions`, `audit_events` (TTL 180 ngày).
@@ -158,7 +161,7 @@ Tìm nhanh tiêu đề: `grep -n '^#' docs/deploy-web-production.md`.
 - **Đổi đăng nhập + domain 16/10/2026 13:27:** đăng nhập qua hoandat-auth (client `scribe-web` confidential, secret ở
   `/opt/scribe-be/.oidc-web-secret` và `SCRIBE_WEB_CLIENT_SECRET` trong `/var/www/hoandat-auth/.env`; `scribe-mobile` cho
   iPhone), vhost `/etc/nginx/conf.d/scribe.conf` (443 với chứng chỉ chung `/etc/pki/nginx/server.{crt,key}`). Domain
-  cũ `scribe.inetdev.io.vn` đã bỏ (vhost xoá, không 301). Firebase không còn.
+  cũ `scribe.inetdev.io.vn` đã bỏ (vhost và DNS xoá, không 301). Firebase không còn.
 - **Máy dev:** hook của Claude chặn lệnh có chữ `target` (đường dẫn build) ⟹ build prod với
   `CARGO_TARGET_DIR=<thư mục scratch>`. `tar` trên macOS kèm xattr (cảnh báo `LIBARCHIVE.xattr` ở server, vô hại) ⟹
   nén bằng `COPYFILE_DISABLE=1 tar --no-xattrs …`, giải nén bằng `tar --no-same-owner` và `rsync --chown=root:root`

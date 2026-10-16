@@ -1,10 +1,10 @@
 # Project Roadmap — Scribe
 
-Cập nhật 2026-10-15. Chi tiết kiến trúc: [codebase-summary.md](./codebase-summary.md).
+Cập nhật 2026-10-16. Chi tiết kiến trúc: [codebase-summary.md](./codebase-summary.md).
 
 ## Scribe Web — plan `260711-1657-scribe-web-media-rust` — ✅ HOÀN TẤT (5/5 phase)
 
-Web hóa Scribe làm ghi + cắt media (BỎ AI transcribe — box .65 không GPU). Live tại domain prod (`DEPLOY_DOMAIN` trong `.env.production`).
+Web hóa Scribe làm ghi + cắt media (BỎ AI transcribe — box .65 không GPU). Live tại `https://scribe.hoandat.com`.
 
 | Phase | Nội dung | Trạng thái |
 |-------|----------|-----------|
@@ -42,30 +42,40 @@ Web hóa Scribe làm ghi + cắt media (BỎ AI transcribe — box .65 không GP
 - ✅ **Bỏ hoàn toàn app desktop** (Tauri + Vue + sidecar chép lời offline). Sản phẩm chỉ còn web và iPhone; lịch sử desktop vẫn còn trong git.
 - 🟡 **Đề xuất kiến trúc đích** (Jev đã duyệt một phần): `plans/dattqh/reports/brainstorm-261016-0809-scribe-target-architecture-refactor.md`.
 
+## 2026-10-16 — Bước 2: key server + đo phút, đăng nhập hoandat-auth (plan `dattqh/261016-1114-server-key-metering-and-hoandat-auth`)
+
+- ✅ **Phần A — key server + đo phút**: bỏ ô nhập key; chép lời dùng key OpenAI của server, giữ chỗ phút khi xếp hàng rồi quyết toán theo giây thật sự gửi; gói `free` 120 phút / `plus` 3.000 phút, quỹ free $10, trần tổng $30 mỗi tháng; CLI `scribe-be admin`. Restart không còn làm mất lượt chép.
+- ✅ **Chống lạm dụng gói free** (Phase 9): 30 phút/ngày mỗi tài khoản, tài khoản mới chờ 24 giờ, `admin block|unblock`, báo động qua bot chat.hoandat.com `@bot_scribe_bot`. Không giới hạn theo IP (người dùng bỏ: 4G chung IP nhà mạng).
+- ✅ **Bỏ mảnh im lặng**: mảnh hoàn toàn im lặng (đỉnh < −30 dB) không gửi OpenAI, không tính phút.
+- ✅ **7a — đổi tên hạ tầng**: service `scribe-be`, user `scribe`, `/opt/scribe-be`, `/var/www/scribe/dist`, db `scribe` (user Mongo riêng). Bản `onescribe*` đã xoá.
+- ✅ **7b — đăng nhập hoandat-auth + domain**: web (`scribe-web`) và iPhone (`scribe-mobile`) đăng nhập qua `auth.hoandat.com`, user cũ ghép theo email, phiên lưu Mongo thu hồi được; prod ở `scribe.hoandat.com` (Cloudflare SSL Full); bỏ Firebase và domain `scribe.inetdev.io.vn`. iPhone mới đã cài và kiểm trên máy thật.
+- ⏳ **7c — mở chép lời cho mọi người** (`TRANSCRIBE_OPEN`): bật vài ngày sau 7b khi đăng nhập chạy ổn; điều kiện Phase 9 đã xong. Tới lúc đó chép lời vẫn chỉ cho email trong `TRANSCRIBE_EMAILS`.
+
 ## Scribe iOS — lộ trình App Store (chưa thực thi)
 
 Chi tiết và lập luận: phase 4 của plan iOS. Tóm tắt:
 
 - **Cần tài khoản Apple Developer ($99/năm)**: profile 1 năm thay 7 ngày, TestFlight, Live Activity (đồng hồ + nút Dừng trên màn hình khoá), mở đường ghi màn hình bằng ReplayKit.
 - **Giấy tờ khi nộp**: Privacy Manifest (`PrivacyInfo.xcprivacy`); App Privacy khai "Audio Data" liên kết danh tính, và khai việc gửi audio tới OpenAI khi người dùng bấm Chép lời; ghi chú cho App Review về `UIBackgroundModes: audio`; nút xoá tài khoản trong app (chưa có).
-- **Chặn thật nằm ở hạ tầng, không phải iOS**: allowlist đăng nhập đang mở cho mọi tài khoản Google; session JWT 12 giờ không thu hồi được; chặng Cloudflare↔origin là HTTP; chưa có chính sách riêng tư và điều khoản; server chỉ giữ file 14 ngày.
+- **Chặn thật nằm ở hạ tầng, không phải iOS**: allowlist đăng nhập đang mở cho mọi tài khoản hoandat-auth có email đã xác minh; chặng Cloudflare↔origin là HTTPS nhưng chứng chỉ tự ký (SSL Full, chưa strict); chưa có chính sách riêng tư và điều khoản; server chỉ giữ file 14 ngày. (Đã xong 16/10: phiên lưu Mongo, thu hồi được.)
 - **Rà mã iOS (2026-10-15), cả 4 mục đạt**: `AudioRecorder` không import Capacitor · Team ID chỉ có trong `web/scripts/ios-device.sh`, không có trong mã app hay `project.pbxproj` · chuỗi xin quyền micro nêu rõ mục đích kể cả khi khoá màn hình · không dùng API không công khai.
 - **Thứ tự nếu quyết định lên Store**: trả $99 → profile 1 năm → Live Activity → TestFlight vài người thử → hạ tầng đủ điều kiện công khai → nộp.
 
 ## Trạng thái hiện tại
 
-- **Web**: LIVE bản React. Ghi (mic + màn hình/system) · Cắt file · lịch sử/phát lại · chép lời (email được phép) · retention/quota/rate-limit · xoá thủ công.
-- **iPhone**: chờ QA trên máy thật.
+- **Web**: LIVE bản React tại `scribe.hoandat.com`, đăng nhập hoandat-auth. Ghi (mic + màn hình/system) · Cắt file · lịch sử/phát lại · chép lời bằng key server có hạn mức (email được phép, chờ 7c) · retention/quota/rate-limit · xoá thủ công.
+- **iPhone**: bản `com.hoandat.scribe` đăng nhập hoandat-auth, đã kiểm trên máy thật (ghi khoá màn hình, tải lên, chép lời); còn cuộc gọi đến, AirPods, chế độ máy bay.
 
 ## Backlog / Next
 
 | Ưu tiên | Hạng mục | Ghi chú |
 |---------|----------|---------|
-| P1 | **QA app iPhone trên máy thật** — đăng nhập, ghi khoá màn hình 60 phút, cuộc gọi đến, AirPods, máy bay, chép lời | Cần iPhone cắm vào Mac |
+| P1 | **7c — mở chép lời cho mọi người** (`TRANSCRIBE_OPEN=1`, build lại) | Vài ngày sau 7b (16/10), khi đăng nhập ổn |
+| P1 | **QA app iPhone còn lại** — cuộc gọi đến, AirPods, máy bay; đăng xuất ở `auth.hoandat.com` làm app mất phiên | Cần máy thứ hai + AirPods |
 | P1 | **Realtime transcript trên iPhone** (Phase 5 plan iOS) | Gate 0 bước 1 đo xong từ Mac; bước 2 (WebSocket khi khoá màn hình) cần iPhone |
 | P2 | **QA thủ công web** — ghi mic + màn hình/system thật (Chrome), cắt file thật | getUserMedia/getDisplayMedia không automate được |
 | P3 | **Unit test** `RateLimiter` (window reset) | logic pure, dễ test; bắt regression |
-| P3 | **Hạ tầng CF Full/strict + firewall origin** | .65 shared → hiện chấp nhận origin-bypass; phòng thủ dồn vào quota + rate-limit + audit |
+| P3 | **Hạ tầng CF Full (strict) + firewall origin** | Đang SSL Full với chứng chỉ tự ký; .65 shared → hiện chấp nhận origin-bypass; phòng thủ dồn vào hạn mức + rate-limit + audit |
 
 ## Unresolved questions
 

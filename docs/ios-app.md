@@ -1,6 +1,6 @@
 # Scribe iOS app
 
-App iPhone bọc giao diện web React (`web/`) bằng Capacitor 8, cộng phần native Swift để **ghi âm khi khoá màn hình** và tải từng đoạn lên backend prod (origin `VITE_NATIVE_API_ORIGIN` trong `web/.env`, nhúng vào Info.plist lúc build). Plan: `plans/260728-1609-scribe-ios-app-ghi-nen-khoa-man-hinh/`.
+App iPhone bọc giao diện web React (`web/`) bằng Capacitor 8, cộng phần native Swift để **ghi âm khi khoá màn hình** và tải từng đoạn lên backend prod `https://scribe.hoandat.com` (origin `VITE_NATIVE_API_ORIGIN` trong `web/.env`, nhúng vào Info.plist lúc build). Plan: `plans/260728-1609-scribe-ios-app-ghi-nen-khoa-man-hinh/`.
 
 ## Cài lên iPhone
 
@@ -15,7 +15,7 @@ Script `web/scripts/ios-device.sh` build web → `cap sync ios` → `xcodebuild`
 
 Cần trên máy build:
 - Xcode ở `/Applications/Xcode.app` (script tự đặt `DEVELOPER_DIR`, không cần `sudo xcode-select`), Apple ID của team đã đăng nhập trong Xcode.
-- `web/.env` (cấu hình Firebase web, xem `web/.env.example`).
+- `web/.env` có `VITE_NATIVE_API_ORIGIN` (chép từ `web/.env.example`).
 - Lần đầu cài: trên iPhone vào *Cài đặt → Cài đặt chung → Quản lý VPN & thiết bị* để tin cậy nhà phát triển.
 
 ## Cách app hoạt động
@@ -24,17 +24,15 @@ Cần trên máy build:
 |---|---|---|
 | Giao diện | `web/dist` đóng gói trong app (`capacitor://localhost`) | Cùng mã với web; nhánh native qua `isNativeShell()` (`web/src/lib/api.ts`) |
 | Gọi API | `CapacitorHttp` → `URLSession` | Không bị CORS/`SameSite`; cookie phiên nằm ở `HTTPCookieStorage` |
-| Đăng nhập Google | `GoogleAuthPlugin.swift` | OAuth PKCE qua `ASWebAuthenticationSession` (client iOS của Firebase project) → `accounts:signInWithIdp` → Firebase ID token → `POST /api/auth/session`. Không dùng Firebase iOS SDK |
+| Đăng nhập hoandat-auth | `HoandatAuthPlugin.swift` | Client public `scribe-mobile`: lấy tham số ở `GET /api/auth/native/config`, app tự sinh PKCE + `nonce`, mở `auth.hoandat.com` bằng `ASWebAuthenticationSession`, redirect `com.hoandat.scribe:/auth/callback` → gửi `code` + verifier + `nonce` tới `POST /api/auth/native/exchange`. Backend giữ refresh token IdP (mã hoá), trả cookie phiên + token thiết bị |
 | Tải / lưu / phát file | `NativeFilesPlugin.swift` | Tải kèm cookie; share sheet (Lưu vào Tệp); bản cache để phát và tua |
 | Ghi âm | `Recorder/AudioRecorder.swift` | AVAudioEngine → m4a AAC, đoạn 1/5/10 phút, chạy nền (`UIBackgroundModes: audio`) |
 | Lưu bền | `Recorder/SegmentStore.swift` | `Documents/recordings/<userKey>/<sessionId>/session.json` + `seg-NNN.m4a`; đối soát khi mở app, báo đoạn cụt nếu app bị kill |
 | Tải lên | `Recorder/UploadQueue.swift` | Mỗi đoạn một bản ghi tên `<sessionId>#<index>`; Lịch sử ghi gom thành một dòng "Bản ghi trên iPhone". Mất phản hồi finalize thì tra theo tên trước khi tạo lại (không sinh bản trùng) |
-| Làm mới phiên | `SessionAuth.swift` | Refresh token Firebase giữ trong Keychain của app (`AfterFirstUnlockThisDeviceOnly`). Gặp 401 khi đang tải, hàng đợi tự đổi lấy ID token mới rồi gọi lại `POST /api/auth/session`; chỉ khi thất bại mới báo "cần đăng nhập lại". Đăng xuất thì xoá token |
-| Key OpenAI (Chép lời) | `SecretsPlugin.swift` | Key người dùng tự nhập, lưu Keychain của app (chỉ nhận tên `openaiApiKey`). Gửi kèm mỗi lần bấm "Chép lời"; đăng xuất thì xoá |
+| Làm mới phiên | `SessionAuth.swift` | Token thiết bị của Scribe giữ trong Keychain của app (`AfterFirstUnlockThisDeviceOnly`). Phiên mobile 12 giờ; gặp 401 khi đang tải, hàng đợi đổi token thiết bị lấy cookie mới ở `POST /api/auth/native/refresh` (chỉ được khi hoandat-auth còn công nhận máy; thu hồi máy ở `/account` của IdP thì lần làm mới sau thất bại), rồi mới báo "cần đăng nhập lại". Đăng xuất thì xoá token và thiết bị trên server |
+| Chép lời | (không có phần native) | Dùng key OpenAI của server, tính vào phút của tài khoản. `SecretsPlugin.swift` chỉ còn để xoá key người dùng tự nhập ở bản cũ khi đăng xuất |
 
-`GoogleService-Info.plist` được commit (cấu hình công khai, API key giới hạn theo bundle id), giống cấu hình Firebase web.
-
-> **Đổi bundle id (2026-10-16):** app id mới là `com.hoandat.scribe` (trước đây dùng bundle id khác). `GoogleService-Info.plist` (không có trong git, tải từ Firebase Console) vẫn là cấu hình Firebase của bundle id cũ và được giữ nguyên tới khi chuyển đăng nhập sang hoandat-auth. Đăng nhập Google vẫn chạy (kiểm trên iPhone 15 Pro Max 2026-10-16, server ghi "login thành công"): `GoogleAuthPlugin` gửi bundle id lấy từ plist trong header `X-Ios-Bundle-Identifier`, nên giới hạn API key của Firebase vẫn khớp. Phần này bỏ đi khi chuyển sang hoandat-auth. Bản cài mới là một app khác trên máy: dữ liệu cục bộ của app cũ (đoạn chưa tải, Keychain) không chuyển sang.
+> **Đổi bundle id và đăng nhập (2026-10-16):** app id là `com.hoandat.scribe`, đăng nhập qua hoandat-auth; Firebase đã bỏ hẳn. Bản cài mới là một app khác trên máy: dữ liệu cục bộ của app cũ (đoạn chưa tải, Keychain) không chuyển sang. Refresh token Firebase của bản cũ (nếu có) bị xoá ở lần đăng nhập hoặc đăng xuất kế tiếp.
 
 ## Đã kiểm / còn phải kiểm trên máy thật
 
@@ -43,7 +41,7 @@ Cần trên máy build:
 | Gate 0 — `CapacitorHttp` tới BE prod | Đạt trên iPhone 15 Pro Max (2026-10-15): JS nhận 401 của `/api/me`, nginx ghi nhận request |
 | Self-test Simulator (`-OSSelfTest`, chỉ bản Debug) | Đạt: đối soát phát hiện đoạn cụt, tên tất định, hàng đợi dừng ở "cần đăng nhập" khi 401 |
 | m4a qua BE | `ftyp` = `M4A `; `infer 0.16` (cùng bản BE dùng) nhận `audio/m4a`; BE trả `audio/mp4` khi phát |
-| Gate 1 — đăng nhập Google trên iPhone | Đạt trên iPhone 15 Pro Max (2026-10-16): server log "login thành công", `POST /api/auth/session` 200 |
+| Gate 1 — đăng nhập trên iPhone | Firebase: đạt (2026-10-16 sáng, bản cũ). hoandat-auth trên prod: đạt (2026-10-16 chiều) — `native/exchange` 200, một thiết bị + một phiên mobile, ghi, tải lên, chép lời bằng key server, phát lại |
 | Ghi khi khoá màn hình ~3 phút, đoạn 1 phút, tải lên | Đạt (2026-10-16): 3 đoạn tới server ngay khi xong (08:24:24, 08:25:24, 08:26:20), AAC 48 kHz mono, 60,05 + 60,05 + 56,06 s liền mạch; phát lại 200; `session.json` đánh dấu đã tải, không còn `.m4a` trên máy |
 | Cuộc gọi đến, AirPods, chế độ máy bay khi đang tải | **Chưa** — cần máy thứ hai để gọi vào và AirPods |
 | Kill app khi đang ghi | Đạt (2026-10-16): vuốt tắt sau ~30 s; mở lại thì đoạn dở 31,3 s được đối soát và tải lên (server 08:29:41, ffprobe 31,36 s) |

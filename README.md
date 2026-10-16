@@ -11,8 +11,9 @@ Hai ứng dụng dùng chung một backend:
 | Backend | `server/scribe-be/` + `crates/core-split/` | Rust/axum, một binary musl tĩnh, MongoDB |
 
 - **Bundle id iPhone**: `com.hoandat.scribe`
-- **Tính năng**: ghi mic và màn hình/tiếng hệ thống (trình duyệt), ghi khi khoá màn hình (iPhone), cắt file theo phút / dung lượng / số phần, lịch sử ghi và phát lại, chép lời bằng OpenAI `gpt-4o-mini-transcribe`.
-- **Môi trường**: dev local và prod. Không có staging.
+- **Tính năng**: ghi mic và màn hình/tiếng hệ thống (trình duyệt), ghi khi khoá màn hình (iPhone), cắt file theo phút / dung lượng / số phần, lịch sử ghi và phát lại, chép lời bằng OpenAI `gpt-4o-mini-transcribe` (key của server, tính phút theo gói).
+- **Đăng nhập**: hoandat-auth (`auth.hoandat.com`) cho cả web và iPhone.
+- **Môi trường**: dev local và prod (`https://scribe.hoandat.com`). Không có staging.
 
 ## Chạy dev
 
