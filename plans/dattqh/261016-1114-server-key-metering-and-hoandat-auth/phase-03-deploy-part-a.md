@@ -24,3 +24,12 @@ Theo skill `scribe-ops-prod` §6. Thao tác ghi prod: chỉ khi người dùng �
 ## Rollback
 
 Binary + dist cũ từ thư mục sao lưu; sổ `transcribe_usage` và trường mới bản cũ bỏ qua. Bản cũ lại đòi key người dùng.
+
+## Kết quả (2026-10-16 11:53)
+
+- Key server ghi bằng stdin vào `OPENAI_KEY_PATH` (600, chủ user service); `.env.production` thêm `OPENAI_KEY_PATH`.
+- Sao lưu `/root/onescribe-backup-20261016-115313/` (binary, dist, dump `transcripts` + `users`); hàng đợi = 0.
+- Deploy commit `a90a7e8`: sha256 binary khớp (`0b4d4576…`), service active, `/api/health` OK, journal "chép lời bật (key server)", FE `index-8BNOtOKg.js`, `NRestarts=0`.
+- `admin set-plan … plus` cho email trong `TRANSCRIBE_EMAILS`: 1/1 thành công.
+- `admin usage`: quỹ free 0/3333 phút, tổng 0/10000 phút.
+- Chưa: chép một bản thật trên prod (cần người dùng bấm, app iPhone đang cài còn bản cũ — xem review #7), journal 30 phút.

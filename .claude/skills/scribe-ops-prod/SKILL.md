@@ -152,8 +152,12 @@ Tìm nhanh tiêu đề: `grep -n '^#' docs/deploy-web-production.md`.
 - **Bản sao lưu** nằm ở `/root/onescribe-backup-<YYYYMMDD-HHMMSS>/` trên chính .65 (`onescribe-be.prev`, `dist/`,
   dump Mongo). Không có cron backup cho Scribe.
 - **Máy dev:** hook của Claude chặn lệnh có chữ `target` (đường dẫn build) ⟹ build prod với
-  `CARGO_TARGET_DIR=<thư mục scratch>`. `tar` trên macOS kèm xattr ⟹ đặt `COPYFILE_DISABLE=1` cho khỏi cảnh báo
-  `LIBARCHIVE.xattr` ở server (vô hại).
+  `CARGO_TARGET_DIR=<thư mục scratch>`. `tar` trên macOS kèm xattr (cảnh báo `LIBARCHIVE.xattr` ở server, vô hại) ⟹
+  nén bằng `COPYFILE_DISABLE=1 tar --no-xattrs …`, giải nén bằng `tar --no-same-owner` và `rsync --chown=root:root`
+  (lần 15/10 FE mang chủ `501:games` của máy Mac).
+- **Key OpenAI của server:** ghi/đổi bằng stdin, không qua argv: `jq -r '.tokens[]|select(.service=="api.openai.com")
+  |.token' "$ACCESS_TOKENS_JSON" | $S/prod-ssh.sh "umask 077; cat > $OPENAI_KEY_PATH.tmp; chown <user>: …; mv -f …"`
+  rồi restart (key chỉ đọc lúc khởi động). Đó là thao tác ghi.
 
 ## 5. Kết luận từ dữ liệu prod
 
