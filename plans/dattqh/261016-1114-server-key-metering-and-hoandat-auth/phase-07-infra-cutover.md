@@ -29,7 +29,7 @@ Thao tác ghi prod; người dùng đã đồng ý các hạng mục phần B. M
 - Cửa sổ chuyển: hàng đợi 0 → dừng `onescribe-be` 12:43:02 → sao lưu `/root/onescribe-backup-20261016-124301/` (dump db `onescribe` 9 collection, binary, dist, vhost, unit) → `mongorestore` sang `scribe`: 9/9 collection khớp số doc (users 1, files 53, audit_events 124, còn lại 0) → `files.path` sửa 53/53, còn 0 đường dẫn cũ → `data/` 268 MB, 56/56 tệp → vhost `root /var/www/scribe/dist`, `nginx -t` OK, reload → `scribe-be` active 12:43:05. Downtime khoảng 3 giây.
 - Nghiệm thu: FE 200 (`index-8BNOtOKg.js`), `/api/health` ok, `/api/me` 401, journal "chép lời bật (key server)", NRestarts 0, RSS ~11 MB, 5 `files.path` ngẫu nhiên tồn tại và thuộc `scribe`; tệp cấu hình admin tạm đã xoá.
 - Chưa: người dùng đăng nhập (Firebase) mở bản ghi cũ và chép một bản ngắn.
-- Đường lùi: `systemctl disable --now scribe-be && systemctl enable --now onescribe-be`, chép lại `onescribe.conf` từ thư mục sao lưu, `nginx -t`, reload.
+- Dọn 12:55 theo yêu cầu người dùng ("ko cần giữ cũ gì hết"; Jev giữ bản dump mới nhất 0,95): drop user Mongo + db `onescribe` (sau khi kiểm `scribe` đủ dữ liệu), xoá unit `onescribe-be`, `/opt/onescribe-be`, `/var/www/onescribe`, user hệ thống `onescribe`, tệp `.bak` vhost, bốn thư mục sao lưu cũ (15/10 và 16/10 sáng). Còn giữ `/root/onescribe-backup-20261016-124301/` (17 MB, bản sao lưu duy nhất của dữ liệu hiện tại). Không còn đường lùi về bản cũ.
 
 ## 7b — Đổi đăng nhập + domain (một chiều)
 

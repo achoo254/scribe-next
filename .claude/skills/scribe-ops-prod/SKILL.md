@@ -1,6 +1,6 @@
 ---
 name: scribe-ops-prod
-description: Tra cứu thông tin và vận hành Scribe (one-scribe) trên PRODUCTION (scribe.inetdev.io.vn, server dùng chung 103.72.98.65 cổng SSH 24700, systemd scribe-be cổng 127.0.0.1:8787, binary /opt/scribe-be, FE /var/www/scribe/dist, database scribe trên mongod chung 27017; bản cũ scribe-be/db onescribe để nguyên chờ dọn). Chỉ đường đọc docs/deploy-web-production.md — credential ở $ALL_IN_ONE_STAGING_DEV entry SSH_SERVER_STAGING, cấu hình prod ở .env.production (không commit), SSH/mongosh qua scripts/ của skill, deploy bằng cargo zigbuild + npm run build theo §6. Kích hoạt khi user nhắc "prod", "production", "scribe.inetdev.io.vn", "server .65", "SSH prod", "mongosh prod", "log prod", "journal prod", "deploy prod", "rollback", "scribe-be", "scribe-be", "backup Scribe", "audit_events", "hàng đợi chép lời prod". KHÔNG dùng cho dev local (localhost:5173/8787, Mongo dev lab 176, cargo run, npm run dev) và không dùng cho app iPhone cài qua cáp (docs/ios-app.md).
+description: Tra cứu thông tin và vận hành Scribe (one-scribe) trên PRODUCTION (scribe.inetdev.io.vn, server dùng chung 103.72.98.65 cổng SSH 24700, systemd scribe-be cổng 127.0.0.1:8787, binary /opt/scribe-be, FE /var/www/scribe/dist, database scribe trên mongod chung 27017). Chỉ đường đọc docs/deploy-web-production.md — credential ở $ALL_IN_ONE_STAGING_DEV entry SSH_SERVER_STAGING, cấu hình prod ở .env.production (không commit), SSH/mongosh qua scripts/ của skill, deploy bằng cargo zigbuild + npm run build theo §6. Kích hoạt khi user nhắc "prod", "production", "scribe.inetdev.io.vn", "server .65", "SSH prod", "mongosh prod", "log prod", "journal prod", "deploy prod", "rollback", "scribe-be", "scribe-be", "backup Scribe", "audit_events", "hàng đợi chép lời prod". KHÔNG dùng cho dev local (localhost:5173/8787, Mongo dev lab 176, cargo run, npm run dev) và không dùng cho app iPhone cài qua cáp (docs/ios-app.md).
 ---
 
 # Scribe Ops — Production
@@ -152,8 +152,8 @@ Tìm nhanh tiêu đề: `grep -n '^#' docs/deploy-web-production.md`.
 - **Bản sao lưu** nằm ở `/root/scribe-backup-<YYYYMMDD-HHMMSS>/` trên chính .65 (`scribe-be.prev`, `dist/`,
   dump Mongo). Bản trước 16/10/2026 nằm ở `/root/onescribe-backup-*`. Không có cron backup cho Scribe.
 - **Đổi tên 16/10/2026 12:43:** db `onescribe` → `scribe` (user Mongo `scribe`, chỉ `readWrite`+`dbAdmin` trên `scribe`),
-  `onescribe-be` → `scribe-be` (user hệ thống `scribe`). Bản cũ (`onescribe-be` disabled, db `onescribe`,
-  `/opt/onescribe-be`, `/var/www/onescribe`) để nguyên làm đường lùi tới khi user cho dọn. Tạo user/db Mongo mới cần
+  `onescribe-be` → `scribe-be` (user hệ thống `scribe`). Bản cũ (service, db `onescribe`, user Mongo/hệ thống
+  `onescribe`, thư mục) đã xoá 16/10/2026 theo yêu cầu user; chỉ còn dump `/root/onescribe-backup-20261016-124301/`. Tạo user/db Mongo mới cần
   tài khoản quản trị `mongo_admin_*` của entry `SSH_SERVER_STAGING` (mật khẩu qua stdin vào tệp 600, không argv).
 - **Máy dev:** hook của Claude chặn lệnh có chữ `target` (đường dẫn build) ⟹ build prod với
   `CARGO_TARGET_DIR=<thư mục scratch>`. `tar` trên macOS kèm xattr (cảnh báo `LIBARCHIVE.xattr` ở server, vô hại) ⟹
