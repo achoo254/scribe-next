@@ -1,9 +1,4 @@
 import { type Page, expect, test } from "@playwright/test";
-import type {
-	TranscriptDetail,
-	TranscriptSegment,
-	TranscriptSummary,
-} from "../../src/features/transcript-docs/transcript-docs-api";
 import {
 	SIGNED_IN_USER,
 	STUB_IDS,
@@ -11,6 +6,12 @@ import {
 	countOf,
 	stubApi,
 } from "../support/api-stubs";
+import {
+	DOC_DETAIL,
+	DOC_KEY,
+	DOC_PATH,
+	DOC_SUMMARY,
+} from "../support/transcript-fixtures";
 
 /*
  * Pages have URLs and unmount when left; the recording, the "Cắt file"
@@ -132,49 +133,6 @@ test("the Cắt file upload and its job survive leaving the page", async ({
 	expect(countOf(api, "POST /api/jobs")).toBe(1);
 	expect(api.unexpected).toEqual([]);
 });
-
-const DOC_KEY = "s:a1b2c3d4-e5f6";
-const DOC_PATH = /\/transcripts\/s%3Aa1b2c3d4-e5f6$/;
-
-function docSegment(index: number): TranscriptSegment {
-	return {
-		fileId: `f-iphone-${index}`,
-		index,
-		offsetS: index * 60,
-		durationS: 60,
-		hasVideo: false,
-		status: "done",
-		progress: 100,
-		error: null,
-		runId: `run-${index}`,
-		edited: false,
-		editedSentences: 0,
-		sentences: [{ start: 0, end: 4, text: `Câu đầu của đoạn ${index + 1}.` }],
-	};
-}
-
-const DOC_SUMMARY: TranscriptSummary = {
-	key: DOC_KEY,
-	title: "Phỏng vấn khách hàng",
-	name: null,
-	createdAt: "2026-10-16T08:00:00+07:00",
-	durationS: 120,
-	segments: 2,
-	done: 2,
-	failed: 0,
-	pending: 0,
-	untranscribed: 0,
-	preview: "Câu đầu của đoạn 1.",
-};
-
-const DOC_DETAIL: TranscriptDetail = {
-	key: DOC_KEY,
-	title: "Phỏng vấn khách hàng",
-	name: null,
-	createdAt: "2026-10-16T08:00:00+07:00",
-	segments: [docSegment(0), docSegment(1)],
-	missingIndexes: [],
-};
 
 test("nav, browser history and the reader's back button follow the URL", async ({
 	page,

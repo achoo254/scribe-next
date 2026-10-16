@@ -8,6 +8,7 @@ import {
 	type SessionRow as SessionRowData,
 	sessionTitle,
 } from "../../features/files/recording-groups";
+import { useT } from "../../i18n/i18n-context";
 import { formatDuration, formatSize } from "../../lib/format";
 import { RecordingRow } from "./recording-row";
 import { TranscriptPanel } from "./transcript-panel";
@@ -37,6 +38,7 @@ export function SessionRow({
 	onTogglePlay,
 	onDelete,
 }: SessionRowProps) {
+	const t = useT();
 	const [open, setOpen] = useState(false);
 	const parts = useMemo(
 		() =>
@@ -60,13 +62,22 @@ export function SessionRow({
 			data-id={id}
 			className="grid gap-2 border-border-subtle border-t pt-3 first:border-t-0 first:pt-0"
 		>
-			<div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-				<Badge tone="primary">iPhone</Badge>
-				<div className="min-w-0 flex-1 basis-48">
-					<div className="truncate font-semibold">{title}</div>
+			<div className="flex items-center gap-2">
+				{/* Inline-size containment: a long title truncates instead of
+				    widening the row past the screen. */}
+				<div className="min-w-0 flex-1 contain-inline-size">
+					<div className="flex min-w-0 items-center gap-2">
+						<Badge tone="primary">{t("record.session.badge")}</Badge>
+						<span className="truncate font-semibold" title={title}>
+							{title}
+						</span>
+					</div>
 					<div className="text-muted text-sm">
-						{row.parts.length} đoạn · {formatDuration(row.durationS)} ·{" "}
-						{formatSize(row.size)}
+						{t("record.session.meta", {
+							count: row.parts.length,
+							duration: formatDuration(row.durationS),
+							size: formatSize(row.size),
+						})}
 					</div>
 				</div>
 				<Button
@@ -83,7 +94,10 @@ export function SessionRow({
 					}
 					onClick={() => setOpen((value) => !value)}
 				>
-					{open ? "Thu gọn" : "Xem các đoạn"}
+					{/* Icon only on phones, like the recordings' "Nghe lại". */}
+					<span className="max-sm:sr-only">
+						{open ? t("record.session.collapse") : t("record.session.expand")}
+					</span>
 				</Button>
 			</div>
 			{transcribe ? (
@@ -99,12 +113,15 @@ export function SessionRow({
 			{open ? (
 				<ul className="m-0 grid list-none gap-3 border-border-subtle border-l-2 p-0 pl-3">
 					{row.parts.map(({ index, item }) => {
-						const label = `${title} — Phần ${String(index + 1).padStart(2, "0")}`;
+						const part = t("record.session.part", {
+							number: String(index + 1).padStart(2, "0"),
+						});
+						const label = `${title} — ${part}`;
 						return (
 							<RecordingRow
 								key={item.id}
 								item={item}
-								displayName={`Phần ${String(index + 1).padStart(2, "0")}`}
+								displayName={part}
 								retentionDays={retentionDays}
 								playing={playingId === item.id}
 								seek={seek?.fileId === item.id ? seek.media : null}

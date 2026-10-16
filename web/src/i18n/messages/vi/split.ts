@@ -1,0 +1,50 @@
+/** "Cắt file" page: upload, criteria, result, and the files kept on the server. */
+export const split = {
+	title: "Cắt file",
+	description:
+		"Tải lên một tệp audio hoặc video, chọn cách cắt, rồi tải các đoạn về dạng zip.",
+	steps: {
+		file: "Chọn file",
+		criteria: "Cách cắt",
+	},
+	choose: "Chọn file audio/video",
+	chooseAnother: "Chọn file khác",
+	uploadProgress: "Tiến độ tải lên",
+	uploading: "Đang tải lên… {percent}%",
+	resume: "Tải tiếp",
+	uploaded: "Đã tải lên — thời lượng {duration}",
+	start: "Cắt",
+	working: "Đang xử lý…",
+	result: { other: "Kết quả ({count} đoạn)" },
+	downloadZip: "Tải zip",
+	criteria: {
+		label: "Cắt theo",
+		byMinutes: "Thời lượng (phút)",
+		byMegabytes: "Dung lượng (MB)",
+		byParts: "Số phần bằng nhau",
+		minutesValue: "Số phút mỗi đoạn",
+		megabytesValue: "MB mỗi đoạn",
+		partsValue: "Chia thành (số đoạn)",
+		valueInvalid: "Nhập số lớn hơn 0.",
+		partsInvalid: "Nhập số nguyên, từ 1 trở lên.",
+	},
+	managed: {
+		title: "Tệp trên hệ thống",
+		description:
+			"Tệp bạn tải lên để cắt và các đoạn đã cắt vẫn tính vào dung lượng. Xoá bớt để giải phóng (tự động xoá sau 14 ngày nếu không xoá tay).",
+		loadFailed: "Không tải được danh sách tệp",
+		uploads: "Tệp đã tải lên",
+		outputs: "Đoạn đã cắt",
+		segments: { other: "{count} đoạn" },
+		menu: "Thao tác với {name}",
+		download: "Tải về",
+		deleteAll: "Xoá tất cả",
+		deleteTitle: "Xoá tệp",
+		deleteFile: "Xoá “{name}”?",
+		deleteSegments: { other: "Xoá {count} đoạn đã cắt?" },
+		deleteBody:
+			"Dung lượng được giải phóng ngay. Hành động này không thể hoàn tác.",
+		fileDeleted: "Đã xoá “{name}”",
+		segmentsDeleted: { other: "Đã xoá {count} đoạn đã cắt" },
+	},
+} as const;

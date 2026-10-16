@@ -1,4 +1,4 @@
-import { IconArrowLeft, IconPencil, IconTrash } from "@tabler/icons-react";
+import { IconFileText, IconPencil, IconTrash } from "@tabler/icons-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AudioPlayer, type MediaSeek } from "../../components/media-player";
@@ -6,9 +6,16 @@ import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
 import { Card } from "../../components/ui/card";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
+import {
+	DropdownMenuItem,
+	DropdownMenuSeparator,
+} from "../../components/ui/dropdown-menu";
 import { IconButton } from "../../components/ui/icon-button";
 import { Input } from "../../components/ui/input";
+import { LoadError } from "../../components/ui/load-error";
+import { RowActionsMenu } from "../../components/ui/row-actions-menu";
 import { Skeleton, SkeletonRegion } from "../../components/ui/skeleton";
+import { useToast } from "../../components/ui/toast";
 import {
 	activeSentence,
 	gapsBefore,
@@ -31,7 +38,9 @@ import {
 	useTranscriptDoc,
 } from "../../features/transcript-docs/transcript-docs-queries";
 import type { ExportScope } from "../../features/transcript/transcript-api";
+import { useT } from "../../i18n/i18n-context";
 import { LeaveGuard } from "../../layout/leave-guard";
+import { PageHeader } from "../../layout/page-header";
 import { errorMessage, isNativeShell } from "../../lib/api";
 import {
 	downloadPaths,
@@ -40,6 +49,7 @@ import {
 	useMediaSource,
 } from "../../lib/download";
 import { formatDateTime, formatDuration } from "../../lib/format";
+import { useDelayedFlag } from "../../lib/use-delayed-flag";
 import { useTranscribe } from "../record/use-transcribe";
 import { ReaderSegment } from "./reader-segment";
 
@@ -72,9 +82,12 @@ export function TranscriptReader({
 	canTranscribe,
 	onBack,
 }: TranscriptReaderProps) {
+	const t = useT();
+	const toast = useToast();
 	const queryClient = useQueryClient();
 	const download = useDownload();
 	const { detail, statuses } = useTranscriptDoc(transcriptKey);
+	const skeleton = useDelayedFlag(detail.isPending);
 	const rename = useRenameTranscript();
 	const save = useSaveSegment();
 	const remove = useDeleteTranscript();
@@ -166,29 +179,29 @@ export function TranscriptReader({
 		try {
 			await rename.mutateAsync({ key: transcriptKey, title: titleDraft });
 			setTitleDraft(null);
+			toast.show({ title: t("transcript.reader.renamed") });
 		} catch (cause) {
 			setTitleError(errorMessage(cause));
 		}
 	}
 
-	if (detail.isPending) {
-		return (
-			<Card className="grid gap-3 p-4 sm:p-6">
-				<SkeletonRegion label="Đang tải transcript…" className="grid gap-3">
-					<Skeleton className="h-8" />
-					<Skeleton className="h-40" />
-				</SkeletonRegion>
-			</Card>
-		);
-	}
+	if (skeleton) return <ReaderSkeleton />;
+	if (detail.isPending) return null;
 	if (detail.isError || !doc) {
 		return (
-			<Card className="grid gap-3 p-4 sm:p-6">
-				<BackButton onBack={onBack} />
-				<Alert tone="danger" data-id="reader-error">
-					{detail.error?.message ?? "Không tải được transcript"}
-				</Alert>
-			</Card>
+			<section data-id="reader" className="grid gap-5">
+				<PageHeader
+					parent={<BackLink onBack={onBack} />}
+					title={t("transcript.reader.errorTitle")}
+				/>
+				<LoadError
+					data-id="reader-error"
+					title={t("transcript.reader.loadFailed")}
+					error={detail.error}
+					retrying={detail.isFetching}
+					onRetry={() => void detail.refetch()}
+				/>
+			</section>
 		);
 	}
 
@@ -198,24 +211,75 @@ export function TranscriptReader({
 	const scope = exportScope(doc);
 
 	return (
-		<Card data-id="reader" className="grid gap-4 p-4 sm:p-6">
-			<div className="grid gap-2">
-				<BackButton onBack={onBack} />
-				{titleDraft === null ? (
-					<div className="flex items-start gap-2">
-						<h2 className="m-0 min-w-0 flex-1 break-words font-bold font-mono text-lg">
-							{title}
-						</h2>
-						<IconButton
-							size="sm"
-							variant="ghost"
-							label="Đổi tên"
-							data-id="reader-rename"
-							icon={<IconPencil size={18} aria-hidden="true" />}
-							onClick={() => setTitleDraft(doc.title ?? "")}
-						/>
-					</div>
-				) : (
+		<section data-id="reader" className="grid gap-5">
+			<PageHeader
+				parent={<BackLink onBack={onBack} />}
+				title={title}
+				description={
+					<>
+						{formatDateTime(doc.createdAt ?? undefined)} ·{" "}
+						{formatDuration(totalS)}
+						{segments.length > 1
+							? ` · ${t("transcript.list.segments", { count: segments.length })}`
+							: ""}
+					</>
+				}
+				actions={
+					<>
+						{titleDraft === null ? (
+							<IconButton
+								label={t("transcript.reader.rename")}
+								data-id="reader-rename"
+								icon={<IconPencil size={20} aria-hidden="true" />}
+								onClick={() => setTitleDraft(doc.title ?? "")}
+							/>
+						) : null}
+						<RowActionsMenu
+							label={t("transcript.reader.menu")}
+							data-id="reader-menu"
+						>
+							{anyDone ? (
+								<>
+									<DropdownMenuItem
+										data-id="reader-txt"
+										icon={<IconFileText size={16} aria-hidden="true" />}
+										onSelect={() =>
+											download(downloadPaths.transcript(scope, "txt", title))
+										}
+									>
+										{isNativeShell()
+											? t("transcript.reader.saveTxt")
+											: t("transcript.reader.downloadTxt")}
+									</DropdownMenuItem>
+									<DropdownMenuItem
+										data-id="reader-srt"
+										icon={<IconFileText size={16} aria-hidden="true" />}
+										onSelect={() =>
+											download(downloadPaths.transcript(scope, "srt", title))
+										}
+									>
+										{isNativeShell()
+											? t("transcript.reader.saveSrt")
+											: t("transcript.reader.downloadSrt")}
+									</DropdownMenuItem>
+									<DropdownMenuSeparator />
+								</>
+							) : null}
+							<DropdownMenuItem
+								danger
+								data-id="reader-delete"
+								icon={<IconTrash size={16} aria-hidden="true" />}
+								onSelect={() => setConfirmDelete(true)}
+							>
+								{t("transcript.reader.delete")}
+							</DropdownMenuItem>
+						</RowActionsMenu>
+					</>
+				}
+			/>
+
+			{titleDraft !== null ? (
+				<Card className="p-4 sm:p-6">
 					<form
 						className="grid gap-2"
 						onSubmit={(event) => {
@@ -225,7 +289,7 @@ export function TranscriptReader({
 					>
 						<Input
 							data-id="reader-title-input"
-							aria-label="Tên transcript"
+							aria-label={t("transcript.reader.titleField")}
 							placeholder={transcriptTitle({ ...doc, title: null })}
 							value={titleDraft}
 							maxLength={120}
@@ -233,152 +297,117 @@ export function TranscriptReader({
 							onChange={(event) => setTitleDraft(event.target.value)}
 						/>
 						{titleError ? <Alert tone="danger">{titleError}</Alert> : null}
-						<div className="flex flex-wrap justify-end gap-2">
-							<Button
-								variant="ghost"
-								data-id="reader-title-cancel"
-								disabled={rename.isPending}
-								onClick={() => {
-									setTitleDraft(null);
-									setTitleError("");
-								}}
-							>
-								Huỷ
-							</Button>
-							<Button
-								type="submit"
-								variant="primary"
-								data-id="reader-title-save"
-								loading={rename.isPending}
-							>
-								Lưu tên
-							</Button>
-						</div>
-						<p className="m-0 text-muted text-sm">
-							Để trống để dùng tên mặc định.
-						</p>
-					</form>
-				)}
-				<div className="text-muted text-sm">
-					{formatDateTime(doc.createdAt ?? undefined)} ·{" "}
-					{formatDuration(totalS)}
-					{segments.length > 1 ? ` · ${segments.length} đoạn` : ""}
-				</div>
-				<div className="flex flex-wrap items-center gap-1">
-					{anyDone ? (
-						<>
-							<Button
-								size="sm"
-								variant="ghost"
-								data-id="reader-txt"
-								onClick={() =>
-									download(downloadPaths.transcript(scope, "txt", title))
-								}
-							>
-								{isNativeShell() ? "Lưu .txt" : "Tải .txt"}
-							</Button>
-							<Button
-								size="sm"
-								variant="ghost"
-								data-id="reader-srt"
-								onClick={() =>
-									download(downloadPaths.transcript(scope, "srt", title))
-								}
-							>
-								{isNativeShell() ? "Lưu .srt" : "Tải .srt"}
-							</Button>
-						</>
-					) : null}
-					<Button
-						size="sm"
-						variant="ghost"
-						data-id="reader-delete"
-						className="text-error!"
-						leadingIcon={<IconTrash size={16} aria-hidden="true" />}
-						onClick={() => setConfirmDelete(true)}
-					>
-						Xoá transcript
-					</Button>
-				</div>
-			</div>
-
-			{pending > 0 ? (
-				<Alert tone="info" data-id="reader-progress">
-					Đang chép lời… {overallProgress(segments, statuses)}%
-				</Alert>
-			) : null}
-			{canTranscribe && pending === 0 && toSend.length > 0 ? (
-				<Alert tone="warning" data-id="reader-unsent">
-					Còn {toSend.length} đoạn chưa chép.
-					<Button
-						size="sm"
-						variant="ghost"
-						className="ml-2"
-						data-id="reader-send-rest"
-						loading={transcribe.pending}
-						onClick={() =>
-							void transcribe.start(
-								toSend.map((s) => s.fileId),
-								toSend.reduce((sum, s) => sum + s.durationS, 0),
-							)
-						}
-					>
-						Chép {toSend.length} đoạn còn lại
-					</Button>
-				</Alert>
-			) : null}
-
-			<div className="grid gap-4">
-				{segments.map((segment) => (
-					<div key={segment.fileId} className="grid gap-1">
-						{(gaps.get(segment.fileId) ?? []).map((missing) => (
-							<p
-								key={missing}
-								data-id={`reader-missing-${missing}`}
-								className="m-0 rounded-sm border border-border border-dashed px-2 py-2 text-muted text-sm"
-							>
-								Thiếu đoạn {missing + 1}
+						<div className="flex flex-wrap items-center justify-between gap-2">
+							<p className="m-0 text-muted text-sm">
+								{t("transcript.reader.titleHint")}
 							</p>
-						))}
-						<ReaderSegment
-							segment={segment}
-							numbered={transcriptKey.startsWith("s:")}
-							progress={live.get(segment.fileId)?.progress ?? segment.progress}
-							activeIndex={
-								segment.fileId === current?.fileId && playback
-									? activeSentence(segment, time)
-									: -1
+							<div className="flex flex-wrap gap-2">
+								<Button
+									variant="ghost"
+									data-id="reader-title-cancel"
+									disabled={rename.isPending}
+									onClick={() => {
+										setTitleDraft(null);
+										setTitleError("");
+									}}
+								>
+									{t("common.actions.cancel")}
+								</Button>
+								<Button
+									type="submit"
+									variant="primary"
+									data-id="reader-title-save"
+									loading={rename.isPending}
+								>
+									{t("transcript.reader.saveTitle")}
+								</Button>
+							</div>
+						</div>
+					</form>
+				</Card>
+			) : null}
+
+			<Card data-id="reader-body" className="grid gap-4 p-4 sm:p-6">
+				{pending > 0 ? (
+					<Alert tone="info" data-id="reader-progress">
+						Đang chép lời… {overallProgress(segments, statuses)}%
+					</Alert>
+				) : null}
+				{canTranscribe && pending === 0 && toSend.length > 0 ? (
+					<Alert tone="warning" data-id="reader-unsent">
+						Còn {toSend.length} đoạn chưa chép.
+						<Button
+							size="sm"
+							variant="ghost"
+							className="ml-2"
+							data-id="reader-send-rest"
+							loading={transcribe.pending}
+							onClick={() =>
+								void transcribe.start(
+									toSend.map((s) => s.fileId),
+									toSend.reduce((sum, s) => sum + s.durationS, 0),
+								)
 							}
-							editLocked={editing !== null && editing !== segment.fileId}
-							canTranscribe={canTranscribe}
-							onPlay={play}
-							onEditingChange={onEditingChange}
-							onSave={saveSegment}
-							onRerun={requestRerun}
+						>
+							Chép {toSend.length} đoạn còn lại
+						</Button>
+					</Alert>
+				) : null}
+
+				<div className="grid gap-4">
+					{segments.map((segment) => (
+						<div key={segment.fileId} className="grid gap-1">
+							{(gaps.get(segment.fileId) ?? []).map((missing) => (
+								<p
+									key={missing}
+									data-id={`reader-missing-${missing}`}
+									className="m-0 rounded-sm border border-border border-dashed px-2 py-2 text-muted text-sm"
+								>
+									Thiếu đoạn {missing + 1}
+								</p>
+							))}
+							<ReaderSegment
+								segment={segment}
+								numbered={transcriptKey.startsWith("s:")}
+								progress={
+									live.get(segment.fileId)?.progress ?? segment.progress
+								}
+								activeIndex={
+									segment.fileId === current?.fileId && playback
+										? activeSentence(segment, time)
+										: -1
+								}
+								editLocked={editing !== null && editing !== segment.fileId}
+								canTranscribe={canTranscribe}
+								onPlay={play}
+								onEditingChange={onEditingChange}
+								onSave={saveSegment}
+								onRerun={requestRerun}
+							/>
+						</div>
+					))}
+				</div>
+
+				{current ? (
+					<div className="sticky bottom-0 z-10 -mx-4 border-border-subtle border-t bg-surface px-4 pt-2 pb-[max(var(--space-2),env(safe-area-inset-bottom))] sm:-mx-6 sm:px-6">
+						{segments.length > 1 ? (
+							<div className="pb-1 font-mono text-muted text-xs">
+								Đang ở đoạn {current.index + 1}
+							</div>
+						) : null}
+						<ReaderPlayer
+							key={current.fileId}
+							segment={current}
+							seek={playback?.fileId === current.fileId ? playback.seek : null}
+							autoPlay={
+								playback?.fileId === current.fileId ? playback.autoPlay : false
+							}
+							onTime={onTime}
+							onEnded={onEnded}
 						/>
 					</div>
-				))}
-			</div>
-
-			{current ? (
-				<div className="sticky bottom-0 z-10 -mx-4 border-border-subtle border-t bg-surface px-4 pt-2 pb-[max(var(--space-2),env(safe-area-inset-bottom))] sm:-mx-6 sm:px-6">
-					{segments.length > 1 ? (
-						<div className="pb-1 font-mono text-muted text-xs">
-							Đang ở đoạn {current.index + 1}
-						</div>
-					) : null}
-					<ReaderPlayer
-						key={current.fileId}
-						segment={current}
-						seek={playback?.fileId === current.fileId ? playback.seek : null}
-						autoPlay={
-							playback?.fileId === current.fileId ? playback.autoPlay : false
-						}
-						onTime={onTime}
-						onEnded={onEnded}
-					/>
-				</div>
-			) : null}
+				) : null}
+			</Card>
 
 			{transcribe.dialog}
 			<LeaveGuard when={unsaved} data-id="reader-leave" />
@@ -400,33 +429,58 @@ export function TranscriptReader({
 			<ConfirmModal
 				open={confirmDelete}
 				onOpenChange={setConfirmDelete}
-				title="Xoá transcript"
-				question={`Xoá transcript “${title}”?`}
-				confirmLabel="Xoá"
+				title={t("transcript.reader.deleteTitle")}
+				question={t("transcript.reader.deleteQuestion", { name: title })}
+				confirmLabel={t("common.actions.delete")}
 				onConfirm={async () => {
 					await remove.mutateAsync(transcriptKey);
+					toast.show({
+						title: t("transcript.reader.deleted", { name: title }),
+					});
 					setRemoved(true);
 				}}
 				data-id="reader-delete-confirm"
 			>
-				Phần chữ và phần đã sửa sẽ mất. Audio vẫn còn trong Lịch sử ghi.
+				{t("transcript.reader.deleteBody")}
 			</ConfirmModal>
-		</Card>
+		</section>
 	);
 }
 
-function BackButton({ onBack }: { onBack: () => void }) {
+/** Start of the breadcrumb: back to the list, like a parent page link. */
+function BackLink({ onBack }: { onBack: () => void }) {
+	const t = useT();
 	return (
-		<Button
-			size="sm"
-			variant="ghost"
-			className="justify-self-start"
+		<button
+			type="button"
 			data-id="reader-back"
-			leadingIcon={<IconArrowLeft size={16} aria-hidden="true" />}
+			className="shrink-0 cursor-pointer rounded-sm border-0 bg-transparent p-0 font-bold font-mono text-muted text-xl hover:text-primary pointer-coarse:min-h-11"
 			onClick={() => onBack()}
 		>
-			Danh sách
-		</Button>
+			{t("transcript.reader.back")}
+		</button>
+	);
+}
+
+/** First load: header, meta line and a card of sentences. */
+function ReaderSkeleton() {
+	const t = useT();
+	return (
+		<SkeletonRegion
+			data-id="reader-loading"
+			label={t("transcript.reader.loading")}
+			className="grid gap-5"
+		>
+			<div className="grid gap-2">
+				<Skeleton className="h-7 w-72 max-w-full" />
+				<Skeleton className="h-3 w-48 max-w-full" />
+			</div>
+			<Card className="grid gap-4 p-4 sm:p-6">
+				<Skeleton className="h-4 w-40 max-w-full" />
+				<Skeleton variant="text" lines={4} />
+				<Skeleton variant="text" lines={3} />
+			</Card>
+		</SkeletonRegion>
 	);
 }
 

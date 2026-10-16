@@ -1,6 +1,7 @@
 /** App shell: top bar, account menu, sign-out and leave confirmations, footer. */
 export const layout = {
 	skipLink: "Bỏ qua tới nội dung chính",
+	breadcrumb: "Đường dẫn",
 	appHeader: {
 		home: "Scribe, về trang Ghi âm",
 		nav: "Chức năng",

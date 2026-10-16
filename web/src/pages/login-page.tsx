@@ -8,13 +8,18 @@ import { ThemeToggle } from "../components/theme-toggle";
 import { Alert } from "../components/ui/alert";
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
+import { useT } from "../i18n/i18n-context";
 
 /**
  * Sign-in with the hoandat account (hoandat-auth: Google, GitHub…); the
  * backend decides who may enter (allowlist). A failed web sign-in comes
- * back here with `?error=<code>`.
+ * back here with `?error=<code>`. Laid out like the hoandat-auth sign-in
+ * page: the 100px grid behind, a top bar with the wordmark, one 420px
+ * card 48px under it with a mono title, a subtitle, the button and a
+ * muted note.
  */
 export function LoginPage() {
+	const t = useT();
 	const { login } = useAuth();
 	const navigate = useNavigate();
 	const [params] = useSearchParams();
@@ -37,45 +42,48 @@ export function LoginPage() {
 	}
 
 	return (
-		<main
+		<div
 			data-id="login"
-			className="grid min-h-dvh grid-rows-[auto_1fr] gap-4 px-gutter pt-[calc(var(--space-4)+env(safe-area-inset-top))] pb-[calc(var(--space-4)+env(safe-area-inset-bottom))]"
+			className="grid-backdrop grid min-h-dvh grid-rows-[auto_1fr] pb-[env(safe-area-inset-bottom)]"
 		>
-			<div className="flex justify-end">
-				<ThemeToggle data-id="login-theme" />
-			</div>
-			<div className="grid place-items-center pb-12">
-				<Card className="grid w-full max-w-sm gap-8 px-6 py-10 sm:px-8">
-					<div className="grid justify-items-center gap-2 text-center">
-						<BrandMark size={48} />
-						<h1 className="m-0">
-							<Wordmark className="text-2xl" />
+			<header className="border-border-subtle border-b bg-bg/82 pt-[env(safe-area-inset-top)] backdrop-blur-md">
+				<div className="mx-auto flex min-h-(--topbar-h) w-full max-w-page items-center justify-between gap-3 px-gutter">
+					<span className="flex items-center gap-2">
+						<BrandMark />
+						<Wordmark />
+					</span>
+					<ThemeToggle data-id="login-theme" />
+				</div>
+			</header>
+			<main className="grid content-start justify-items-center px-gutter pt-12 pb-16">
+				<Card className="grid w-full max-w-105 gap-4 px-6 py-8 sm:p-8">
+					<div className="grid gap-1">
+						<h1 className="m-0 font-bold font-mono text-[1.375rem] tracking-[-0.01em]">
+							{t("login.title")}
 						</h1>
-						<p className="m-0 text-muted text-sm">Ghi và cắt media</p>
+						<p className="m-0 text-muted text-sm">{t("login.subtitle")}</p>
 					</div>
-					<div className="grid gap-4">
-						<Button
-							variant="primary"
-							size="lg"
-							block
-							loading={busy}
-							data-id="login-submit"
-							leadingIcon={<IconLogin2 size={20} aria-hidden="true" />}
-							onClick={() => void signIn()}
-						>
-							Đăng nhập
-						</Button>
-						<p className="m-0 text-center text-muted text-sm">
-							Dùng tài khoản hoandat (Google hoặc GitHub).
-						</p>
-						{error ? (
-							<Alert tone="danger" data-id="login-error">
-								{error}
-							</Alert>
-						) : null}
-					</div>
+					<Button
+						variant="primary"
+						size="lg"
+						block
+						loading={busy}
+						data-id="login-submit"
+						leadingIcon={<IconLogin2 size={20} aria-hidden="true" />}
+						onClick={() => void signIn()}
+					>
+						{t("login.submit")}
+					</Button>
+					{error ? (
+						<Alert tone="danger" data-id="login-error">
+							{error}
+						</Alert>
+					) : null}
+					<p className="m-0 text-center text-muted text-sm">
+						{t("login.note")}
+					</p>
 				</Card>
-			</div>
-		</main>
+			</main>
+		</div>
 	);
 }

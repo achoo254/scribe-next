@@ -1,12 +1,24 @@
+import {
+	IconChevronUp,
+	IconDownload,
+	IconPlayerPlayFilled,
+	IconTrash,
+} from "@tabler/icons-react";
 import { MediaPlayer, type MediaSeek } from "../../components/media-player";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
+import {
+	DropdownMenuItem,
+	DropdownMenuSeparator,
+} from "../../components/ui/dropdown-menu";
+import { RowActionsMenu } from "../../components/ui/row-actions-menu";
 import type { RecordingItem } from "../../features/files/files-api";
 import {
 	daysUntilExpiry,
 	expiresSoon,
 	expiryLabel,
 } from "../../features/files/recording-groups";
+import { useT } from "../../i18n/i18n-context";
 import { isNativeShell } from "../../lib/api";
 import { cn } from "../../lib/cn";
 import { downloadPaths, useDownload } from "../../lib/download";
@@ -40,7 +52,9 @@ export function RecordingRow({
 	onTogglePlay,
 	onDelete,
 }: RecordingRowProps) {
+	const t = useT();
 	const download = useDownload();
+	const name = displayName ?? item.name;
 	const days = daysUntilExpiry(item.createdAt, retentionDays);
 	const expiry = expiryLabel(days);
 	const id = `history-item-${item.id}`;
@@ -50,16 +64,17 @@ export function RecordingRow({
 			data-id={id}
 			className="grid gap-2 border-border-subtle border-t pt-3 first:border-t-0 first:pt-0"
 		>
-			<div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-				<Badge tone={item.hasVideo ? "accent" : "neutral"}>
-					{item.hasVideo ? "Màn hình" : "Mic"}
-				</Badge>
-				<div className="min-w-0 flex-1 basis-48">
-					<div
-						className="truncate font-semibold"
-						title={displayName ?? item.name}
-					>
-						{displayName ?? item.name}
+			<div className="flex items-center gap-2">
+				{/* Inline-size containment: the long name must not widen the row
+				    (and the grids around it) past the screen; it truncates. */}
+				<div className="min-w-0 flex-1 contain-inline-size">
+					<div className="flex min-w-0 items-center gap-2">
+						<Badge tone={item.hasVideo ? "accent" : "neutral"}>
+							{item.hasVideo ? t("record.row.screen") : t("record.row.mic")}
+						</Badge>
+						<span className="truncate font-semibold" title={name}>
+							{name}
+						</span>
 					</div>
 					<div className="text-muted text-sm">
 						{formatDuration(item.durationS)} · {formatSize(item.size)}
@@ -75,33 +90,49 @@ export function RecordingRow({
 						) : null}
 					</div>
 				</div>
-				<div className="flex flex-none flex-wrap items-center gap-1">
+				<div className="flex flex-none items-center gap-1">
 					<Button
 						size="sm"
 						variant="ghost"
 						data-id={`${id}-play`}
 						aria-expanded={playing}
+						leadingIcon={
+							playing ? (
+								<IconChevronUp size={16} aria-hidden="true" />
+							) : (
+								<IconPlayerPlayFilled size={16} aria-hidden="true" />
+							)
+						}
 						onClick={onTogglePlay}
 					>
-						{playing ? "Ẩn" : "Nghe lại"}
+						{/* Icon only on phones: the name keeps the room; still the button's name. */}
+						<span className="max-sm:sr-only">
+							{playing ? t("record.row.hide") : t("record.row.play")}
+						</span>
 					</Button>
-					<Button
-						size="sm"
-						variant="ghost"
-						data-id={`${id}-download`}
-						onClick={() => download(downloadPaths.file(item.id))}
+					<RowActionsMenu
+						label={t("record.row.menu", { name })}
+						data-id={`${id}-menu`}
 					>
-						{isNativeShell() ? "Lưu vào Tệp" : "Tải"}
-					</Button>
-					<Button
-						size="sm"
-						variant="ghost"
-						data-id={`${id}-delete`}
-						className="text-error!"
-						onClick={onDelete}
-					>
-						Xoá
-					</Button>
+						<DropdownMenuItem
+							data-id={`${id}-download`}
+							icon={<IconDownload size={16} aria-hidden="true" />}
+							onSelect={() => download(downloadPaths.file(item.id))}
+						>
+							{isNativeShell()
+								? t("record.row.saveToFiles")
+								: t("record.row.download")}
+						</DropdownMenuItem>
+						<DropdownMenuSeparator />
+						<DropdownMenuItem
+							danger
+							data-id={`${id}-delete`}
+							icon={<IconTrash size={16} aria-hidden="true" />}
+							onSelect={onDelete}
+						>
+							{t("common.actions.delete")}
+						</DropdownMenuItem>
+					</RowActionsMenu>
 				</div>
 			</div>
 			{playing ? (

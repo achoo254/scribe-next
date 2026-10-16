@@ -16,7 +16,7 @@
 		"typecheck": "tsc --noEmit && tsc -p scripts/tsconfig.json && tsc -p e2e/tsconfig.json",
 		"test": "vitest run",
 		"test:watch": "vitest",
-		"test:e2e": "playwright test --config e2e/playwright.config.ts",
+		"test:e2e": "node node_modules/@playwright/test/cli.js test --config e2e/playwright.config.ts",
 		"check:tokens": "tsx scripts/check-tokens.ts",
 		"check:dist": "tsx e2e/check-dist.ts",
 		"ios:device": "scripts/ios-device.sh",

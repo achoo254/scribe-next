@@ -1,20 +1,26 @@
 import { FormField } from "../../components/ui/form-field";
 import { Input } from "../../components/ui/input";
-import { SegmentedControl } from "../../components/ui/segmented-control";
+import { Select } from "../../components/ui/select";
 import type { JobCriterion } from "../../features/split/split-job";
+import { useT } from "../../i18n/i18n-context";
+import type { MessageKey } from "../../i18n/message-types";
 import { parsePositiveNumber } from "../../lib/format";
 
-const OPTIONS = [
-	{ value: "minutes", label: "Phút", "data-id": "split-criterion-minutes" },
-	{ value: "megabytes", label: "MB", "data-id": "split-criterion-megabytes" },
-	{ value: "parts", label: "Số phần", "data-id": "split-criterion-parts" },
-] as const;
+const CRITERIA = [
+	{ value: "minutes", label: "split.criteria.byMinutes" },
+	{ value: "megabytes", label: "split.criteria.byMegabytes" },
+	{ value: "parts", label: "split.criteria.byParts" },
+] as const satisfies ReadonlyArray<{ value: JobCriterion; label: MessageKey }>;
 
-const VALUE_LABEL: Record<JobCriterion, string> = {
-	minutes: "Số phút mỗi đoạn",
-	megabytes: "MB mỗi đoạn",
-	parts: "Chia thành (số đoạn)",
-};
+const VALUE_LABEL = {
+	minutes: "split.criteria.minutesValue",
+	megabytes: "split.criteria.megabytesValue",
+	parts: "split.criteria.partsValue",
+} as const satisfies Record<JobCriterion, MessageKey>;
+
+function isCriterion(value: string): value is JobCriterion {
+	return CRITERIA.some((option) => option.value === value);
+}
 
 /** The value to send, or null when the input does not fit the criterion. */
 export function parseSplitValue(
@@ -40,32 +46,37 @@ export function SplitCriteria({
 	onValueChange,
 	disabled,
 }: SplitCriteriaProps) {
+	const t = useT();
+	const invalid = parseSplitValue(criterion, value) === null;
 	return (
-		<div className="grid gap-4">
-			<div className="grid gap-1.5">
-				<span
-					aria-hidden="true"
-					className="font-mono font-semibold text-[0.8125rem] text-fg"
-				>
-					Tiêu chí
-				</span>
-				<SegmentedControl
-					legend="Tiêu chí"
-					data-id="split-criterion"
-					options={OPTIONS}
-					value={criterion}
-					onChange={(next) => {
-						if (!disabled) onCriterionChange(next);
-					}}
-				/>
-			</div>
+		<div className="flex flex-wrap items-start gap-4">
 			<FormField
-				label={VALUE_LABEL[criterion]}
+				label={t("split.criteria.label")}
+				className="w-full max-w-60"
+				data-id="split-criterion"
+			>
+				<Select
+					value={criterion}
+					disabled={disabled}
+					onChange={(event) => {
+						const next = event.target.value;
+						if (isCriterion(next)) onCriterionChange(next);
+					}}
+				>
+					{CRITERIA.map((option) => (
+						<option key={option.value} value={option.value}>
+							{t(option.label)}
+						</option>
+					))}
+				</Select>
+			</FormField>
+			<FormField
+				label={t(VALUE_LABEL[criterion])}
 				error={
-					parseSplitValue(criterion, value) === null
+					invalid
 						? criterion === "parts"
-							? "Nhập số nguyên, từ 1 trở lên."
-							: "Nhập số lớn hơn 0."
+							? t("split.criteria.partsInvalid")
+							: t("split.criteria.valueInvalid")
 						: undefined
 				}
 				className="w-full max-w-60"

@@ -5,12 +5,16 @@ import { Card } from "../../components/ui/card";
 import { ProgressBar } from "../../components/ui/progress-bar";
 import { supportsScreenCapture } from "../../features/recorder/media-capture";
 import { isJobBusy } from "../../features/split/split-job";
+import { useT } from "../../i18n/i18n-context";
+import { renderRich } from "../../i18n/rich-text";
+import { PageHeader } from "../../layout/page-header";
 import { isNativeShell } from "../../lib/api";
-import { formatClock, parsePositiveNumber } from "../../lib/format";
+import { parsePositiveNumber } from "../../lib/format";
 import { LiveMonitor } from "./live-monitor";
 import { NativeRecordCard } from "./native-record-card";
 import { RecordSourcesField } from "./record-sources";
 import { useBrowserRecordState } from "./record-state";
+import { RecordTimer } from "./record-timer";
 import { RecordingHistory } from "./recording-history";
 import { SplitAfterRecording } from "./split-after-recording";
 
@@ -23,18 +27,24 @@ const canScreen = supportsScreenCapture();
  * itself lives in `RecordStateProvider`, so it outlives this page.
  */
 export function RecordPage() {
-	if (isNativeShell()) {
-		return (
-			<div data-id="record" className="grid gap-4">
-				<NativeRecordCard />
-				<RecordingHistory />
-			</div>
-		);
-	}
-	return <BrowserRecordPage />;
+	const t = useT();
+	const native = isNativeShell();
+	return (
+		<section data-id="record" className="grid gap-5">
+			<PageHeader
+				title={t("record.title")}
+				description={
+					native ? t("record.nativeDescription") : t("record.description")
+				}
+			/>
+			{native ? <NativeRecordCard /> : <BrowserRecordCard />}
+			<RecordingHistory />
+		</section>
+	);
 }
 
-function BrowserRecordPage() {
+function BrowserRecordCard() {
+	const t = useT();
 	const {
 		rec,
 		split,
@@ -58,30 +68,23 @@ function BrowserRecordPage() {
 	const splitBusy = isJobBusy(split.status);
 
 	return (
-		<div data-id="record" className="grid gap-4">
-			<Card className="grid gap-4 p-4 sm:p-6">
-				<h2 className="m-0 font-bold font-mono text-lg">Ghi âm</h2>
+		<Card data-id="record-card" className="grid gap-5 p-4 sm:p-6">
+			<div className="grid gap-4">
 				<RecordSourcesField
 					value={sources}
 					onChange={setSources}
 					disabled={locked}
 				/>
-				{noSource ? (
-					<Alert tone="warning">Hãy bật ít nhất một nguồn ghi.</Alert>
-				) : null}
+				{noSource ? <Alert tone="warning">{t("record.noSource")}</Alert> : null}
 				<Alert tone="info" data-id="record-sources-help">
-					Tiếng hệ thống và ghi màn hình cần chia sẻ màn hình — tốt nhất trên{" "}
-					<strong>Chrome/Edge</strong>: chọn “Toàn màn hình” và bật “Chia sẻ âm
-					thanh” để có tiếng hệ thống. Firefox/Safari có thể không hỗ trợ tiếng
-					hệ thống. Chọn nhiều nguồn → trộn chung vào 1 bản ghi.
+					{renderRich(t("record.sourcesHelp"))}
 					{canScreen ? null : (
 						<>
 							<br />
-							Trình duyệt này không hỗ trợ chia sẻ màn hình (chỉ ghi được mic).
+							{t("record.noScreenCapture")}
 						</>
 					)}
 				</Alert>
-
 				<SplitAfterRecording
 					enabled={splitEnabled}
 					onEnabledChange={setSplitEnabled}
@@ -89,49 +92,41 @@ function BrowserRecordPage() {
 					onMinutesChange={setSplitMinutes}
 					disabled={locked}
 				/>
+			</div>
+
+			<div className="grid gap-4 border-border-subtle border-t pt-5">
+				<div className="flex flex-wrap items-center gap-x-5 gap-y-3">
+					<Button
+						variant={rec.recording ? "danger" : "primary"}
+						size="lg"
+						data-id="record-toggle"
+						loading={rec.starting || rec.finalizing}
+						disabled={!rec.recording && startBlocked}
+						leadingIcon={
+							rec.recording ? (
+								<IconPlayerStopFilled size={20} aria-hidden="true" />
+							) : (
+								<IconMicrophone size={20} aria-hidden="true" />
+							)
+						}
+						onClick={() => void toggle()}
+					>
+						{rec.recording ? t("record.stop") : t("record.start")}
+					</Button>
+					{rec.recording ? (
+						<RecordTimer data-id="record-timer" elapsedS={rec.elapsedS} />
+					) : null}
+					{rec.finalizing ? (
+						<p className="m-0 text-muted text-sm">{t("record.saving")}</p>
+					) : null}
+				</div>
 
 				{rec.recording ? (
-					<>
-						<p
-							data-id="record-timer"
-							aria-live="polite"
-							className="m-0 flex items-center gap-2 font-mono font-semibold text-error"
-						>
-							<span
-								aria-hidden="true"
-								className="size-2.5 rounded-full bg-error motion-safe:animate-pulse"
-							/>
-							Đang ghi — {formatClock(rec.elapsedS)}
-						</p>
-						<LiveMonitor
-							recorder={rec.recorder}
-							stream={rec.previewStream}
-							showPreview={sources.screen}
-						/>
-					</>
-				) : null}
-
-				<Button
-					variant={rec.recording ? "danger" : "primary"}
-					size="lg"
-					data-id="record-toggle"
-					className="justify-self-start"
-					loading={rec.starting || rec.finalizing}
-					disabled={!rec.recording && startBlocked}
-					leadingIcon={
-						rec.recording ? (
-							<IconPlayerStopFilled size={20} aria-hidden="true" />
-						) : (
-							<IconMicrophone size={20} aria-hidden="true" />
-						)
-					}
-					onClick={() => void toggle()}
-				>
-					{rec.recording ? "Dừng ghi" : "Bắt đầu ghi"}
-				</Button>
-
-				{rec.finalizing ? (
-					<p className="m-0 text-muted text-sm">Đang lưu bản ghi…</p>
+					<LiveMonitor
+						recorder={rec.recorder}
+						stream={rec.previewStream}
+						showPreview={sources.screen}
+					/>
 				) : null}
 				{rec.error ? (
 					<Alert tone="danger" data-id="record-error">
@@ -142,21 +137,18 @@ function BrowserRecordPage() {
 				{splitBusy ? (
 					<div className="grid gap-2" aria-busy="true">
 						<ProgressBar className="relative rounded-full" />
-						<p className="m-0 text-muted text-sm">
-							Đang cắt bản ghi thành các đoạn…
-						</p>
+						<p className="m-0 text-muted text-sm">{t("record.splitting")}</p>
 					</div>
 				) : null}
 				{split.error ? <Alert tone="danger">{split.error}</Alert> : null}
 				{split.status === "done" ? (
 					<Alert tone="success" data-id="record-split-done">
-						Đã cắt thành {split.segments.length} đoạn — xem trong{" "}
-						<strong>Lịch sử ghi</strong> bên dưới.
+						{renderRich(
+							t("record.splitDone", { count: split.segments.length }),
+						)}
 					</Alert>
 				) : null}
-			</Card>
-
-			<RecordingHistory />
-		</div>
+			</div>
+		</Card>
 	);
 }

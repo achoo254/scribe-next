@@ -234,3 +234,43 @@ describe("TranscriptReader", () => {
 		expect(screen.queryByRole("dialog")).toBeNull();
 	});
 });
+
+describe("TranscriptReader header", () => {
+	it("deletes from the ⋮ menu, says so and goes back without a history entry", async () => {
+		const fake = fakeFetch({
+			[`GET ${PATH}`]: jsonResponse(DETAIL),
+			[`DELETE ${PATH}`]: new Response(null, { status: 204 }),
+		});
+		vi.stubGlobal("fetch", fake.fetcher);
+		const onBack = vi.fn();
+		renderWithProviders(
+			<TranscriptReader transcriptKey={KEY} canTranscribe onBack={onBack} />,
+		);
+		const title = "Bản ghi trên iPhone 09:41 16/10/2026";
+		expect(
+			await screen.findByRole("heading", { level: 1, name: title }),
+		).toHaveAttribute("aria-current", "page");
+		expect(
+			screen.getByRole("navigation", { name: "Đường dẫn" }),
+		).toHaveTextContent(`Transcript/${title}`);
+
+		screen.getByRole("button", { name: "Thao tác với transcript" }).focus();
+		await userEvent.keyboard("{Enter}");
+		expect(
+			await screen.findByRole("menuitem", { name: "Tải .txt" }),
+		).toBeInTheDocument();
+		await userEvent.click(
+			screen.getByRole("menuitem", { name: "Xoá transcript" }),
+		);
+		const dialog = await screen.findByRole("dialog", {
+			name: "Xoá transcript",
+		});
+		await userEvent.click(within(dialog).getByRole("button", { name: "Xoá" }));
+
+		expect(
+			await screen.findByText(`Đã xoá transcript “${title}”`),
+		).toBeVisible();
+		await waitFor(() => expect(onBack).toHaveBeenCalledWith({ replace: true }));
+		expect(fake.calls.some((c) => c.method === "DELETE")).toBe(true);
+	});
+});

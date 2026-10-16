@@ -1,5 +1,9 @@
 import { common } from "./common";
 import { layout } from "./layout";
+import { login } from "./login";
+import { record } from "./record";
+import { split } from "./split";
+import { transcript } from "./transcript";
 import { ui } from "./ui";
 
 /**
@@ -10,5 +14,9 @@ import { ui } from "./ui";
 export const vi = {
 	common,
 	layout,
+	login,
+	record,
+	split,
+	transcript,
 	ui,
 } as const;
