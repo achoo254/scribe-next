@@ -1,6 +1,6 @@
 # Codebase Summary — Scribe
 
-Tổng quan kiến trúc + module chính. Cập nhật 2026-10-16 (bỏ app desktop; đăng nhập chuyển sang hoandat-auth; prod ở `scribe.hoandat.com`).
+Tổng quan kiến trúc + module chính. Cập nhật 2026-10-16 (bỏ app desktop; đăng nhập chuyển sang hoandat-auth; prod ở `scribe.hoandat.com`; giao diện web theo khung Localman).
 
 Scribe = app ghi/cắt/transcribe media trong hệ sinh thái hoandat. Repo có **2 ứng dụng**:
 
@@ -16,11 +16,14 @@ Scribe = app ghi/cắt/transcribe media trong hệ sinh thái hoandat. Repo có 
 
 React 19 + Vite 7 + Tailwind 4 + TanStack Query + Radix. Token màu lấy từ localman-next (`styles/tokens.css`, kiểm tương phản bằng `pnpm run check:tokens`).
 
-- **Shell** (`layout/`): top bar + tab Ghi âm / Cắt file / Transcript (tab Transcript chỉ hiện khi `me.canTranscribe`; `transcript-nav.ts` cho trang khác mở một transcript).
-- **pages/**: `login-page`, `record/` (nguồn ghi, theo dõi mức âm, thẻ ghi native trên iPhone, Lịch sử ghi gom theo ngày và theo phiên iPhone, panel "Chép lời", hộp xác nhận bản ghi dài), `split/` (cắt file), `transcript/` (danh sách transcript theo phiên + màn hình đọc: chạm câu để phát, tự sang đoạn kế, sửa câu theo đoạn, đổi tên, chép lại từng đoạn, xuất, xoá).
+- **Router** (`routes.tsx`, `createBrowserRouter`): `/` → `/record`, `/record`, `/split`, `/transcripts`, `/transcripts/:key` (khoá phiên qua `transcriptPath()` ở `layout/app-paths.ts`), `/login`, `/__ui` (chỉ dev). Hai trang `/transcripts*` chỉ có khi `me.canTranscribe`. Trạng thái ghi (`pages/record/record-state.tsx`) và upload/job Cắt file (`pages/split/split-state.tsx`) nằm trong `layout/signed-in-state.tsx`, dưới `RequireAuth`: đổi trang không mất phiên ghi, đăng xuất thì unmount. `PageError` là `errorElement` bên dưới shell, trang lỗi không làm mất trạng thái đó. Trang không lazy, để tab đang mở qua một lần deploy không phải tải chunk đã mất.
+- **Shell** (`layout/`, chép từ Localman, ghi nguồn ở đầu tệp): top bar sticky (wordmark, nav theo URL, account menu); dưới 640 px nav thành một hàng gọn ngay dưới thanh. Account menu có link IdP `/account` và `/account#account-apps` (`lib/idp.ts`), cùng nút "Đăng xuất"; khi đang ghi hoặc đang tải lên thì hỏi xác nhận trước (`account-controls.tsx`, `session-activity.ts`). Footer có link IdP và theme toggle. Còn có skip link, `page-header.tsx` dùng chung, và `leave-guard.tsx` hỏi trước khi rời trang đọc còn câu chưa lưu.
+- **pages/**: `login-page`, `record/` (nguồn ghi, theo dõi mức âm, thẻ ghi native trên iPhone, Lịch sử ghi gom theo ngày và theo phiên iPhone, panel "Chép lời", hộp xác nhận bản ghi dài), `split/` (cắt file), `transcript/` (trang "Lời đã chép": danh sách bản chép lời theo phiên + màn hình đọc: chạm câu để phát, tự sang đoạn kế, sửa câu theo đoạn, đổi tên, chép lại từng đoạn, xuất, xoá). URL và tên trong code vẫn là `transcript`.
+- **i18n/** (chép từ Localman): mọi chuỗi giao diện nằm trong từ điển tiếng Việt `i18n/messages/vi/`; component dùng `useT()`, module không phải React dùng `activeTranslator()`. `dictionaries.test.ts` bắt khoá thừa/thiếu, `hard-coded-strings.test.ts` báo lỗi khi `src/` còn chuỗi tiếng Việt viết cứng ngoài từ điển.
 - **features/** (logic, không UI): `files` (danh sách/xoá/gom nhóm), `upload` (chunk), `split` (job cắt), `recorder` (trình duyệt + bản native qua plugin Swift), `transcript` (API chép lời, ghép phiên), `transcript-docs` (API `/api/transcript-docs`, query có poll `/status` nhẹ, `reader-model` thuần).
 - **auth/**: `auth-api.ts`, `auth-context.tsx` — web chuyển hẳn sang `/api/auth/login` (BE lo OIDC), iPhone gọi plugin Swift `HoandatAuth`; đăng xuất web đi tiếp tới trang kết thúc phiên của IdP.
-- **lib/**: `api.ts` (`apiFetch`, `isNativeShell`, origin backend khi chạy trong app), `download.ts` (tải/phát qua plugin native trên iPhone), `native.ts` (khai báo plugin Swift).
+- **lib/**: `api.ts` (`apiFetch`, `isNativeShell`, origin backend khi chạy trong app), `download.ts` (tải/phát qua plugin native trên iPhone), `native.ts` (khai báo plugin Swift), `idp.ts` (origin hoandat-auth, đọc `VITE_IDP_ORIGIN`, mặc định `https://auth.hoandat.com`), `external-link.ts` (mở link ngoài; trong app iPhone, Capacitor chuyển sang trình duyệt hệ thống).
+- **e2e/** (Playwright, `pnpm run test:e2e`): stub API (`support/api-stubs.ts`) và stub Capacitor (`support/capacitor-stub.ts`) nên không cần backend; chạy trên Chromium desktop và WebKit iPhone (nhánh iOS qua stub), so ảnh chụp sáng/tối, kiểm axe. `pnpm run build` kết thúc bằng `check:dist`: build thất bại nếu stub lọt vào `dist/`.
 - Dev proxy `/api` → `127.0.0.1:8787`; prod nginx cùng origin.
 
 ## Web app — Backend (`server/scribe-be/`)
@@ -83,7 +86,6 @@ Build musl bằng `cargo zigbuild` → binary `/opt/scribe-be/scribe-be` (system
 
 ## Tính năng mới (session 2026-07-12)
 
-- **Refactor UI web theo giao diện app desktop cũ**: theme dark của app + BrandMark + Be Vietnam Pro + shell 3 tab (thay giao diện trắng/xanh dương cũ).
 - **Mode A — Ghi (web)**: mic + màn hình/system audio (Chrome/Edge) → MediaRecorder streaming upload → finalize remux webm seekable (tua được) → lịch sử + player (stream/Range); tùy chọn cắt theo phút → đoạn thành các bản ghi riêng trong Lịch sử ghi (thay bản ghi gốc), phát/tua từng đoạn.
 - **Retention & hardening**: auto-purge 14 ngày (sweep), rate-limit real-IP, `/api/me/usage` + QuotaBar, quota 5GB + size cap 2GB.
 - **Xoá recording thủ công**: `DELETE /api/files/:id` + nút Xoá (xác nhận inline).

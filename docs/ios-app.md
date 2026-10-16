@@ -23,6 +23,7 @@ Cần trên máy build:
 | Phần | Ở đâu | Ghi chú |
 |---|---|---|
 | Giao diện | `web/dist` đóng gói trong app (`capacitor://localhost`) | Cùng mã với web; nhánh native qua `isNativeShell()` (`web/src/lib/api.ts`) |
+| Điều hướng | `MainViewController.swift` | Mỗi trang có URL; app bật cử chỉ vuốt từ mép trái để lùi/tiến trang (`allowsBackForwardNavigationGestures`, Capacitor để tắt theo mặc định). Link IdP trong account menu và footer mở ở trình duyệt hệ thống |
 | Gọi API | `CapacitorHttp` → `URLSession` | Không bị CORS/`SameSite`; cookie phiên nằm ở `HTTPCookieStorage` |
 | Đăng nhập hoandat-auth | `HoandatAuthPlugin.swift` | Client public `scribe-mobile`: lấy tham số ở `GET /api/auth/native/config`, app tự sinh PKCE + `nonce`, mở `auth.hoandat.com` bằng `ASWebAuthenticationSession`, redirect `com.hoandat.scribe:/auth/callback` → gửi `code` + verifier + `nonce` tới `POST /api/auth/native/exchange`. Backend giữ refresh token IdP (mã hoá), trả cookie phiên + token thiết bị |
 | Tải / lưu / phát file | `NativeFilesPlugin.swift` | Tải kèm cookie; share sheet (Lưu vào Tệp); bản cache để phát và tua |
@@ -46,4 +47,6 @@ Cần trên máy build:
 | Cuộc gọi đến, AirPods, chế độ máy bay khi đang tải | **Chưa** — cần máy thứ hai để gọi vào và AirPods |
 | Kill app khi đang ghi | Đạt (2026-10-16): vuốt tắt sau ~30 s; mở lại thì đoạn dở 31,3 s được đối soát và tải lên (server 08:29:41, ffprobe 31,36 s) |
 | Đăng xuất khi còn đoạn chưa tải | Đạt (2026-10-16): đoạn 90,8 s ở lại trên máy, `uploaded: false`; server có `recordings/init` 3 s trước `logout` nhưng không có `finalize`, không file nào vào tài khoản. Sau đăng xuất máy có mạng, 08:31:51–08:35:02 (gồm lúc mở app để đăng nhập lại) server không nhận request nào. Đăng nhập lại cùng tài khoản (08:35:02) thì đoạn tồn tải nốt ngay: `finalize` 08:35:03 nối tiếp phiên tải cũ (không `init` mới), ffprobe 90,86 s, đúng một file |
+| Ghi khi đổi trang, vuốt lùi và khoá màn hình (giao diện có URL) | Đạt (2026-10-16): đoạn 1 phút, một phiên, 3 đoạn 60 + 60 + 48 s, `init`/`finalize` 200, không lỗi, không phiên treo |
+| QA cuối giao diện mới (đăng xuất từ menu, theme sáng/tối, safe area) | **Chưa** |
 | Ghi dài không sạc, đo pin (ngưỡng ≤ 12% / 60 phút) | Đạt (2026-10-16): 48:07 khoá màn hình, đã rút sạc, đoạn 1 phút; pin 76% → 76% (dưới ~2%); server nhận đủ 49 đoạn liền mạch (48 × ~60 s + 3,9 s), tải lên từng phút 08:43:38–09:30:42 |

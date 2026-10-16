@@ -203,8 +203,10 @@ Báo phép đo đã làm trước, rồi mới tới kết quả. Còn mắt xí
   (`mongodump --uri` trong một script gửi bằng stdin), không đặt URI vào argv trên máy dùng chung.
 - **Thay bản:** đẩy binary bằng stdin (`cat … | prod-ssh.sh 'cat > /tmp/scribe-be.new'`), FE bằng
   `COPYFILE_DISABLE=1 tar -C web/dist -czf - . | prod-ssh.sh 'mkdir -p /tmp/scribe-fe && tar -xzf - -C /tmp/scribe-fe'`,
-  rồi theo đúng khối lệnh `install … && mv -f … && rsync -a --delete … && systemctl restart` ở
-  `docs/deploy-web-production.md` §Deploy (làm tay). So `sha256sum` binary hai đầu.
+  rồi theo đúng khối lệnh `install … && mv -f … && systemctl restart` ở `docs/deploy-web-production.md` §Deploy (làm
+  tay). So `sha256sum` binary hai đầu. **FE giữ `assets/` của bản trước** (tab đang mở không 404): chép `assets/` trước,
+  không `--delete`, rồi phần còn lại `rsync -a --delete --exclude /assets/`; chỉ deploy khi không còn doc trong
+  `recording_sessions`/`upload_sessions` và hàng đợi chép lời rỗng.
 - **Nghiệm thu:** §Verify sau deploy + `/api/health`, `NRestarts`, journal không có `ERROR` mới sau 30 phút; FE trả
   đúng `assets/index-*.js` vừa build.
 - **Rollback code:** `install -o $DEPLOY_USER -g $DEPLOY_USER -m 700 /root/scribe-backup-<ts>/scribe-be.prev

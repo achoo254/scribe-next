@@ -135,10 +135,12 @@ Hai client trên IdP `https://auth.hoandat.com` (chỉ tenant chính):
 
 FE đọc **lúc build** từ `web/.env` (không có trong git, mẫu ở `web/.env.example`): chỉ `VITE_NATIVE_API_ORIGIN=https://scribe.hoandat.com` (origin backend mà app iPhone gọi, `web/src/lib/api.ts`; trang web dùng cùng origin nên không cần). `pnpm run ios:device` cũng nhúng giá trị này vào Info.plist của app. Thiếu biến thì `vite build` dừng và báo tên biến (`web/vite.config.ts`).
 
+Tuỳ chọn: `VITE_IDP_ORIGIN` — origin hoandat-auth cho link "Tài khoản hoandat" và "Ứng dụng" ở account menu và footer; bỏ trống thì dùng `https://auth.hoandat.com` (`web/src/lib/idp.ts`). Có giá trị mà không phải origin http(s) thì build dừng (`web/vite.config.ts`).
+
 ## CI và repo
 
 - **Repo duy nhất là GitHub** (`origin` = `achoo254/scribe-next`, private). GitLab đã bỏ hoàn toàn ngày 2026-10-16.
-- **CI** `.github/workflows/ci.yml` chạy mỗi lần push `main` và mỗi pull request, **chỉ kiểm, không deploy**: job `web` (`ppnpm install --frozen-lockfile`, `lint`, `typecheck`, `check:tokens`, `test`) và job `rust` (`cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`, có ffmpeg cho test cắt file thật).
+- **CI** `.github/workflows/ci.yml` chạy mỗi lần push `main` và mỗi pull request, **chỉ kiểm, không deploy**: job `web` (`pnpm install --frozen-lockfile`, `lint`, `typecheck`, `check:tokens`, `test`) và job `rust` (`cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`, có ffmpeg cho test cắt file thật).
 
 ### SSH source-IP allowlist
 
@@ -207,7 +209,7 @@ cargo zigbuild --release --target x86_64-unknown-linux-musl -p scribe-be
 #    → target/x86_64-unknown-linux-musl/release/scribe-be
 
 # 2) Build FE
-cd web && ppnpm install --frozen-lockfile && pnpm run build && cd ..   # → web/dist
+cd web && pnpm install --frozen-lockfile && pnpm run build && cd ..   # → web/dist
 
 # 3) Đẩy lên .65 (KEY = file tạm chứa private key, xem mục Server)
 rsync -avz -e "ssh -i $KEY -p 24700" target/x86_64-unknown-linux-musl/release/scribe-be root@103.72.98.65:/tmp/scribe-be.new
@@ -217,7 +219,8 @@ ssh -i "$KEY" -p 24700 root@103.72.98.65 "
   install -o $DEPLOY_USER -g $DEPLOY_USER -m 700 /tmp/scribe-be.new $DEPLOY_APP_DIR/$DEPLOY_SERVICE.new
   mv -f $DEPLOY_APP_DIR/$DEPLOY_SERVICE.new $DEPLOY_APP_DIR/$DEPLOY_SERVICE
   rm -f /tmp/scribe-be.new
-  rsync -a --delete /tmp/scribe-fe/ $DEPLOY_WEB_ROOT/
+  rsync -a /tmp/scribe-fe/assets/ $DEPLOY_WEB_ROOT/assets/
+  rsync -a --delete --exclude /assets/ /tmp/scribe-fe/ $DEPLOY_WEB_ROOT/
   rm -rf /tmp/scribe-fe
   systemctl restart $DEPLOY_SERVICE && sleep 2 && systemctl is-active $DEPLOY_SERVICE"
 rm -f "$KEY"
@@ -225,6 +228,8 @@ rm -f "$KEY"
 
 Skill SSH lab không có rsync: đẩy bản build FE bằng `tar -C web/dist -czf - . | lab-ssh.sh 65 "tar -xzf - -C /tmp/scribe-fe"` (cách skill `scribe-ops-prod` làm: §6 của skill). Sao lưu trước mỗi lần thay bản vào `/root/scribe-backup-<YYYYMMDD-HHMMSS>/` (binary `scribe-be.prev`, `dist/`, dump Mongo khi cần). Quay lại bản trước: `install` binary `.prev` từ thư mục sao lưu thành `$DEPLOY_APP_DIR/$DEPLOY_SERVICE.new`, `mv -f` đè lên binary rồi `systemctl restart $DEPLOY_SERVICE`.
 
+> **Deploy web:** chỉ deploy khi không còn phiên ghi hay phiên tải lên đang mở và hàng đợi chép lời rỗng. Phiên mở là doc còn trong `recording_sessions` / `upload_sessions` (finalize thì doc bị xoá, `server/scribe-be/src/recordings.rs`, `upload.rs`; phiên bỏ dở do `retention.rs` dọn); hàng đợi đếm như ở đầu §Deploy. Giữ `assets/` của bản trước để tab đang mở bản cũ không bị 404 khi tải tệp trong `assets/`: rsync `assets/` không `--delete` và chạy trước, nên `index.html` mới không trỏ tới tệp chưa có. Tệp cũ trong `assets/` dọn ở lần deploy sau.
+>
 > **Thay binary đang chạy:** dùng `mv` (atomic rename) — tránh `ETXTBSY` khi ghi đè executable đang chạy. rsync mặc định (không `--inplace`) cũng an toàn.
 
 ## Verify sau deploy

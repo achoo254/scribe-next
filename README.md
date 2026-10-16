@@ -35,6 +35,14 @@ cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace
 
 CI GitHub Actions (`.github/workflows/ci.yml`) chạy đúng các lệnh này cho mỗi push `main` và pull request. Deploy prod làm tay.
 
+Ngoài CI, chạy thêm trước khi deploy web:
+
+```bash
+cd web && pnpm run test:e2e && pnpm run build
+```
+
+`test:e2e` là bộ Playwright trong `web/e2e/` (stub API và Capacitor, không cần backend; ảnh chụp sáng/tối trên Chromium desktop và WebKit iPhone, kiểm axe). `build` kết thúc bằng `check:dist`, báo lỗi nếu stub của e2e lọt vào `dist/`.
+
 ## Cài app lên iPhone
 
 ```bash

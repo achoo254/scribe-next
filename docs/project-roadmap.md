@@ -18,7 +18,7 @@ Web hóa Scribe làm ghi + cắt media (BỎ AI transcribe — box .65 không GP
 
 ## Bổ sung ngoài plan (2026-07-12)
 
-- ✅ **Refactor UI web bám 100% desktop** — theme dark của app (xanh lá/cam) + BrandMark + Be Vietnam Pro + shell 3 tab (thay giao diện trắng/xanh dương cũ). Live.
+- ✅ **Refactor UI web bám 100% desktop** — theme dark của app (xanh lá/cam) + BrandMark + Be Vietnam Pro + shell 3 tab (thay giao diện trắng/xanh dương cũ). Đã thay bằng khung Localman ngày 2026-10-16.
 - ✅ **Xoá recording thủ công** — `DELETE /api/files/:id` (ownership) + nút Xoá (xác nhận inline) ở lịch sử. Live.
 
 ## Bổ sung ngoài plan (2026-07-13)
@@ -63,14 +63,14 @@ Chi tiết và lập luận: phase 4 của plan iOS. Tóm tắt:
 
 ## Trạng thái hiện tại
 
-- **Web**: LIVE bản React tại `scribe.hoandat.com`, đăng nhập hoandat-auth. Ghi (mic + màn hình/system) · Cắt file · lịch sử/phát lại · chép lời bằng key server có hạn mức (mở cho mọi người từ 16/10) · retention/quota/rate-limit · xoá thủ công.
+- **Web**: LIVE bản React tại `scribe.hoandat.com`, đăng nhập hoandat-auth, giao diện theo khung Localman. Ghi (mic + màn hình/system) · Cắt file · lịch sử/phát lại · chép lời bằng key server có hạn mức (mở cho mọi người từ 16/10) · retention/quota/rate-limit · xoá thủ công.
 - **iPhone**: bản `com.hoandat.scribe` đăng nhập hoandat-auth, đã kiểm trên máy thật (ghi khoá màn hình, tải lên, chép lời); còn cuộc gọi đến, AirPods, chế độ máy bay.
 
 ## Backlog / Next
 
 | Ưu tiên | Hạng mục | Ghi chú |
 |---------|----------|---------|
-| P0 | **Refactor UI/UX theo format hệ sinh thái hoandat** (plan `dattqh/261016-1426-ui-ux-hoandat-ecosystem-refactor`) | Đang làm; trước mọi mục dưới |
+| ✅ P0 | **Refactor UI/UX theo format hệ sinh thái hoandat** (plan `dattqh/261016-1426-ui-ux-hoandat-ecosystem-refactor`) | Xong phase 1–5, web đã lên prod 16/10: khung Localman (top bar, account menu, footer), URL cho từng trang, từ điển tiếng Việt, Playwright sáng/tối. Còn QA cuối trên iPhone thật (phase 6) |
 | P1 | **Gói "Sau cuộc họp"**: tóm tắt + quyết định + việc cần làm (LLM trên transcript), đánh dấu khoảnh khắc khi đang ghi (cả màn hình khoá iPhone), gửi biên bản sang chat.hoandat.com qua bot | Người dùng chốt 16/10 sau refactor UI; Jev chấm giá trị/công sức 2,34/1,08 · 1,80/0,69 · 1,99/0,81 (thang 0–3). Mọi tính năng LLM đi qua quota + trần chi phí như chép lời |
 | P1 | **Gói "Kho bản ghi"**: tìm kiếm toàn văn mọi transcript (nhảy tới đúng giây), rồi hỏi đáp trên bản ghi có trích mốc thời gian | Sau gói "Sau cuộc họp"; Jev 1,96/1,27 · 2,37/1,53 |
 | P2 | **Xuất phụ đề SRT/VTT, DOCX/Markdown**; sau đó **dịch transcript Việt ↔ Anh** | Jev 1,79/1,09 · 1,68/1,05 |
