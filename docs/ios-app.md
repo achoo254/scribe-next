@@ -48,5 +48,5 @@ Cần trên máy build:
 | Kill app khi đang ghi | Đạt (2026-10-16): vuốt tắt sau ~30 s; mở lại thì đoạn dở 31,3 s được đối soát và tải lên (server 08:29:41, ffprobe 31,36 s) |
 | Đăng xuất khi còn đoạn chưa tải | Đạt (2026-10-16): đoạn 90,8 s ở lại trên máy, `uploaded: false`; server có `recordings/init` 3 s trước `logout` nhưng không có `finalize`, không file nào vào tài khoản. Sau đăng xuất máy có mạng, 08:31:51–08:35:02 (gồm lúc mở app để đăng nhập lại) server không nhận request nào. Đăng nhập lại cùng tài khoản (08:35:02) thì đoạn tồn tải nốt ngay: `finalize` 08:35:03 nối tiếp phiên tải cũ (không `init` mới), ffprobe 90,86 s, đúng một file |
 | Ghi khi đổi trang, vuốt lùi và khoá màn hình (giao diện có URL) | Đạt (2026-10-16): đoạn 1 phút, một phiên, 3 đoạn 60 + 60 + 48 s, `init`/`finalize` 200, không lỗi, không phiên treo |
-| QA cuối giao diện mới (đăng xuất từ menu, theme sáng/tối, safe area) | **Chưa** |
+| QA cuối giao diện mới (đăng xuất từ menu, theme sáng/tối, safe area) | **Chưa** — hoãn 16/10/2026 theo yêu cầu (không cắm iPhone); web đã kiểm bằng Playwright e2e |
 | Ghi dài không sạc, đo pin (ngưỡng ≤ 12% / 60 phút) | Đạt (2026-10-16): 48:07 khoá màn hình, đã rút sạc, đoạn 1 phút; pin 76% → 76% (dưới ~2%); server nhận đủ 49 đoạn liền mạch (48 × ~60 s + 3,9 s), tải lên từng phút 08:43:38–09:30:42 |

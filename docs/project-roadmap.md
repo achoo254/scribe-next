@@ -70,7 +70,7 @@ Chi tiết và lập luận: phase 4 của plan iOS. Tóm tắt:
 
 | Ưu tiên | Hạng mục | Ghi chú |
 |---------|----------|---------|
-| ✅ P0 | **Refactor UI/UX theo format hệ sinh thái hoandat** (plan `dattqh/261016-1426-ui-ux-hoandat-ecosystem-refactor`) | Xong phase 1–5, web đã lên prod 16/10: khung Localman (top bar, account menu, footer), URL cho từng trang, từ điển tiếng Việt, Playwright sáng/tối. Còn QA cuối trên iPhone thật (phase 6) |
+| ✅ P0 | **Refactor UI/UX theo format hệ sinh thái hoandat** (plan `dattqh/261016-1426-ui-ux-hoandat-ecosystem-refactor`) | Xong phase 1–5, web đã lên prod 16/10: khung Localman (top bar, account menu, footer), URL cho từng trang, từ điển tiếng Việt, Playwright sáng/tối. Plan đóng 16/10; QA tay trên iPhone bản cuối hoãn tới lần cắm máy sau |
 | P1 | **Gói "Sau cuộc họp"**: tóm tắt + quyết định + việc cần làm (LLM trên transcript), đánh dấu khoảnh khắc khi đang ghi (cả màn hình khoá iPhone), gửi biên bản sang chat.hoandat.com qua bot | Người dùng chốt 16/10 sau refactor UI; Jev chấm giá trị/công sức 2,34/1,08 · 1,80/0,69 · 1,99/0,81 (thang 0–3). Mọi tính năng LLM đi qua quota + trần chi phí như chép lời |
 | P1 | **Gói "Kho bản ghi"**: tìm kiếm toàn văn mọi transcript (nhảy tới đúng giây), rồi hỏi đáp trên bản ghi có trích mốc thời gian | Sau gói "Sau cuộc họp"; Jev 1,96/1,27 · 2,37/1,53 |
 | P2 | **Xuất phụ đề SRT/VTT, DOCX/Markdown**; sau đó **dịch transcript Việt ↔ Anh** | Jev 1,79/1,09 · 1,68/1,05 |
