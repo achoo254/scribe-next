@@ -149,6 +149,17 @@ Mẫu của chat-next và localman-next: repo GitHub `*-next`, tên hiển thị
 | Database prod | đổi tên cùng đợt lớp 3, có sao lưu 0,99 | **Duyệt** |
 | Bundle id, sau khi biết API key iOS của Firebase khoá theo bundle id cũ (`GoogleAuthPlugin.swift:129`) | cùng đợt auth 0,44 / ngay, chấp nhận đăng nhập hỏng 0,31 / ngay, sửa Firebase 0,25 (độ tin cậy 0,16) | **Chưa quyết**, chuyển người dùng |
 
+### Quản lý transcript — Giai đoạn 1 (Jev, 2026-10-16 10:20)
+
+State trung lập: data model hiện tại (một transcript cho mỗi file, phiên iPhone chỉ ghép khi xuất), xoá file ghi xoá luôn transcript (`file::delete_doc`), chép lời chỉ cho email được phép, tham khảo Otter/Notta.
+
+| Câu hỏi | Jev | Kết luận |
+|---|---|---|
+| Đơn vị transcript | một transcript cho mỗi phiên ghi 0,89 | **Duyệt**: phiên iPhone nhiều đoạn gộp thành một; đổi data model và chuyển dữ liệu hiện có |
+| Thời hạn lưu | xoá cùng audio 0,98 | **Duyệt**: giữ như hiện nay (khi người dùng xoá hoặc sau 14 ngày) |
+| Người dùng | làm ngay cho nhóm email đang được phép 0,83 | **Duyệt**: tự mở rộng khi có bước tính phút |
+| Nền tảng | thiết kế cho iPhone, web dùng chung mã 0,81 | **Duyệt**: chỉ kiểm web không vỡ giao diện |
+
 ## 7. Lộ trình đề xuất ban đầu (Jev KHÔNG duyệt nguyên văn, xem bản sửa ở mục 6)
 
 | Bước | Nội dung | Tier |

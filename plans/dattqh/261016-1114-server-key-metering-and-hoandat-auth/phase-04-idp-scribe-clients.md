@@ -31,3 +31,10 @@ Repo `~/inet-gitlab/hoandat-auth`, làm theo mẫu client chat (`src/oidc/chat-c
 
 - IdP dùng chung: lỗi cấu hình làm hỏng đăng nhập app khác ⟹ deploy giờ thấp điểm, có rollback release của IdP.
 - Domain `scribe.hoandat.com` chưa có ở bước này: redirect trỏ trước domain mới, chỉ dùng được sau Phase 7 (dev local dùng client riêng — xem Phase 5).
+
+## Kết quả (2026-10-16 12:05)
+
+- hoandat-auth commit `e1a7c96` (+ docs): `src/oidc/scribe-clients.ts`, env `SCRIBE_WEB_URL`, `SCRIBE_WEB_CLIENT_SECRET` (tuỳ chọn), `SCRIBE_MOBILE_REDIRECT_URI`, cặp tuỳ chọn `SCRIBE_WEB_DEV_URL` + `SCRIBE_WEB_DEV_CLIENT_SECRET`; chỉ tenant chính (test tenant khác không có client); `/apps` có thẻ Scribe khi có client web. `scribe-mobile` bật cả khi chỉ có client dev.
+- Task 0: IdP nhận redirect loopback cho client web confidential, **cổng phải khớp chính xác** (client web không được nới cổng như native) — có test.
+- Gate: lint, typecheck, 518 test, 10 e2e, check:tokens sạch. Deploy `infra/deploy.sh`: `/healthz` OK, Localman 200, chat-web/chat-mobile chuyển đúng redirect.
+- `.env` IdP (sao lưu `.env.bak-<giờ>`): bật `scribe-web-dev` (`http://localhost:5174`); secret dev ở máy dev `~/.onescribe-dev/.oidc-web-dev-secret` (600). `scribe-web` chưa bật: bật ở 7b cùng site `scribe.hoandat.com` (DNS proxied đã có — người dùng cấu hình 16/10; hiện trả 421 vì chưa có vhost).
