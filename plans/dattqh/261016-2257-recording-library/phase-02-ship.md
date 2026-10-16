@@ -45,7 +45,7 @@ effort: "M"
 - Web: lint 0 lỗi (232 tệp), typecheck 0 lỗi, check:tokens đạt (82 cặp; 9 cặp tư vấn APCA có từ trước), vitest 57 tệp và 300 test đạt, build đạt và `check:dist` sạch, e2e 77 đạt và 7 bỏ qua (như trước). Không đổi ảnh chụp. Hai test web mới (tô theo câu tìm cũ, nhảy lại khi `?t=` đổi) đã được thử trên code cũ và đều trượt.
 
 ## Deploy (17/10/2026)
-- **06:23 (+07)**, theo skill `scribe-ops-prod`. Sao lưu `/root/scribe-backup-20261017-062309`. Binary sha256 `d15d004579927cc3…`, `index-BrYuE0r6.js`.
+- **06:23 (+07)**, build từ commit `ec381b6`, theo skill `scribe-ops-prod`. Sao lưu `/root/scribe-backup-20261017-062309`. Binary sha256 `d15d004579927cc3…`, `index-BrYuE0r6.js`.
 - **Sau deploy:** health ok, `NRestarts=0`.
 - **Backfill:** journal có dòng "đã dựng index tìm kiếm cho dữ liệu cũ" với `sessions=0 sentences=0 failed=0`. Đúng với dữ liệu: prod chỉ có một transcript đã chép xong và transcript đó không có câu nào. Dòng này chỉ in sau khi ghi xong cờ `search.backfill` (`src/search/index.rs`).
 - **Index trên `transcript_sentences`:** `userId_1_key_1_idx_1`, `userId_1_createdAt_-1`, `fileId_1`, `userId_norm_text`, `expiresAt_1`.
