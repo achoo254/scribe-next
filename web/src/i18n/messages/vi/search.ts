@@ -19,6 +19,7 @@ export const search = {
 		showing: "{count} câu khớp nhất trong {total}",
 		searching: "Đang tìm…",
 		idle: "Gõ vài từ để tìm trong các bản chép lời.",
+		tooShort: "Gõ ít nhất 2 ký tự để tìm.",
 		emptyTitle: "Không có câu nào khớp",
 		emptyBody: "Thử từ khác hoặc ít từ hơn. Chỉ tìm trong câu đã chép lời.",
 		failed: "Không tìm được",

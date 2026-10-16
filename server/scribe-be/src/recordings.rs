@@ -222,6 +222,12 @@ pub async fn finalize(
         FileDoc::new_recording(&user.0, &name, &final_path, size as i64, duration_s, has_video, id),
     )
     .await?;
+    // Đoạn iPhone tới muộn (sau các đoạn đứng sau nó): mốc giây theo cả phiên của các đoạn sau nó dời theo,
+    // nên dựng lại index của phiên. Bản ghi một file mới chưa có câu nào để dựng.
+    let key = file::session_key(&name, id);
+    if key.starts_with("s:") {
+        crate::search::index::schedule(&state.db, &user.0, &key);
+    }
 
     let _ = state
         .db

@@ -228,7 +228,9 @@ pub async fn find_expired(db: &Database) -> Result<Vec<FileDoc>, AppError> {
 /// Bản chép lời đi theo file: đây là nơi duy nhất xoá doc file (xoá tay, retention, cắt bản ghi).
 /// Câu sửa của đoạn và biên bản của phiên trong `transcript_docs` dọn theo (phiên hết file thì xoá cả
 /// doc), lỗi chỉ `warn` (đĩa đã xoá, không báo lỗi ngược); sweep mồ côi trong retention là cơ chế đảm bảo.
-/// Index tìm kiếm của phiên được dựng lại (nền); TTL theo hạn file là cơ chế đảm bảo của index.
+/// Câu của file bị xoá khỏi index tìm kiếm ngay (đồng bộ), rồi index của phiên được dựng lại (nền) để mốc
+/// giây của các đoạn còn lại dời theo; quét câu mồ côi trong retention và TTL theo hạn file là cơ chế đảm
+/// bảo của index.
 pub async fn delete_doc(db: &Database, f: &FileDoc) -> Result<(), AppError> {
     let Some(id) = f.id else { return Ok(()) };
     db.collection::<FileDoc>(COLL)
@@ -240,6 +242,9 @@ pub async fn delete_doc(db: &Database, f: &FileDoc) -> Result<(), AppError> {
         let key = session_key(&f.name, id);
         if let Err(e) = super::transcript_doc::forget_segment(db, &f.user_id, &key, id).await {
             tracing::warn!(file = %id, "dọn câu sửa và biên bản của phiên lỗi (sweep mồ côi sẽ dọn): {e:?}");
+        }
+        if let Err(e) = crate::search::index::forget_file(db, &f.user_id, &key, id).await {
+            tracing::warn!(file = %id, "xoá câu của file khỏi index lỗi (sweep mồ côi sẽ dọn): {e:?}");
         }
         crate::search::index::schedule(db, &f.user_id, &key);
     }
@@ -308,6 +313,51 @@ pub async fn list_session(db: &Database, user_id: &str, key: &str) -> Result<Vec
         out.push((index, f));
     }
     out.sort_by_key(|(index, _)| *index);
+    Ok(out)
+}
+
+/// Tên và lúc tạo của các bản ghi thuộc các phiên `keys` (khoá sai dạng bị bỏ qua), một truy vấn chỉ đọc
+/// `_id`, `name`, `createdAt`. Trả `(khoá phiên, tên, lúc tạo)` mỗi bản ghi.
+pub async fn session_heads(db: &Database, user_id: &str, keys: &[String]) -> Result<Vec<(String, String, DateTime)>, AppError> {
+    let wanted: std::collections::HashSet<&str> = keys.iter().map(String::as_str).collect();
+    let mut ids = Vec::new();
+    let mut sessions = Vec::new();
+    for key in keys.iter().filter(|k| is_valid_session_key(k)) {
+        if let Some(session) = key.strip_prefix("s:") {
+            sessions.push(session.to_string());
+        } else if let Some(oid) = key.strip_prefix("f:").and_then(|hex| ObjectId::parse_str(hex).ok()) {
+            ids.push(oid);
+        }
+    }
+    let mut any = Vec::new();
+    if !ids.is_empty() {
+        any.push(doc! { "_id": { "$in": ids } });
+    }
+    if !sessions.is_empty() {
+        // Id phiên chỉ gồm [0-9a-z-] (đã kiểm) nên ghép thẳng vào regex được.
+        any.push(doc! { "name": { "$regex": format!("^({})#[0-9]+$", sessions.join("|")) } });
+    }
+    if any.is_empty() {
+        return Ok(Vec::new());
+    }
+    let read = |e: mongodb::error::Error| AppError::Internal(format!("đọc bản ghi của phiên: {e}"));
+    let mut cur = db
+        .collection::<Document>(COLL)
+        .find(doc! { "userId": user_id, "kind": "recording", "$or": any })
+        .projection(doc! { "_id": 1, "name": 1, "createdAt": 1 })
+        .await
+        .map_err(read)?;
+    let mut out = Vec::new();
+    while let Some(r) = cur.next().await {
+        let d = r.map_err(read)?;
+        let (Ok(id), Ok(name), Ok(created_at)) = (d.get_object_id("_id"), d.get_str("name"), d.get_datetime("createdAt")) else {
+            continue;
+        };
+        let key = session_key(name, id);
+        if wanted.contains(key.as_str()) {
+            out.push((key, name.to_string(), *created_at));
+        }
+    }
     Ok(out)
 }
 

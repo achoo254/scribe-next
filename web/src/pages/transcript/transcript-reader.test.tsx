@@ -9,6 +9,7 @@ import type {
 } from "../../features/transcript-docs/transcript-docs-api";
 import { fakeFetch, jsonResponse } from "../../test/fake-fetch";
 import { renderWithProviders } from "../../test/render-with-providers";
+import { TranscriptReaderPage } from "./transcript-page";
 import { TranscriptReader } from "./transcript-reader";
 
 const auth = vi.hoisted(() => ({
@@ -123,6 +124,26 @@ describe("TranscriptReader", () => {
 		);
 		// "Hỏi Scribe" asks about this transcript only.
 		expect(screen.getByText(/Hỏi về bản ghi này/)).toBeInTheDocument();
+	});
+
+	it("jumps again when the time in the address changes on the same transcript", async () => {
+		const fake = fakeFetch({ [`GET ${PATH}`]: jsonResponse(DETAIL) });
+		vi.stubGlobal("fetch", fake.fetcher);
+		const { router } = renderWithProviders(<p>trang trước</p>, {
+			routes: [
+				{ path: "/transcripts/:key", element: <TranscriptReaderPage /> },
+			],
+		});
+		const line = (segment: number) =>
+			document.querySelector(`[data-id="reader-segment-${segment}-line-0"]`);
+		await act(() =>
+			router.navigate(`/transcripts/${encodeURIComponent(KEY)}?t=61`),
+		);
+		await waitFor(() => expect(line(2)).toHaveFocus());
+		await act(() =>
+			router.navigate(`/transcripts/${encodeURIComponent(KEY)}?t=1`),
+		);
+		await waitFor(() => expect(line(0)).toHaveFocus());
 	});
 
 	it("plays the tapped sentence's segment", async () => {

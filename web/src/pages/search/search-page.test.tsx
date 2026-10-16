@@ -56,6 +56,36 @@ describe("SearchPage", () => {
 		expect(router.state.location.search).toBe("?t=61.5");
 	});
 
+	it("asks for a second character before searching a lone letter", async () => {
+		const fake = fakeFetch({ "GET /api/search": jsonResponse(REPLY) });
+		vi.stubGlobal("fetch", fake.fetcher);
+		const { router } = renderWithProviders(<SearchPage />);
+		await userEvent.type(screen.getByRole("searchbox"), "h");
+		await waitFor(() => expect(router.state.location.search).toBe("?q=h"));
+		expect(screen.getByText("Gõ ít nhất 2 ký tự để tìm.")).toBeInTheDocument();
+		expect(fake.calls).toHaveLength(0);
+	});
+
+	it("keeps marking the previous query while the next one loads", async () => {
+		let calls = 0;
+		const fetcher = vi.fn(async () => {
+			calls += 1;
+			if (calls === 1) return jsonResponse(REPLY);
+			return new Promise<Response>(() => undefined);
+		});
+		vi.stubGlobal("fetch", fetcher);
+		renderWithProviders(<SearchPage />);
+		const field = screen.getByRole("searchbox");
+		await userEvent.type(field, "hop dong");
+		expect((await screen.findByText("hợp đồng")).tagName).toBe("MARK");
+		await userEvent.clear(field);
+		await userEvent.type(field, "nha");
+		await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2));
+		// The sentence on screen still answers "hop dong": "nhà" is not marked.
+		expect(screen.getByText("hợp đồng").tagName).toBe("MARK");
+		expect(screen.queryByText("nhà")).not.toBeInTheDocument();
+	});
+
 	it("says when nothing matches", async () => {
 		const fake = fakeFetch({
 			"GET /api/search": jsonResponse({ results: [], total: 0 }),

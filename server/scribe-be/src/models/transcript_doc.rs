@@ -127,6 +127,25 @@ pub async fn get_many(db: &Database, user_id: &str, keys: &[String]) -> Result<V
     Ok(out)
 }
 
+/// Tiêu đề người dùng đặt của các phiên `keys` (phiên chưa đặt tên thì không có), chỉ đọc `key` và `title`.
+pub async fn titles(db: &Database, user_id: &str, keys: &[String]) -> Result<HashMap<String, String>, AppError> {
+    let read = |e: mongodb::error::Error| AppError::Internal(format!("đọc tiêu đề transcript_docs: {e}"));
+    let mut cur = db
+        .collection::<Document>(COLL)
+        .find(doc! { "userId": user_id, "key": { "$in": keys }, "title": { "$type": "string" } })
+        .projection(doc! { "_id": 0, "key": 1, "title": 1 })
+        .await
+        .map_err(read)?;
+    let mut out = HashMap::new();
+    while let Some(r) = cur.next().await {
+        let d = r.map_err(read)?;
+        if let (Ok(key), Ok(title)) = (d.get_str("key"), d.get_str("title")) {
+            out.insert(key.to_string(), title.to_string());
+        }
+    }
+    Ok(out)
+}
+
 pub async fn get(db: &Database, user_id: &str, key: &str) -> Result<Option<SessionDoc>, AppError> {
     Ok(get_many(db, user_id, &[key.to_string()]).await?.into_iter().next())
 }

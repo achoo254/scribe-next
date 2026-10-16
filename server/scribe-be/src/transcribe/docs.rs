@@ -2,7 +2,8 @@
 //! (`transcripts`, mỗi file một doc) với phần người dùng tạo ra (`transcript_docs`: tiêu đề, câu sửa).
 //! Danh sách và chi tiết tính lúc đọc, không lưu trùng.
 //!
-//! Lưu câu sửa hay xoá transcript thì dựng lại index tìm kiếm của phiên (`search::index`).
+//! Lưu câu sửa thì dựng lại index tìm kiếm của phiên; xoá transcript thì xoá ngay câu của phiên khỏi
+//! index (`search::index`).
 //!
 //! Đọc/sửa/xoá transcript của chính mình chỉ cần đăng nhập (như `GET /api/transcripts`); chỉ việc
 //! xếp chép lời cần quyền `TRANSCRIBE_EMAILS`. Audit không ghi tiêu đề hay câu (giữ 180 ngày).
@@ -175,6 +176,11 @@ impl Loaded {
     /// Lúc bắt đầu phiên (RFC 3339).
     pub fn created_at(&self) -> Option<String> {
         created_at(&self.files)
+    }
+
+    /// Lúc bắt đầu phiên: file tạo sớm nhất.
+    pub fn started_at(&self) -> Option<mongodb::bson::DateTime> {
+        self.files.iter().map(|(_, f)| f.created_at).min()
     }
 
     /// Câu cho index tìm kiếm: như [`Self::timed_sentences`], kèm file chứa câu và hạn của file đó.
@@ -469,7 +475,8 @@ pub async fn delete(
     let files = session_files(&state.db, &user.0, &key).await?;
     let removed = transcript::delete_owned(&state.db, &user.0, &file_ids(&files)).await?;
     transcript_doc::delete(&state.db, &user.0, &key).await?;
-    search::index::schedule(&state.db, &user.0, &key);
+    // Đồng bộ: câu đã xoá không được còn tìm thấy hay bị gửi cho hỏi đáp (lỗi thì quét mồ côi dọn sau).
+    search::index::clear(&state.db, &user.0, &key).await?;
     let details = doc! { "key": &key, "segments": files.len() as i64, "transcripts": removed as i64 };
     audit::record(&state, Some(&user.0), "transcript.delete", details);
     Ok(Json(json!({ "ok": true })))

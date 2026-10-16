@@ -186,14 +186,17 @@ export function TranscriptReader({
 		[segments, play],
 	);
 
-	// Opened at a time (search result, source of an answer): jump once, as
-	// soon as the sentences are on screen.
-	const startedAt = useRef(false);
+	// Opened at a time (search result, source of an answer): jump as soon as
+	// the sentences are on screen, once per time asked for — a new `?t=` on
+	// the same transcript (back/forward) jumps again without a remount.
+	const jumpedTo = useRef<number | undefined>(undefined);
 	useEffect(() => {
-		if (startedAt.current || startAt === undefined || segments.length === 0) {
+		if (startAt === undefined) {
+			jumpedTo.current = undefined;
 			return;
 		}
-		startedAt.current = true;
+		if (jumpedTo.current === startAt || segments.length === 0) return;
+		jumpedTo.current = startAt;
 		jumpTo(startAt);
 	}, [startAt, segments.length, jumpTo]);
 

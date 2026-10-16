@@ -3,8 +3,8 @@
 //!
 //! Tìm trên index `transcript_sentences` (`models::sentence`, dựng ở `index`): câu tìm được chuẩn hoá như
 //! câu trong index (`norm`), nên gõ có dấu hay không dấu đều khớp. Lọc ứng viên bằng index (`$text` trên
-//! các từ đã gõ xong; câu tìm một từ thì theo tiền tố), rồi trong code đòi khớp cả cụm liền nhau, từ cuối
-//! theo tiền tố (đang gõ dở). Không có câu nào khớp cả cụm thì nới ra: câu chứa đủ các từ, thứ tự bất kỳ.
+//! các từ đã gõ xong; câu tìm một từ thì theo tiền tố, từ 2 ký tự), lấy từ phiên mới nhất trước, rồi
+//! trong code đòi khớp cả cụm liền nhau, từ cuối theo tiền tố (đang gõ dở). Không có câu nào khớp cả cụm thì nới ra: câu chứa đủ các từ, thứ tự bất kỳ.
 //!
 //! Chỉ cần đăng nhập và chỉ thấy câu của chính mình (mọi truy vấn lọc `userId`). Audit không ghi câu tìm.
 
@@ -14,7 +14,7 @@ pub mod norm;
 
 use crate::auth::UserId;
 use crate::error::AppError;
-use crate::models::sentence::{self, Row};
+use crate::models::sentence::{self, Order, Row};
 use crate::models::{file, transcript_doc};
 use crate::state::AppState;
 use crate::transcribe::docs::check_key;
@@ -31,8 +31,11 @@ use std::collections::{HashMap, HashSet};
 const MAX_QUERY_CHARS: usize = 200;
 const DEFAULT_LIMIT: usize = 20;
 const MAX_LIMIT: usize = 50;
-/// Số câu ứng viên tối đa lấy từ index cho một lần tìm (xếp hạng và lọc cụm làm trong code).
+/// Số câu ứng viên tối đa lấy từ index cho một lần tìm, phiên mới nhất trước (xếp hạng và lọc cụm làm
+/// trong code): kho rất lớn với từ rất phổ biến thì phiên cũ nhất có thể không tới lượt.
 const CANDIDATES: i64 = 2_000;
+/// Câu tìm một từ cần ít nhất chừng này ký tự (đã chuẩn hoá) mới tìm theo tiền tố.
+pub(crate) const MIN_PREFIX_CHARS: usize = 2;
 /// Ô tìm gửi theo nhịp gõ (đã chờ một chút): trần mỗi phút của một người.
 const PER_MINUTE: u32 = 120;
 
@@ -51,29 +54,23 @@ impl SessionMeta {
     }
 }
 
-/// Tên và lúc bắt đầu của các phiên `keys` của user (hai truy vấn: bản ghi của user, `transcript_docs`).
+/// Tên và lúc bắt đầu của các phiên `keys` của user: một truy vấn bản ghi của đúng các phiên đó, một truy
+/// vấn tiêu đề trong `transcript_docs`, đều chỉ đọc trường cần.
 pub(crate) async fn session_meta(db: &Database, user_id: &str, keys: &HashSet<String>) -> Result<HashMap<String, SessionMeta>, AppError> {
     let mut out: HashMap<String, SessionMeta> = HashMap::new();
     if keys.is_empty() {
         return Ok(out);
     }
-    for f in file::list_recordings(db, user_id).await? {
-        let Some(id) = f.id else { continue };
-        let key = file::session_key(&f.name, id);
-        if !keys.contains(&key) {
-            continue;
-        }
+    let wanted: Vec<String> = keys.iter().cloned().collect();
+    for (key, name, created_at) in file::session_heads(db, user_id, &wanted).await? {
         let meta = out.entry(key.clone()).or_default();
-        meta.created_at = Some(meta.created_at.map_or(f.created_at, |c| c.min(f.created_at)));
+        meta.created_at = Some(meta.created_at.map_or(created_at, |c| c.min(created_at)));
         if key.starts_with("f:") {
-            meta.title = Some(f.name.clone());
+            meta.title = Some(name);
         }
     }
-    let wanted: Vec<String> = keys.iter().cloned().collect();
-    for d in transcript_doc::get_many(db, user_id, &wanted).await? {
-        if let Some(title) = d.title {
-            out.entry(d.key).or_default().title = Some(title);
-        }
+    for (key, title) in transcript_doc::titles(db, user_id, &wanted).await? {
+        out.entry(key).or_default().title = Some(title);
     }
     Ok(out)
 }
@@ -143,10 +140,12 @@ pub(crate) async fn find(db: &Database, user_id: &str, key: Option<&str>, query:
     let words = norm::tokens(&normalized);
     let candidates = match words.as_slice() {
         [] => return Ok(Vec::new()),
+        // Tiền tố một ký tự khớp gần như mọi câu: quét nặng mà kết quả vô nghĩa.
+        [only] if only.chars().count() < MIN_PREFIX_CHARS => return Ok(Vec::new()),
         [only] => sentence::prefix_matches(db, user_id, key, only, CANDIDATES).await?,
         [done @ .., _typing] => {
             let terms: Vec<String> = done.iter().map(|w| w.to_string()).collect();
-            sentence::text_matches(db, user_id, key, &terms, CANDIDATES).await?
+            sentence::text_matches(db, user_id, key, &terms, Order::Newest, CANDIDATES).await?
         }
     };
     Ok(rank(candidates, &words))

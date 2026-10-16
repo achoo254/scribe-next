@@ -67,12 +67,17 @@ async fn main() {
         tracing::error!("{e}");
         std::process::exit(1);
     }
+    // Text index của index tìm kiếm phải có trước request đầu tiên: `$text` lỗi khi chưa có text index.
+    if let Err(e) = models::sentence::ensure_indexes(&db).await {
+        tracing::error!("{e}");
+        std::process::exit(1);
+    }
     let http = reqwest::Client::builder()
         .build()
         .expect("dựng reqwest client");
 
-    // Index của files/jobs/transcripts/audit (nền, lỗi chỉ log). Index transcript_docs, users và phiên
-    // đăng nhập tạo riêng, chờ xong và chặn khởi động nếu lỗi.
+    // Index của files/jobs/transcripts/audit (nền, lỗi chỉ log). Index transcript_docs, transcript_sentences,
+    // users và phiên đăng nhập tạo riêng, chờ xong và chặn khởi động nếu lỗi.
     {
         let db = db.clone();
         tokio::spawn(async move {
@@ -137,7 +142,7 @@ async fn main() {
     jobs::start_worker(state.clone());
     transcribe::start_worker(state.clone()).await;
     retention::start_sweeper(state.clone()); // sweep purge quá hạn + orphan (red-team #1)
-    search::index::start_backfill(state.db.clone()); // index tìm kiếm + đưa dữ liệu cũ vào một lần
+    search::index::start_backfill(state.db.clone()); // đưa dữ liệu cũ vào index tìm kiếm một lần
     chat_link::warm_up(state.clone());
     chat_link::poll::start(state.clone()); // chỉ khi CHAT_LINK_POLL bật và có token bot
 

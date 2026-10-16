@@ -4,7 +4,7 @@
 
 use crate::config::RETENTION_DAYS;
 use crate::error::AppError;
-use crate::models::{file, transcript_doc};
+use crate::models::{file, sentence, transcript_doc};
 use crate::state::AppState;
 use mongodb::bson::{doc, DateTime, Document};
 use std::path::Path;
@@ -74,10 +74,19 @@ async fn sweep_once(state: &AppState) -> Result<(), AppError> {
     let stale_sessions = sweep_stale_sessions(&state.db).await;
     let stale_jobs = sweep_stale_jobs(&state.db).await;
     let orphan_docs = sweep_orphan_transcript_docs(&state.db).await;
+    let orphan_sentences = sweep_orphan_sentences(&state.db).await;
+    let reindexed = reconcile_search_index(&state.db).await;
 
-    if removed > 0 || orphan_parts > 0 || stale_sessions > 0 || stale_jobs > 0 || orphan_docs > 0 {
+    if removed > 0
+        || orphan_parts > 0
+        || stale_sessions > 0
+        || stale_jobs > 0
+        || orphan_docs > 0
+        || orphan_sentences > 0
+        || reindexed > 0
+    {
         tracing::info!(
-            "retention: xoá {removed} file (~{} MB), {orphan_parts} .part mồ côi, {stale_sessions} session cũ, {stale_jobs} job cũ, {orphan_docs} transcript mồ côi",
+            "retention: xoá {removed} file (~{} MB), {orphan_parts} .part mồ côi, {stale_sessions} session cũ, {stale_jobs} job cũ, {orphan_docs} transcript mồ côi, {orphan_sentences} câu mồ côi trong index tìm kiếm; dựng lại index {reindexed} phiên lệch",
             bytes / 1_048_576
         );
     }
@@ -99,6 +108,23 @@ async fn sweep_stale_jobs(db: &mongodb::Database) -> u64 {
 async fn sweep_orphan_transcript_docs(db: &mongodb::Database) -> u64 {
     transcript_doc::delete_orphans(db).await.unwrap_or_else(|e| {
         tracing::warn!("sweep transcript_docs mồ côi lỗi: {e:?}");
+        0
+    })
+}
+
+/// Xoá câu trong index tìm kiếm của file đã mất doc hoặc mất transcript (bước xoá đồng bộ lúc xoá có thể
+/// lỗi). Chạy sau bước xoá file quá hạn ở trên.
+async fn sweep_orphan_sentences(db: &mongodb::Database) -> u64 {
+    sentence::delete_orphans(db).await.unwrap_or_else(|e| {
+        tracing::warn!("sweep câu mồ côi của index tìm kiếm lỗi: {e:?}");
+        0
+    })
+}
+
+/// Dựng lại các phiên mà index tìm kiếm lệch với transcript (`search::index::reconcile`).
+async fn reconcile_search_index(db: &mongodb::Database) -> usize {
+    crate::search::index::reconcile(db).await.unwrap_or_else(|e| {
+        tracing::warn!("đối soát index tìm kiếm lỗi: {e:?}");
         0
     })
 }

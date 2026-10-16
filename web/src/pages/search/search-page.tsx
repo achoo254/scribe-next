@@ -6,12 +6,15 @@ import { EmptyState } from "../../components/ui/empty-state";
 import { Input } from "../../components/ui/input";
 import { LoadError } from "../../components/ui/load-error";
 import { PanelProgress } from "../../components/ui/panel-progress";
-import { highlightParts } from "../../features/search/normalize";
+import { highlightParts, queryWords } from "../../features/search/normalize";
 import type {
 	AskCitation,
 	SearchResult,
 } from "../../features/search/search-api";
-import { useSearchQuery } from "../../features/search/search-queries";
+import {
+	isSearchable,
+	useSearchQuery,
+} from "../../features/search/search-queries";
 import { useT } from "../../i18n/i18n-context";
 import { PATHS, transcriptPath } from "../../layout/app-paths";
 import { PageHeader } from "../../layout/page-header";
@@ -120,10 +123,17 @@ function SearchResults({
 }) {
 	const t = useT();
 	const search = useSearchQuery(query);
-	if (!query.trim()) {
+	if (queryWords(query).length === 0) {
 		return (
 			<p className="m-0 text-muted text-sm" data-id="search-idle">
 				{t("search.results.idle")}
+			</p>
+		);
+	}
+	if (!isSearchable(query)) {
+		return (
+			<p className="m-0 text-muted text-sm" data-id="search-too-short">
+				{t("search.results.tooShort")}
 			</p>
 		);
 	}
@@ -145,7 +155,8 @@ function SearchResults({
 			/>
 		);
 	}
-	const { results, total } = search.data;
+	// While the next query loads, the results (and their marks) are still those of the previous one.
+	const { results, total, query: answered } = search.data;
 	if (results.length === 0) {
 		return (
 			<EmptyState
@@ -182,7 +193,7 @@ function SearchResults({
 						<ResultRow
 							key={`${result.key}@${result.at}`}
 							result={result}
-							query={query}
+							query={answered}
 							onOpen={onOpen}
 						/>
 					))}

@@ -2,7 +2,7 @@
 //! ghi của chính người hỏi, trích nguồn từng ý bằng mốc giây.
 //!
 //! Ngữ cảnh lấy từ index tìm kiếm (`transcript_sentences`). Có `key` và bản ghi ngắn (dưới
-//! [`FULL_CONTEXT_CHARS`]) thì gửi nguyên bản; còn lại tìm theo từ khoá của câu hỏi (đã bỏ dấu, bỏ từ đệm)
+//! [`full_context_chars`] của gói) thì gửi nguyên bản; còn lại tìm theo từ khoá của câu hỏi (đã bỏ dấu, bỏ từ đệm)
 //! trong cả kho hoặc trong bản ghi đó, lấy [`TOP_HITS`] câu liên quan nhất, mỗi câu kèm [`NEIGHBORS`] câu
 //! trước và sau. Mỗi câu ngữ cảnh mang số `[n]`; model trích `[n]`, server đổi `[n]` thành trích dẫn
 //! `{key, title, at, text}` lấy từ chính ngữ cảnh (số ngoài ngữ cảnh bị bỏ) và đánh số lại 1, 2, … theo
@@ -17,7 +17,7 @@ use super::{norm, session_meta, SessionMeta};
 use crate::audit;
 use crate::auth::UserId;
 use crate::error::AppError;
-use crate::models::sentence::{self, Row};
+use crate::models::sentence::{self, Order, Row};
 use crate::models::summary::Feature;
 use crate::models::{plan, user};
 use crate::state::AppState;
@@ -34,8 +34,17 @@ use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
 
 const MAX_QUESTION_CHARS: usize = 500;
-/// Bản ghi ngắn hơn chừng này ký tự thì gửi nguyên bản khi hỏi trong một bản ghi (~2 giờ nói).
-const FULL_CONTEXT_CHARS: usize = 120_000;
+/// Hỏi trong một bản ghi ngắn hơn chừng này ký tự thì gửi nguyên bản; dài hơn thì lấy câu theo từ khoá.
+///
+/// Mỗi câu hỏi gửi nguyên bản tốn chi phí theo độ dài bản ghi, trừ vào trần tháng dùng chung với tóm tắt:
+/// 120.000 ký tự (~2 giờ nói) khoảng 535 giây quy đổi một câu, đủ làm cạn trần tháng của gói free sau vài
+/// câu. Gói free chỉ gửi nguyên bản dưới 30.000 ký tự (~30 phút nói, khoảng 135 giây một câu).
+fn full_context_chars(plan: plan::Plan) -> usize {
+    match plan {
+        plan::Plan::Free => 30_000,
+        plan::Plan::Plus => 120_000,
+    }
+}
 /// Số câu liên quan nhất lấy từ index khi tìm theo từ khoá.
 const TOP_HITS: i64 = 40;
 /// Số câu kèm theo mỗi phía của một câu liên quan.
@@ -135,7 +144,7 @@ fn arrange(rows: Vec<Row>, hits: &[Row]) -> Vec<Row> {
 }
 
 /// Ngữ cảnh của câu hỏi. Hỏi trong một bản ghi chưa có câu nào → 409 `NOT_TRANSCRIBED`.
-async fn gather(db: &Database, user_id: &str, key: Option<&str>, question: &str) -> Result<Vec<Row>, AppError> {
+async fn gather(db: &Database, user_id: &str, key: Option<&str>, question: &str, plan: plan::Plan) -> Result<Vec<Row>, AppError> {
     if let Some(key) = key {
         let rows = sentence::session_rows(db, user_id, key).await?;
         if rows.is_empty() {
@@ -146,12 +155,12 @@ async fn gather(db: &Database, user_id: &str, key: Option<&str>, question: &str)
             });
         }
         let chars: usize = rows.iter().map(|r| r.text.chars().count()).sum();
-        if chars <= FULL_CONTEXT_CHARS {
+        if chars <= full_context_chars(plan) {
             return Ok(rows);
         }
     }
     let terms = norm::keywords(question);
-    let hits = sentence::text_matches(db, user_id, key, &terms, TOP_HITS).await?;
+    let hits = sentence::text_matches(db, user_id, key, &terms, Order::Relevance, TOP_HITS).await?;
     if hits.is_empty() {
         return Ok(Vec::new());
     }
@@ -324,7 +333,8 @@ pub async fn ask(
         .start(&user.0, ASK_SLOT)
         .ok_or_else(|| AppError::TooManyRequests("đang trả lời câu trước, chờ một chút".into()))?;
 
-    let lines = gather(&state.db, &user.0, key.as_deref(), &question).await?;
+    let plan = plan::effective(profile.plan.as_deref(), profile.plan_until, DateTime::now());
+    let lines = gather(&state.db, &user.0, key.as_deref(), &question, plan).await?;
     if lines.is_empty() {
         let details = doc! { "scope": scope(key.as_deref()), "context": 0_i64, "costS": 0_i64 };
         audit::record(&state, Some(&user.0), "ask.create", details);
@@ -335,7 +345,7 @@ pub async fn ask(
     let job = Job {
         user_id: user.0.clone(),
         key,
-        plan: plan::effective(profile.plan.as_deref(), profile.plan_until, DateTime::now()),
+        plan,
         input: build_input(&question, &lines, &meta),
         lines,
         meta,
@@ -401,6 +411,12 @@ mod tests {
 
     fn row(key: &str, idx: i64, at: f64, text: &str) -> Row {
         Row { key: key.into(), file_id: ObjectId::new(), idx, at, text: text.into(), norm: norm::normalize(text) }
+    }
+
+    #[test]
+    fn free_accounts_send_whole_transcripts_only_when_short() {
+        assert_eq!(full_context_chars(plan::Plan::Free), 30_000);
+        assert_eq!(full_context_chars(plan::Plan::Plus), 120_000);
     }
 
     #[test]
