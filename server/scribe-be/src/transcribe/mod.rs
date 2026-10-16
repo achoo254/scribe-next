@@ -87,7 +87,8 @@ impl Transcriber {
         self.key.is_some() && !self.broken.load(Ordering::Relaxed)
     }
 
-    /// Key server khi còn dùng được (tóm tắt dùng chung key và cờ ngắt với chép lời).
+    /// Key server khi còn dùng được. Tóm tắt dùng chung key: chép lời bị ngắt thì tóm tắt cũng dừng; lỗi
+    /// key ở lượt tóm tắt chỉ ngắt tóm tắt (`summary::Summaries`), không ngắt chép lời.
     pub(crate) fn api_key(&self) -> Option<&str> {
         self.key.as_ref().filter(|_| self.ready()).map(|k| k.0.as_str())
     }
@@ -487,8 +488,9 @@ async fn record(db: &mongodb::Database, file_id: ObjectId, run_id: &str, outcome
     }
 }
 
-/// Key server hỏng (401 hoặc hết credit): mọi lượt sau cũng hỏng y vậy ⟹ ngắt chép lời lẫn tóm tắt, ghi
-/// audit và báo chủ sản phẩm một lần; người dùng chỉ thấy thông báo tạm ngưng chung.
+/// Key server hỏng (401 hoặc hết credit) ở một lượt chép lời: mọi lượt sau cũng hỏng y vậy ⟹ ngắt chép
+/// lời (tóm tắt dùng chung key nên dừng theo), ghi audit và báo chủ sản phẩm một lần; người dùng chỉ thấy
+/// thông báo tạm ngưng chung.
 pub(crate) fn report_key_broken(state: &AppState, e: &str) {
     if state.transcriber.trip() {
         tracing::error!("key OpenAI của server không dùng được ({e}) — ngắt chép lời tới khi khởi động lại");

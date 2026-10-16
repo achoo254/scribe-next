@@ -7,12 +7,15 @@ use crate::models::transcript_doc::{Action, Decision};
 use crate::transcribe::openai::{backoff, is_quota, KEY_INVALID, NO_CREDIT};
 use serde::Deserialize;
 use serde_json::{json, Value};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 const API_URL: &str = "https://api.openai.com/v1/chat/completions";
 const HTTP_RETRIES: u32 = 3;
-/// Một lượt tóm tắt bản dài có thể mất vài chục giây.
-const TIMEOUT: Duration = Duration::from_secs(180);
+/// Tổng thời gian cho mọi lần thử: request `POST …/summary` trả kết quả đồng bộ qua Cloudflare (cắt ở
+/// ~100 giây), nên lượt gọi model phải xong dưới mức đó kèm phần đọc/ghi Mongo.
+const DEADLINE: Duration = Duration::from_secs(80);
+/// Chỉ thử lại khi còn ít nhất chừng này giây (sau thời gian chờ lùi) cho lần thử mới.
+const MIN_ATTEMPT: Duration = Duration::from_secs(25);
 
 const INSTRUCTIONS: &str = "Bạn là thư ký viết biên bản. Đầu vào là bản chép lời tiếng Việt của một bản ghi \
 (thường là cuộc họp), mỗi dòng có dạng `[giây] câu`, giây tính từ đầu bản ghi. Bản chép lời do máy nghe nên có \
@@ -38,6 +41,19 @@ pub struct Completion {
     pub input_tokens: i64,
     pub output_tokens: i64,
     pub draft: Result<Draft, String>,
+}
+
+/// Kết quả gọi model. `Err` kèm `maybe_billed`: OpenAI có thể đã xử lý (và tính tiền) mà không trả được
+/// số token — quá thời gian chờ sau khi đã gửi, đứt kết nối giữa chừng, trả 2xx không đọc được.
+pub struct Call {
+    pub result: Result<Completion, String>,
+    pub maybe_billed: bool,
+}
+
+impl Call {
+    fn failed(e: impl Into<String>, maybe_billed: bool) -> Call {
+        Call { result: Err(e.into()), maybe_billed }
+    }
 }
 
 fn schema() -> Value {
@@ -121,35 +137,53 @@ fn api_error(status: u16, body: &str) -> String {
     format!("Dịch vụ tóm tắt đang lỗi (HTTP {status})")
 }
 
-/// Gọi model, thử lại khi lỗi mạng, 429 (không phải hết credit) hoặc 5xx. `Err` = OpenAI không xử lý
-/// lượt nào (không tốn token).
-pub async fn summarize(http: &reqwest::Client, api_key: &str, model: &str, input: &str) -> Result<Completion, String> {
+/// Gọi model trong [`DEADLINE`]. Chỉ thử lại khi chắc OpenAI chưa xử lý gì (không kết nối được, 429
+/// không phải hết credit, 5xx) và còn đủ thời gian; quá thời gian chờ thì không thử lại (lượt chậm có
+/// thể đã bị tính tiền, thử lại vừa tốn gấp đôi vừa vượt hạn của request).
+pub async fn summarize(http: &reqwest::Client, api_key: &str, model: &str, input: &str) -> Call {
     let body = request_body(model, input);
+    let started = Instant::now();
     for attempt in 1..=HTTP_RETRIES {
-        let last = attempt == HTTP_RETRIES;
-        let sent = http.post(API_URL).bearer_auth(api_key).json(&body).timeout(TIMEOUT).send().await;
+        let remaining = DEADLINE.saturating_sub(started.elapsed());
+        let can_retry = |wait: Duration| {
+            attempt < HTTP_RETRIES && DEADLINE.saturating_sub(started.elapsed()) >= wait + MIN_ATTEMPT
+        };
+        let wait = Duration::from_secs(3 * u64::from(attempt));
+        // `timeout` của reqwest tính cả lúc đọc body.
+        let sent = http.post(API_URL).bearer_auth(api_key).json(&body).timeout(remaining).send().await;
         let response = match sent {
             Ok(r) => r,
-            Err(e) if !last => {
-                tracing::warn!(attempt, timeout = e.is_timeout(), "gọi OpenAI (tóm tắt) lỗi mạng, thử lại");
+            Err(e) if e.is_timeout() => return Call::failed("OpenAI: quá thời gian chờ phản hồi", true),
+            Err(e) if e.is_connect() && can_retry(wait) => {
+                tracing::warn!(attempt, "gọi OpenAI (tóm tắt) không kết nối được, thử lại");
                 backoff(attempt).await;
                 continue;
             }
-            Err(e) if e.is_timeout() => return Err("OpenAI: quá thời gian chờ phản hồi".into()),
-            Err(_) => return Err("OpenAI: không kết nối được".into()),
+            Err(e) if e.is_connect() => return Call::failed("OpenAI: không kết nối được", false),
+            Err(_) => return Call::failed("OpenAI: kết nối bị ngắt giữa chừng", true),
         };
         let status = response.status().as_u16();
-        let text = response.text().await.unwrap_or_default();
+        let text = match response.text().await {
+            Ok(t) => t,
+            Err(e) => {
+                let timeout = e.is_timeout();
+                let billed = (200..300).contains(&status);
+                return Call::failed(if timeout { "OpenAI: quá thời gian chờ phản hồi" } else { "OpenAI: đọc phản hồi lỗi" }, billed || timeout);
+            }
+        };
         if (200..300).contains(&status) {
-            return parse_response(&text);
+            return match parse_response(&text) {
+                Ok(c) => Call { result: Ok(c), maybe_billed: true },
+                Err(e) => Call::failed(e, true),
+            };
         }
-        if matches!(status, 429 | 500 | 502 | 503) && !is_quota(&text) && !last {
+        if matches!(status, 429 | 500 | 502 | 503) && !is_quota(&text) && can_retry(wait) {
             backoff(attempt).await;
             continue;
         }
-        return Err(api_error(status, &text));
+        return Call::failed(api_error(status, &text), false);
     }
-    Err("OpenAI: hết số lần thử".into())
+    Call::failed("OpenAI: hết số lần thử", false)
 }
 
 #[cfg(test)]

@@ -24,6 +24,9 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 
 const MAX_LABEL_CHARS: usize = 200;
+/// Mỗi người thêm tối đa chừng này mốc mỗi phút: khoá `s:` không kiểm được trước khi có file, nên chặn
+/// việc tạo hàng loạt doc rác bằng khoá tự đặt; người bấm tay không chạm tới mức này.
+const ADDS_PER_MINUTE: u32 = 120;
 /// Mốc lớn nhất (giây): phiên dài nhất vài giờ, trần này chỉ chặn số vô lý.
 const MAX_AT_S: f64 = 48.0 * 3600.0;
 
@@ -70,6 +73,9 @@ pub async fn add(
     Json(req): Json<AddReq>,
 ) -> Result<Json<Value>, AppError> {
     let (at, label) = validate(req.at, req.label.as_deref())?;
+    if !state.rate.allow(&format!("bookmark:{}", user.0), ADDS_PER_MINUTE) {
+        return Err(AppError::TooManyRequests("đánh dấu quá nhanh, thử lại sau một phút".into()));
+    }
     check_owner(&state, &user.0, &key).await?;
     let bookmark = Bookmark { id: ObjectId::new().to_hex(), at, label };
     if !transcript_doc::add_bookmark(&state.db, &user.0, &key, &bookmark).await? {

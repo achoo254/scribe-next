@@ -24,8 +24,8 @@ pub struct AppState {
     pub rate: Arc<RateLimiter>,
     /// Key OpenAI của server + hàng đợi chép lời.
     pub transcriber: Arc<Transcriber>,
-    /// Phiên đang được tóm tắt (một lượt mỗi phiên).
-    pub summaries: Arc<crate::summary::Running>,
+    /// Phiên đang được tóm tắt (một lượt mỗi phiên) và cờ tạm ngưng riêng của tóm tắt.
+    pub summaries: Arc<crate::summary::Summaries>,
     /// Username bot chat.hoandat.com (đọc một lần).
     pub chat_bot: Arc<crate::chat_link::BotProfile>,
 }

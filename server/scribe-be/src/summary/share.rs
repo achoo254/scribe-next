@@ -1,13 +1,14 @@
 //! Gửi biên bản tới chat riêng của người dùng với bot Scribe trên chat.hoandat.com (markdown của Bot API,
 //! xem `chat-next/spec/bot-api/format.md`). Chỉ chat đã liên kết qua deep link (`chat_link`), không bao
-//! giờ vào nhóm. Audit không ghi nội dung.
+//! giờ vào nhóm. Tài khoản bị khoá không gửi được. Biên bản đã cũ (chữ đã đổi sau lúc tóm tắt) vẫn gửi
+//! được, kèm dòng nhắc. Audit không ghi nội dung.
 
 use crate::audit;
 use crate::auth::UserId;
 use crate::chat_link::bot::{BotApi, BotError};
 use crate::error::AppError;
-use crate::models::chat_link;
 use crate::models::transcript_doc::StoredSummary;
+use crate::models::{chat_link, user};
 use crate::notify;
 use crate::state::AppState;
 use crate::transcribe::docs;
@@ -60,11 +61,17 @@ fn truncate(text: &str, max: usize) -> String {
     format!("{}…", cut.trim_end())
 }
 
+/// Dòng nhắc khi biên bản viết từ chữ cũ hơn chữ hiện tại.
+const STALE_NOTE: &str = "(biên bản có thể đã cũ)";
+
 /// Tin nhắn biên bản. Quá dài thì rút gọn tóm tắt và bớt mục cuối, kèm dòng "còn N mục" trỏ về Scribe.
-pub fn format_message(title: &str, when: Option<&str>, stored: &StoredSummary, url: &str) -> String {
+pub fn format_message(title: &str, when: Option<&str>, stored: &StoredSummary, url: &str, stale: bool) -> String {
     let mut head = format!("*{}*\n", escape(title));
     if let Some(when) = when {
         head.push_str(&format!("{}\n", escape(when)));
+    }
+    if stale {
+        head.push_str(&format!("_{}_\n", escape(STALE_NOTE)));
     }
     head.push_str(&format!("\n*Tóm tắt*\n{}\n", escape(&truncate(&stored.summary, MAX_SUMMARY_CHARS))));
     let footer = format!("\n[Mở trên Scribe]({url})");
@@ -127,12 +134,35 @@ fn conflict(code: &'static str, message: &str) -> AppError {
     AppError::Coded { status: StatusCode::CONFLICT, code, message: message.into() }
 }
 
+/// Kết quả gửi tới bot: lỗi trả client và mã `error.code` của bot khi phải gỡ liên kết (bot bị chặn hoặc
+/// chat không còn: liên kết không còn dùng được).
+fn after_send(sent: Result<(), BotError>) -> (Result<(), AppError>, Option<String>) {
+    match sent {
+        Ok(()) => (Ok(()), None),
+        Err(BotError::Forbidden(code)) => (
+            Err(conflict("CHAT_BLOCKED", "Không gửi được vì bot Scribe đã bị chặn trên chat. Đã gỡ liên kết, hãy liên kết lại.")),
+            Some(code),
+        ),
+        Err(BotError::RetryAfter(_)) => (Err(AppError::TooManyRequests("chat đang bận, thử lại sau ít phút".into())), None),
+        Err(e) => {
+            tracing::warn!("gửi biên bản lỗi: {e}");
+            (Err(AppError::Unavailable("Không gửi được sang chat, thử lại sau.".into())), None)
+        }
+    }
+}
+
 /// `POST /api/transcript-docs/{key}/share` — gửi biên bản tới chat riêng đã liên kết.
 pub async fn share(
     State(state): State<AppState>,
     Extension(user): Extension<UserId>,
     Path(key): Path<String>,
 ) -> Result<Json<Value>, AppError> {
+    let profile = user::find_profile(&state.db, &user.0)
+        .await?
+        .ok_or_else(|| AppError::Unauthorized("user không tồn tại".into()))?;
+    if profile.blocked {
+        return Err(AppError::Forbidden("tài khoản đã bị khoá".into()));
+    }
     if !state.rate.allow_in(&format!("share:{}", user.0), SHARES_PER_HOUR, Duration::from_secs(3600)) {
         return Err(AppError::TooManyRequests(format!("mỗi giờ gửi tối đa {SHARES_PER_HOUR} lần, thử lại sau")));
     }
@@ -149,29 +179,20 @@ pub async fn share(
     })?;
     let when = vn_when(loaded.created_at().as_deref());
     let title = loaded.title(&key).or_else(|| when.as_ref().map(|w| format!("Bản ghi {w}"))).unwrap_or_else(|| "Bản ghi".into());
-    let text = format_message(&title, when.as_deref(), stored, &transcript_url(&state.config.public_url, &key));
+    let stale = stored.source_hash != super::source_hash(&super::build_input(&loaded.timed_sentences()));
+    let text = format_message(&title, when.as_deref(), stored, &transcript_url(&state.config.public_url, &key), stale);
 
-    match BotApi::new(&state.http, &state.config.notify_bot_api, &token).send(chat_id, &text, true).await {
-        Ok(()) => {
-            audit::record(&state, Some(&user.0), "transcript.share", doc! { "key": &key, "chatId": chat_id });
-            Ok(Json(json!({ "ok": true })))
-        }
-        Err(BotError::Forbidden(code)) => {
-            // Người dùng đã chặn bot (hoặc xoá chat): liên kết không còn dùng được.
-            if chat_link::unlink(&state.db, &user.0, Some(chat_id)).await? {
-                audit::record(&state, Some(&user.0), "chat.unlink", doc! { "reason": "bot_forbidden", "code": &code });
-            }
-            Err(conflict(
-                "CHAT_BLOCKED",
-                "Không gửi được vì bot Scribe đã bị chặn trên chat. Đã gỡ liên kết, hãy liên kết lại.",
-            ))
-        }
-        Err(BotError::RetryAfter(_)) => Err(AppError::TooManyRequests("chat đang bận, thử lại sau ít phút".into())),
-        Err(e) => {
-            tracing::warn!(key = %key, "gửi biên bản lỗi: {e}");
-            Err(AppError::Unavailable("Không gửi được sang chat, thử lại sau.".into()))
+    let sent = BotApi::new(&state.http, &state.config.notify_bot_api, &token).send(chat_id, &text, true).await;
+    let (result, unlink_code) = after_send(sent);
+    if let Some(code) = unlink_code {
+        // Chỉ gỡ khi vẫn là chat vừa gửi: không gỡ liên kết mới vừa chen vào.
+        if chat_link::unlink(&state.db, &user.0, Some(chat_id)).await? {
+            audit::record(&state, Some(&user.0), "chat.unlink", doc! { "reason": "bot_forbidden", "code": &code });
         }
     }
+    result?;
+    audit::record(&state, Some(&user.0), "transcript.share", doc! { "key": &key, "chatId": chat_id, "stale": stale });
+    Ok(Json(json!({ "ok": true })))
 }
 
 #[cfg(test)]
@@ -207,7 +228,7 @@ mod tests {
 
     #[test]
     fn message_lists_summary_decisions_and_actions() {
-        let text = format_message("Họp *tuần*", Some("09:00 ngày 16/10/2026"), &stored(1, 2), "https://x/transcripts/f%3A1");
+        let text = format_message("Họp *tuần*", Some("09:00 ngày 16/10/2026"), &stored(1, 2), "https://x/transcripts/f%3A1", false);
         assert_eq!(
             text,
             "*Họp \\*tuần\\**\n09:00 ngày 16/10/2026\n\n*Tóm tắt*\nBàn kế hoạch \\*quý 4\\* \\[nháp\\].\n\
@@ -215,8 +236,30 @@ mod tests {
              \n*Việc cần làm*\n• \\[1:02:05\\] Việc 0\\_x — Lan, hạn thứ Sáu\n• \\[1:02:05\\] Việc 1\\_x — Lan\n\
              \n[Mở trên Scribe](https://x/transcripts/f%3A1)"
         );
-        let empty = format_message("T", None, &stored(0, 0), "u");
+        let empty = format_message("T", None, &stored(0, 0), "u", false);
         assert!(!empty.contains("Quyết định") && !empty.contains("Việc cần làm"));
+        assert!(!empty.contains("đã cũ"));
+    }
+
+    #[test]
+    fn stale_minutes_carry_a_note() {
+        let text = format_message("T", Some("09:00"), &stored(0, 0), "u", true);
+        assert!(text.starts_with("*T*\n09:00\n_\\(biên bản có thể đã cũ\\)_\n"), "{text}");
+    }
+
+    #[test]
+    fn a_bot_refusal_unlinks_and_reports_chat_blocked() {
+        let (result, unlink) = after_send(Err(BotError::Forbidden("forbidden".into())));
+        assert_eq!(unlink.as_deref(), Some("forbidden"));
+        let Err(AppError::Coded { status, code, .. }) = result else { panic!("phải là lỗi có mã") };
+        assert_eq!((status, code), (StatusCode::CONFLICT, "CHAT_BLOCKED"));
+
+        let (result, unlink) = after_send(Err(BotError::RetryAfter(5)));
+        assert!(matches!(result, Err(AppError::TooManyRequests(_))) && unlink.is_none());
+        let (result, unlink) = after_send(Err(BotError::Status(400, "bad_request".into())));
+        assert!(matches!(result, Err(AppError::Unavailable(_))) && unlink.is_none());
+        let (result, unlink) = after_send(Ok(()));
+        assert!(result.is_ok() && unlink.is_none());
     }
 
     #[test]
@@ -226,7 +269,7 @@ mod tests {
         for d in &mut s.decisions {
             d.text = "quyết định dài ".repeat(10);
         }
-        let text = format_message("T", None, &s, "https://x");
+        let text = format_message("T", None, &s, "https://x", true);
         assert!(text.chars().count() <= 4_000, "{}", text.chars().count());
         assert!(text.contains("… còn ") && text.ends_with("[Mở trên Scribe](https://x)"));
     }

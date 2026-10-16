@@ -6,7 +6,8 @@
 //!
 //! Doc còn giữ biên bản (`summary`, xem `crate::summary`) và dấu mốc (`bookmarks`). Dấu mốc được đánh
 //! lúc đang ghi, khi phiên có thể chưa có file nào: doc tạo lười bằng upsert, sweep mồ côi chừa doc
-//! còn mới ([`ORPHAN_GRACE_HOURS`]).
+//! còn mới ([`ORPHAN_GRACE_HOURS`]) nếu doc chưa có biên bản. Biên bản viết từ audio của phiên nên đi
+//! theo audio: xoá một đoạn là bỏ biên bản ([`forget_segment`]), phiên hết file là xoá cả doc.
 //!
 //! Phần sửa của một đoạn gắn với `runId` của lượt chép đã sinh ra câu máy: chép lại thì `runId` đổi
 //! và phần sửa cũ tự hết hiệu lực ([`effective_texts`]), không cần dọn đồng bộ.
@@ -219,13 +220,21 @@ pub async fn remove_bookmark(db: &Database, user_id: &str, key: &str, id: &str) 
         .map_err(|e| AppError::Internal(format!("xoá dấu mốc: {e}")))
 }
 
-pub async fn unset_edits(db: &Database, user_id: &str, key: &str, file_id: ObjectId) -> Result<(), AppError> {
+/// Một đoạn của phiên đã bị xoá: bỏ câu sửa của đoạn và biên bản (viết cả từ đoạn đó); phiên không còn
+/// file nào thì xoá cả doc (tiêu đề, dấu mốc đi theo bản ghi).
+pub async fn forget_segment(db: &Database, user_id: &str, key: &str, file_id: ObjectId) -> Result<(), AppError> {
     let path = format!("edits.{}", file_id.to_hex());
     db.collection::<Document>(COLL)
-        .update_one(doc! { "userId": user_id, "key": key }, doc! { "$unset": { path: "" } })
+        .update_one(
+            doc! { "userId": user_id, "key": key },
+            doc! { "$unset": { path: "", "summary": "" }, "$set": { "updatedAt": DateTime::now() } },
+        )
         .await
-        .map(|_| ())
-        .map_err(|e| AppError::Internal(format!("bỏ câu sửa: {e}")))
+        .map_err(|e| AppError::Internal(format!("bỏ câu sửa và biên bản: {e}")))?;
+    if super::file::list_session(db, user_id, key).await?.is_empty() {
+        delete(db, user_id, key).await?;
+    }
+    Ok(())
 }
 
 /// Gỡ câu sửa của đoạn chỉ khi nó còn thuộc lượt `run_id` (không đụng phần sửa của lượt mới hơn).
@@ -253,12 +262,17 @@ pub async fn delete(db: &Database, user_id: &str, key: &str) -> Result<(), AppEr
         .map_err(|e| AppError::Internal(format!("xoá transcript_docs: {e}")))
 }
 
-/// Xoá doc không còn file bản ghi nào của phiên (audio đã bị xoá tay, hết hạn, hay bị cắt). Doc tạo
-/// chưa tới [`ORPHAN_GRACE_HOURS`] giờ được chừa: phiên đang ghi có dấu mốc trước khi có file.
+/// Xoá doc không còn file bản ghi nào của phiên (audio đã bị xoá tay, hết hạn, hay bị cắt). Doc chưa có
+/// biên bản và tạo chưa tới [`ORPHAN_GRACE_HOURS`] giờ được chừa: phiên đang ghi có dấu mốc trước khi có
+/// file. Doc có biên bản thì phiên đã từng có audio, hết file là mồ côi ngay.
 /// Đây là cơ chế đảm bảo; bước dọn trong `file::delete_doc` chỉ là tối ưu. Trả số doc đã xoá.
 pub async fn delete_orphans(db: &Database) -> Result<u64, AppError> {
     let cutoff = DateTime::from_millis(DateTime::now().timestamp_millis() - ORPHAN_GRACE_HOURS * 3_600_000);
-    let old_enough = doc! { "$or": [{ "createdAt": { "$lt": cutoff } }, { "createdAt": { "$exists": false } }] };
+    let old_enough = doc! { "$or": [
+        { "createdAt": { "$lt": cutoff } },
+        { "createdAt": { "$exists": false } },
+        { "summary": { "$exists": true } },
+    ] };
     let mut cur = db
         .collection::<Document>(COLL)
         .find(old_enough)
@@ -372,9 +386,19 @@ mod tests {
         let run = transcript::statuses_for_files(&db, &user, &[a]).await.expect("status");
         assert_eq!(effective_texts(d.edits.get(&a.to_hex()), &run[0].run_id, 1), None);
 
-        // Xoá đoạn a: câu sửa của a dọn theo; còn b nên doc phiên chưa mồ côi.
+        // Xoá đoạn a: câu sửa của a và biên bản dọn theo; còn b nên doc phiên chưa mồ côi.
+        let stored = StoredSummary {
+            model: "m".into(),
+            created_at: DateTime::now(),
+            source_hash: "h".into(),
+            summary: "Tóm tắt".into(),
+            decisions: vec![],
+            actions: vec![],
+        };
+        set_summary(&db, &user, &key, &stored).await.expect("biên bản");
         let fa = files.iter().find(|(_, f)| f.id == Some(a)).map(|(_, f)| f).expect("fa");
         file::delete_doc(&db, fa).await.expect("xoá a");
+        assert_eq!(get(&db, &user, &key).await.expect("get").expect("doc").summary, None);
         db.collection::<Document>(crate::models::usage::RUNS_COLL).delete_many(doc! { "userId": &user }).await.expect("dọn");
         let d = get(&db, &user, &key).await.expect("get").expect("doc");
         assert!(!d.edits.contains_key(&a.to_hex()) && d.edits.contains_key(&b.to_hex()));
@@ -392,6 +416,11 @@ mod tests {
             .update_one(doc! { "userId": &user, "key": &key }, doc! { "$set": { "createdAt": two_days_ago } })
             .await
             .expect("lùi createdAt");
+        assert!(delete_orphans(&db).await.expect("sweep") >= 1);
+        assert!(get(&db, &user, &key).await.expect("get").is_none());
+
+        // Doc còn mới nhưng có biên bản mà không còn file: sweep xoá ngay.
+        set_summary(&db, &user, &key, &stored).await.expect("biên bản");
         assert!(delete_orphans(&db).await.expect("sweep") >= 1);
         assert!(get(&db, &user, &key).await.expect("get").is_none());
     }

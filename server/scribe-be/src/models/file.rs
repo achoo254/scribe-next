@@ -226,8 +226,8 @@ pub async fn find_expired(db: &Database) -> Result<Vec<FileDoc>, AppError> {
 /// Xoá file doc (gọi SAU khi đã xoá file disk — thứ tự cố định, red-team #1).
 ///
 /// Bản chép lời đi theo file: đây là nơi duy nhất xoá doc file (xoá tay, retention, cắt bản ghi).
-/// Câu sửa của đoạn trong `transcript_docs` dọn theo, lỗi chỉ `warn` (đĩa đã xoá, không báo lỗi
-/// ngược); sweep mồ côi trong retention là cơ chế đảm bảo.
+/// Câu sửa của đoạn và biên bản của phiên trong `transcript_docs` dọn theo (phiên hết file thì xoá cả
+/// doc), lỗi chỉ `warn` (đĩa đã xoá, không báo lỗi ngược); sweep mồ côi trong retention là cơ chế đảm bảo.
 pub async fn delete_doc(db: &Database, f: &FileDoc) -> Result<(), AppError> {
     let Some(id) = f.id else { return Ok(()) };
     db.collection::<FileDoc>(COLL)
@@ -237,8 +237,8 @@ pub async fn delete_doc(db: &Database, f: &FileDoc) -> Result<(), AppError> {
     super::transcript::delete(db, id).await?;
     if f.kind == "recording" {
         let key = session_key(&f.name, id);
-        if let Err(e) = super::transcript_doc::unset_edits(db, &f.user_id, &key, id).await {
-            tracing::warn!(file = %id, "dọn câu sửa của đoạn lỗi (sweep mồ côi sẽ dọn): {e:?}");
+        if let Err(e) = super::transcript_doc::forget_segment(db, &f.user_id, &key, id).await {
+            tracing::warn!(file = %id, "dọn câu sửa và biên bản của phiên lỗi (sweep mồ côi sẽ dọn): {e:?}");
         }
     }
     Ok(())

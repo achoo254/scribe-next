@@ -6,9 +6,14 @@
 //! `transcript_docs.summary` cùng băm chữ đầu vào: chữ đổi thì API báo `stale`.
 //!
 //! Tiền: mỗi tài khoản có số lượt mỗi ngày giờ Việt Nam theo gói (`SUMMARY_FREE_DAILY`,
-//! `SUMMARY_PAID_DAILY`); chi phí token quy ra giây chép lời tương đương và cộng vào trần tổng tháng
-//! (giữ chỗ theo ước lượng trước khi gọi, quyết toán theo token thật), nên cảnh báo 80/100% và chặn ở
-//! 100% của trần vẫn đúng. Audit không ghi nội dung.
+//! `SUMMARY_PAID_DAILY`) và trần chi phí mỗi tháng (`SUMMARY_*_MONTHLY_MINUTES`); chi phí token quy ra
+//! giây chép lời tương đương, giữ chỗ theo ước lượng trên sổ tháng của user lẫn trần tổng tháng trước khi
+//! gọi rồi quyết toán theo token thật, nên cảnh báo 80/100% và chặn ở 100% của trần vẫn đúng. Lượt ngày
+//! chỉ được trả lại khi OpenAI chắc chắn chưa xử lý gì. Audit không ghi nội dung.
+//!
+//! Phần có tiền (lấy lượt → gọi model → quyết toán → lưu biên bản) chạy trong task riêng, handler chờ
+//! kết quả: client ngắt kết nối (Cloudflare cắt ở ~100 giây, người dùng rời trang) thì task vẫn chạy
+//! hết, sổ không bị giữ chỗ treo và biên bản vẫn được lưu.
 
 mod llm;
 pub mod share;
@@ -20,13 +25,15 @@ use crate::models::transcript_doc::{self, Action, Decision, StoredSummary};
 use crate::models::{plan, summary as ledger, usage, user};
 use crate::state::AppState;
 use crate::transcribe::{self, docs, openai::is_key_broken};
+use crate::notify;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::{Extension, Json};
 use mongodb::bson::{doc, DateTime};
 use serde_json::{json, Value};
 use std::collections::HashSet;
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 
 /// Chữ đầu vào dài nhất (ký tự): ~3 giờ họp nói liên tục vẫn dưới mức này; chặn chi phí bất thường.
 const MAX_INPUT_CHARS: usize = 400_000;
@@ -44,29 +51,42 @@ const PER_MINUTE: u32 = 6;
 const PAUSED: &str = "Tóm tắt đang tạm ngưng, quản trị đã được báo. Thử lại sau.";
 const FAILED: &str = "Không tạo được biên bản lúc này, thử lại sau.";
 
-/// Các phiên đang được tóm tắt (`<userId>|<key>`): tối đa một lượt đang chạy cho mỗi phiên.
+/// Trạng thái chung của tính năng tóm tắt trong tiến trình.
 #[derive(Default)]
-pub struct Running {
+pub struct Summaries {
+    /// Các phiên đang được tóm tắt (`<userId>|<key>`): tối đa một lượt đang chạy cho mỗi phiên.
     keys: Mutex<HashSet<String>>,
+    /// Lượt tóm tắt gặp lỗi key/credit: chỉ tóm tắt tạm ngưng tới khi khởi động lại, chép lời không bị
+    /// ngắt theo (chép lời tự ngắt khi chính nó gặp lỗi đó).
+    paused: AtomicBool,
 }
 
-/// Giữ chỗ "đang chạy" tới khi lượt kết thúc (kể cả khi handler bị huỷ giữa chừng).
-pub struct RunningGuard<'a> {
-    running: &'a Running,
+/// Giữ chỗ "đang chạy" tới khi lượt kết thúc. Sở hữu `Arc` nên đi được vào task nền cùng lượt.
+pub struct RunningGuard {
+    summaries: Arc<Summaries>,
     id: String,
 }
 
-impl Running {
-    fn start(&self, user_id: &str, key: &str) -> Option<RunningGuard<'_>> {
+impl Summaries {
+    fn start(self: &Arc<Self>, user_id: &str, key: &str) -> Option<RunningGuard> {
         let id = format!("{user_id}|{key}");
         let mut keys = self.keys.lock().unwrap_or_else(|p| p.into_inner());
-        keys.insert(id.clone()).then(|| RunningGuard { running: self, id })
+        keys.insert(id.clone()).then(|| RunningGuard { summaries: Arc::clone(self), id })
+    }
+
+    fn paused(&self) -> bool {
+        self.paused.load(Ordering::Relaxed)
+    }
+
+    /// `true` ở lần ngắt đầu tiên (để báo quản trị một lần).
+    fn pause(&self) -> bool {
+        !self.paused.swap(true, Ordering::Relaxed)
     }
 }
 
-impl Drop for RunningGuard<'_> {
+impl Drop for RunningGuard {
     fn drop(&mut self) {
-        self.running.keys.lock().unwrap_or_else(|p| p.into_inner()).remove(&self.id);
+        self.summaries.keys.lock().unwrap_or_else(|p| p.into_inner()).remove(&self.id);
     }
 }
 
@@ -150,6 +170,16 @@ fn daily_limit_error(used: i64, limit: i64, now: chrono::DateTime<chrono::Utc>) 
     }
 }
 
+fn monthly_limit_error(used_s: i64, limit_s: i64, now: chrono::DateTime<chrono::Utc>) -> AppError {
+    AppError::Quota {
+        code: "SUMMARY_MONTHLY_LIMIT",
+        message: "Tháng này tài khoản đã dùng hết hạn mức tóm tắt, sẽ mở lại đầu tháng sau.".into(),
+        used_minutes: usage::used_minutes(used_s),
+        limit_minutes: limit_s / 60,
+        retry_at: Some(usage::next_reset(now).to_rfc3339()),
+    }
+}
+
 fn cap_error(now: chrono::DateTime<chrono::Utc>) -> AppError {
     AppError::Quota {
         code: "CAP_REACHED",
@@ -158,6 +188,30 @@ fn cap_error(now: chrono::DateTime<chrono::Utc>) -> AppError {
         limit_minutes: 0,
         retry_at: Some(usage::next_reset(now).to_rfc3339()),
     }
+}
+
+/// Chi phí ghi sổ của một lượt gọi model (giây tương đương) và có trả lại lượt ngày không. OpenAI đã
+/// xử lý thì tính theo token thật, không trả lượt (kể cả khi biên bản bị cắt, bị từ chối hay sai dạng);
+/// có thể đã xử lý mà không biết token thì giữ nguyên phần ước lượng; chắc chắn chưa xử lý thì không
+/// tính gì và trả lượt.
+fn charge_of(call: &llm::Call, estimate: i64) -> (i64, bool) {
+    match &call.result {
+        Ok(c) => (cost_seconds(c.input_tokens, c.output_tokens), false),
+        Err(_) if call.maybe_billed => (estimate, false),
+        Err(_) => (0, true),
+    }
+}
+
+/// Phần đã kiểm xong của một lượt, đủ để task nền chạy tiếp mà không cần request.
+struct Job {
+    user_id: String,
+    key: String,
+    plan: plan::Plan,
+    input: String,
+    chars: usize,
+    hash: String,
+    max_at: f64,
+    api_key: String,
 }
 
 /// `POST /api/transcript-docs/{key}/summary` — tạo (hoặc tạo lại) biên bản của phiên.
@@ -175,11 +229,16 @@ pub async fn create(
     if !state.config.transcribe_allowed(&profile.email) {
         return Err(AppError::Forbidden("tài khoản này chưa được dùng tóm tắt".into()));
     }
-    let api_key = state.transcriber.api_key().ok_or_else(|| AppError::Unavailable(PAUSED.into()))?;
+    let api_key = state
+        .transcriber
+        .api_key()
+        .filter(|_| !state.summaries.paused())
+        .ok_or_else(|| AppError::Unavailable(PAUSED.into()))?
+        .to_string();
     if !state.rate.allow(&format!("summary:{}", user.0), PER_MINUTE) {
         return Err(AppError::TooManyRequests("bấm tóm tắt quá nhanh, thử lại sau một phút".into()));
     }
-    let _running = state
+    let running = state
         .summaries
         .start(&user.0, &key)
         .ok_or_else(|| AppError::TooManyRequests("bản này đang được tóm tắt, chờ một chút".into()))?;
@@ -198,88 +257,143 @@ pub async fn create(
     if chars > MAX_INPUT_CHARS {
         return Err(AppError::TooLarge("bản chép lời quá dài để tóm tắt".into()));
     }
-    let hash = source_hash(&input);
+    let job = Job {
+        user_id: user.0.clone(),
+        key,
+        plan: plan::effective(profile.plan.as_deref(), profile.plan_until, DateTime::now()),
+        hash: source_hash(&input),
+        input,
+        chars,
+        max_at: loaded.duration_s(),
+        api_key,
+    };
+    // Task giữ `running` tới khi xong; handler bị huỷ thì task vẫn chạy hết.
+    let task = tokio::spawn(run(state, job, running));
+    task.await.unwrap_or_else(|e| {
+        tracing::error!("task tóm tắt dừng bất thường: {e}");
+        Err(AppError::Internal("tóm tắt dừng bất thường".into()))
+    })
+}
 
+/// Trả lại phần đã giữ (lượt ngày, sổ tháng, và trần tổng khi `total`) khi lượt dừng trước lúc gọi model.
+async fn undo(db: &mongodb::Database, user_id: &str, day: &str, month: &str, estimate: i64, total: bool) {
+    ledger::refund_daily(db, user_id, day).await;
+    if let Err(e) = ledger::settle_monthly(db, user_id, month, -estimate).await {
+        tracing::error!(estimate, "trả chi phí tháng của tóm tắt lỗi: {e:?}");
+    }
+    if total {
+        if let Err(e) = usage::settle_total(db, month, -estimate).await {
+            tracing::error!(estimate, "trả trần tổng của tóm tắt lỗi: {e:?}");
+        }
+    }
+}
+
+/// Phần có tiền của một lượt: mọi đường ra đều quyết toán phần đã giữ.
+async fn run(state: AppState, job: Job, _running: RunningGuard) -> Result<Json<Value>, AppError> {
+    let (db, user_id, key) = (&state.db, job.user_id.as_str(), job.key.as_str());
     let now = chrono::Utc::now();
     let (day, month) = (usage::day_key(now), usage::month_key(now));
-    let plan = plan::effective(profile.plan.as_deref(), profile.plan_until, DateTime::now());
     let limits = state.config.summary_limits;
-    let daily = if plan == plan::Plan::Free { limits.free_daily } else { limits.paid_daily };
-    if !ledger::take_daily(&state.db, &user.0, &day, daily).await? {
-        let used = ledger::used_daily(&state.db, &user.0, &day).await?;
-        audit::record(&state, Some(&user.0), "summary.blocked", doc! { "reason": "DailyLimit" });
+    let (daily, monthly) = if job.plan == plan::Plan::Free {
+        (limits.free_daily, limits.free_monthly_seconds)
+    } else {
+        (limits.paid_daily, limits.paid_monthly_seconds)
+    };
+    if !ledger::take_daily(db, user_id, &day, daily).await? {
+        let used = ledger::used_daily(db, user_id, &day).await?;
+        audit::record(&state, Some(user_id), "summary.blocked", doc! { "reason": "DailyLimit" });
         return Err(daily_limit_error(used, daily, now));
     }
-    let estimate = cost_seconds(estimate_input_tokens(chars), MAX_OUTPUT_TOKENS);
-    match usage::reserve_total(&state.db, &month, estimate, &state.config.transcribe_limits).await {
+    let estimate = cost_seconds(estimate_input_tokens(job.chars), MAX_OUTPUT_TOKENS);
+    match ledger::reserve_monthly(db, user_id, &month, estimate, monthly).await {
         Ok(true) => {}
         Ok(false) => {
-            ledger::refund_daily(&state.db, &user.0, &day).await;
-            audit::record(&state, Some(&user.0), "summary.blocked", doc! { "reason": "TotalCap" });
-            return Err(cap_error(now));
+            ledger::refund_daily(db, user_id, &day).await;
+            let used = ledger::used_monthly(db, user_id, &month).await?;
+            audit::record(&state, Some(user_id), "summary.blocked", doc! { "reason": "MonthlyLimit" });
+            return Err(monthly_limit_error(used, monthly, now));
         }
         Err(e) => {
-            ledger::refund_daily(&state.db, &user.0, &day).await;
+            ledger::refund_daily(db, user_id, &day).await;
             return Err(e);
         }
     }
-
-    // Từ đây phần giữ chỗ trên trần phải được quyết toán ở mọi đường ra.
+    match usage::reserve_total(db, &month, estimate, &state.config.transcribe_limits).await {
+        Ok(true) => {}
+        Ok(false) => {
+            undo(db, user_id, &day, &month, estimate, false).await;
+            audit::record(&state, Some(user_id), "summary.blocked", doc! { "reason": "TotalCap" });
+            return Err(cap_error(now));
+        }
+        Err(e) => {
+            undo(db, user_id, &day, &month, estimate, false).await;
+            return Err(e);
+        }
+    }
     let model = state.config.summary_model.as_str();
-    let result = llm::summarize(&state.http, api_key, model, &input).await;
-    let (input_tokens, output_tokens) = result.as_ref().map_or((0, 0), |c| (c.input_tokens, c.output_tokens));
-    let cost_s = if result.is_ok() { cost_seconds(input_tokens, output_tokens) } else { 0 };
-    if let Err(e) = usage::settle_total(&state.db, &month, cost_s - estimate).await {
+    let opened = ledger::Run { user_id, key, model, month: &month, day: &day, reserved_s: estimate };
+    let run_id = match ledger::open_run(db, &opened).await {
+        Ok(id) => id,
+        Err(e) => {
+            undo(db, user_id, &day, &month, estimate, true).await;
+            return Err(e);
+        }
+    };
+
+    // Từ đây phần giữ chỗ phải được quyết toán ở mọi đường ra.
+    let call = llm::summarize(&state.http, &job.api_key, model, &job.input).await;
+    let (cost_s, refund) = charge_of(&call, estimate);
+    if let Err(e) = usage::settle_total(db, &month, cost_s - estimate).await {
         tracing::error!(cost_s, estimate, "quyết toán trần cho tóm tắt lỗi: {e:?}");
     }
-    let draft = result.and_then(|c| c.draft);
-    let run = ledger::Run {
-        user_id: &user.0,
-        key: &key,
-        model,
-        month: &month,
-        day: &day,
-        input_tokens,
-        output_tokens,
-        cost_s,
-        ok: draft.is_ok(),
-    };
-    ledger::record_run(&state.db, &run).await;
+    if let Err(e) = ledger::settle_monthly(db, user_id, &month, cost_s - estimate).await {
+        tracing::error!(cost_s, estimate, "quyết toán chi phí tháng của tóm tắt lỗi: {e:?}");
+    }
+    if refund {
+        ledger::refund_daily(db, user_id, &day).await;
+    }
+    let (input_tokens, output_tokens) = call.result.as_ref().map_or((0, 0), |c| (c.input_tokens, c.output_tokens));
+    let draft = call.result.and_then(|c| c.draft);
+    let closing = ledger::Closing { input_tokens, output_tokens, cost_s, ok: draft.is_ok() };
+    ledger::close_run(db, run_id, &closing).await;
     transcribe::note_cap_levels(&state, &month).await;
 
     let draft = match draft {
         Ok(draft) => draft,
         Err(e) => {
-            ledger::refund_daily(&state.db, &user.0, &day).await;
             if is_key_broken(&e) {
-                transcribe::report_key_broken(&state, &e);
+                if state.summaries.pause() {
+                    tracing::error!("key OpenAI không dùng được cho tóm tắt ({e}) — tạm ngưng tóm tắt tới khi khởi động lại");
+                    audit::record(&state, None, "summary.key_invalid", doc! { "reason": &e });
+                    notify::send(&state, format!("Tóm tắt tạm ngưng: key OpenAI của server không dùng được ({e}). Kiểm tra key rồi khởi động lại."));
+                }
                 return Err(AppError::Unavailable(PAUSED.into()));
             }
             tracing::warn!(key = %key, "tóm tắt lỗi: {e}");
-            audit::record(&state, Some(&user.0), "summary.failed", doc! { "key": &key, "error": &e });
+            audit::record(&state, Some(user_id), "summary.failed", doc! { "key": key, "error": &e });
             return Err(AppError::Unavailable(FAILED.into()));
         }
     };
-    let (summary, decisions, actions) = sanitize(draft, loaded.duration_s());
+    let (summary, decisions, actions) = sanitize(draft, job.max_at);
     let stored = StoredSummary {
         model: model.to_string(),
         created_at: DateTime::now(),
-        source_hash: hash.clone(),
+        source_hash: job.hash.clone(),
         summary,
         decisions,
         actions,
     };
-    transcript_doc::set_summary(&state.db, &user.0, &key, &stored).await?;
+    transcript_doc::set_summary(db, user_id, key, &stored).await?;
     let details = doc! {
-        "key": &key,
+        "key": key,
         "inputTokens": input_tokens,
         "outputTokens": output_tokens,
         "costS": cost_s,
         "decisions": stored.decisions.len() as i64,
         "actions": stored.actions.len() as i64,
     };
-    audit::record(&state, Some(&user.0), "summary.create", details);
-    Ok(Json(to_json(&stored, &hash)))
+    audit::record(&state, Some(user_id), "summary.create", details);
+    Ok(Json(to_json(&stored, &job.hash)))
 }
 
 #[cfg(test)]
@@ -310,13 +424,52 @@ mod tests {
 
     #[test]
     fn one_run_per_session_at_a_time() {
-        let running = Running::default();
+        let running = Arc::new(Summaries::default());
         let first = running.start("u", "s:abc").expect("lượt đầu");
         assert!(running.start("u", "s:abc").is_none());
         assert!(running.start("u", "s:other").is_some());
         assert!(running.start("v", "s:abc").is_some());
-        drop(first);
+        // Guard sống trong task khác (lượt chạy nền) vẫn giữ chỗ tới khi task xong.
+        let moved = std::thread::spawn(move || drop(first));
+        moved.join().expect("thread");
         assert!(running.start("u", "s:abc").is_some());
+    }
+
+    #[test]
+    fn pause_reports_only_the_first_trip() {
+        let s = Summaries::default();
+        assert!(!s.paused());
+        assert!(s.pause());
+        assert!(!s.pause());
+        assert!(s.paused());
+    }
+
+    #[test]
+    fn daily_turn_is_refunded_only_when_openai_processed_nothing() {
+        let completion = |draft: Result<llm::Draft, String>| llm::Call {
+            result: Ok(llm::Completion { input_tokens: 20_000, output_tokens: 1_500, draft }),
+            maybe_billed: true,
+        };
+        // Bị cắt / từ chối / sai dạng: đã tính tiền theo token, không trả lượt.
+        assert_eq!(charge_of(&completion(Err("cắt".into())), 900), (208, false));
+        let ok = llm::Draft { summary: "x".into(), decisions: vec![], actions: vec![] };
+        assert_eq!(charge_of(&completion(Ok(ok)), 900), (208, false));
+        // Có thể đã xử lý (quá giờ sau khi gửi): giữ ước lượng, không trả lượt.
+        let maybe = llm::Call { result: Err("quá giờ".into()), maybe_billed: true };
+        assert_eq!(charge_of(&maybe, 900), (900, false));
+        // Chưa xử lý gì (không kết nối được, 401, 5xx hết lượt thử): không tính, trả lượt.
+        let none = llm::Call { result: Err("401".into()), maybe_billed: false };
+        assert_eq!(charge_of(&none, 900), (0, true));
+    }
+
+    #[test]
+    fn monthly_limit_error_reopens_next_month() {
+        let now: chrono::DateTime<chrono::Utc> = "2026-10-16T04:00:00Z".parse().expect("giờ");
+        let AppError::Quota { code, retry_at, used_minutes, limit_minutes, .. } = monthly_limit_error(3_590, 3_600, now) else {
+            panic!("phải là Quota");
+        };
+        assert_eq!((code, used_minutes, limit_minutes), ("SUMMARY_MONTHLY_LIMIT", 60, 60));
+        assert_eq!(retry_at.as_deref(), Some("2026-10-31T17:00:00+00:00"));
     }
 
     #[test]

@@ -1,8 +1,13 @@
 //! Liên kết chat.hoandat.com: người dùng mở deep link `https://chat.hoandat.com/b/<bot>?start=<token>`,
-//! bấm "Gửi /start", task long-poll ([`poll`]) nhận `/start <token>` và gắn chat riêng của họ với tài
-//! khoản. Biên bản chỉ gửi tới chat riêng đó (`summary::share`). Không thêm endpoint public nào.
+//! bấm "Gửi /start", task long-poll ([`poll`]) nhận `/start <token>`, bot hỏi lại kèm tài khoản Scribe
+//! (email che bớt) và nút "Xác nhận liên kết"; bấm nút mới gắn chat riêng đó với tài khoản ([`flow`]).
+//! Biên bản chỉ gửi tới chat riêng đó (`summary::share`). Không thêm endpoint public nào.
+//!
+//! Liên kết chỉ bật khi task poll chạy (`CHAT_LINK_POLL` và có token bot): không poll thì không ai đọc
+//! `/start`, nên `POST /api/chat/link` trả 503 `CHAT_LINK_DISABLED` và `GET` báo `enabled: false`.
 
 pub mod bot;
+pub mod flow;
 pub mod poll;
 
 use crate::audit;
@@ -12,6 +17,7 @@ use crate::models::chat_link;
 use crate::notify;
 use crate::state::AppState;
 use axum::extract::State;
+use axum::http::StatusCode;
 use axum::{Extension, Json};
 use bot::BotApi;
 use mongodb::bson::doc;
@@ -76,16 +82,34 @@ pub fn deep_link(bot_api: &str, username: &str, token: &str) -> String {
     format!("{}/b/{username}?start={token}", chat_origin(bot_api))
 }
 
-/// `GET /api/chat/link` — `{linked}`.
+/// Máy chủ này có nhận liên kết mới không (task poll có chạy).
+fn link_enabled(config: &crate::config::Config) -> bool {
+    config.chat_link_poll && config.notify_bot_token_path.is_some()
+}
+
+/// Body của `GET /api/chat/link`.
+fn status_json(linked: Option<&chat_link::Linked>, enabled: bool) -> Value {
+    json!({
+        "linked": linked.is_some(),
+        "linkedAt": linked.and_then(|l| l.linked_at).and_then(|at| at.try_to_rfc3339_string().ok()),
+        "enabled": enabled,
+    })
+}
+
+/// `GET /api/chat/link` — `{linked, linkedAt, enabled}`.
 pub async fn status(State(state): State<AppState>, Extension(user): Extension<UserId>) -> Result<Json<Value>, AppError> {
-    let linked = chat_link::linked_chat(&state.db, &user.0).await?.is_some();
-    Ok(Json(json!({ "linked": linked })))
+    let linked = chat_link::linked(&state.db, &user.0).await?;
+    Ok(Json(status_json(linked.as_ref(), link_enabled(&state.config))))
 }
 
 /// `POST /api/chat/link` — token một lần (hạn 10 phút) và đường dẫn để mở trên chat.hoandat.com.
 pub async fn create(State(state): State<AppState>, Extension(user): Extension<UserId>) -> Result<Json<Value>, AppError> {
-    if state.config.notify_bot_token_path.is_none() {
-        return Err(AppError::Unavailable("Liên kết chat chưa được bật trên máy chủ này.".into()));
+    if !link_enabled(&state.config) {
+        return Err(AppError::Coded {
+            status: StatusCode::SERVICE_UNAVAILABLE,
+            code: "CHAT_LINK_DISABLED",
+            message: "Liên kết chat chưa được bật trên máy chủ này.".into(),
+        });
     }
     if !state.rate.allow_in(&format!("chat-link:{}", user.0), LINKS_PER_HOUR, Duration::from_secs(3600)) {
         return Err(AppError::TooManyRequests("tạo đường dẫn liên kết quá nhiều lần, thử lại sau".into()));
@@ -120,5 +144,12 @@ mod tests {
         assert_eq!(deep_link("http://localhost:8080/bot/v1/", "b", "t"), "http://localhost:8080/b/b?start=t");
         assert!(valid_username("Scribe_bot1"));
         assert!(!valid_username("bad/name") && !valid_username(""));
+    }
+
+    #[test]
+    fn status_reports_link_time_and_whether_linking_is_on() {
+        assert_eq!(status_json(None, false), json!({ "linked": false, "linkedAt": null, "enabled": false }));
+        let linked = chat_link::Linked { chat_id: 12, linked_at: Some(mongodb::bson::DateTime::from_millis(0)) };
+        assert_eq!(status_json(Some(&linked), true), json!({ "linked": true, "linkedAt": "1970-01-01T00:00:00Z", "enabled": true }));
     }
 }

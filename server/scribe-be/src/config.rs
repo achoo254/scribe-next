@@ -27,21 +27,33 @@ const DEFAULT_FREE_DELAY_HOURS: i64 = 24;
 /// Tóm tắt (biên bản): lượt mỗi ngày giờ Việt Nam (Jev chốt 16/10/2026) và model mặc định.
 const DEFAULT_SUMMARY_FREE_DAILY: i64 = 10;
 const DEFAULT_SUMMARY_PAID_DAILY: i64 = 50;
+/// Trần chi phí tóm tắt mỗi tháng của một tài khoản, tính bằng phút chép lời tương đương: một người không
+/// tiêu hết trần tổng của mọi người. 60 phút ≈ $0,18 ≈ vài chục biên bản thường.
+const DEFAULT_SUMMARY_FREE_MONTHLY_MINUTES: i64 = 60;
+const DEFAULT_SUMMARY_PAID_MONTHLY_MINUTES: i64 = 600;
 const DEFAULT_SUMMARY_MODEL: &str = "gpt-4.1-mini";
 
-/// Lượt tóm tắt mỗi ngày (giờ Việt Nam) của một tài khoản, theo gói.
+/// Hạn mức tóm tắt của một tài khoản theo gói: lượt mỗi ngày (giờ Việt Nam) và trần chi phí mỗi tháng
+/// (giây chép lời tương đương).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SummaryLimits {
     pub free_daily: i64,
     pub paid_daily: i64,
+    pub free_monthly_seconds: i64,
+    pub paid_monthly_seconds: i64,
 }
 
 impl SummaryLimits {
-    fn from_parts(free: Option<&str>, paid: Option<&str>) -> Self {
+    /// Thứ tự: lượt ngày free, lượt ngày trả phí, phút tháng free, phút tháng trả phí. Sai dạng hoặc âm
+    /// thì dùng mặc định.
+    fn from_parts(parts: [Option<&str>; 4]) -> Self {
         let num = |v: Option<&str>, default: i64| v.and_then(|s| s.trim().parse().ok()).filter(|n: &i64| *n >= 0).unwrap_or(default);
+        let [free, paid, free_month, paid_month] = parts;
         SummaryLimits {
             free_daily: num(free, DEFAULT_SUMMARY_FREE_DAILY),
             paid_daily: num(paid, DEFAULT_SUMMARY_PAID_DAILY),
+            free_monthly_seconds: num(free_month, DEFAULT_SUMMARY_FREE_MONTHLY_MINUTES).saturating_mul(60),
+            paid_monthly_seconds: num(paid_month, DEFAULT_SUMMARY_PAID_MONTHLY_MINUTES).saturating_mul(60),
         }
     }
 }
@@ -193,7 +205,12 @@ impl Config {
             notify_bot_api: option_env!("NOTIFY_BOT_API").unwrap_or("https://chat.hoandat.com/bot/v1").trim_end_matches('/').to_string(),
             notify_bot_token_path: option_env!("NOTIFY_BOT_TOKEN_PATH").filter(|p| !p.is_empty()).map(str::to_string),
             notify_chat_id: option_env!("NOTIFY_CHAT_ID").filter(|c| !c.is_empty()).map(str::to_string),
-            summary_limits: SummaryLimits::from_parts(option_env!("SUMMARY_FREE_DAILY"), option_env!("SUMMARY_PAID_DAILY")),
+            summary_limits: SummaryLimits::from_parts([
+                option_env!("SUMMARY_FREE_DAILY"),
+                option_env!("SUMMARY_PAID_DAILY"),
+                option_env!("SUMMARY_FREE_MONTHLY_MINUTES"),
+                option_env!("SUMMARY_PAID_MONTHLY_MINUTES"),
+            ]),
             summary_model: option_env!("SUMMARY_MODEL")
                 .map(str::trim)
                 .filter(|m| !m.is_empty())
@@ -268,8 +285,11 @@ mod tests {
 
     #[test]
     fn summary_limits_default_to_ten_and_fifty() {
-        assert_eq!(SummaryLimits::from_parts(None, None), SummaryLimits { free_daily: 10, paid_daily: 50 });
-        assert_eq!(SummaryLimits::from_parts(Some(" 3 "), Some("-1")), SummaryLimits { free_daily: 3, paid_daily: 50 });
-        assert_eq!(SummaryLimits::from_parts(Some("x"), Some("0")), SummaryLimits { free_daily: 10, paid_daily: 0 });
+        let d = SummaryLimits::from_parts([None; 4]);
+        assert_eq!((d.free_daily, d.paid_daily), (10, 50));
+        assert_eq!((d.free_monthly_seconds, d.paid_monthly_seconds), (3_600, 36_000));
+        let s = SummaryLimits::from_parts([Some(" 3 "), Some("-1"), Some("5"), Some("x")]);
+        assert_eq!(s, SummaryLimits { free_daily: 3, paid_daily: 50, free_monthly_seconds: 300, paid_monthly_seconds: 36_000 });
+        assert_eq!(SummaryLimits::from_parts([Some("x"), Some("0"), None, None]).paid_daily, 0);
     }
 }

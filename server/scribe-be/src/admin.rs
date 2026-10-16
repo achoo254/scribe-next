@@ -98,7 +98,7 @@ async fn set_plan(db: &Database, args: &[String]) -> Result<Value, String> {
     Ok(json!({ "userId": user_id, "plan": chosen.name(), "until": until_text }))
 }
 
-/// Khoá: chặn đăng nhập và chép lời, xoá mọi phiên (server đang chạy còn nhớ phiên tối đa 30 giây; app
+/// Khoá: chặn đăng nhập và chép lời, gỡ liên kết chat, xoá mọi phiên (server đang chạy còn nhớ phiên tối đa 30 giây; app
 /// iPhone mất thiết bị ở lần làm mới kế tiếp). Mở khoá chỉ xoá dấu khoá.
 async fn block(db: &Database, args: &[String], on: bool) -> Result<Value, String> {
     let email = args.first().ok_or_else(usage_text)?;
@@ -110,8 +110,14 @@ async fn block(db: &Database, args: &[String], on: bool) -> Result<Value, String
         return Ok(json!({ "userId": user_id, "blocked": false }));
     }
     let removed = sessions::delete_by_user(db, &user_id, None).await.map_err(err)?;
-    audit(db, Some(&user_id), "admin.block", doc! { "reason": reason, "sessions": removed.len() as i64 }).await;
-    Ok(json!({ "userId": user_id, "blocked": true, "sessionsRemoved": removed.len() }))
+    // Tài khoản bị khoá không được nhận gì qua chat nữa; mở khoá thì người dùng tự liên kết lại.
+    let unlinked = crate::models::chat_link::unlink(db, &user_id, None).await.map_err(err)?;
+    let details = doc! { "reason": reason, "sessions": removed.len() as i64, "chatUnlinked": unlinked };
+    audit(db, Some(&user_id), "admin.block", details).await;
+    if unlinked {
+        audit(db, Some(&user_id), "chat.unlink", doc! { "reason": "blocked" }).await;
+    }
+    Ok(json!({ "userId": user_id, "blocked": true, "sessionsRemoved": removed.len(), "chatUnlinked": unlinked }))
 }
 
 async fn show_usage(config: &Config, db: &Database, args: &[String]) -> Result<Value, String> {
@@ -167,10 +173,15 @@ async fn recompute(db: &Database, month: &str, apply: bool) -> Result<Value, Str
         open_runs += 1;
         add(&t.user_id, t.free_pool, t.charged_s);
     }
-    // Chi phí token của tóm tắt chỉ tính vào trần tổng (không vào sổ phút của user hay quỹ free).
+    // Chi phí token của tóm tắt chỉ tính vào trần tổng (không vào sổ phút của user hay quỹ free); lượt
+    // đang gọi model giữ chỗ theo ước lượng và quyết toán sau, nên cũng chặn `--apply` như lượt chép.
     total += crate::models::summary::month_cost_seconds(db, month).await.map_err(err)?;
+    let running_summaries = crate::models::summary::running_count(db, month).await.map_err(err)?;
     if apply && open_runs > 0 {
         return Err(format!("còn {open_runs} lượt đang chạy trong tháng {month}: chờ hàng đợi rỗng rồi chạy lại --apply"));
+    }
+    if apply && running_summaries > 0 {
+        return Err(format!("còn {running_summaries} lượt tóm tắt đang chạy trong tháng {month}: chờ ít phút rồi chạy lại --apply"));
     }
     for user_id in usage::user_ids_with_ledger(db, month).await.map_err(err)? {
         per_user.entry(user_id).or_default();
@@ -196,6 +207,7 @@ async fn recompute(db: &Database, month: &str, apply: bool) -> Result<Value, Str
     Ok(json!({
         "applied": apply,
         "openRuns": open_runs,
+        "runningSummaries": running_summaries,
         "userDiffs": diffs,
         "freePool": { "ledgerSeconds": current.free_pool_seconds, "recomputedSeconds": free_pool },
         "total": { "ledgerSeconds": current.total_seconds, "recomputedSeconds": total },
