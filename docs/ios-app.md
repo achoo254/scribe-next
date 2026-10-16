@@ -34,7 +34,7 @@ Cần trên máy build:
 
 `GoogleService-Info.plist` được commit (cấu hình công khai, API key giới hạn theo bundle id), giống cấu hình Firebase web.
 
-> **Đổi bundle id (2026-10-16):** app id mới là `com.hoandat.scribe` (trước đây dùng bundle id khác). `GoogleService-Info.plist` (không có trong git, tải từ Firebase Console) vẫn là cấu hình Firebase của bundle id cũ và được giữ nguyên tới khi chuyển đăng nhập sang hoandat-auth. Người dùng đã chấp nhận đăng nhập Google trên iPhone có thể hỏng trong giai đoạn này. Bản cài mới là một app khác trên máy: dữ liệu cục bộ của app cũ (đoạn chưa tải, Keychain) không chuyển sang.
+> **Đổi bundle id (2026-10-16):** app id mới là `com.hoandat.scribe` (trước đây dùng bundle id khác). `GoogleService-Info.plist` (không có trong git, tải từ Firebase Console) vẫn là cấu hình Firebase của bundle id cũ và được giữ nguyên tới khi chuyển đăng nhập sang hoandat-auth. Đăng nhập Google vẫn chạy (kiểm trên iPhone 15 Pro Max 2026-10-16, server ghi "login thành công"): `GoogleAuthPlugin` gửi bundle id lấy từ plist trong header `X-Ios-Bundle-Identifier`, nên giới hạn API key của Firebase vẫn khớp. Phần này bỏ đi khi chuyển sang hoandat-auth. Bản cài mới là một app khác trên máy: dữ liệu cục bộ của app cũ (đoạn chưa tải, Keychain) không chuyển sang.
 
 ## Đã kiểm / còn phải kiểm trên máy thật
 
