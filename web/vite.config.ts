@@ -31,9 +31,8 @@ function vendorChunk(id: string): string | undefined {
 }
 
 export default defineConfig(({ command, mode }) => {
-	// Without this config the built app shows a blank page (auth/invalid-api-key)
-	// or the iPhone app has no backend; fail the build instead. Dev and prod use the
-	// same Firebase project, read from web/.env (not in git, see
+	// Without VITE_NATIVE_API_ORIGIN the iPhone app has no backend; fail the build
+	// instead. Read from web/.env (not in git, copy web/.env.example; see
 	// docs/deploy-web-production.md).
 	if (command === "build") {
 		const env = loadEnv(mode, process.cwd(), "VITE_");

@@ -68,7 +68,8 @@ async fn main() {
         .build()
         .expect("dựng reqwest client");
 
-    // Tạo unique index users (non-blocking) — chặn user trùng firebaseUid khi 2 upsert đua nhau.
+    // Index của files/jobs/transcripts/audit (nền, lỗi chỉ log). Index transcript_docs, users và phiên
+    // đăng nhập tạo riêng, chờ xong và chặn khởi động nếu lỗi.
     {
         let db = db.clone();
         tokio::spawn(async move {

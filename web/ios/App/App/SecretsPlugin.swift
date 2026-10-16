@@ -41,9 +41,10 @@ enum Keychain {
     }
 }
 
-/// Values the WebView asks the app to keep in the Keychain: the user's own
-/// OpenAI key for transcription. Only names in `allowed` are accepted, so
-/// the page cannot read other Keychain items (the Firebase refresh token).
+/// Values the WebView may touch in the Keychain. Transcription now uses the
+/// server's OpenAI key; the page only removes the key older builds stored.
+/// Only names in `allowed` are accepted, so the page cannot read other
+/// Keychain items (the sign-in device token).
 @objc(SecretsPlugin)
 public class SecretsPlugin: CAPPlugin, CAPBridgedPlugin {
     public let identifier = "SecretsPlugin"

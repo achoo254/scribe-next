@@ -1,7 +1,7 @@
 ---
 phase: 3
 title: "Deploy phần A"
-status: pending
+status: completed
 priority: P1
 effort: "S"
 dependencies: [1, 2]

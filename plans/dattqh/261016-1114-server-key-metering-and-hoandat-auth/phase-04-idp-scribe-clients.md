@@ -1,7 +1,7 @@
 ---
 phase: 4
 title: "hoandat-auth: client scribe-web + scribe-mobile"
-status: pending
+status: completed
 priority: P1
 effort: "M"
 dependencies: [3]

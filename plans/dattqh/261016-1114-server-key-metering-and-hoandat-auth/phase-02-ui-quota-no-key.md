@@ -1,7 +1,7 @@
 ---
 phase: 2
 title: "Web/iPhone: bỏ nhập key, hiện quota"
-status: pending
+status: completed
 priority: P1
 effort: "S"
 dependencies: [1]

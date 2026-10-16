@@ -1,7 +1,7 @@
 ---
 phase: 7
 title: "Hạ tầng: tách 7a (DB + service), 7b (đăng nhập + domain), 7c (mở chép lời)"
-status: pending
+status: in-progress
 priority: P1
 effort: "M"
 dependencies: [6]

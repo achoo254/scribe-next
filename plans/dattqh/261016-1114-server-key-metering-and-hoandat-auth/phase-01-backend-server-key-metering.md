@@ -1,7 +1,7 @@
 ---
 phase: 1
 title: "Backend: key server, sổ phút, quota, trần, CLI admin"
-status: pending
+status: completed
 priority: P1
 effort: "M"
 dependencies: []

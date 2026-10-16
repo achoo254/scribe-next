@@ -46,5 +46,3 @@ dist-ssr
 # OS / misc
 Thumbs.db
 
-# Cấu hình Firebase iOS (tải từ Firebase Console), giữ ngoài git
-web/ios/App/App/GoogleService-Info.plist

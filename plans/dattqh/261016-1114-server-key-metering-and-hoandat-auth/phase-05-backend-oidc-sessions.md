@@ -1,7 +1,7 @@
 ---
 phase: 5
 title: "Backend: OIDC, phiên thu hồi được, chuyển user"
-status: pending
+status: completed
 priority: P1
 effort: "L"
 dependencies: [4]

@@ -197,7 +197,7 @@ nginx -t && systemctl reload nginx
 
 Cần `cargo-zigbuild` (build chéo musl trên macOS: `brew install zig`, `rustup target add x86_64-unknown-linux-musl`, `cargo install cargo-zigbuild --locked`), cộng SSH key `.65`.
 
-> **`scripts/build-musl.sh` (Docker) chưa cập nhật theo đăng nhập hoandat-auth:** script vẫn đòi `FIREBASE_PROJECT_ID` (không còn trong `.env.production`, nên dừng trước khi build) và không chuyển các biến OIDC / `OPENAI_KEY_PATH` / hạn mức / báo động vào container (binary ra sẽ thiếu `PUBLIC_URL`, `OIDC_WEB_CLIENT_SECRET_PATH` và dừng ngay khi khởi động). Dùng `cargo zigbuild` (cách đang deploy prod) tới khi sửa script.
+> Build backend bằng `cargo zigbuild` (script Docker `scripts/build-musl.sh` cũ đã bỏ ngày 2026-10-16: còn đòi biến Firebase và không chuyển biến OIDC/hạn mức vào container).
 
 ```bash
 set -a; . ./.env.production; set +a

@@ -1,7 +1,7 @@
 ---
 phase: 6
 title: "Web + iPhone: đăng nhập qua IdP, bỏ Firebase"
-status: pending
+status: completed
 priority: P1
 effort: "M"
 dependencies: [5]

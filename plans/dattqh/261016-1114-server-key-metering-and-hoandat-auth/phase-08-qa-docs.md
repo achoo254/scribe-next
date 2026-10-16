@@ -1,7 +1,7 @@
 ---
 phase: 8
 title: "QA iPhone thật + docs"
-status: pending
+status: in-progress
 priority: P2
 effort: "S"
 dependencies: [7]

@@ -21,7 +21,7 @@ use serde::{Deserialize, Serialize};
 
 const COLL: &str = "transcripts";
 
-/// Lượt chép mất khoá vì backend khởi động lại (key chỉ nằm trong RAM).
+/// Lượt bị backend khởi động lại cắt ngang lần thứ hai: dừng hẳn thay vì gửi lại audio lần nữa.
 pub const RESTARTED: &str = "Máy chủ đã khởi động lại trong lúc chép. Hãy bấm Chép lời lại.";
 
 #[derive(Debug, Serialize, Deserialize)]
