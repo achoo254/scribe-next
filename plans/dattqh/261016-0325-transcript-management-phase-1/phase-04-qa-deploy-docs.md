@@ -35,6 +35,19 @@ Tính năng chạy trên iPhone thật với dữ liệu prod; tài liệu khớ
 7. Docs: `docs/codebase-summary.md` (collection `transcript_docs`, route mới, tab Transcript), `docs/project-roadmap.md`, `docs/ios-app.md` (bảng QA), `docs/deploy-web-production.md` (bước "chờ hàng đợi rỗng" trước mỗi lần restart).
 8. Sau 14 ngày hoặc khi người dùng xác nhận ổn định: xoá thư mục sao lưu.
 
+## Tiến độ (2026-10-16)
+
+- [x] Review độc lập trước deploy (`../reports/code-reviewer-261016-1105-transcript-phase-1.md`): 1 High + 1 Medium + 3 Low đã sửa, commit `ae0039d`.
+- [x] Người dùng đồng ý deploy prod, commit và push (push `main` tới `002d0d5`).
+- [x] Hàng đợi chép lời prod = 0; sao lưu `/root/onescribe-backup-20261016-110644/` (dump `transcripts`, `onescribe-be.prev`, `dist/`).
+- [x] Deploy 11:07: binary sha256 khớp hai đầu (`b46606f9…`), `onescribe-be` active, `/api/health` OK, index unique `{userId, key}` của `transcript_docs` đã tạo, FE trả `assets/index-Fhu8MBkS.js` đúng bản build, `/api/transcript-docs` trả 401 khi chưa đăng nhập.
+- [x] Docs: `docs/codebase-summary.md`, `docs/deploy-web-production.md` (bước chờ hàng đợi rỗng, sao lưu/khôi phục `transcripts`, sự kiện audit).
+- [x] Skill vận hành prod `.claude/skills/scribe-ops-prod/` (SSH/mongosh chỉ đọc qua script).
+- [ ] QA trên iPhone thật (mục 5–6), gồm autoplay đoạn kế trong WKWebView và mạng chậm.
+- [ ] Journal 30 phút sau deploy không có `ERROR` mới.
+- [ ] `docs/ios-app.md` (bảng QA), `docs/project-roadmap.md` sau QA iPhone.
+- [ ] Xoá `/root/onescribe-backup-20261016-110644/` sau 2026-10-30 hoặc khi người dùng xác nhận ổn định (hỏi trước).
+
 ## Verification
 
 - CI GitHub xanh trên commit cuối.
