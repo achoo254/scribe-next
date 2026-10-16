@@ -13,11 +13,11 @@ dependencies: []
 
 Thay khung `web/` bằng đúng stack và design system của `localman-next`, chưa có tính năng. Kết thúc phase, một trang demo hiển thị đủ primitive ở cả sáng lẫn tối và `check:tokens` chạy sạch.
 
-## Nguồn chép từ `localman-next` (`~/inet-gitlab/localman-next`)
+## Nguồn chép từ `localman-next` (`~/workspace/localman-next`)
 
 | Nguồn | Đích | Ghi chú |
 |---|---|---|
-| `packages/design-tokens/tokens.css` | `web/src/styles/tokens.css` | Chép nguyên, đổi header comment sang OneScribe |
+| `packages/design-tokens/tokens.css` | `web/src/styles/tokens.css` | Chép nguyên, đổi header comment sang Scribe |
 | `apps/web/src/styles/global.css` | `web/src/styles/global.css` | Giữ `@theme inline reference`, bỏ phần riêng của Localman (grid canvas, tree) |
 | `apps/web/src/styles/fonts-*.css` | `web/src/styles/` | Inter + JetBrains Mono, subset latin/latin-ext/vietnamese, tự host qua `@fontsource` |
 | `scripts/check-tokens.ts` + `scripts/check-tokens/` | `web/scripts/` | Đổi đường dẫn quét sang `web/src` |
@@ -31,7 +31,7 @@ Thay khung `web/` bằng đúng stack và design system của `localman-next`, c
 - Scripts: `dev`, `build` (`tsc --noEmit && vite build`), `lint` (biome), `typecheck`, `test` (vitest), `check:tokens`.
 - Vite dev proxy `/api` → `127.0.0.1:8787` như `web/vite.config.ts`.
 - Sáng/tối theo `prefers-color-scheme`, có nút chuyển `data-theme` như `localman-next` (`theme-toggle`).
-- Wordmark `OneScribe`: JetBrains Mono đậm, chữ "One" màu `--c-primary` (cùng quy ước wordmark Localman).
+- Wordmark `Scribe`: JetBrains Mono đậm, chữ "One" màu `--c-primary` (cùng quy ước wordmark Localman).
 - `index.html`: `lang="vi"`, `theme-color` lấy theo token nền, không nháy màu khi tải.
 
 ## Related code files

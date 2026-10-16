@@ -41,7 +41,7 @@ actor UploadQueue {
 
     private let store: SegmentStore
     private let session: URLSession
-    private let log = Logger(subsystem: "vn.inet.onescribe", category: "upload")
+    private let log = Logger(subsystem: "com.hoandat.scribe", category: "upload")
     private var userKey: String?
     private var paused = false
     private var drainTask: Task<Void, Never>?
@@ -112,7 +112,7 @@ actor UploadQueue {
             guard path.status == .satisfied, let self else { return }
             Task { await self.networkBack() }
         }
-        monitor.start(queue: DispatchQueue(label: "vn.inet.onescribe.path"))
+        monitor.start(queue: DispatchQueue(label: "com.hoandat.scribe.path"))
     }
 
     private func networkBack() {
@@ -127,7 +127,7 @@ actor UploadQueue {
 
     private func runDrain(for user: String) async {
         // Keep uploading for a while if the user leaves the app.
-        let background = await BackgroundTask.begin(name: "onescribe-upload")
+        let background = await BackgroundTask.begin(name: "scribe-upload")
         repeat {
             rerun = false
             await drain(for: user)

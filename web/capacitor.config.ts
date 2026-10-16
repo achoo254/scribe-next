@@ -8,8 +8,8 @@ import type { CapacitorConfig } from "@capacitor/cli";
  * running natively.
  */
 const config: CapacitorConfig = {
-	appId: "vn.inet.onescribe",
-	appName: "OneScribe",
+	appId: "com.hoandat.scribe",
+	appName: "Scribe",
 	webDir: "dist",
 	plugins: {
 		CapacitorHttp: { enabled: true },

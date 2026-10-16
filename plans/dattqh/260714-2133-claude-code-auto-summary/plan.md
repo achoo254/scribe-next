@@ -1,6 +1,6 @@
 ---
-title: "OneScribe — Tự tóm tắt/biên bản qua Claude Code headless (hướng B)"
-description: "OneScribe làm driver gọi `claude -p` ngầm (dùng gói sub Claude Code trên máy) để tóm tắt transcript: rolling realtime lúc ghi (Mode A) + biên bản đầy đủ khi dừng; Mode C tóm tắt file có sẵn. Fallback: chỉ báo khi chưa cài/chưa login."
+title: "Scribe — Tự tóm tắt/biên bản qua Claude Code headless (hướng B)"
+description: "Scribe làm driver gọi `claude -p` ngầm (dùng gói sub Claude Code trên máy) để tóm tắt transcript: rolling realtime lúc ghi (Mode A) + biên bản đầy đủ khi dừng; Mode C tóm tắt file có sẵn. Fallback: chỉ báo khi chưa cài/chưa login."
 status: draft
 priority: P2
 branch: "main"
@@ -9,13 +9,13 @@ created: "2026-07-14T21:33:00+07:00"
 createdBy: "ck:ask → plan"
 ---
 
-# OneScribe — Tự tóm tắt/biên bản qua Claude Code headless
+# Scribe — Tự tóm tắt/biên bản qua Claude Code headless
 
-> **Định vị (chốt với user 2026-07-14):** tính năng **cá nhân/nội bộ desktop**, KHÔNG phải feature ship kèm sản phẩm. OneScribe = driver; **Claude Code trên máy** = engine ẩn; dùng **login/gói sub sẵn có** của user (không API key, không tốn token). Giống mô hình pencil.dev ở chỗ *piggyback lên Claude Code đã cài*, nhưng ngược hướng: OneScribe điều khiển Claude Code (hướng B), không phải Claude Code điều khiển OneScribe (hướng A/MCP).
+> **Định vị (chốt với user 2026-07-14):** tính năng **cá nhân/nội bộ desktop**, KHÔNG phải feature ship kèm sản phẩm. Scribe = driver; **Claude Code trên máy** = engine ẩn; dùng **login/gói sub sẵn có** của user (không API key, không tốn token). Giống mô hình pencil.dev ở chỗ *piggyback lên Claude Code đã cài*, nhưng ngược hướng: Scribe điều khiển Claude Code (hướng B), không phải Claude Code điều khiển Scribe (hướng A/MCP).
 
 ## Overview
 
-Thêm 1 backend tóm tắt **`claude -p` (Claude Code print/headless mode)** vào OneScribe desktop:
+Thêm 1 backend tóm tắt **`claude -p` (Claude Code print/headless mode)** vào Scribe desktop:
 - **Mode A (Ghi):** trong lúc ghi, cứ ~60s gom text đoạn mới → cập nhật **bản tóm tắt rolling** (incremental: tóm tắt cũ + đoạn mới). Bấm **Dừng** → sinh **biên bản đầy đủ** 1 lần. Hiển thị ở pane "Tóm tắt trực tiếp".
 - **Mode C (Transcript):** nút "Tạo biên bản" cho transcript file đã có (1 lần gọi).
 - **Fallback:** detect `claude` chưa cài / chưa `/login` → disable toggle + hiện hướng dẫn (KHÔNG tự fallback Ollama/API ở giai đoạn này).

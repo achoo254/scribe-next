@@ -16,7 +16,7 @@ public class NativeFilesPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "share", returnType: CAPPluginReturnPromise),
     ]
 
-    static let backendHost = "scribe.inetdev.io.vn"
+    static var backendHost: String { SessionAuth.backendHost }
 
     struct FilesError: LocalizedError {
         let message: String

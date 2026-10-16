@@ -1,6 +1,6 @@
 ---
 title: "Realtime Meeting (camera/mic) + Live Transcribe tiếng Việt"
-description: "Mở rộng OneScribe thành nền tảng họp video (LiveKit SFU) có live-transcribe tiếng Việt tích hợp; host transcribe đa-track, server pure-relay, web client Vue 3"
+description: "Mở rộng Scribe thành nền tảng họp video (LiveKit SFU) có live-transcribe tiếng Việt tích hợp; host transcribe đa-track, server pure-relay, web client Vue 3"
 status: cancelled
 priority: P2
 branch: "main"
@@ -16,12 +16,12 @@ source: skill
 # Realtime Meeting (camera/mic) + Live Transcribe tiếng Việt
 
 > ## 🛑 CANCELLED — 2026-07-07 (tính năng bị bỏ hoàn toàn)
-> **Quyết định user:** bỏ hẳn tính năng họp online khỏi OneScribe. Toàn bộ code meeting (server/meeting-server, packages/meeting-shared, apps/web, infra livekit/coturn/caddy, sidecar stream_*, UI họp desktop + Rust meeting_audio) **đã gỡ khỏi repo**; LiveKit trên server .65 **đã gỡ sạch** (service/binary/config removed). OneScribe giữ nguyên **desktop offline transcribe** (ghi âm/màn hình + batch PhoWhisper).
-> **Bối cảnh:** pivot web-first [260707-1325](../260707-1325-onescribe-web-pivot/plan.md) đã bị hủy sau Phase 1 gate NO-GO (CPU .65 không kham realtime streaming) → user chọn bỏ hẳn meeting thay vì đổi hạ tầng. Plan này KHÔNG còn cook tiếp; giữ làm hồ sơ. Desktop maintenance tiếp tục theo `260613-1130-split-record-implementation`.
+> **Quyết định user:** bỏ hẳn tính năng họp online khỏi Scribe. Toàn bộ code meeting (server/meeting-server, packages/meeting-shared, apps/web, infra livekit/coturn/caddy, sidecar stream_*, UI họp desktop + Rust meeting_audio) **đã gỡ khỏi repo**; LiveKit trên server .65 **đã gỡ sạch** (service/binary/config removed). Scribe giữ nguyên **desktop offline transcribe** (ghi âm/màn hình + batch PhoWhisper).
+> **Bối cảnh:** pivot web-first [260707-1325](../260707-1325-scribe-web-pivot/plan.md) đã bị hủy sau Phase 1 gate NO-GO (CPU .65 không kham realtime streaming) → user chọn bỏ hẳn meeting thay vì đổi hạ tầng. Plan này KHÔNG còn cook tiếp; giữ làm hồ sơ. Desktop maintenance tiếp tục theo `260613-1130-split-record-implementation`.
 
 ## Overview
 
-Mở rộng OneScribe (Tauri + Vue 3 + ViUI, transcribe offline PhoWhisper) thành **nền tảng họp video realtime có transcribe tiếng Việt tích hợp**. Conferencing = commodity → dùng **LiveKit SFU mã nguồn mở**, KHÔNG tự viết. Transcribe = hero → **host (desktop) transcribe mọi track**, push caption lên server relay; web client (Vue) chỉ xem video + đọc caption.
+Mở rộng Scribe (Tauri + Vue 3 + design system, transcribe offline PhoWhisper) thành **nền tảng họp video realtime có transcribe tiếng Việt tích hợp**. Conferencing = commodity → dùng **LiveKit SFU mã nguồn mở**, KHÔNG tự viết. Transcribe = hero → **host (desktop) transcribe mọi track**, push caption lên server relay; web client (Vue) chỉ xem video + đọc caption.
 
 **Định vị:** không cạnh tranh UX họp với Meet/Zoom; điểm bán hàng là **live-transcribe tiếng Việt per-speaker + privacy (server không lưu media)**.
 
@@ -37,7 +37,7 @@ Mở rộng OneScribe (Tauri + Vue 3 + ViUI, transcribe offline PhoWhisper) thà
 | 6 | Host rớt → caption **dừng** (chấp nhận, KHÔNG chuyển quyền host). |
 | 7 | Web participant = consumer thuần (xem video + đọc caption). |
 | 8 | Recording MP4/audio = tùy chọn, **phía client/host**, KHÔNG ở server. |
-| 9 | FE thống nhất **Vue 3 + Vuetify + ViUI** cho cả desktop lẫn web client. |
+| 9 | FE thống nhất **Vue 3 + Vuetify + design system** cho cả desktop lẫn web client. |
 | 10 | Streaming ASR: **vad-cut (utterance-based) + max-utterance cap ~8s** — _cập nhật Session 2: LocalAgreement đo thực tế NO-GO trên CPU yếu (re-transcribe → RTF 5x; xem spike §9), thay bằng vad-cut_. Cap số stream ASR đồng thời **≤2** (Whisper có overhead encoder ~cố định/lần gọi → không cắt vụn). `WhisperModel`(PhoWhisper, KHÔNG BatchedInferencePipeline) + VAD webrtcvad/built-in (KHÔNG silero). Live = small ("tham khảo"); biên bản chuẩn = medium/large batch (tái dùng Mode C). |
 
 ## Phases
@@ -48,7 +48,7 @@ Mở rộng OneScribe (Tauri + Vue 3 + ViUI, transcribe offline PhoWhisper) thà
 | 1 | [Spike Streaming ASR](./phase-01-spike-streaming-asr.md) — **FEASIBILITY GATE** | In Progress (G1 GO + G3+G4 GO; G2 chưa chốt, G5 kém — proxy TTS; G6 CODE DONE 2026-06-29, chờ QA runtime) |
 | 2 | [LiveKit Media Core](./phase-02-livekit-media-core.md) | In Progress (slice nền: FE+CSP H1+quyền media H2+infra dev done; compile✓ + code-review✓ C1 fixed; chờ QA E2E + xác nhận no-white-screen) |
 | 3 | [Host Transcribe Relay](./phase-03-host-transcribe-relay.md) | Code done + verified trên mac (sidecar 13 test, Rust check+3 test, FE build); runtime WebView2/E2E = checklist Windows |
-| 4 | [Web Client Vue](./phase-04-web-client-vue.md) | Code done (sibling apps/web + packages/meeting-shared; vue-tsc+vite build✓). Monorepo đầy đủ + ViUI npm defer |
+| 4 | [Web Client Vue](./phase-04-web-client-vue.md) | Code done (sibling apps/web + packages/meeting-shared; vue-tsc+vite build✓). Monorepo đầy đủ + design system npm defer |
 | 5 | [Server Infra Retention](./phase-05-server-infra-retention.md) | Code done (meeting-server 8 test✓: C6/C7/C8+host-lock+TURN+rate-limit; infra configs). Caption store in-memory (Redis defer); remote NAT/egress/HTTPS = verify sau |
 | 6 | [AI Biên bản / Tóm tắt sau họp (Claude)](./phase-06-ai-meeting-minutes-claude.md) — ⏸️ **POST-COMPLETION, deferred** | Deferred |
 
@@ -97,7 +97,7 @@ Mở rộng OneScribe (Tauri + Vue 3 + ViUI, transcribe offline PhoWhisper) thà
 #### Verification Results
 - Claims checked: 8 (file references existing) — Tier: Full (5 phase)
 - Verified: 8 | Failed: 0 | Unverified: 0
-- Bằng chứng: `src/App.vue`, `src/plugins/vuetify.ts`, `src/assets/styles/viui-tokens.css`, `sidecar/transcriber/main.py`, `src-tauri/src/transcribe.rs`, `src/design-system/vi-ui/` (17 Vi*, không có grid/layout → khớp risk Phase 2), `src/composables/use-*.ts` (convention khớp).
+- Bằng chứng: `src/App.vue`, `src/plugins/vuetify.ts`, `src/assets/styles/design-tokens.css`, `sidecar/transcriber/main.py`, `src-tauri/src/transcribe.rs`, `src/design-system/ui/` (17 Ui*, không có grid/layout → khớp risk Phase 2), `src/composables/use-*.ts` (convention khớp).
 
 #### Questions & Answers
 1. **[Scope]** Số người tối đa/phòng cho MVP? → **≤ 8 người**. Rationale: giữ tải transcribe host + egress trong tầm; mở rộng sau Phase 1.
@@ -162,9 +162,9 @@ Mở rộng OneScribe (Tauri + Vue 3 + ViUI, transcribe offline PhoWhisper) thà
 | H2 | Camera/mic chưa khai báo capability + macOS WKWebView Info.plist | High | Accept | Phase 2 |
 | H3 | Sidecar crash giữa họp không recovery/không event | High | Accept | Phase 3 |
 | H4 | Reader thread trộn caption + đụng listener batch | High | Accept | Phase 3 |
-| H5 | ViRow/ViCol thiếu ở vi-ui local vs npm → shared build gãy | High | Accept | Phase 2, 4 |
+| H5 | UiRow/UiCol thiếu ở ui local vs npm → shared build gãy | High | Accept | Phase 2, 4 |
 | H6 | Monorepo refactor phá find_script/frontendDist/build_pyinstaller.ps1/capabilities | High | Accept | Phase 4 |
-| M1-6 | TURN ephemeral cred; mic revocation onmute; path traversal canonicalize; .npmrc+pin @hobui/viui; resolve() venv path; stream_pcm schema | Medium | Accept | Phase 1/3/4/5 |
+| M1-6 | TURN ephemeral cred; mic revocation onmute; path traversal canonicalize; .npmrc+pin @hobui/ui; resolve() venv path; stream_pcm schema | Medium | Accept | Phase 1/3/4/5 |
 
 ### Whole-Plan Consistency Sweep
 - Files reread: plan.md + phase-00..05.

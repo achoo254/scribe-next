@@ -54,7 +54,7 @@ Route giữ nguyên: `/` (cần đăng nhập), `/login`, mọi đường khác 
 
 ## Môi trường kiểm chứng lab (dựng rồi gỡ 2026-10-15)
 
-Đã dựng thử `onescribe-react.tunnel.hoandat.com` trên .65 (pm2 + tunelo client + key riêng) rồi gỡ cùng ngày khi chủ sở hữu chốt chỉ còn dev local và prod: pm2 đã xoá, `/opt/onescribe-react-lab` đã xoá, key `onescribe-react-lab` đã `revoked`. Bài học còn giá trị: `create-access-token.mjs` của tunelo tạo key thiếu `tenantId` nên server từ chối (`TUNELO_AUTH_001`) cho tới khi gán `tenantId: "primary"`.
+Đã dựng thử `scribe-react.tunnel.hoandat.com` trên .65 (pm2 + tunelo client + key riêng) rồi gỡ cùng ngày khi chủ sở hữu chốt chỉ còn dev local và prod: pm2 đã xoá, `/opt/scribe-react-lab` đã xoá, key `scribe-react-lab` đã `revoked`. Bài học còn giá trị: `create-access-token.mjs` của tunelo tạo key thiếu `tenantId` nên server từ chối (`TUNELO_AUTH_001`) cho tới khi gán `tenantId: "primary"`.
 
 ## Kết quả kiểm parity ở dev local (2026-10-15, Chrome desktop, BE local + Mongo dev 176)
 

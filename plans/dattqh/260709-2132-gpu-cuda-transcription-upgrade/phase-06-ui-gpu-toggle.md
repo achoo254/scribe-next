@@ -21,11 +21,11 @@
 - Composable mới `src/composables/use-gpu.ts`: gộp 2 trách nhiệm (đặt cùng file vì cùng 1 khái niệm "GPU" trên UI, tránh tạo quá nhiều file nhỏ — DRY/KISS):
   - `useGpuSetting()`: đọc/ghi `AppSettings.use_gpu` qua `settings-store` (mirror `use-glossary.ts`).
   - `useCudaRuntime()`: `cudaSupported` (ref, invoke `cuda_supported` 1 lần lúc mounted), `ready` (invoke `cuda_runtime_status`), `downloading`/`downloadPct` (nghe `transcribe_msg` type `cuda_download`/`cuda_ready`), `ensure()` (invoke `ensure_cuda_runtime`).
-- `TranscriptView.vue`: thêm khối UI sau phần chọn model (trước hoặc sau glossary — đặt ngay dưới model picker, cùng nhóm "cấu hình nhận dạng"): `ViSwitch` bound `gpu.useGpu`, chỉ render khối này nếu `cuda.cudaSupported`; trong khối, nếu `!cuda.ready` → `ViAlert warning` + `ViButton "Tải CUDA runtime (~1.3GB)"` + `ViProgressLinear` (pattern y hệt khối model dòng 107-125); nếu `cuda.ready` → `ViAlert success` ngắn "CUDA runtime sẵn sàng".
+- `TranscriptView.vue`: thêm khối UI sau phần chọn model (trước hoặc sau glossary — đặt ngay dưới model picker, cùng nhóm "cấu hình nhận dạng"): `UiSwitch` bound `gpu.useGpu`, chỉ render khối này nếu `cuda.cudaSupported`; trong khối, nếu `!cuda.ready` → `UiAlert warning` + `UiButton "Tải CUDA runtime (~1.3GB)"` + `UiProgressLinear` (pattern y hệt khối model dòng 107-125); nếu `cuda.ready` → `UiAlert success` ngắn "CUDA runtime sẵn sàng".
 
 ### Non-functional
 - KHÔNG sửa `use-transcribe.ts`/`use-record-transcribe.ts`/`AsrModelControls.vue`/`RecordView.vue` — GPU setting đọc thẳng từ Rust ở tầng `Transcriber::transcribe()`, frontend không cần forward gì thêm cho Mode A.
-- Theo đúng token/wrapper `Vi*` (README: "UI bắt buộc theo iNET ViUI... không hardcode màu/spacing").
+- Theo đúng token/wrapper `Ui*` (README: "UI bắt buộc theo design system... không hardcode màu/spacing").
 
 ## Architecture
 ```
@@ -41,9 +41,9 @@ use-gpu.ts
 
 TranscriptView.vue
   onMounted: gpu.load(); cudaRt.init()
-  <ViSwitch v-if="cudaRt.cudaSupported" v-model="gpu.useGpu" label="Dùng GPU (CUDA)" @update:model-value="gpu.save()" />
+  <UiSwitch v-if="cudaRt.cudaSupported" v-model="gpu.useGpu" label="Dùng GPU (CUDA)" @update:model-value="gpu.save()" />
   <template v-if="cudaRt.cudaSupported && gpu.useGpu">
-     ready ? ViAlert success : (ViAlert warning + nút tải + progress)
+     ready ? UiAlert success : (UiAlert warning + nút tải + progress)
   </template>
 ```
 
@@ -115,30 +115,30 @@ TranscriptView.vue
    }
    ```
 2. `TranscriptView.vue` script: thêm import `useGpuSetting, useCudaRuntime` từ `../composables/use-gpu`; khai báo `const gpu = useGpuSetting(); const cudaRt = useCudaRuntime();`; trong `onMounted` (dòng 19-23) thêm `gpu.load(); cudaRt.init();`.
-3. `TranscriptView.vue` template: chèn ngay sau khối `ViSelect` model picker (sau dòng 70, trước khối glossary dòng 72):
+3. `TranscriptView.vue` template: chèn ngay sau khối `UiSelect` model picker (sau dòng 70, trước khối glossary dòng 72):
    ```html
    <template v-if="cudaRt.cudaSupported.value">
-     <ViSwitch
+     <UiSwitch
        v-model="gpu.useGpu.value"
        label="Dùng GPU (CUDA) — nhanh hơn nhiều, cần tải runtime lần đầu"
        hide-details
        @update:model-value="gpu.save()"
      />
      <template v-if="gpu.useGpu.value">
-       <ViAlert v-if="cudaRt.ready.value" type="success" variant="tonal" density="compact">
+       <UiAlert v-if="cudaRt.ready.value" type="success" variant="tonal" density="compact">
          CUDA runtime sẵn sàng.
-       </ViAlert>
+       </UiAlert>
        <template v-else>
-         <ViAlert type="warning" variant="tonal" density="compact">
+         <UiAlert type="warning" variant="tonal" density="compact">
            Chưa tải CUDA runtime (~1.3GB) — cần tải 1 lần, sau đó dùng offline. Chưa tải thì transcribe vẫn chạy (CPU, chậm hơn).
-         </ViAlert>
+         </UiAlert>
          <div class="os-row">
-           <ViButton color="secondary" :disabled="cudaRt.downloading.value" @click="cudaRt.ensure()">
-             <ViIcon icon="IconDownload" start />Tải CUDA runtime
-           </ViButton>
+           <UiButton color="secondary" :disabled="cudaRt.downloading.value" @click="cudaRt.ensure()">
+             <UiIcon icon="IconDownload" start />Tải CUDA runtime
+           </UiButton>
            <span v-if="cudaRt.downloading.value" class="os-muted">{{ cudaRt.downloadPct.value }}%</span>
          </div>
-         <ViProgressLinear
+         <UiProgressLinear
            v-if="cudaRt.downloading.value"
            :model-value="cudaRt.downloadPct.value"
            :indeterminate="cudaRt.downloadPct.value === 0"
@@ -147,11 +147,11 @@ TranscriptView.vue
            rounded
          />
        </template>
-       <ViAlert v-if="cudaRt.error.value" type="error" density="compact" closable>{{ cudaRt.error.value }}</ViAlert>
+       <UiAlert v-if="cudaRt.error.value" type="error" density="compact" closable>{{ cudaRt.error.value }}</UiAlert>
      </template>
    </template>
    ```
-4. Import `ViSwitch` vào danh sách import `vi-ui` đầu file (dòng 7-10) nếu chưa có.
+4. Import `UiSwitch` vào danh sách import `ui` đầu file (dòng 7-10) nếu chưa có.
 5. `npm run build` (vue-tsc) → xanh.
 
 ## Todo List

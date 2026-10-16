@@ -1,4 +1,4 @@
-# Research Report: Nâng cấp model transcript tận dụng GPU RTX 5070 Ti (OneScribe)
+# Research Report: Nâng cấp model transcript tận dụng GPU RTX 5070 Ti (Scribe)
 
 > Thời điểm research: 2026-07-09 21:24 (Asia/Saigon) · Gemini: tắt → dùng WebSearch
 
@@ -109,6 +109,6 @@ Hướng thay thế:
 
 ## Unresolved Questions
 
-1. ~~Bundle vs nhẹ hơn~~ → **ĐÃ CHỐT: tải on-demand ~1.3GB CUDA libs (chỉ máy NVIDIA), installer giữ gọn.** Còn lại: xác nhận nguồn tải = PyPI trực tiếp hay mirror iNET.
+1. ~~Bundle vs nhẹ hơn~~ → **ĐÃ CHỐT: tải on-demand ~1.3GB CUDA libs (chỉ máy NVIDIA), installer giữ gọn.** Còn lại: xác nhận nguồn tải = PyPI trực tiếp hay mirror nội bộ.
 2. Có cần code-switch Việt–Anh nhiều không? Nếu có → thêm large-v3-turbo lên ưu tiên cao hơn.
 3. Root cause 5070 Ti chậm hơn 4070 Ti Super (issue #1287) chưa chốt — cần benchmark thực tế trên máy sau khi bật GPU để xác nhận tốc độ thực.

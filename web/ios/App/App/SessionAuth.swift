@@ -7,7 +7,18 @@ import Foundation
 /// token (securetoken API) → `POST /api/auth/session` → cookie in
 /// HTTPCookieStorage, which CapacitorHttp and URLSession.shared both use.
 enum SessionAuth {
-    static let backendOrigin = "https://scribe.inetdev.io.vn"
+    /// Backend origin, set at build time (`SCRIBE_BACKEND_ORIGIN` → Info.plist
+    /// `ScribeBackendOrigin`; `npm run ios:device` fills it from web/.env).
+    static let backendOrigin: String = {
+        guard let origin = Bundle.main.object(forInfoDictionaryKey: "ScribeBackendOrigin") as? String,
+              let host = URL(string: origin)?.host, !host.isEmpty else {
+            fatalError("ScribeBackendOrigin is missing: build with SCRIBE_BACKEND_ORIGIN set (npm run ios:device)")
+        }
+        return origin
+    }()
+
+    /// Host part of `backendOrigin`, for matching request URLs.
+    static var backendHost: String { URL(string: backendOrigin)?.host ?? "" }
 
     /// Google/Firebase client config, from GoogleService-Info.plist.
     struct Config {
@@ -37,7 +48,7 @@ enum SessionAuth {
 
     // MARK: Keychain
 
-    private static let service = "vn.inet.onescribe.firebase"
+    private static let service = "com.hoandat.scribe.firebase"
     private static let account = "refreshToken"
 
     static func saveRefreshToken(_ token: String) {

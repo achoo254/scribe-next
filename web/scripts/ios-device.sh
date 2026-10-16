@@ -14,8 +14,8 @@ cd "$(dirname "$0")/.."
 
 export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
 TEAM="${IOS_TEAM:-AM5C55N339}"
-BUNDLE="vn.inet.onescribe"
-DERIVED="${IOS_DERIVED_DATA:-${TMPDIR:-/tmp}/onescribe-ios-build}"
+BUNDLE="com.hoandat.scribe"
+DERIVED="${IOS_DERIVED_DATA:-${TMPDIR:-/tmp}/scribe-ios-build}"
 
 DEVICE="${IOS_DEVICE:-}"
 if [ -z "$DEVICE" ]; then
@@ -31,9 +31,13 @@ echo "→ iPhone $DEVICE"
 npm run build
 npx cap sync ios
 
+# Backend origin của app (nhúng vào Info.plist), lấy cùng nguồn với bản web: web/.env.
+ORIGIN=$(grep -E '^VITE_NATIVE_API_ORIGIN=' .env | tail -1 | cut -d= -f2-)
+[ -n "$ORIGIN" ] || { echo "Thiếu VITE_NATIVE_API_ORIGIN trong web/.env (xem web/.env.example)." >&2; exit 1; }
+
 xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Release \
 	-destination "id=$DEVICE" -derivedDataPath "$DERIVED" \
-	-allowProvisioningUpdates DEVELOPMENT_TEAM="$TEAM" CODE_SIGN_STYLE=Automatic \
+	-allowProvisioningUpdates DEVELOPMENT_TEAM="$TEAM" CODE_SIGN_STYLE=Automatic SCRIBE_BACKEND_ORIGIN="$ORIGIN" \
 	build | grep -E "error:|warning:|BUILD (SUCCEEDED|FAILED)" || true
 
 APP="$DERIVED/Build/Products/Release-iphoneos/App.app"
@@ -43,4 +47,4 @@ xcrun devicectl device install app --device "$DEVICE" "$APP" >/dev/null
 echo "→ Đã cài. Mở app (iPhone phải đang mở khoá)…"
 xcrun devicectl device process launch --device "$DEVICE" --terminate-existing "$BUNDLE" >/dev/null \
 	&& echo "→ Xong." \
-	|| echo "Không mở được app: mở khoá iPhone rồi bấm vào biểu tượng OneScribe."
+	|| echo "Không mở được app: mở khoá iPhone rồi bấm vào biểu tượng Scribe."

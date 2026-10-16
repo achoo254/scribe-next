@@ -1,38 +1,38 @@
 ---
-title: "Viết lại web OneScribe bằng React theo design system của localman-next"
-description: "Bỏ Vue + Vuetify + @hobui/viui; dựng lại web bằng React 19 + Vite 7 + Tailwind 4 với tokens.css giống hệt localman-next, giữ nguyên backend và tính năng."
+title: "Viết lại web Scribe bằng React theo design system của localman-next"
+description: "Bỏ Vue + Vuetify + @hobui/ui; dựng lại web bằng React 19 + Vite 7 + Tailwind 4 với tokens.css giống hệt localman-next, giữ nguyên backend và tính năng."
 status: in-progress
 priority: P1
 effort: L
 branch: main
 tags: [frontend, react, tailwind, design-system, web]
 blockedBy: []
-blocks: [project:260728-1609-onescribe-ios-app-ghi-nen-khoa-man-hinh]
+blocks: [project:260728-1609-scribe-ios-app-ghi-nen-khoa-man-hinh]
 created: 2026-10-15
 ---
 
-# Viết lại web OneScribe bằng React
+# Viết lại web Scribe bằng React
 
 ## Bối cảnh và quyết định của chủ sở hữu (2026-10-15)
 
-- Không dùng ViUI cho app này. Dùng design system **giống hệt `localman-next`**: Radix Colors v3 (violet/slate/plum), `tokens.css` là nơi duy nhất chứa mã màu, sáng/tối theo hệ điều hành.
+- Không dùng design system cho app này. Dùng design system **giống hệt `localman-next`**: Radix Colors v3 (violet/slate/plum), `tokens.css` là nơi duy nhất chứa mã màu, sáng/tối theo hệ điều hành.
 - Viết lại bằng **React** như `localman-next`, không giữ Vue.
-- Làm **trước** plan iOS (`260728-1609-onescribe-ios-app-ghi-nen-khoa-man-hinh`): Phase 1 iOS sửa trực tiếp các file Vue, làm iOS trước thì phải làm lại.
+- Làm **trước** plan iOS (`260728-1609-scribe-ios-app-ghi-nen-khoa-man-hinh`): Phase 1 iOS sửa trực tiếp các file Vue, làm iOS trước thì phải làm lại.
 
 ## Outcome
 
-`scribe.inetdev.io.vn` chạy bản React có đủ tính năng của bản Vue hiện tại (đăng nhập Google, Ghi âm, Cắt file, Lịch sử ghi + phát lại, quota, xoá), giao diện theo token của `localman-next`, sẵn sàng bọc bằng Capacitor.
+`$DEPLOY_DOMAIN` chạy bản React có đủ tính năng của bản Vue hiện tại (đăng nhập Google, Ghi âm, Cắt file, Lịch sử ghi + phát lại, quota, xoá), giao diện theo token của `localman-next`, sẵn sàng bọc bằng Capacitor.
 
 ## Ràng buộc
 
-- Backend `server/onescribe-be` và nginx **không đổi**. Mọi đường dẫn `/api/*` và hợp đồng request/response giữ nguyên (danh sách ở Phase 2).
+- Backend `server/scribe-be` và nginx **không đổi**. Mọi đường dẫn `/api/*` và hợp đồng request/response giữ nguyên (danh sách ở Phase 2).
 - Chỉ `tokens.css` được chứa mã màu; `check:tokens` chặn phần còn lại, như `localman-next`.
 - Không phụ thuộc gói riêng tư (`@hobui/*`): `npm ci` phải chạy được trên máy sạch không cần đăng nhập npm.
 - Viết đè thẳng trong `web/` (chủ sở hữu chọn). Giữa chừng `web/` có thể không build được; prod (.65) vẫn chạy dist Vue cũ vì deploy làm tay, chỉ deploy ở Phase 4.
 
 ## Non-goals
 
-- App desktop Tauri (`src/`) vẫn Vue + ViUI, không đụng.
+- App desktop Tauri (`src/`) vẫn Vue + design system, không đụng.
 - Đa ngôn ngữ: chỉ tiếng Việt, không thêm thư viện i18n.
 - Tính năng mới (Transcript web, realtime): thuộc plan iOS và plan khác.
 - Chuyển CI sang GitHub Actions: GitLab đã archive, deploy prod vẫn làm tay theo `docs/deploy-web-production.md`.
@@ -69,7 +69,7 @@ Thứ tự: **1 → 2 → 3 → 4**.
 
 ## Môi trường (chủ sở hữu chốt 2026-10-15)
 
-Chỉ còn **dev local** và **prod** (`.65`, `scribe.inetdev.io.vn`); khái niệm staging đã bỏ. Hệ quả cho plan: bảng parity kiểm ở dev local; Phase 4 là deploy prod, cần chủ sở hữu đồng ý thời điểm; không dựng môi trường xem trước trên `.65` (môi trường tunnel `onescribe-react.tunnel.hoandat.com` dựng thử cùng ngày đã gỡ, key tunelo đã thu hồi).
+Chỉ còn **dev local** và **prod** (`.65`, `$DEPLOY_DOMAIN`); khái niệm staging đã bỏ. Hệ quả cho plan: bảng parity kiểm ở dev local; Phase 4 là deploy prod, cần chủ sở hữu đồng ý thời điểm; không dựng môi trường xem trước trên `.65` (môi trường tunnel `scribe-react.tunnel.hoandat.com` dựng thử cùng ngày đã gỡ, key tunelo đã thu hồi).
 
 ## Validation Log
 

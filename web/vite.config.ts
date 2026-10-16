@@ -2,11 +2,15 @@ import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig, loadEnv } from "vite";
 
-/** Firebase web config (public, not a secret) read by src/lib/firebase.ts. */
+/**
+ * Build-time config: Firebase web config (public, not a secret) read by
+ * src/lib/firebase.ts, and the backend origin the native shell calls.
+ */
 const REQUIRED_ENV = [
 	"VITE_FIREBASE_API_KEY",
 	"VITE_FIREBASE_AUTH_DOMAIN",
 	"VITE_FIREBASE_PROJECT_ID",
+	"VITE_NATIVE_API_ORIGIN",
 ] as const;
 
 /** Vendor chunks: libraries stay cached across deploys. */
@@ -36,8 +40,8 @@ function vendorChunk(id: string): string | undefined {
 }
 
 export default defineConfig(({ command, mode }) => {
-	// Without the Firebase config the built app shows a blank page
-	// (auth/invalid-api-key); fail the build instead. Dev and prod use the
+	// Without this config the built app shows a blank page (auth/invalid-api-key)
+	// or the iPhone app has no backend; fail the build instead. Dev and prod use the
 	// same Firebase project, read from web/.env (not in git, see
 	// docs/deploy-web-production.md).
 	if (command === "build") {

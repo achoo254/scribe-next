@@ -24,32 +24,12 @@ dist-ssr
 *.sln
 *.sw?
 
-# Rust / Cargo (Tauri backend)
-src-tauri/target/
-
-# Rust / Cargo (web workspace: server BE + core-split)
+# Rust / Cargo (server BE + core-split)
 /target/
 
 # Session signing key BE (tự sinh runtime — KHÔNG commit)
 .session-key
 **/.session-key
-
-# Tauri generated schemas
-src-tauri/gen/schemas/
-
-# Sidecar binaries (ffmpeg/ffprobe LGPL từ BtbN — tải riêng, xem README)
-src-tauri/binaries/*
-!src-tauri/binaries/.gitkeep
-
-# Python sidecar (transcriber) — venv & build artifacts tái tạo được
-sidecar/transcriber/.venv/
-sidecar/transcriber/build/
-sidecar/transcriber/dist/
-sidecar/transcriber/*.spec
-# transcriber.spec là build config TÙY BIẾN (mlx macOS + exclude torch), build_pyinstaller dùng nó → track.
-!sidecar/transcriber/transcriber.spec
-__pycache__/
-*.pyc
 
 # Secrets — dotenv (KHÔNG commit; chỉ .env.example là template an toàn). .env.production (biến
 # build BE cho prod .65) và web/.env cũng không commit: mỗi máy tự giữ bản của mình.
@@ -60,8 +40,11 @@ __pycache__/
 # Local agent memory / tooling
 .claude/agent-memory/
 
-# MCP config máy-local (inet-viui design system) — không commit (giống localman/vaultic)
+# MCP config máy-local — không commit (giống localman/vaultic)
 .mcp.json
 
 # OS / misc
 Thumbs.db
+
+# Cấu hình Firebase iOS (tải từ Firebase Console), giữ ngoài git
+web/ios/App/App/GoogleService-Info.plist

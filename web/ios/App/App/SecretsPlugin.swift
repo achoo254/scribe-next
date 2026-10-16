@@ -54,7 +54,7 @@ public class SecretsPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "remove", returnType: CAPPluginReturnPromise),
     ]
 
-    private static let service = "vn.inet.onescribe.secrets"
+    private static let service = "com.hoandat.scribe.secrets"
     private static let allowed: Set<String> = ["openaiApiKey"]
 
     private func name(_ call: CAPPluginCall) -> String? {

@@ -16,7 +16,7 @@ UI cho convert/extract/trim: gọi job qua composable, poll tiến độ, tải 
 <!-- Updated: Validation Session 1 — format audio {MP3,M4A,WAV} (bỏ MP4); trim → MP3. -->
 
 - Functional: từ 1 bản ghi (lịch sử) hoặc file đã upload → chọn "Xuất **MP3/M4A/WAV**", "Tách audio" (input có video), "Trim (in/out)" → job chạy → tải file kết quả.
-- Non-functional: bám design tokens/ViUI (dark theme); không phá `useSplitter` split hiện có; tái dùng poll pattern. `type` gửi lên = convert/extract/trim (khớp BE Phase 2).
+- Non-functional: bám design tokens (dark theme); không phá `useSplitter` split hiện có; tái dùng poll pattern. `type` gửi lên = convert/extract/trim (khớp BE Phase 2).
 
 ## Architecture
 - Tổng quát hoá job composable (DRY): `use-splitter.ts` hiện chỉ split. Chọn 1 trong 2:

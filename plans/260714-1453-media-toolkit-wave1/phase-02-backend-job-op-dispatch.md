@@ -34,11 +34,11 @@ Mở rộng job queue để chạy convert/extract/trim ngoài split, KHÔNG th�
 - Output đơn file: `run_job` lưu `segments` (1 phần tử) → FE đọc `result.segments[0].fileId` để tải. KHÔNG zip cho op mới.
 
 ## Related Code Files
-- Modify: `server/onescribe-be/src/models/job.rs` (op/params, create_media_job)
-- Modify: `server/onescribe-be/src/jobs.rs` (create handler: parse+validate op)
-- Modify: `server/onescribe-be/src/worker/mod.rs` (dispatch theo op)
-- Create: `server/onescribe-be/src/worker/convert_worker.rs`, `worker/trim_worker.rs`
-- Modify: `server/onescribe-be/src/worker/split_worker.rs` (không đổi logic; chỉ nếu refactor chung)
+- Modify: `server/scribe-be/src/models/job.rs` (op/params, create_media_job)
+- Modify: `server/scribe-be/src/jobs.rs` (create handler: parse+validate op)
+- Modify: `server/scribe-be/src/worker/mod.rs` (dispatch theo op)
+- Create: `server/scribe-be/src/worker/convert_worker.rs`, `worker/trim_worker.rs`
+- Modify: `server/scribe-be/src/worker/split_worker.rs` (không đổi logic; chỉ nếu refactor chung)
 
 ## Implementation Steps (TDD — test trước phần thuần logic)
 1. **Test trước** (unit, không cần ffmpeg/DB) — đặt validate ở hàm pure (vd `parse_job_request(body) -> Result<..., AppError>`):
@@ -46,7 +46,7 @@ Mở rộng job queue để chạy convert/extract/trim ngoài split, KHÔNG th�
    - Serde: Job split cũ (có criterion/value) deserialize OK sau khi đổi sang Option; job type mới thiếu criterion/value deserialize OK.
 2. Chạy → đỏ.
 3. Impl model (criterion/value→Option + format/start_s/end_s) + validate pure + dispatch arm trong run_job + 2 worker mới (convert_worker dùng cho convert & extract, trim_worker).
-4. Chạy `cargo test -p onescribe-be` (unit) xanh; `cargo check` + `cargo clippy` sạch.
+4. Chạy `cargo test -p scribe-be` (unit) xanh; `cargo check` + `cargo clippy` sạch.
 5. Integration thủ công (cần ffmpeg+Mongo, không automate): tạo job convert/extract/trim thật → done → tải output đúng. Ghi lại kết quả.
 
 ## Success Criteria

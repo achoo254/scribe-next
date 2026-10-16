@@ -54,10 +54,10 @@ describe("files API", () => {
 describe("auth API", () => {
 	it("reads the user, or null without a session", async () => {
 		const signedIn = fakeFetch({
-			"GET /api/me": jsonResponse({ email: "a@inet.vn" }),
+			"GET /api/me": jsonResponse({ email: "a@example.com" }),
 		});
 		expect(await fetchCurrentUser(signedIn.fetcher)).toEqual({
-			email: "a@inet.vn",
+			email: "a@example.com",
 		});
 		const anonymous = fakeFetch({ "GET /api/me": jsonResponse({}, 401) });
 		expect(await fetchCurrentUser(anonymous.fetcher)).toBeNull();

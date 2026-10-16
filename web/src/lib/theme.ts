@@ -1,7 +1,7 @@
 export type ThemePreference = "light" | "dark" | "system";
 
 /** Must match the inline bootstrap script in index.html. */
-export const THEME_STORAGE_KEY = "onescribe-theme";
+export const THEME_STORAGE_KEY = "scribe-theme";
 
 export function isThemePreference(value: unknown): value is ThemePreference {
 	return value === "light" || value === "dark" || value === "system";

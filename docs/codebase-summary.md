@@ -1,25 +1,16 @@
-# Codebase Summary — OneScribe
+# Codebase Summary — Scribe
 
-Tổng quan kiến trúc + module chính. Cập nhật 2026-10-15 (web viết lại bằng React, app iPhone, chép lời bằng OpenAI).
+Tổng quan kiến trúc + module chính. Cập nhật 2026-10-16 (bỏ app desktop; chỉ còn web và iPhone).
 
-OneScribe = sản phẩm **One Series (iNET)** ghi/cắt/transcribe media. Repo có **3 ứng dụng**:
+Scribe = app ghi/cắt/transcribe media trong hệ sinh thái hoandat. Repo có **2 ứng dụng**:
 
 | App | Vị trí | Stack | Vai trò |
 |-----|--------|-------|---------|
-| **Desktop** | `src/` + `src-tauri/` | Tauri v2 (Rust) + Vue 3 + Vuetify 3 + ViUI local | Ghi mic/màn hình/system + cắt file + **transcribe offline** (PhoWhisper) hoặc OpenAI (key người dùng) |
-| **Web** | `web/` + `server/onescribe-be/` + `crates/core-split/` | React 19 + Vite 7 + Tailwind 4 (token từ localman-next) · BE Rust/axum (musl static) · MongoDB · Firebase Auth | Ghi (browser) + cắt file + **chép lời bằng OpenAI** (key người dùng tự nhập, chỉ email trong `TRANSCRIBE_EMAILS`) |
+| **Web** | `web/` + `server/scribe-be/` + `crates/core-split/` | React 19 + Vite 7 + Tailwind 4 (token từ localman-next) · BE Rust/axum (musl static) · MongoDB · Firebase Auth | Ghi (browser) + cắt file + **chép lời bằng OpenAI** (key người dùng tự nhập, chỉ email trong `TRANSCRIBE_EMAILS`) |
 | **iPhone** | `web/ios/` (Capacitor 8, đóng gói bản build của `web/`) | Swift plugin + cùng mã React | Ghi nền khi khoá màn hình theo đoạn 1 phút, lưu bền, tự tải lên; dùng chung backend web. Chi tiết: [ios-app.md](./ios-app.md) |
 
-Bản web Vue cũ nằm ở `web/src-vue-legacy/` (tham khảo, không build).
 
 ---
-
-## Desktop app (`src/`, `src-tauri/`)
-
-- **UI** (`src/`): `App.vue` shell 3 tab (Ghi âm / Cắt file / Transcript) · `views/` (RecordView, SplitView, TranscriptView, RegionSelectorOverlay, RecordBorder*) · `components/` (BrandMark logo, LevelMeter, TranscriptPlayer, …) · `design-system/vi-ui/` wrapper Vi* local · `plugins/vuetify.ts` theme `inetOneDark` + Tabler iconset · `tokens/one-series.ts` token màu.
-- **Native** (`src-tauri/src/`): `lib/commands/ffmpeg/settings/screen.rs` · `audio/encoder.rs` (ffmpeg args audio + ddagrab→MP4 ghi màn hình).
-- **Sidecar**: ffmpeg/ffprobe (LGPL) + `transcriber` (faster-whisper PyInstaller).
-- 3 chế độ: Ghi (mic cpal / system WASAPI loopback / màn hình ddagrab — Windows), Cắt (`src-tauri/src/splitter.rs`), Transcript (PhoWhisper, CPU int8 / GPU CUDA).
 
 ## Web app — Frontend (`web/`)
 
@@ -31,7 +22,7 @@ React 19 + Vite 7 + Tailwind 4 + TanStack Query + Radix + Firebase JS SDK. Token
 - **lib/**: `api.ts` (`apiFetch`, `isNativeShell`, origin backend khi chạy trong app), `download.ts` (tải/phát qua plugin native trên iPhone), `native.ts` (khai báo plugin Swift).
 - Dev proxy `/api` → `127.0.0.1:8787`; prod nginx cùng origin.
 
-## Web app — Backend (`server/onescribe-be/`)
+## Web app — Backend (`server/scribe-be/`)
 
 Rust/axum → **1 static musl binary**, bind `127.0.0.1:8787`, secret nhúng compile-time (`build.rs`/`option_env!`), session key HS256 sinh runtime, TLS out-bound = rustls (musl sạch).
 
@@ -50,7 +41,7 @@ Rust/axum → **1 static musl binary**, bind `127.0.0.1:8787`, secret nhúng com
 - `retention.rs` — sweep 1h: xoá file quá hạn 14 ngày (**disk TRƯỚC → doc**, KHÔNG TTL native), dọn orphan `.part`/session/job cũ, panic-isolation.
 - `models/{file,job,user}.rs`, `state.rs`, `error.rs`, `db.rs`, `routes.rs`.
 
-**core-split** (`crates/core-split/`, chia sẻ desktop): `split_file` (ffmpeg segment `-c copy`), `remux_copy_to_mkv` (fix cues webm), `probe_file`/`size_cut_times`, `compute_segment_time`.
+**core-split** (`crates/core-split/`): `split_file` (ffmpeg segment `-c copy`), `remux_copy_to_mkv` (fix cues webm), `probe_file`/`size_cut_times`, `compute_segment_time`.
 
 ### API endpoints (web)
 
@@ -65,7 +56,7 @@ Rust/axum → **1 static musl binary**, bind `127.0.0.1:8787`, secret nhúng com
 | GET | `/api/files` | lịch sử ghi |
 | POST/GET | `/api/jobs` · `/api/jobs/:id` · `/api/jobs/:id/download` | job cắt + tải zip |
 
-### MongoDB (`onescribe`)
+### MongoDB (database `$DB_NAME`)
 
 `users` (firebaseUid unique) · `files` (kind `upload|output|recording`, `size`, `durationS`, `hasVideo`, `jobId`, `expiresAt` index thường) · `jobs` (queue cắt) · `upload_sessions` / `recording_sessions` (append-disk).
 
@@ -77,11 +68,11 @@ Rust/axum → **1 static musl binary**, bind `127.0.0.1:8787`, secret nhúng com
 
 ## Deploy (web)
 
-Build musl qua Docker (`scripts/build-musl.sh`) hoặc `cargo zigbuild` trên macOS → binary `/opt/onescribe-be/onescribe-be` (systemd) + FE dist `/var/www/onescribe/dist`; nginx `:80` (CF DNS proxied lo TLS) tại `scribe.inetdev.io.vn`. Chi tiết: [deploy-web-production.md](./deploy-web-production.md); app iPhone: [ios-app.md](./ios-app.md). Thiết kế cắt/ghi: [split-record-design.md](./split-record-design.md).
+Build musl qua Docker (`scripts/build-musl.sh`) hoặc `cargo zigbuild` trên macOS → binary `$DEPLOY_APP_DIR/$DEPLOY_SERVICE` (systemd) + FE dist `$DEPLOY_WEB_ROOT` (giá trị trong `.env.production`); nginx `:80` (CF DNS proxied lo TLS) tại domain prod (`DEPLOY_DOMAIN`). Chi tiết: [deploy-web-production.md](./deploy-web-production.md); app iPhone: [ios-app.md](./ios-app.md).
 
 ## Tính năng mới (session 2026-07-12)
 
-- **Refactor UI web bám 100% desktop**: theme dark One Series + BrandMark + Be Vietnam Pro + shell 3 tab (thay giao diện trắng/xanh dương cũ).
+- **Refactor UI web theo giao diện app desktop cũ**: theme dark của app + BrandMark + Be Vietnam Pro + shell 3 tab (thay giao diện trắng/xanh dương cũ).
 - **Mode A — Ghi (web)**: mic + màn hình/system audio (Chrome/Edge) → MediaRecorder streaming upload → finalize remux webm seekable (tua được) → lịch sử + player (stream/Range); tùy chọn cắt theo phút → đoạn thành các bản ghi riêng trong Lịch sử ghi (thay bản ghi gốc), phát/tua từng đoạn.
 - **Retention & hardening**: auto-purge 14 ngày (sweep), rate-limit real-IP, `/api/me/usage` + QuotaBar, quota 5GB + size cap 2GB.
 - **Xoá recording thủ công**: `DELETE /api/files/:id` + nút Xoá (xác nhận inline).

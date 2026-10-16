@@ -1,4 +1,4 @@
-# Handoff — Ghi màn hình OneScribe (tiếp tục máy khác)
+# Handoff — Ghi màn hình Scribe (tiếp tục máy khác)
 
 > Ngày: 2026-06-15. Hết giờ làm, commit để pull tiếp máy khác.
 > Trạng thái: **Feature ghi màn hình ĐÃ implement + compile + review xong. CÒN 1 bug đang debug:
@@ -15,7 +15,7 @@ input video `ddagrab` (DXGI) → mux MP4 segment; encode `libopenh264`). Toggle 
 ## 2. BUG đang dở — overlay "Chọn vùng" vô hình
 **Triệu chứng:** bật "Ghi kèm màn hình" → "Chọn vùng" → bấm "Chọn vùng…" → màn hình KHÔNG mờ, không thấy khung kéo.
 
-**Bằng chứng đã thu (user xác nhận):** terminal `tauri dev` IN `[onescribe] open_region_selector: ... overlay window đã tạo OK` và KHÔNG có alert lỗi.
+**Bằng chứng đã thu (user xác nhận):** terminal `tauri dev` IN `[scribe] open_region_selector: ... overlay window đã tạo OK` và KHÔNG có alert lỗi.
 → Command Rust chạy OK, `WebviewWindowBuilder::build()` thành công, set_position/size OK.
 → **Root cause khoanh vùng: cửa sổ overlay TRONG SUỐT không render nội dung (nghi WebView2 transparent trên Windows) — KHÔNG phải lỗi command/IPC.**
 
@@ -23,11 +23,11 @@ Phần đã loại trừ: lỗi invoke (đã surface ra UI, không có alert); c
 Rust chưa rebuild (user đã chạy lại).
 
 ## 3. Bước tiếp theo (làm trên máy khác) — theo thứ tự
-Đã thêm sẵn **devtools auto-open cho overlay (chỉ debug)** trong `screen.rs` + log `[onescribe] mounting
+Đã thêm sẵn **devtools auto-open cho overlay (chỉ debug)** trong `screen.rs` + log `[scribe] mounting
 RegionSelectorOverlay` trong `main.ts`. Khi chạy `npm run tauri dev` và bấm "Chọn vùng…":
 
 1. **Devtools overlay sẽ tự mở** → kiểm tra:
-   - Console có in `[onescribe] mounting RegionSelectorOverlay (label=region-selector)` không?
+   - Console có in `[scribe] mounting RegionSelectorOverlay (label=region-selector)` không?
      - KHÔNG → `main.ts` mount nhầm `App` (label != "region-selector") → sửa logic route theo label.
      - CÓ → component mount OK → vào (2).
    - Elements tab: `<div class="rs-root">` có tồn tại + có `background: rgba(0,0,0,0.35)` không?

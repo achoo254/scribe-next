@@ -1,5 +1,5 @@
 /**
- * `npm run check:tokens` — design-token guard for OneScribe web (copied
+ * `npm run check:tokens` — design-token guard for Scribe web (copied
  * from localman-next, which owns the same design system).
  *
  * 1. Literal scan: `src/` and `index.html` must not contain colour literals

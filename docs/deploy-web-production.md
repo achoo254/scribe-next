@@ -1,184 +1,179 @@
-# Deploy Guide — OneScribe Web (prod .65)
+# Deploy Guide — Scribe Web (prod .65)
 
-Hướng dẫn build + deploy **OneScribe Web** (BE axum musl + FE React) lên box prod `.65` tại `scribe.inetdev.io.vn`, qua **GitLab CI/CD** (runner sẵn có) + fallback deploy thủ công. Mục đích: AI Agent / dev có full context deploy mà không cần dò lại hạ tầng.
+Hướng dẫn build + deploy **Scribe** (web + backend dùng chung với app iPhone) (BE axum musl + FE React) lên box prod `.65`, bằng **deploy làm tay** (CI GitHub Actions chỉ kiểm, không deploy). Mục đích: AI Agent / dev có full context deploy mà không cần dò lại hạ tầng.
 
-> Deploy **installer desktop** (Windows/macOS) là tài liệu khác: [deployment-guide.md](./deployment-guide.md). File này CHỈ cho bản Web.
+## Tên trên prod nằm ngoài repo
+
+Tên dịch vụ, thư mục, domain và database đang chạy trên prod **không ghi trong repo**. Chúng nằm trong `.env.production` ở gốc repo (không có trong git, mỗi máy deploy tự giữ):
+
+| Biến | Ý nghĩa |
+|---|---|
+| `DEPLOY_DOMAIN` | Domain prod (Cloudflare → nginx) |
+| `DEPLOY_SERVICE` | Tên systemd unit của BE, cũng là tên file binary trong `DEPLOY_APP_DIR` |
+| `DEPLOY_USER` | User hệ thống chạy BE |
+| `DEPLOY_APP_DIR` | Thư mục BE (binary, `.session-key`, `data/`) |
+| `DEPLOY_WEB_ROOT` | Thư mục FE static |
+| `DEPLOY_NGINX_CONF` | File vhost nginx |
+| `DB_NAME`, `FIREBASE_PROJECT_ID`, `SESSION_KEY_PATH`, `DATA_DIR` | Biến build của BE (xem bên dưới) |
+
+File mẫu trong `deploy/` (`scribe-be.service`, `nginx-scribe.conf`) mô tả **trạng thái đích** sau đợt đổi hạ tầng (`scribe-be`, `/opt/scribe-be`, `/var/www/scribe`, `scribe.hoandat.com`), làm cùng lúc chuyển đăng nhập sang hoandat-auth. Tới lúc đó prod vẫn chạy theo các giá trị trong `.env.production`.
+
+Các lệnh dưới đây giả định đã nạp biến: `set -a; . ./.env.production; set +a`.
 
 ## Môi trường
 
-OneScribe web có đúng **hai** môi trường (chốt 2026-10-15; khái niệm staging đã bỏ):
+Scribe web có đúng **hai** môi trường (chốt 2026-10-15; khái niệm staging đã bỏ):
 
 | Môi trường | Ở đâu | Dùng để |
 |---|---|---|
 | **Dev local** | Máy dev: BE `127.0.0.1:8787` + `cd web && npm run dev` (`:5173`, proxy `/api` → BE) | Phát triển và kiểm chứng trước khi đẩy prod |
-| **Prod** | Box `.65`, `https://scribe.inetdev.io.vn` | Người dùng thật — mọi deploy hay đổi cấu hình ở đây là thay đổi prod |
+| **Prod** | Box `.65`, `https://$DEPLOY_DOMAIN` | Người dùng thật — mọi deploy hay đổi cấu hình ở đây là thay đổi prod |
 
 Không dựng thêm môi trường xem trước (tunnel, preview) trên `.65`.
 
 ### Chạy dev local
 
-- **Mongo dev:** database `onescribe` trên mongod lab **176** (`192.168.122.176:27017`, cần VPN lab), user `onescribe_dev` chỉ có `readWrite` trên đúng database đó (`authSource=onescribe`). Tên database là `onescribe` vì BE gắn cứng tên này (`server/onescribe-be/src/db.rs`); 176 là máy khác với prod nên không đụng dữ liệu thật. Tạo ngày 2026-10-15; đã kiểm cách ly: user này không thấy database nào khác và đọc `server_tools_v2_staging_db` bị `Unauthorized`.
-- **Biến BE dev** nằm trong `.env.development` ở gốc repo (không có trong git, mỗi máy tự giữ): `MONGO_URI`, `PORT`, `SESSION_KEY_PATH`, `DATA_DIR` (hai đường dẫn sau trỏ ra `~/.onescribe-dev/`, vì mặc định `/opt/onescribe-be` không ghi được trên macOS). BE đọc biến **lúc build** (`option_env!`), nên nạp env rồi mới build/chạy:
+- **Mongo dev:** database dev trên mongod lab **176** (`192.168.122.176:27017`, cần VPN lab), user dev chỉ có `readWrite` trên đúng database đó. 176 là máy khác với prod nên không đụng dữ liệu thật. Tạo ngày 2026-10-15; đã kiểm cách ly: user này không thấy database nào khác.
+- **Biến BE dev** nằm trong `.env.development` ở gốc repo (không có trong git): `MONGO_URI`, `PORT`, `DB_NAME`, `FIREBASE_PROJECT_ID`, `SESSION_KEY_PATH`, `DATA_DIR` (hai đường dẫn sau trỏ vào thư mục dev trong home, vì thư mục prod không ghi được trên macOS). BE đọc biến **lúc build** (`option_env!`), nên nạp env rồi mới build/chạy:
 
   ```bash
   set -a; . ./.env.development; set +a
-  cargo run -p onescribe-be          # → 127.0.0.1:8787, kiểm: curl 127.0.0.1:8787/api/health
+  cargo run -p scribe-be             # → 127.0.0.1:8787, kiểm: curl 127.0.0.1:8787/api/health
   cd web && npm run dev              # → http://localhost:5173
   ```
-- **Đăng nhập Google ở dev:** `localhost` đã được thêm vào Firebase authorizedDomains của project `onescribe-inet` ngày 2026-10-15 (trước đó chỉ có `onescribe-inet.firebaseapp.com`, `onescribe-inet.web.app`, `scribe.inetdev.io.vn`). Gỡ: PATCH `identitytoolkit.googleapis.com/admin/v2/projects/onescribe-inet/config?updateMask=authorizedDomains` với danh sách cũ.
+- **Đăng nhập Google ở dev:** `localhost` đã được thêm vào Firebase authorizedDomains của project ngày 2026-10-15. Gỡ: PATCH `identitytoolkit.googleapis.com/admin/v2/projects/$FIREBASE_PROJECT_ID/config?updateMask=authorizedDomains` với danh sách cũ.
 
 ## Server
 
 | Server | IP | SSH port | Vai trò | Ghi chú |
 |---|---|---|---|---|
-| **Prod single-box `.65`** | `103.72.98.65` | `24700` | `scribe.inetdev.io.vn` — BE axum `:8787` + FE static + MongoDB **co-located** | Box SHARED (~15 vhost + MongoDB, chỉ ~3Gi RAM free). Cùng box với cloud-panel staging. |
+| **Prod single-box `.65`** | `103.72.98.65` | `24700` | BE axum `:8787` + FE static + MongoDB **co-located** | Box SHARED (~15 vhost + MongoDB, chỉ ~3Gi RAM free). |
 
-**Credentials SSH (root@.65):** nằm trong `all-in-one-staging-dev.json` (biến `ALL_IN_ONE_STAGING_DEV` — xem `cloud-panel-application/docs/server-scripts/README.md` để biết path per-OS). **Từ 2026-08-13 file dùng schema structured** `{_meta, servers[]}` — entry `name = "SSH_SERVER_STAGING"` (group `"SERVER STAGING .65"`, `auth: "key+password"`):
-- `private_key` — **nội dung PEM inline** (`-----BEGIN ...`), thay cho key cũ `SSH_KEY_SERVER_STAGING_CONTENT`. Auth thực tế = key-based. Cách dùng: ghi ra file tạm + `chmod 600` → `ssh -i <tmp.pem> -p 24700 root@103.72.98.65`:
-  ```bash
-  jq -r '.servers[]|select(.name=="SSH_SERVER_STAGING")|.private_key' "$ALL_IN_ONE_STAGING_DEV" > /tmp/onescribe-65.pem && chmod 600 /tmp/onescribe-65.pem
-  ```
-- `password` — dự phòng (server key-only nên thường không auth được; ưu tiên key trên).
+**Credentials SSH (root@.65):** trong tệp credential lab (biến môi trường `ALL_IN_ONE_STAGING_DEV`), entry `name = "SSH_SERVER_STAGING"`, trường `private_key` (PEM inline). Cách dùng: ghi ra file tạm + `chmod 600` → `ssh -i <tmp.pem> -p 24700 root@103.72.98.65`:
+
+```bash
+KEY=$(mktemp); chmod 600 "$KEY"
+jq -r '.servers[]|select(.name=="SSH_SERVER_STAGING")|.private_key' "$ALL_IN_ONE_STAGING_DEV" > "$KEY"
+```
 
 ## Deploy topology
 
 ```
 Cloudflare (DNS proxied, lo TLS edge)
-        │  scribe.inetdev.io.vn
+        │  $DEPLOY_DOMAIN
         ▼
-   nginx :80  (/etc/nginx/conf.d/onescribe.conf — SHARED, chỉ thêm 1 server block)
-        ├─ /api/  → proxy 127.0.0.1:8787  (BE axum, systemd onescribe-be)
-        └─ /      → /var/www/onescribe/dist  (FE Vue SPA, try_files → index.html)
+   nginx :80  ($DEPLOY_NGINX_CONF — SHARED, chỉ thêm 1 server block)
+        ├─ /api/  → proxy 127.0.0.1:8787  (BE axum, systemd $DEPLOY_SERVICE)
+        └─ /      → $DEPLOY_WEB_ROOT  (FE React SPA, try_files → index.html)
                           │
-   BE ─ /opt/onescribe-be/onescribe-be  (static musl, user `onescribe`, chmod 700)
-        ├─ /opt/onescribe-be/.session-key   (tự sinh runtime)
-        └─ /opt/onescribe-be/data/{userId}/ (upload/recording/output)
-   MongoDB co-located 127.0.0.1:27017 (db `onescribe`)
+   BE ─ $DEPLOY_APP_DIR/$DEPLOY_SERVICE  (static musl, user $DEPLOY_USER, chmod 700)
+        ├─ $SESSION_KEY_PATH          (tự sinh runtime)
+        └─ $DATA_DIR/{userId}/        (upload/recording/output)
+   MongoDB co-located 127.0.0.1:27017 (database $DB_NAME)
 ```
 
 | Thành phần | Path trên .65 | Nguồn (repo) |
 |---|---|---|
-| BE binary | `/opt/onescribe-be/onescribe-be` | `scripts/build-musl.sh` → `target/x86_64-unknown-linux-musl/release/onescribe-be` |
-| systemd unit | `/etc/systemd/system/onescribe-be.service` | `deploy/onescribe-be.service` |
-| nginx vhost | `/etc/nginx/conf.d/onescribe.conf` | `deploy/nginx-onescribe.conf` |
-| FE static | `/var/www/onescribe/dist` | `web/` → `npm run build` → `web/dist` |
+| BE binary | `$DEPLOY_APP_DIR/$DEPLOY_SERVICE` | `scripts/build-musl.sh` → `target/x86_64-unknown-linux-musl/release/scribe-be` |
+| systemd unit | `/etc/systemd/system/$DEPLOY_SERVICE.service` | mẫu `deploy/scribe-be.service` |
+| nginx vhost | `$DEPLOY_NGINX_CONF` | mẫu `deploy/nginx-scribe.conf` |
+| FE static | `$DEPLOY_WEB_ROOT` | `web/` → `npm run build` → `web/dist` |
 
-## ⚠️ Ràng buộc then chốt — secret bake **compile-time**
+## ⚠️ Ràng buộc then chốt — cấu hình bake **compile-time**
 
-`server/onescribe-be/src/config.rs` đọc config bằng **`option_env!`** (compile-time, KHÔNG phải runtime) + `build.rs` bake vào binary qua `cargo:rustc-env`. Hệ quả:
+`server/scribe-be/src/config.rs` đọc config bằng **`option_env!`** (compile-time, KHÔNG phải runtime) + `build.rs` bake vào binary. Hệ quả:
 
-- **Binary KHÔNG đọc env lúc chạy** → KHÔNG dùng systemd `EnvironmentFile` để cấp `MONGO_URI`.
-- **`MONGO_URI` (+ `PORT`, `ALLOWED_DOMAINS`, `ALLOWED_EMAILS`, `SESSION_KEY_PATH`, `DATA_DIR`) phải có mặt LÚC BUILD** → CI runner build binary *kèm secret* rồi mới rsync sang `.65`.
-- Biến nào không set lúc build → dùng fallback trong `config.rs` (`PORT=8787`, `MONGO_URI=mongodb://127.0.0.1:27017`, allowlist rỗng = mở, `SESSION_KEY_PATH=/opt/onescribe-be/.session-key`, `DATA_DIR=/opt/onescribe-be/data`).
-- **Firebase project ID** (`onescribe-inet`) là hằng công khai trong `config.rs`, KHÔNG phải secret.
+- **Binary KHÔNG đọc env lúc chạy** → KHÔNG dùng systemd `EnvironmentFile`.
+- **Bắt buộc lúc build:** `DB_NAME`, `FIREBASE_PROJECT_ID`, `SESSION_KEY_PATH`, `DATA_DIR`. Thiếu biến nào thì binary **dừng ngay khi khởi động** và log tên biến thiếu (để không bao giờ chạy với database hay thư mục sai).
+- **Tuỳ chọn:** `MONGO_URI` (mặc định `mongodb://127.0.0.1:27017`), `PORT` (mặc định `8787`), `ALLOWED_DOMAINS`, `ALLOWED_EMAILS`, `TRANSCRIBE_EMAILS`.
+- `FIREBASE_PROJECT_ID` là giá trị công khai (aud/iss khi verify ID token), không phải secret.
 
-> Đổi `MONGO_URI`/allowlist = **build lại binary** rồi redeploy; sửa env trên server vô tác dụng.
+> Đổi bất kỳ biến nào = **build lại binary** rồi redeploy; sửa env trên server vô tác dụng.
 
-## CI/CD
+### Biến build của BE
 
-Pipeline: `.gitlab-ci.yml` (root) + template `.gitlab/ci/templates/ssh-deploy.yml`. Project `dattqh/one-scribe` (id `331`).
+| Biến | Giá trị / nguồn |
+|---|---|
+| `MONGO_URI` | Mongo URI prod trên `.65` (co-located, có auth) |
+| `PORT` | `8787` (khớp systemd + nginx proxy) |
+| `DB_NAME` | Database Mongo của app |
+| `FIREBASE_PROJECT_ID` | Firebase project dùng cho đăng nhập Google |
+| `SESSION_KEY_PATH`, `DATA_DIR` | Trong `DEPLOY_APP_DIR` |
+| `TRANSCRIBE_EMAILS` | Email được dùng "Chép lời" bằng OpenAI (cách nhau dấu phẩy). Thiếu biến = tính năng tắt với mọi người |
 
-### Stages & jobs
-
-| Job | Stage | Chạy khi | Việc |
-|---|---|---|---|
-| `be:build` | build | mọi nhánh + MR | Build static musl binary trong image `rust-musl-cross` (bake `MONGO_URI`/`PORT`). Artifact = binary. |
-| `fe:build` | build | mọi nhánh + MR | `cd web && npm ci && npm run build` (vue-tsc + vite). Artifact = `web/dist`. |
-| `deploy:production` | deploy | **chỉ `main`** | rsync binary + dist sang `.65`, thay binary bằng **atomic rename** rồi `systemctl restart onescribe-be`. |
-
-Build chạy mọi nhánh/MR để bắt lỗi sớm; deploy chỉ `main` (tránh nhánh phụ đẩy lên prod trên box shared).
-
-### CI/CD Variables (Settings → CI/CD → Variables)
-
-| Key | Giá trị / nguồn | Protected | Masked | Dùng ở |
-|---|---|---|---|---|
-| `SSH_PRIVATE_KEY` | `private_key` của entry `SSH_SERVER_STAGING` trong `all-in-one-staging-dev.json` (PEM inline) | ✅ | ❌ (multiline) | deploy |
-| `SERVER_IP` | `103.72.98.65` | ✅ | ❌ | deploy |
-| `SERVER_PORT` | `24700` | ✅ | ❌ | deploy |
-| `SSH_USER` | `root` | ✅ | ❌ | deploy |
-| `MONGO_URI` | Mongo URI prod trên `.65` (co-located; thường `mongodb://127.0.0.1:27017`) | ✅ | ✅ | be:build (bake) |
-| `PORT` | `8787` (khớp systemd + nginx proxy) | ✅ | ❌ | be:build (bake) |
-| `TRANSCRIBE_EMAILS` | `quocdat254@gmail.com` — email được dùng "Chép lời" bằng OpenAI (cách nhau dấu phẩy). Thiếu biến = tính năng tắt với mọi người | ✅ | ❌ | be:build (bake) |
-
-- `ALLOWED_DOMAINS` / `ALLOWED_EMAILS`: **KHÔNG set** → fallback rỗng = mở cho mọi email Google verified (quyết định hiện tại). Muốn siết → thêm biến `ALLOWED_DOMAINS=inet.vn` rồi build lại.
+- `ALLOWED_DOMAINS` / `ALLOWED_EMAILS`: **KHÔNG set** → fallback rỗng = mở cho mọi email Google verified (quyết định hiện tại). Muốn siết → thêm `ALLOWED_DOMAINS=<domain>` rồi build lại.
 - `TRANSCRIBE_EMAILS`: rỗng nghĩa là **không ai** được chép lời (ngược với allowlist đăng nhập). Key OpenAI do người dùng tự nhập trong app/web, gửi kèm mỗi lần chép; backend chỉ giữ trong RAM, không có biến key nào ở server.
-- **Protected** = chỉ inject trên protected branch/tag. `main` phải là **protected branch** (mặc định GitLab) để job `main` nhận được biến. Nhánh phụ không nhận protected var → build dùng fallback (vô hại vì không deploy).
 
-### SSH source-IP allowlist (BẮT BUỘC)
+### FE build env
 
-`.65` chặn SSH port `24700` theo iptables chain **`CP_SSH_ACL`** (allowlist source IP). **IP egress runner chạy `deploy:production` PHẢI nằm trong allowlist**, nếu không `ssh-keyscan` trong template treo tới timeout rồi fail (template in rõ egress IP để whitelist).
+FE đọc **lúc build** từ `web/.env` (không có trong git, mẫu ở `web/.env.example`): `VITE_FIREBASE_API_KEY/AUTH_DOMAIN/PROJECT_ID` (`web/src/lib/firebase.ts`) và `VITE_NATIVE_API_ORIGIN` (origin backend mà app iPhone gọi, `web/src/lib/api.ts`; script `npm run ios:device` cũng nhúng giá trị này vào Info.plist của app). Dev local và prod dùng chung một Firebase project, nên `npm run dev` lẫn `npm run build` đọc cùng tệp. Thiếu biến nào thì `vite build` dừng và báo tên biến.
 
-- Runner online: **`103.57.222.245`** (id=15, đang dùng) · `202.92.5.105` (id=5, Shared-Runner đang paused).
-- Thêm runner mới / CI fail ở keyscan → SSH vào `.65` thêm rule (idempotent) rồi persist:
-  ```bash
-  iptables -C CP_SSH_ACL -s <RUNNER_IP>/32 -j ACCEPT 2>/dev/null || \
-    iptables -I CP_SSH_ACL 1 -s <RUNNER_IP>/32 -j ACCEPT
-  service iptables save   # → /etc/sysconfig/iptables
-  ```
-- Chain này là hardening ops có chủ đích — KHÔNG gỡ; chỉ thêm IP runner khi cần.
+## CI và repo
 
-### Image registry
+- **Repo duy nhất là GitHub** (`origin` = `achoo254/scribe-next`, private). GitLab đã bỏ hoàn toàn ngày 2026-10-16.
+- **CI** `.github/workflows/ci.yml` chạy mỗi lần push `main` và mỗi pull request, **chỉ kiểm, không deploy**: job `web` (`npm ci`, `lint`, `typecheck`, `check:tokens`, `test`) và job `rust` (`cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`, có ffmpeg cho test cắt file thật).
 
-Dùng Harbor pull-through mirror `harbor.000nethost.com/docker-hub/...` cho image Docker Hub (né rate-limit). BE build dùng `ghcr.io/rust-cross/rust-musl-cross:x86_64-musl` — nếu runner không reach ghcr.io → mirror image này vào Harbor rồi đổi `image:` trong `be:build`.
+### SSH source-IP allowlist
 
-### FE build env — Firebase config
+`.65` chặn SSH port `24700` theo iptables chain **`CP_SSH_ACL`** (allowlist source IP). Máy deploy phải có IP nằm trong allowlist. Chain này là hardening ops có chủ đích — KHÔNG gỡ; chỉ thêm IP khi cần:
 
-FE đọc `VITE_FIREBASE_API_KEY/AUTH_DOMAIN/PROJECT_ID` **lúc build** (`web/src/lib/firebase.ts`). Dev local và prod dùng chung một Firebase project, nên cả `npm run dev` lẫn `npm run build` (mode production mặc định của Vite) đọc cùng tệp `web/.env`. Tệp này **không có trong git**: máy build phải tự có (mẫu ở `web/.env.example`; config Firebase web là public, không phải secret). Thiếu biến nào thì `vite build` dừng và báo tên biến, thay vì ra bản build trắng trang (`auth/invalid-api-key`).
+```bash
+iptables -C CP_SSH_ACL -s <IP>/32 -j ACCEPT 2>/dev/null || \
+  iptables -I CP_SSH_ACL 1 -s <IP>/32 -j ACCEPT
+service iptables save   # → /etc/sysconfig/iptables
+```
 
-Biến build của BE cho prod (`MONGO_URI`, `PORT`, `ALLOWED_DOMAINS`, `ALLOWED_EMAILS`, `TRANSCRIBE_EMAILS`) giữ cục bộ trong `.env.production` ở gốc repo (không có trong git), nạp vào shell trước khi build: `set -a; . ./.env.production; set +a`.
+## Setup 1 lần trên `.65` (bootstrap — trước lần deploy đầu)
 
-## Setup 1 lần trên `.65` (bootstrap — trước lần deploy CI đầu)
-
-CI **giả định** đã có sẵn: user `onescribe`, systemd unit, nginx vhost, MongoDB, thư mục. Làm 1 lần (SSH root@.65):
+Deploy **giả định** đã có sẵn: user, systemd unit, nginx vhost, MongoDB, thư mục. Làm 1 lần (SSH root@.65, đã có các biến `DEPLOY_*` trong shell):
 
 ```bash
 # 1) User + thư mục (session key + data ghi được; ProtectSystem=full chừa /opt)
-useradd --system --home /opt/onescribe-be --shell /usr/sbin/nologin onescribe || true
-mkdir -p /opt/onescribe-be/data /var/www/onescribe/dist
-chown -R onescribe:onescribe /opt/onescribe-be
+useradd --system --home "$DEPLOY_APP_DIR" --shell /usr/sbin/nologin "$DEPLOY_USER" || true
+mkdir -p "$DEPLOY_APP_DIR/data" "$DEPLOY_WEB_ROOT"
+chown -R "$DEPLOY_USER:$DEPLOY_USER" "$DEPLOY_APP_DIR"
 
-# 2) systemd unit (từ deploy/onescribe-be.service)
-#    scp deploy/onescribe-be.service → /etc/systemd/system/onescribe-be.service
+# 2) systemd unit: từ mẫu deploy/scribe-be.service (thay tên/thư mục cho khớp DEPLOY_*)
+#    → /etc/systemd/system/$DEPLOY_SERVICE.service
 systemctl daemon-reload
-# (enable; --now sẽ fail tới khi có binary — deploy CI đầu tiên sẽ đưa binary + restart)
-systemctl enable onescribe-be
+systemctl enable "$DEPLOY_SERVICE"   # --now sẽ fail tới khi lần deploy đầu đưa binary lên
 
-# 3) nginx vhost (từ deploy/nginx-onescribe.conf → /etc/nginx/conf.d/onescribe.conf)
+# 3) nginx vhost: từ mẫu deploy/nginx-scribe.conf → $DEPLOY_NGINX_CONF
 #    KIỂM TRA SSL mode Cloudflare cho zone: Flexible → block listen 80 đủ;
 #    Full/Full(strict) → thêm block listen 443 ssl + origin cert (xem comment trong file).
 nginx -t && systemctl reload nginx
 
-# 4) MongoDB: đảm bảo mongod chạy 127.0.0.1:27017; nếu bật auth → tạo user/db `onescribe`
-#    và cập nhật MONGO_URI (CI variable) tương ứng.
+# 4) MongoDB: đảm bảo mongod chạy 127.0.0.1:27017; nếu bật auth → tạo user/database $DB_NAME
+#    và cập nhật MONGO_URI trong .env.production tương ứng.
 ```
 
-> Chỉ THÊM server block nginx cho OneScribe — KHÔNG sửa 14 vhost khác trên box shared. `nginx -t` trước mọi reload.
+> Chỉ THÊM server block nginx cho Scribe — KHÔNG sửa 14 vhost khác trên box shared. `nginx -t` trước mọi reload.
 
-## Deploy thủ công (fallback khi CI hỏng / hotfix)
+## Deploy (làm tay)
 
-Cần Docker (build musl) + SSH key `.65`.
+Cần Docker (build musl) hoặc `cargo-zigbuild`, cộng SSH key `.65`.
 
 ```bash
-# 1) Build BE musl (secret truyền qua ENV, KHÔNG hardcode)
-MONGO_URI="mongodb://127.0.0.1:27017" PORT=8787 ./scripts/build-musl.sh
-#    → target/x86_64-unknown-linux-musl/release/onescribe-be
+set -a; . ./.env.production; set +a
+
+# 1) Build BE musl (cấu hình lấy từ .env.production, KHÔNG hardcode)
+./scripts/build-musl.sh
+#    → target/x86_64-unknown-linux-musl/release/scribe-be
 
 # 2) Build FE
 cd web && npm ci && npm run build && cd ..   # → web/dist
 
-# 3) Ghi SSH key ra file tạm (từ all-in-one-staging-dev.json — tên tệp credential, không phải tên môi trường) rồi rsync
-KEY=$(mktemp); chmod 600 "$KEY"
-#   jq -r '.servers[]|select(.name=="SSH_SERVER_STAGING")|.private_key' "$ALL_IN_ONE_STAGING_DEV" > "$KEY"
-rsync -avz -e "ssh -i $KEY -p 24700" target/x86_64-unknown-linux-musl/release/onescribe-be root@103.72.98.65:/tmp/onescribe-be.new
-rsync -avz --delete -e "ssh -i $KEY -p 24700" web/dist/ root@103.72.98.65:/tmp/onescribe-fe/
-ssh -i "$KEY" -p 24700 root@103.72.98.65 '
+# 3) Đẩy lên .65 (KEY = file tạm chứa private key, xem mục Server)
+rsync -avz -e "ssh -i $KEY -p 24700" target/x86_64-unknown-linux-musl/release/scribe-be root@103.72.98.65:/tmp/scribe-be.new
+rsync -avz --delete -e "ssh -i $KEY -p 24700" web/dist/ root@103.72.98.65:/tmp/scribe-fe/
+ssh -i "$KEY" -p 24700 root@103.72.98.65 "
   set -e
-  install -o onescribe -g onescribe -m 700 /tmp/onescribe-be.new /opt/onescribe-be/onescribe-be.new
-  mv -f /opt/onescribe-be/onescribe-be.new /opt/onescribe-be/onescribe-be
-  rm -f /tmp/onescribe-be.new
-  rsync -a --delete /tmp/onescribe-fe/ /var/www/onescribe/dist/
-  rm -rf /tmp/onescribe-fe
-  systemctl restart onescribe-be && sleep 2 && systemctl is-active onescribe-be'
+  install -o $DEPLOY_USER -g $DEPLOY_USER -m 700 /tmp/scribe-be.new $DEPLOY_APP_DIR/$DEPLOY_SERVICE.new
+  mv -f $DEPLOY_APP_DIR/$DEPLOY_SERVICE.new $DEPLOY_APP_DIR/$DEPLOY_SERVICE
+  rm -f /tmp/scribe-be.new
+  rsync -a --delete /tmp/scribe-fe/ $DEPLOY_WEB_ROOT/
+  rm -rf /tmp/scribe-fe
+  systemctl restart $DEPLOY_SERVICE && sleep 2 && systemctl is-active $DEPLOY_SERVICE"
 rm -f "$KEY"
 ```
 
@@ -186,12 +181,10 @@ rm -f "$KEY"
 
 ```bash
 set -a; . ./.env.production; set +a
-cargo zigbuild --release --target x86_64-unknown-linux-musl -p onescribe-be
+cargo zigbuild --release --target x86_64-unknown-linux-musl -p scribe-be
 ```
 
-Lần đầu dùng cách này: 2026-10-15, chỉ thay BE (commit `cac8497`, có chép lời). Cùng tối, deploy cả FE React + BE commit `bc14254` (sao lưu bản Vue + binary ở `/root/onescribe-backup-20261015-211433/`). `lab-ssh.sh` không có rsync: đẩy bản build FE bằng `tar -C web/dist -czf - . | lab-ssh.sh 65 "tar -xzf - -C /tmp/onescribe-fe"`. Trước khi thay đã sao lưu DB `onescribe` + binary cũ vào `/root/onescribe-backup-20261015-210141/` trên `.65`. Quay lại: `install -o onescribe -g onescribe -m 700 <thư mục>/onescribe-be.prev /opt/onescribe-be/onescribe-be.new && mv -f /opt/onescribe-be/onescribe-be.new /opt/onescribe-be/onescribe-be && systemctl restart onescribe-be`.
-
-> **Repo chính là GitHub** (`origin` = `achoo254/one-scribe`, không có GitHub Actions): push không tự deploy, deploy prod làm tay theo mục này. Remote `gitlabs.inet.vn` và `.gitlab-ci.yml` là cách cũ, dừng từ 2026-08-21.
+Lần đầu dùng cách này: 2026-10-15, chỉ thay BE (commit `cac8497`, có chép lời). Cùng tối, deploy cả FE React + BE commit `bc14254`, có sao lưu bản Vue, binary và database vào `/root/*-backup-20261015-*/` trên `.65`. Skill SSH lab không có rsync: đẩy bản build FE bằng `tar -C web/dist -czf - . | lab-ssh.sh 65 "tar -xzf - -C /tmp/scribe-fe"`. Quay lại bản trước: `install` binary `.prev` từ thư mục sao lưu thành `$DEPLOY_APP_DIR/$DEPLOY_SERVICE.new`, `mv -f` đè lên binary rồi `systemctl restart $DEPLOY_SERVICE`.
 
 > **Thay binary đang chạy:** dùng `mv` (atomic rename) — tránh `ETXTBSY` khi ghi đè executable đang chạy. rsync mặc định (không `--inplace`) cũng an toàn.
 
@@ -199,35 +192,33 @@ Lần đầu dùng cách này: 2026-10-15, chỉ thay BE (commit `cac8497`, có 
 
 ```bash
 # Trên .65:
-systemctl is-active onescribe-be          # → active
-journalctl -u onescribe-be -n 30 --no-pager
-curl -s http://127.0.0.1:8787/api/health  # → liveness OK
+systemctl is-active "$DEPLOY_SERVICE"          # → active
+journalctl -u "$DEPLOY_SERVICE" -n 30 --no-pager
+curl -s http://127.0.0.1:8787/api/health       # → liveness OK
 
 # Từ ngoài:
-curl -sI https://scribe.inetdev.io.vn/            # 200, FE index
-curl -s  https://scribe.inetdev.io.vn/api/health  # liveness
+curl -sI "https://$DEPLOY_DOMAIN/"             # 200, FE index
+curl -s  "https://$DEPLOY_DOMAIN/api/health"   # liveness
 ```
 
-- [ ] `systemctl is-active onescribe-be` = active, không restart-loop (`systemctl status` restart count).
-- [ ] `/api/health` trả OK (BE connect Mongo thành công — nếu `MONGO_URI` sai → BE fail sớm, xem journal).
+- [ ] Service active, không restart-loop (`systemctl status` restart count).
+- [ ] `/api/health` trả OK. Thiếu biến build bắt buộc → BE dừng ngay, journal ghi "thiếu biến build bắt buộc: …".
 - [ ] FE load, đăng nhập Google được (allowlist mở → mọi email verified).
 - [ ] Ghi/cắt file → upload + phát lại (Range) hoạt động.
 
-## Trạng thái đã xác minh (pipeline 6892 + dò `.65`, 2026-07-13)
+## Trạng thái đã xác minh (dò `.65`, 2026-07-13)
 
-- **Bootstrap `.65`: XONG** — user `onescribe`, systemd unit active, nginx vhost, mongod đều có sẵn. CI deploy = redeploy (idempotent).
-- **Cloudflare: OK** — `https://scribe.inetdev.io.vn/api/health` → `{"status":"ok"}` với nginx block `listen 80` hiện tại (CF lo TLS edge). index.html serve `DYNAMIC` (CF không cache), asset hashed cache 4h.
-- **Runner reach `ghcr.io`: OK** — `be:build` pull `rust-musl-cross` thành công (263s).
-- **MongoDB `.65`:** auth ENABLED; `MONGO_URI` dùng cred `onescribe` (db + authSource = `onescribe`). **DB dùng chung cho team theo chủ đích** → cổng `27017` mở ra ngoài + mật khẩu chia sẻ là **cố ý**, KHÔNG firewall về localhost / KHÔNG rotate (team cần kết nối trực tiếp).
+- **Bootstrap `.65`: XONG** — user, systemd unit active, nginx vhost, mongod đều có sẵn. Deploy = redeploy (idempotent).
+- **Cloudflare: OK** — `/api/health` → `{"status":"ok"}` với nginx block `listen 80` hiện tại (CF lo TLS edge). index.html serve `DYNAMIC` (CF không cache), asset hashed cache 4h.
+- **MongoDB `.65`:** auth ENABLED; `MONGO_URI` dùng user riêng của app (database + authSource = `$DB_NAME`). **DB dùng chung cho team theo chủ đích** → cổng `27017` mở ra ngoài + mật khẩu chia sẻ là **cố ý**, KHÔNG firewall về localhost / KHÔNG rotate (team cần kết nối trực tiếp).
 
 ## Log và audit
 
 BE ghi hai lớp (thêm 2026-10-15):
 
-- **Access log** ra journal (`target=access`): mỗi request `/api` một dòng `method`, `path`, `status`, `ms`, `ip` (từ `X-Real-IP` do nginx đặt), `user` (id Mongo, `-` khi chưa đăng nhập). Chunk upload/ghi thành công ở mức debug (khi ghi âm ≈1 request/giây); `/api/health` không log. Xem: `journalctl -u onescribe-be -o cat | grep "access: request"`.
-- **`audit_events`** trong Mongo (database `onescribe`): một doc cho mỗi hành vi `auth.login`, `auth.login_denied`, `auth.logout`, `recording.start`, `recording.finish`, `upload.start`, `upload.finish`, `job.create`, `job.done`, `job.failed`, `job.download`, `file.play`, `file.download`, `file.delete`, `recordings.archive` — kèm `at`, `userId`, `ip` và chi tiết (fileId, tên, kích thước…). TTL 180 ngày trên `at`; index `{userId, at}` để tra theo user. Ghi nền: Mongo lỗi chỉ log warn, không làm hỏng request.
+- **Access log** ra journal (`target=access`): mỗi request `/api` một dòng `method`, `path`, `status`, `ms`, `ip` (từ `X-Real-IP` do nginx đặt), `user` (id Mongo, `-` khi chưa đăng nhập). Chunk upload/ghi thành công ở mức debug (khi ghi âm ≈1 request/giây); `/api/health` không log. Xem: `journalctl -u "$DEPLOY_SERVICE" -o cat | grep "access: request"`.
+- **`audit_events`** trong Mongo (database `$DB_NAME`): một doc cho mỗi hành vi `auth.login`, `auth.login_denied`, `auth.logout`, `recording.start`, `recording.finish`, `upload.start`, `upload.finish`, `job.create`, `job.done`, `job.failed`, `job.download`, `file.play`, `file.download`, `file.delete`, `recordings.archive` — kèm `at`, `userId`, `ip` và chi tiết (fileId, tên, kích thước…). TTL 180 ngày trên `at`; index `{userId, at}` để tra theo user. Ghi nền: Mongo lỗi chỉ log warn, không làm hỏng request.
 
 ## Ghi chú vận hành
 
-- **Mọi push lên `main` đều rebuild musl (~4.5') + redeploy** (chưa có `changes:` filter). Push chỉ đổi docs/config → dùng `git push -o ci.skip` để bỏ qua. Có thể thêm rule `changes: [web/**, server/**, crates/**, .gitlab-ci.yml]` nếu muốn tự lọc.
 - Feature **preview/level meter khi ghi** chỉ hiện lúc đang ghi (`v-if="rec.recording.value"` trong `RecordView.vue`) — reload trang idle không thấy; phải bấm Bắt đầu ghi.

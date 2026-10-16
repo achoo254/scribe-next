@@ -60,7 +60,7 @@ RecordView (toggle Nguồn ghi + select thiết bị)
 - [x] `cargo check` EXIT=0 (fix Arc move vào closure) + `vue-tsc` EXIT=0
 - [ ] **Test thật trên Windows**: chọn "Tiếng hệ thống", phát nhạc/video → ghi ra file có tiếng output;
       thử default + chọn render device cụ thể; auto-transcript chạy trên segment loopback
-- [ ] ViUI MCP validate_brand_usage trên RecordView.vue
+- [ ] MCP design system validate_brand_usage trên RecordView.vue
 
 ## Success criteria
 

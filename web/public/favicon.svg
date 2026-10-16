@@ -1,6 +1,6 @@
 <svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
-  <!-- OneScribe app icon — concept: waveform → text (speech → transcript).
-       Palette = theme One Series dark (src/tokens/one-series.ts):
+  <!-- Scribe app icon — concept: waveform → text (speech → transcript).
+       Palette = theme Scribe dark (src/tokens/brand.ts):
        bg #0d0d0d, primary green #49c98d, accent orange #f7ad30.
        Master vector; regen mọi format bằng: npx tauri icon src-tauri/icons/icon-source.svg -->
   <defs>

@@ -45,7 +45,7 @@ cat <transcript> | claude -p "<prompt VN>" \
 
 ## Phát hiện quan trọng (ảnh hưởng thiết kế)
 
-1. **Overhead ~38k token/call** (`cache_creation_input_tokens: 38660`) — là context harness Claude Code (CLAUDE.md global + tool defs + MCP inet-viui/mongodb/firebase + skills catalog) nạp mỗi lần. Transcript thật chỉ 9 input token; phần còn lại là overhead.
+1. **Overhead ~38k token/call** (`cache_creation_input_tokens: 38660`) — là context harness Claude Code (CLAUDE.md global + tool defs + MCP design-system/mongodb/firebase + skills catalog) nạp mỗi lần. Transcript thật chỉ 9 input token; phần còn lại là overhead.
    - **Hệ quả:** rolling 60 lần/giờ × 38k = ~2.3M token vào rate limit sub → có thể chạm trần.
    - **Giảm thiểu:** (a) **haiku cho rolling**; (b) **đừng rolling quá dày** — 60s là tối thiểu, cân nhắc theo lượng text mới thay vì timer cứng; (c) chạy từ **cwd sạch** (không CLAUDE.md project); (d) `--disable-slash-commands` + `--settings` tối giản để bớt skills/MCP khỏi context; (e) **tái dùng session** (`--resume <session_id>`) cho rolling → 38k thành cache_read (~0.1×) thay vì tạo mới mỗi lần, đồng thời session tự nhớ tóm tắt trước (incremental tự nhiên).
 2. **Model lever:** haiku 4.5 (rolling, 8s) vs default/opus (biên bản cuối, 25s, chất lượng cao hơn).
@@ -62,4 +62,4 @@ cat <transcript> | claude -p "<prompt VN>" \
 
 - Cách giảm 38k overhead khi vẫn giữ OAuth (thử `--disable-slash-commands` + `--settings` rỗng + cwd sạch — đo lại token). Làm đầu Phase 1.
 - Session-reuse `--resume` giữ auth sub + cache hoạt động xuyên call? (verify Phase 1).
-- Latency thật khi spawn từ OneScribe (cwd runtime, không project CLAUDE.md) — có thể < 25s do bớt context.
+- Latency thật khi spawn từ Scribe (cwd runtime, không project CLAUDE.md) — có thể < 25s do bớt context.

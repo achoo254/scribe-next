@@ -1,6 +1,6 @@
 # Research: Model ASR tiếng Việt nhanh trên CPU (ưu tiên tốc độ)
 
-> Thực hiện: 2026-06-15 · Bối cảnh: OneScribe Mode C đang dùng `kiendt/PhoWhisper-large-ct2` (int8 CPU) — chất lượng tốt nhưng chậm trên CPU (large ~1.55B params). User muốn nhanh hơn, chấp nhận giảm chút chất lượng.
+> Thực hiện: 2026-06-15 · Bối cảnh: Scribe Mode C đang dùng `kiendt/PhoWhisper-large-ct2` (int8 CPU) — chất lượng tốt nhưng chậm trên CPU (large ~1.55B params). User muốn nhanh hơn, chấp nhận giảm chút chất lượng.
 
 ## Executive Summary
 

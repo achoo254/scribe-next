@@ -1,0 +1,34 @@
+# systemd unit cho Scribe BE (static musl binary). Cài: /etc/systemd/system/scribe-be.service
+# Deploy: tạo user `scribe`, đặt binary /opt/scribe-be/scribe-be (chmod 700, chứa secret bake),
+# systemctl daemon-reload && enable --now scribe-be.
+[Unit]
+Description=Scribe Web backend (axum, static musl)
+After=network-online.target mongod.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=scribe
+Group=scribe
+WorkingDirectory=/opt/scribe-be
+ExecStart=/opt/scribe-be/scribe-be
+Restart=on-failure
+RestartSec=3
+
+# Resource cap — box .65 SHARED (~15 service + MongoDB, chỉ ~3Gi RAM free). Chừa tài nguyên (red-team #10).
+CPUQuota=200%
+MemoryMax=1G
+
+# Hardening. ProtectSystem=full để /usr,/etc,/boot read-only; /opt vẫn ghi được (session key + WorkingDir).
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/opt/scribe-be
+
+# Log ra journald.
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

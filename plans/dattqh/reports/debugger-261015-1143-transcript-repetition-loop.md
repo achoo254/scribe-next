@@ -89,5 +89,5 @@ Riêng khúc 0–5' khớp thấp, nhưng chủ yếu không phải lời thật
 
 ## Câu hỏi còn mở
 
-- App đang cài (`/Applications/OneScribe.app`) vẫn chạy sidecar cũ. Cần build lại sidecar bằng PyInstaller và build lại app thì bản sửa mới có hiệu lực.
+- App đang cài (`/Applications/Scribe.app`) vẫn chạy sidecar cũ. Cần build lại sidecar bằng PyInstaller và build lại app thì bản sửa mới có hiệu lực.
 - Glossary Block Storage hiện tại (1.643 ký tự) sẽ bị cảnh báo. Người dùng nên rút gọn còn vài từ khoá hoặc để trống.

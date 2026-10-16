@@ -18,9 +18,9 @@ thành checklist Windows. User chốt: web client **sibling** (KHÔNG monorepo r
   streaming riêng, demux xảy ra tự nhiên (H4) mà không cần đụng use-transcribe.ts.
 - **Caption store in-memory** (không Redis) — quyết định có chủ đích cho MVP single-instance; interface
   store-agnostic để drop-in Redis sau. Đánh đổi late-joiner-qua-restart ghi rõ trong docs.
-- **Web dùng plain Vue + CSS token One Series** thay Vuetify/ViUI — vì `@hobui/viui` là private registry
-  không cài được trên mac (build phải xanh trên mac). Align ViUI npm = follow-up khi có Windows/registry.
-- **Consolidate desktop lên `@onescribe/meeting-shared` qua vite alias** (bỏ duplicate use-caption-feed).
+- **Web dùng plain Vue + CSS token brand** thay Vuetify/design system — vì `@hobui/ui` là private registry
+  không cài được trên mac (build phải xanh trên mac). Align design system npm = follow-up khi có Windows/registry.
+- **Consolidate desktop lên `@scribe/meeting-shared` qua vite alias** (bỏ duplicate use-caption-feed).
   "Sibling" của user là về KHÔNG dời src-tauri (rủi ro H6 không verify được `tauri build` trên mac), chứ
   không cấm shared package qua alias — cái này verify được bằng `npm run build`.
 
@@ -45,5 +45,5 @@ thành checklist Windows. User chốt: web client **sibling** (KHÔNG monorepo r
   latency, `tauri build` nsis, compile `#[cfg(windows)]`.
 - Remote: TURN qua NAT/4G/firewall doanh nghiệp, egress/giờ → chi phí, HTTPS thật cho getUserMedia web.
 - Gate Phase 1 empirical (G2/G5): cần i5 + speech tiếng Việt thật.
-- Monorepo workspaces đầy đủ + `@hobui/viui` npm cho web (defer).
+- Monorepo workspaces đầy đủ + `@hobui/ui` npm cho web (defer).
 - Bundle desktop 913KB (livekit-client) — cân nhắc code-split.

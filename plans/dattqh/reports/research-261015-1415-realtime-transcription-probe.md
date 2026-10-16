@@ -1,6 +1,6 @@
 # Đo OpenAI Realtime transcription cho app mobile
 
-Ngày đo: 2026-10-15. Mục đích: quyết định cách làm transcript realtime cho app iOS (Capacitor kèm plugin Swift, plan `260728-1609-onescribe-ios-app-ghi-nen-khoa-man-hinh`).
+Ngày đo: 2026-10-15. Mục đích: quyết định cách làm transcript realtime cho app iOS (Capacitor kèm plugin Swift, plan `260728-1609-scribe-ios-app-ghi-nen-khoa-man-hinh`).
 
 ## Kết luận
 

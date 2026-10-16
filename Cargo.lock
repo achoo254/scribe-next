@@ -1487,32 +1487,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "onescribe-be"
-version = "0.1.0"
-dependencies = [
- "axum",
- "axum-extra",
- "chrono",
- "core-split",
- "futures-util",
- "infer",
- "jsonwebtoken",
- "mongodb",
- "rand 0.8.7",
- "reqwest",
- "serde",
- "serde_json",
- "time",
- "tokio",
- "tokio-util",
- "tower-http",
- "tracing",
- "tracing-subscriber",
- "uuid",
- "zip",
-]
-
-[[package]]
 name = "parking_lot"
 version = "0.12.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1957,6 +1931,32 @@ name = "scopeguard"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
+
+[[package]]
+name = "scribe-be"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "axum-extra",
+ "chrono",
+ "core-split",
+ "futures-util",
+ "infer",
+ "jsonwebtoken",
+ "mongodb",
+ "rand 0.8.7",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "time",
+ "tokio",
+ "tokio-util",
+ "tower-http",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+ "zip",
+]
 
 [[package]]
 name = "semver"

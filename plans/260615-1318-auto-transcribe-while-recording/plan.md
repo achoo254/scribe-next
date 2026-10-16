@@ -42,12 +42,12 @@ RecordView ── watch(segments.length) ──► flushFinalized()
 
 - Create: `src/composables/use-record-transcribe.ts` — model status/download + map transcript theo path + enqueue.
 - Create: `src/components/SegmentTranscriptList.vue` — danh sách đoạn + transcript inline (presentational).
-- Create: `src/design-system/vi-ui/vi-switch/ViSwitch.vue` — wrapper toggle (+ export index.ts).
+- Create: `src/design-system/ui/vi-switch/UiSwitch.vue` — wrapper toggle (+ export index.ts).
 - Modify: `src/views/RecordView.vue` — toggle + model picker/status + điều phối enqueue + hiển thị.
 
 ## Implementation steps
 
-1. ViSwitch wrapper (Vi*-only) + export barrel.
+1. UiSwitch wrapper (Ui*-only) + export barrel.
 2. Composable: reuse `model_status`/`model_path`/`ensure_model`/`transcribe_files`; listen `transcribe_msg`
    → map `{status,pct,text,txtPath,srtPath,error}` theo path; `enqueue` dedup + gate enabled/model.
 3. SegmentTranscriptList: render từng đoạn (số thứ tự, tên, status, progress, textarea readonly, copy, locate).
@@ -56,7 +56,7 @@ RecordView ── watch(segments.length) ──► flushFinalized()
 
 ## Todo
 
-- [x] ViSwitch wrapper + export
+- [x] UiSwitch wrapper + export
 - [x] use-record-transcribe composable
 - [x] SegmentTranscriptList component
 - [x] Tích hợp RecordView (toggle + model + điều phối + hiển thị)
@@ -65,7 +65,7 @@ RecordView ── watch(segments.length) ──► flushFinalized()
       H1 (cho thử lại đoạn lỗi transient), H2 (handler chỉ tra entry có sẵn, tránh rò chéo phiên),
       L2 (xóa error khi đổi size), M2 (statusLabel default)
 - [ ] Test thủ công: ghi nhiều đoạn, transcript hiện dần; tải model lần đầu; dừng → đoạn cuối transcribe
-- [ ] ViUI MCP `validate_brand_usage` trên RecordView.vue + SegmentTranscriptList.vue
+- [ ] MCP design system `validate_brand_usage` trên RecordView.vue + SegmentTranscriptList.vue
 
 ## Success criteria
 

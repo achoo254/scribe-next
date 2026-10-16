@@ -1,6 +1,6 @@
-# OneScribe iOS app
+# Scribe iOS app
 
-App iPhone bọc giao diện web React (`web/`) bằng Capacitor 8, cộng phần native Swift để **ghi âm khi khoá màn hình** và tải từng đoạn lên backend prod (`scribe.inetdev.io.vn`). Plan: `plans/260728-1609-onescribe-ios-app-ghi-nen-khoa-man-hinh/`.
+App iPhone bọc giao diện web React (`web/`) bằng Capacitor 8, cộng phần native Swift để **ghi âm khi khoá màn hình** và tải từng đoạn lên backend prod (origin `VITE_NATIVE_API_ORIGIN` trong `web/.env`, nhúng vào Info.plist lúc build). Plan: `plans/260728-1609-scribe-ios-app-ghi-nen-khoa-man-hinh/`.
 
 ## Cài lên iPhone
 
@@ -34,6 +34,8 @@ Cần trên máy build:
 
 `GoogleService-Info.plist` được commit (cấu hình công khai, API key giới hạn theo bundle id), giống cấu hình Firebase web.
 
+> **Đổi bundle id (2026-10-16):** app id mới là `com.hoandat.scribe` (trước đây dùng bundle id khác). `GoogleService-Info.plist` (không có trong git, tải từ Firebase Console) vẫn là cấu hình Firebase của bundle id cũ và được giữ nguyên tới khi chuyển đăng nhập sang hoandat-auth. Người dùng đã chấp nhận đăng nhập Google trên iPhone có thể hỏng trong giai đoạn này. Bản cài mới là một app khác trên máy: dữ liệu cục bộ của app cũ (đoạn chưa tải, Keychain) không chuyển sang.
+
 ## Đã kiểm / còn phải kiểm trên máy thật
 
 | Hạng mục | Trạng thái |
@@ -41,5 +43,9 @@ Cần trên máy build:
 | Gate 0 — `CapacitorHttp` tới BE prod | Đạt trên iPhone 15 Pro Max (2026-10-15): JS nhận 401 của `/api/me`, nginx ghi nhận request |
 | Self-test Simulator (`-OSSelfTest`, chỉ bản Debug) | Đạt: đối soát phát hiện đoạn cụt, tên tất định, hàng đợi dừng ở "cần đăng nhập" khi 401 |
 | m4a qua BE | `ftyp` = `M4A `; `infer 0.16` (cùng bản BE dùng) nhận `audio/m4a`; BE trả `audio/mp4` khi phát |
-| Gate 1 — đăng nhập Google trên iPhone | **Chưa** — cần chủ sở hữu bấm đăng nhập trên máy |
-| Ghi thật khi khoá màn hình, cuộc gọi, tải lên | **Chưa** — Simulator trên Mac mini không có micro (engine abort ở `AURemoteIO`); engine giống spike đã chạy 63 phút trên máy |
+| Gate 1 — đăng nhập Google trên iPhone | Đạt trên iPhone 15 Pro Max (2026-10-16): server log "login thành công", `POST /api/auth/session` 200 |
+| Ghi khi khoá màn hình ~3 phút, đoạn 1 phút, tải lên | Đạt (2026-10-16): 3 đoạn tới server ngay khi xong (08:24:24, 08:25:24, 08:26:20), AAC 48 kHz mono, 60,05 + 60,05 + 56,06 s liền mạch; phát lại 200; `session.json` đánh dấu đã tải, không còn `.m4a` trên máy |
+| Cuộc gọi đến, AirPods, chế độ máy bay khi đang tải | **Chưa** — cần máy thứ hai để gọi vào và AirPods |
+| Kill app khi đang ghi | Đạt (2026-10-16): vuốt tắt sau ~30 s; mở lại thì đoạn dở 31,3 s được đối soát và tải lên (server 08:29:41, ffprobe 31,36 s) |
+| Đăng xuất khi còn đoạn chưa tải | Đạt (2026-10-16): đoạn 90,8 s ở lại trên máy, `uploaded: false`; server có `recordings/init` 3 s trước `logout` nhưng không có `finalize`, không file nào vào tài khoản. Sau đăng xuất máy có mạng, 08:31:51–08:35:02 (gồm lúc mở app để đăng nhập lại) server không nhận request nào. Đăng nhập lại cùng tài khoản (08:35:02) thì đoạn tồn tải nốt ngay: `finalize` 08:35:03 nối tiếp phiên tải cũ (không `init` mới), ffprobe 90,86 s, đúng một file |
+| Ghi dài không sạc, đo pin (ngưỡng ≤ 12% / 60 phút) | Đạt (2026-10-16): 48:07 khoá màn hình, đã rút sạc, đoạn 1 phút; pin 76% → 76% (dưới ~2%); server nhận đủ 49 đoạn liền mạch (48 × ~60 s + 3,9 s), tải lên từng phút 08:43:38–09:30:42 |

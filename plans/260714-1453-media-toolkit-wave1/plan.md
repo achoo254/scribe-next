@@ -1,5 +1,5 @@
 ---
-title: "OneScribe Web — Media toolkit Wave 1 (Convert/Extract/Trim)"
+title: "Scribe Web — Media toolkit Wave 1 (Convert/Extract/Trim)"
 description: "Thêm Convert/Export định dạng, Tách audio từ video, Trim theo mốc — tái dùng core-split + job queue. Non-AI."
 status: pending
 priority: P2
@@ -12,11 +12,11 @@ createdBy: "ck:plan"
 source: skill
 ---
 
-# OneScribe Web — Media toolkit Wave 1 (Convert/Extract/Trim)
+# Scribe Web — Media toolkit Wave 1 (Convert/Extract/Trim)
 
 ## Overview
 
-Biến OneScribe từ "ghi + cắt" thành mini media-toolkit non-AI. Lấp lỗ hổng lớn nhất: bản ghi ra `.webm` khó dùng ngoài app. Thêm 3 thao tác, TÁI DÙNG y nguyên job queue + worker + core-split + quota + retention:
+Biến Scribe từ "ghi + cắt" thành mini media-toolkit non-AI. Lấp lỗ hổng lớn nhất: bản ghi ra `.webm` khó dùng ngoài app. Thêm 3 thao tác, TÁI DÙNG y nguyên job queue + worker + core-split + quota + retention:
 
 - **Convert/Export**: recording/upload → MP3 / M4A / WAV (audio-only ở Wave 1; MP4 video hoãn).
 - **Tách audio từ video**: screen recording (video) → MP3 (`-vn`).

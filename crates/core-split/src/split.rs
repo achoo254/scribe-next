@@ -11,7 +11,7 @@ use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
 /// 15' dư cho `-c copy` (chỉ I/O, không encode) kể cả file 2GB.
 const FFMPEG_TIMEOUT_SECS: u64 = 900;
 
-/// Tiêu chí cắt. Serde `lowercase` khớp giá trị FE/desktop cũ ("minutes"/"megabytes"/"parts").
+/// Tiêu chí cắt. Serde `lowercase` khớp giá trị FE ("minutes"/"megabytes"/"parts").
 #[derive(serde::Serialize, serde::Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum SplitCriterion {
@@ -30,7 +30,7 @@ enum SegmentArg {
 
 /// Cắt 1 file vào `out_dir/<stem>/`. Trả danh sách đoạn (đã sort theo tên).
 ///
-/// `ffmpeg_path`/`ffprobe_path`: đường dẫn tường minh (server đọc từ config; desktop resolve sidecar).
+/// `ffmpeg_path`/`ffprobe_path`: đường dẫn tường minh (server đọc từ config).
 pub async fn split_file(
     ffmpeg_path: &str,
     ffprobe_path: &str,
@@ -45,7 +45,7 @@ pub async fn split_file(
 }
 
 /// Như [`split_file`] nhưng ghi đoạn vào subdir `sub` do caller chỉ định (không suy từ tên file).
-/// Desktop batch dùng để né trùng khi nhiều file nguồn cùng tên stem (khác thư mục nguồn).
+/// Dùng để né trùng khi nhiều file nguồn cùng tên stem (khác thư mục nguồn).
 #[allow(clippy::too_many_arguments)]
 pub async fn split_file_into(
     ffmpeg_path: &str,

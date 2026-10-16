@@ -8,7 +8,7 @@ gate: true
 
 # Phase 0 — Spike: `claude -p` headless feasibility
 
-**GATE cứng, làm trước nhất.** Validate rẻ (không viết code app) rằng OneScribe có thể driver Claude Code headless. NO-GO ở đây → dừng, xem lại backend (Messages API BYOK / Ollama) trước khi đổ công Phase 1+.
+**GATE cứng, làm trước nhất.** Validate rẻ (không viết code app) rằng Scribe có thể driver Claude Code headless. NO-GO ở đây → dừng, xem lại backend (Messages API BYOK / Ollama) trước khi đổ công Phase 1+.
 
 ## Mục tiêu (câu hỏi cần trả lời)
 

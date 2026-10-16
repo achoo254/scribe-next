@@ -3,13 +3,13 @@ import { describe, expect, it } from "vitest";
 import { BrandMark, Wordmark } from "./wordmark";
 
 describe("Wordmark", () => {
-	it("reads OneScribe with 'One' in the primary colour", () => {
+	it("reads Scribe with the 'S' in the primary colour", () => {
 		const { container } = render(<Wordmark data-id="brand" />);
 		const root = container.firstElementChild;
-		expect(root).toHaveTextContent(/^OneScribe$/);
+		expect(root).toHaveTextContent(/^Scribe$/);
 		expect(root).toHaveClass("font-mono", "font-bold", "text-fg");
 		expect(root).toHaveAttribute("data-id", "brand");
-		expect(screen.getByText("One")).toHaveClass("text-primary");
+		expect(screen.getByText("S")).toHaveClass("text-primary");
 	});
 });
 

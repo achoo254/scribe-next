@@ -98,14 +98,14 @@ perspective: attacker
 
 ---
 
-## Finding 9: `@hobui/viui` Dependency — Unpinned External Package, Version Mismatch Risk
+## Finding 9: `@hobui/ui` Dependency — Unpinned External Package, Version Mismatch Risk
 
 - **Severity:** Medium
-- **Location:** Phase 4, "Architecture" + "ViUI trên web"; `package.json` codebase
-- **Flaw:** Desktop app dùng `src/design-system/vi-ui/` local copy (VERIFIED: `src/design-system/vi-ui/index.ts` exists). Phase 4 plan thêm `apps/web` dùng `@hobui/viui` từ npm. Hai nguồn này sẽ diverge theo version — plan acknowledge risk nhưng giải pháp chỉ là "khóa version thống nhất". `@hobui/viui` là internal package của iNET, không public npm — nếu publish lên private registry không đúng access control, hoặc nếu package name bị typosquat trên public npm, web app tải malicious package.
-- **Failure scenario:** `npm install @hobui/viui` resolves từ public npmjs.com thay vì private registry (nếu `.npmrc` không set registry chuẩn, hoặc build CI không có private registry config) → typosquatting package → malicious JS chạy trong web client.
-- **Evidence:** `src/design-system/vi-ui/` exists với 17 files (VERIFIED via plan validation log). `package.json` không có `@hobui/viui` dependency hiện tại (VERIFIED). Phase-04:34 — "cài npm `@hobui/viui @hobui/tokens vuetify @tabler/icons-vue`" — không specify registry source, không specify exact version.
-- **Suggested fix:** Chỉ rõ private npm registry trong `.npmrc` (`@hobui:registry=https://...`). Pin exact version. Cân nhắc tái dùng local alias thay vì npm package cho web (monorepo workspaces có thể symlink `packages/vi-ui` → dùng chung mà không qua npm).
+- **Location:** Phase 4, "Architecture" + "design system trên web"; `package.json` codebase
+- **Flaw:** Desktop app dùng `src/design-system/ui/` local copy (VERIFIED: `src/design-system/ui/index.ts` exists). Phase 4 plan thêm `apps/web` dùng `@hobui/ui` từ npm. Hai nguồn này sẽ diverge theo version — plan acknowledge risk nhưng giải pháp chỉ là "khóa version thống nhất". `@hobui/ui` là internal package, không public npm — nếu publish lên private registry không đúng access control, hoặc nếu package name bị typosquat trên public npm, web app tải malicious package.
+- **Failure scenario:** `npm install @hobui/ui` resolves từ public npmjs.com thay vì private registry (nếu `.npmrc` không set registry chuẩn, hoặc build CI không có private registry config) → typosquatting package → malicious JS chạy trong web client.
+- **Evidence:** `src/design-system/ui/` exists với 17 files (VERIFIED via plan validation log). `package.json` không có `@hobui/ui` dependency hiện tại (VERIFIED). Phase-04:34 — "cài npm `@hobui/ui @hobui/tokens vuetify @tabler/icons-vue`" — không specify registry source, không specify exact version.
+- **Suggested fix:** Chỉ rõ private npm registry trong `.npmrc` (`@hobui:registry=https://...`). Pin exact version. Cân nhắc tái dùng local alias thay vì npm package cho web (monorepo workspaces có thể symlink `packages/ui` → dùng chung mà không qua npm).
 
 ---
 
@@ -121,6 +121,6 @@ perspective: attacker
 | 6 | Path traversal in sidecar protocol — model_dir/file not whitelisted | High | 3 | main.py:63,106; transcribe.rs:213 |
 | 7 | Supply chain — whisper_streaming + silero-vad unpinned | High | 1 | requirements.txt:1-4 |
 | 8 | WebView2 camera/mic capability missing from capabilities config | Medium | 2 | capabilities/default.json |
-| 9 | @hobui/viui npm registry not specified — typosquat risk | Medium | 4 | package.json |
+| 9 | @hobui/ui npm registry not specified — typosquat risk | Medium | 4 | package.json |
 
 **Blockers trước implement:** Findings 1, 2, 3 phải được thiết kế lại trước Phase 5. Finding 5 (CSP=null) phải fix ngay trong Phase 2 trước khi tích hợp bất kỳ external JS nào.

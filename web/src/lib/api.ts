@@ -1,12 +1,16 @@
 /**
  * The one way the app talks to the backend. Paths start with `/api/`; on
  * the web they stay relative (same origin as nginx), in a native shell they
- * are prefixed with the staging origin because the page itself is served
+ * are prefixed with the backend origin because the page itself is served
  * from the app bundle. Every request sends the session cookie.
  */
 
-/** Origin of the backend when the page is not served by it (native shell). */
-export const NATIVE_API_ORIGIN = "https://scribe.inetdev.io.vn";
+/**
+ * Origin of the backend when the page is not served by it (native shell).
+ * Set at build time from web/.env (the build fails without it).
+ */
+export const NATIVE_API_ORIGIN: string =
+	import.meta.env.VITE_NATIVE_API_ORIGIN ?? "";
 
 const NETWORK_ERROR_MESSAGE =
 	"Không kết nối được máy chủ — kiểm tra mạng rồi thử lại.";

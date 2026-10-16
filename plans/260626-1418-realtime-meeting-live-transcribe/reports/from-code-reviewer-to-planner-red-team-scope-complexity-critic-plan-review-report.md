@@ -60,7 +60,7 @@ The plan acknowledges "có thể đụng cấu hình" (`phase-04:66`) but marks 
 **Evidence:**
 - `src-tauri/tauri.conf.json:8–9` — `frontendDist: "../dist"` path becomes invalid if `src-tauri` moves.
 - `src-tauri/src/transcribe.rs:109–116` — `find_script()` walks from `current_exe()` ancestors; path breaks when binary location changes.
-- `package.json:1` — flat `"name": "one-scribe"`, no workspaces declared anywhere in repo.
+- `package.json:1` — flat `"name": "scribe-next"`, no workspaces declared anywhere in repo.
 - `src-tauri/Cargo.toml` — no workspace declaration; changing to workspace member requires coordinated `Cargo.toml` edits at root.
 
 **Suggested fix:** Either (a) skip monorepo entirely for MVP — ship web client as a separate standalone Vite project, share code by copy+adjust (acceptable for MVP ≤8 person scope), or (b) add a Phase 0 monorepo feasibility spike BEFORE committing. DRY at this scale does not justify the refactor risk.
@@ -114,9 +114,9 @@ The plan's architectural decision table (`plan.md:25`) lists "LiveKit self-host 
 
 **Location:** `phase-04-web-client-vue.md` entire file; `plan.md:67` (Phase 4 scope "chốt")
 
-**Flaw:** The stated MVP target is ≤8 people using the app. Every non-host participant in Phase 4 is described as a "consumer thuần — xem video + đọc caption" (`phase-04:14`). This consumer role could be filled by another desktop app user (install OneScribe, join as non-host). The web client is a quality-of-life feature for participants who don't want to install the desktop app — valuable eventually, but not required to prove the core value proposition (Vietnamese live transcription in a meeting).
+**Flaw:** The stated MVP target is ≤8 people using the app. Every non-host participant in Phase 4 is described as a "consumer thuần — xem video + đọc caption" (`phase-04:14`). This consumer role could be filled by another desktop app user (install Scribe, join as non-host). The web client is a quality-of-life feature for participants who don't want to install the desktop app — valuable eventually, but not required to prove the core value proposition (Vietnamese live transcription in a meeting).
 
-Building a separate web client in Phase 4 requires: monorepo refactor (high risk, Finding 3), a new Vite app, ViUI npm package alignment, Safari/iOS WebRTC testing, HTTPS/TLS (Phase 5 dependency), and a token endpoint. That is 5–8 days of scope that does not prove whether people want the live-transcription feature itself.
+Building a separate web client in Phase 4 requires: monorepo refactor (high risk, Finding 3), a new Vite app, design system npm package alignment, Safari/iOS WebRTC testing, HTTPS/TLS (Phase 5 dependency), and a token endpoint. That is 5–8 days of scope that does not prove whether people want the live-transcription feature itself.
 
 **Failure scenario:** Team ships a web client for a meeting feature that nobody uses yet (no users validated), while the core transcription quality (Phase 1 GO/NO-GO) might not even pass. If Phase 1 is NO-GO, Phases 2–5 are wasted.
 

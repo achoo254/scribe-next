@@ -1,4 +1,4 @@
-# Review: ghi âm native iOS + hàng đợi tải lên (OneScribe)
+# Review: ghi âm native iOS + hàng đợi tải lên (Scribe)
 
 Ngày: 2026-10-15 · Người review: code-reviewer · Chế độ: chỉ đọc, chưa chạy trên máy thật.
 
@@ -6,7 +6,7 @@ Ngày: 2026-10-15 · Người review: code-reviewer · Chế độ: chỉ đọc
 
 - Swift: `web/ios/App/App/Recorder/{AudioRecorder,SegmentStore,UploadQueue,RecorderPlugin}.swift`, `GoogleAuthPlugin.swift`, `NativeFilesPlugin.swift`, `MainViewController.swift`, `SceneDelegate.swift` (kèm thay đổi chưa commit ở `AudioRecorder.swift:272-279`).
 - TS: `features/recorder/native-recorder.ts`, `use-native-recorder.ts`, `pages/record/native-record-card.tsx`, `lib/download.ts`, `lib/firebase.ts`, `auth/auth-context.tsx`.
-- Đối chiếu với: `plans/260728-1609-.../phase-02-recorder-va-upload.md`, `server/onescribe-be/src/recordings.rs`, `files.rs`, `error.rs`, `retention.rs`, `rate_limit.rs`, `ios-spike/OneScribeSpike/Recorder.swift`.
+- Đối chiếu với: `plans/260728-1609-.../phase-02-recorder-va-upload.md`, `server/scribe-be/src/recordings.rs`, `files.rs`, `error.rs`, `retention.rs`, `rate_limit.rs`, `ios-spike/ScribeSpike/Recorder.swift`.
 - Kiểm tra đã chạy: `tsc --noEmit` exit 0; `biome check` trên 15 file TS liên quan: sạch. Swift **chưa** build (`xcodebuild` không chạy trong phiên này).
 
 ## Tổng quan

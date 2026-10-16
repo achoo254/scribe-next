@@ -44,7 +44,7 @@ cd sidecar\transcriber
 
 # Đo 1 người nói (RTF + latency), mô phỏng i5 4 nhân, LocalAgreement, realtime:
 .venv\Scripts\python.exe stream_asr_spike.py `
-  --model-dir "$env:APPDATA\vn.inet.onescribe\models\small\PhoWhisper-small-ct2-fasterWhisper" `
+  --model-dir "$env:APPDATA\com.hoandat.scribe\models\small\PhoWhisper-small-ct2-fasterWhisper" `
   --wav mau_1nguoi.wav --cpu-threads 4 --strategy local-agreement --realtime --vad webrtc `
   --out spike_1track.json
 
@@ -54,7 +54,7 @@ cd sidecar\transcriber
 
 # Đo RAM small+medium đồng thời (kiểm OOM 8GB) [C1]:
 .venv\Scripts\python.exe stream_asr_spike.py --probe-ram `
-  --model-dir "<small>" --medium-dir "$env:APPDATA\vn.inet.onescribe\models\medium\PhoWhisper-medium-ct2-fasterWhisper"
+  --model-dir "<small>" --medium-dir "$env:APPDATA\com.hoandat.scribe\models\medium\PhoWhisper-medium-ct2-fasterWhisper"
 ```
 
 Tham số nên quét (Step 5 plan): `--chunk-ms` 500↔1000, `--strategy` vad-cut↔local-agreement, `--vad` energy↔webrtc, `--cpu-threads` 4 (i5) ↔ full (dev baseline).
@@ -141,9 +141,9 @@ Tham số nên quét (Step 5 plan): `--chunk-ms` 500↔1000, `--strategy` vad-cu
 cd sidecar\transcriber
 # 1. venv + deps (nếu .venv chưa có): python -m venv .venv
 .venv\Scripts\python.exe -m pip install -r requirements.txt -r requirements-spike.txt
-# 2. Tải model small (+ medium cho probe-ram). Cách nhanh: mở app OneScribe, picker chọn small+medium
-#    để app tự tải về %APPDATA%\vn.inet.onescribe\models\. HOẶC chạy snapshot_download:
-.venv\Scripts\python.exe -c "import os;os.environ['HF_HUB_DISABLE_XET']='1';from huggingface_hub import snapshot_download as d;d('quocphu/PhoWhisper-ct2-FasterWhisper',local_dir=os.path.expandvars(r'%APPDATA%\vn.inet.onescribe\models\small'),allow_patterns=['PhoWhisper-small-ct2-fasterWhisper/*'])"
+# 2. Tải model small (+ medium cho probe-ram). Cách nhanh: mở app Scribe, picker chọn small+medium
+#    để app tự tải về %APPDATA%\com.hoandat.scribe\models\. HOẶC chạy snapshot_download:
+.venv\Scripts\python.exe -c "import os;os.environ['HF_HUB_DISABLE_XET']='1';from huggingface_hub import snapshot_download as d;d('quocphu/PhoWhisper-ct2-FasterWhisper',local_dir=os.path.expandvars(r'%APPDATA%\com.hoandat.scribe\models\small'),allow_patterns=['PhoWhisper-small-ct2-fasterWhisper/*'])"
 # 3. Chuẩn bị WAV speech tiếng Việt (xem §6).
 ```
 

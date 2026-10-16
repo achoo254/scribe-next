@@ -6,7 +6,7 @@ priority: P1
 effort: "2d"
 dependencies: [1]
 implemented: "2026-06-13"
-note: "Code + build + code-review (fix C1 collision, H1 stale-output, parts integer, probe→UI) + ViUI validate xong. Chờ test cắt file thủ công."
+note: "Code + build + code-review (fix C1 collision, H1 stale-output, parts integer, probe→UI) + design system validate xong. Chờ test cắt file thủ công."
 ---
 
 # Phase 3: Mode B - Split existing files
@@ -40,7 +40,7 @@ batch: loop từng file tuần tự, emit progress (đọc ffmpeg -progress pipe
 
 - Create: `src-tauri/src/splitter.rs` (+ `splitter/criterion.rs` nếu cần)
 - Modify: `src-tauri/src/commands.rs` (`probe_file`, `split_files`)
-- Modify: `src-tauri/src/main.rs` (đăng ký), `src/views/SplitView.vue` (UI ViUI), `src/composables/use-splitter.ts` (wrap invoke + listen progress), `src/styles.css`
+- Modify: `src-tauri/src/main.rs` (đăng ký), `src/views/SplitView.vue` (UI design system), `src/composables/use-splitter.ts` (wrap invoke + listen progress), `src/styles.css`
 
 ## Implementation Steps
 
@@ -49,9 +49,9 @@ batch: loop từng file tuần tự, emit progress (đọc ffmpeg -progress pipe
 3. `split_one(path, seg_time, out_dir)`: tạo subfolder `<stem>`, chạy ffmpeg segment `-c copy` với `-progress pipe:1`; emit progress.
 4. `split_batch(paths[], criterion, value, out_dir)`: loop tuần tự; emit `{file_index, total, file_pct, overall_pct}`; gom kết quả.
 5. `commands.rs`: expose `probe_file` (để UI hiển thị duration trước khi cắt) + `split_files`.
-6. `SplitView.vue` (**UI bắt buộc ViUI — chỉ Vi*, token-only, WCAG AA**): multi-file picker = `ViButton` (mở dialog) + `ViList` hiển thị file đã chọn; radio tiêu chí [Phút|MB|Chia-K] = `ViRadioGroup`/`ViButtonToggle`; ô giá trị = `ViInput` (đổi label theo tiêu chí + ẩn chia-K nếu cần); output folder = `ViButton`; nút Cắt = `ViButton` (primary); progress per-file + tổng = thanh progress (verify `ViProgress`/`ViLoading` qua MCP; nếu thiếu wrapper linear → tạo Vi* wrapper hoặc div token-styled); danh sách kết quả = `ViList`/`ViDataTable` + `ViButton` mở thư mục; note VBR ước lượng = `ViAlert`.
+6. `SplitView.vue` (**UI bắt buộc design system — chỉ Ui*, token-only, WCAG AA**): multi-file picker = `UiButton` (mở dialog) + `UiList` hiển thị file đã chọn; radio tiêu chí [Phút|MB|Chia-K] = `UiRadioGroup`/`UiButtonToggle`; ô giá trị = `UiInput` (đổi label theo tiêu chí + ẩn chia-K nếu cần); output folder = `UiButton`; nút Cắt = `UiButton` (primary); progress per-file + tổng = thanh progress (verify `UiProgress`/`UiLoading` qua MCP; nếu thiếu wrapper linear → tạo Ui* wrapper hoặc div token-styled); danh sách kết quả = `UiList`/`UiDataTable` + `UiButton` mở thư mục; note VBR ước lượng = `UiAlert`.
 7. Test: cắt 1 mp3 theo phút / MB / chia-4; batch 3 file → mỗi file ra subfolder riêng, đoạn lossless phát được, không trùng tên.
-8. **Verify design system**: ViUI MCP `validate_brand_usage` + `review_design_tokens` trên `SplitView.vue` → 0 vi phạm.
+8. **Verify design system**: MCP design system `validate_brand_usage` + `review_design_tokens` trên `SplitView.vue` → 0 vi phạm.
 
 ## Todo List
 
@@ -60,9 +60,9 @@ batch: loop từng file tuần tự, emit progress (đọc ffmpeg -progress pipe
 - [x] split_one + ffmpeg -c copy segment + progress (out_time_us) + cleanup segment cũ
 - [x] split_files batch tuần tự + progress tổng + dedupe subdir (chống ghi đè trùng tên)
 - [x] commands probe_file + split_files
-- [x] SplitView.vue UI (Vi* + token + WCAG): multi-file, radio, progress, kết quả
+- [x] SplitView.vue UI (Ui* + token + WCAG): multi-file, radio, progress, kết quả
 - [ ] **test cắt file thủ công**: phút/MB/chia-4 + batch (m4a copy chưa test)
-- [x] ViUI MCP `validate_brand_usage` → 0 vi phạm (SplitView). *`review_design_tokens` không chạy được (MCP sandbox).*
+- [x] MCP design system `validate_brand_usage` → 0 vi phạm (SplitView). *`review_design_tokens` không chạy được (MCP sandbox).*
 
 ## Success Criteria
 

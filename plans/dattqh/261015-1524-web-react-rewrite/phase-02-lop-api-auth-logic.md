@@ -19,7 +19,7 @@ Chuyển toàn bộ logic của 8 composable Vue sang TypeScript thuần cộng 
 
 ## Thiết kế
 
-- `src/lib/api.ts`: một hàm `apiFetch` duy nhất. Đường dẫn bắt đầu bằng `/api/` được ghép với `API_BASE`: rỗng trên web (cùng origin), là `https://scribe.inetdev.io.vn` khi chạy native. Đây là điểm Gate 0 của plan iOS đang kiểm. Lỗi HTTP thành `ApiError { status, message }`.
+- `src/lib/api.ts`: một hàm `apiFetch` duy nhất. Đường dẫn bắt đầu bằng `/api/` được ghép với `API_BASE`: rỗng trên web (cùng origin), là `https://$DEPLOY_DOMAIN` khi chạy native. Đây là điểm Gate 0 của plan iOS đang kiểm. Lỗi HTTP thành `ApiError { status, message }`.
 - `src/lib/download.ts`: gom 5 chỗ `window.location.href` hiện tại (`use-recordings.ts:49,53,57`, `use-splitter.ts:113`, `use-managed-files.ts:56`) thành `download(url)` và `mediaUrl(fileId)`. Web: giữ hành vi hiện tại. Nhánh native để plan iOS cắm vào sau.
 - Auth: `src/lib/firebase.ts` (Google sign-in popup như hiện tại) + `AuthProvider`/`useAuth` (đọc `/api/me` một lần, `login`, `logout`). Biến `VITE_FIREBASE_*` thiếu thì báo lỗi rõ lúc build.
 - Dữ liệu danh sách (`/api/files`, `/api/files/manage`, `/api/me/usage`, job đang chạy) dùng TanStack Query như `localman-next`.

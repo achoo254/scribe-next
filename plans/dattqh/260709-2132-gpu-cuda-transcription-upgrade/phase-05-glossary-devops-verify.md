@@ -40,7 +40,7 @@ Không đổi — xem `settings.rs::load()`/`save()` (dòng 89-110) đã là ngu
    )
    ```
 2. Cập nhật docstring đầu file (dòng 18 `Glossary (initial_prompt) truyền từ app (settings)...`) nếu cần rút ngắn do không còn tham chiếu EXAMPLE_PROMPT.
-3. Verify thủ công: xoá/backup `%APPDATA%/vn.inet.onescribe/settings.json` (hoặc dir tương ứng `app_data_dir()`), chạy app, mở Mode C → check glossary textarea.
+3. Verify thủ công: xoá/backup `%APPDATA%/com.hoandat.scribe/settings.json` (hoặc dir tương ứng `app_data_dir()`), chạy app, mở Mode C → check glossary textarea.
 4. Verify settings cũ (không có field `glossary`, tạo giả 1 file settings.json cũ thiếu field) → load → vẫn ra glossary DevOps (serde default hoạt động).
 
 ## Todo List

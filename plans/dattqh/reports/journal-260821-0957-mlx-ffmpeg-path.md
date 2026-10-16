@@ -26,8 +26,8 @@ Bỏ hẳn phụ thuộc ffmpeg CLI ở nhánh MLX. Import lazy trong hàm → W
 - `.app` sau `tauri build`: đủ 4 binary, `codesign --verify --deep --strict` = valid, smoke transcriber trong bundle = done.
 
 ## Phát hành
-0.2.0 → 0.2.1 (package.json + tauri.conf.json + Cargo.toml). `OneScribe_0.2.1_aarch64.dmg` +
-`/Applications/OneScribe.app` (hash binary khớp artifact build, đã `xattr -cr`, chạy được).
+0.2.0 → 0.2.1 (package.json + tauri.conf.json + Cargo.toml). `Scribe_0.2.1_aarch64.dmg` +
+`/Applications/Scribe.app` (hash binary khớp artifact build, đã `xattr -cr`, chạy được).
 Windows: installer 0.2.1 **chưa build** (cần máy Windows chạy `build_pyinstaller.ps1` rồi `tauri build`).
 
 ## Bài học

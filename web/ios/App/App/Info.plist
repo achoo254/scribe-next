@@ -6,8 +6,10 @@
 	<string>$(CAPACITOR_DEBUG)</string>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>vi</string>
+	<key>ScribeBackendOrigin</key>
+	<string>$(SCRIBE_BACKEND_ORIGIN)</string>
 	<key>CFBundleDisplayName</key>
-	<string>OneScribe</string>
+	<string>Scribe</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -25,7 +27,7 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>OneScribe dùng micro để ghi âm cuộc họp, kể cả khi màn hình khoá.</string>
+	<string>Scribe dùng micro để ghi âm cuộc họp, kể cả khi màn hình khoá.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

@@ -40,14 +40,14 @@ describe("API base", () => {
 describe("apiFetch", () => {
 	it("sends the cookie and a JSON body", async () => {
 		const { fetcher, calls } = fakeFetch({
-			"POST /api/auth/session": jsonResponse({ email: "a@inet.vn" }),
+			"POST /api/auth/session": jsonResponse({ email: "a@example.com" }),
 		});
 		const user = await apiJson(
 			"/api/auth/session",
 			{ method: "POST", json: { idToken: "t" } },
 			fetcher,
 		);
-		expect(user).toEqual({ email: "a@inet.vn" });
+		expect(user).toEqual({ email: "a@example.com" });
 		expect(calls[0]).toMatchObject({
 			method: "POST",
 			url: "/api/auth/session",

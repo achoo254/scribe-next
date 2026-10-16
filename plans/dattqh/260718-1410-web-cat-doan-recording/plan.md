@@ -4,7 +4,7 @@ Status: DONE (chờ QA thật + commit) · Branch: main · 2026-07-18
 
 ## Bối cảnh (chẩn đoán)
 
-Web OneScribe (thư mục `web/` + `server/onescribe-be`), KHÔNG phải desktop Tauri.
+Web Scribe (thư mục `web/` + `server/scribe-be`), KHÔNG phải desktop Tauri.
 
 **Bug #1 — bật "Cắt thành đoạn theo phút" nhưng Lịch sử ghi chỉ 1 file.**
 - Dừng ghi → finalize tạo 1 bản ghi gốc (`kind:recording`). Bật cắt → job cắt tạo đoạn `kind:output`.
@@ -27,7 +27,7 @@ Web OneScribe (thư mục `web/` + `server/onescribe-be`), KHÔNG phải desktop
 ### BE — crate core-split
 - `split.rs`: thêm `remux_copy_to_webm` (refactor helper chung với `remux_copy_to_mkv`).
 
-### BE — server onescribe-be
+### BE — server scribe-be
 - `recordings.rs::finalize`: EBML (webm/mkv) → remux ra webm seekable (fallback rename nếu remux lỗi → không mất bản ghi). Ép ext `.webm`. Probe duration (remux có duration).
 - `models/job.rs`: thêm field `recordingSplit` + param `create_split`.
 - `jobs.rs`: `CreateReq.recordingSplit`; guard input phải `kind:recording` khi bật; truyền vào create_split.

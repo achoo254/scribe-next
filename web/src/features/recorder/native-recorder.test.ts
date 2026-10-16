@@ -179,9 +179,9 @@ describe("NativeRecorder", () => {
 
 describe("userKeyOf", () => {
 	it("is stable per account and ignores case and spaces", async () => {
-		const a = await userKeyOf("Dat@inet.vn");
+		const a = await userKeyOf("Dat@example.com");
 		expect(a).toMatch(/^[0-9a-f]{24}$/);
-		expect(await userKeyOf(" dat@inet.vn ")).toBe(a);
-		expect(await userKeyOf("other@inet.vn")).not.toBe(a);
+		expect(await userKeyOf(" dat@example.com ")).toBe(a);
+		expect(await userKeyOf("other@example.com")).not.toBe(a);
 	});
 });

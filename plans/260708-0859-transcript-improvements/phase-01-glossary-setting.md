@@ -18,7 +18,7 @@
 - `src-tauri/src/settings.rs` — thêm field `glossary: Option<String>` (`#[serde(default)]`) vào `AppSettings` + `Default`.
 - `src-tauri/src/transcribe.rs` — trong `transcribe()`: load `settings::load(app)`, lấy `glossary`, thêm vào JSON gửi sidecar khi non-empty: `"prompt": <glossary>`. (Đọc ở Rust = DRY, không phải nhét qua mọi lời `invoke`.)
 - `sidecar/transcriber/main.py` — `transcribe()` nhận `prompt = req.get("prompt")`; truyền xuống `_transcribe_ct2`/`_transcribe_mlx`. `initial_prompt=prompt` chỉ khi truthy; bỏ hằng `DEFAULT_PROMPT` (hoặc giữ làm placeholder gợi ý ở UI, KHÔNG dùng làm mặc định ngầm).
-- `src/views/TranscriptView.vue` — thêm ô "Thuật ngữ / tên riêng" (ViTextarea, collapsible) bind vào glossary; load từ `get_settings`, lưu qua `set_settings` (debounce hoặc lưu khi blur).
+- `src/views/TranscriptView.vue` — thêm ô "Thuật ngữ / tên riêng" (UiTextarea, collapsible) bind vào glossary; load từ `get_settings`, lưu qua `set_settings` (debounce hoặc lưu khi blur).
 
 ## Các bước
 

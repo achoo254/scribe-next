@@ -1,4 +1,4 @@
-# Ghi màn hình (Mode A mở rộng) — OneScribe
+# Ghi màn hình (Mode A mở rộng) — Scribe
 
 Thêm ghi màn hình (toàn màn hình + chọn vùng kiểu Bandicam) vào tính năng ghi âm hiện có,
 xuất MP4 (video + audio mic/hệ thống), vẫn auto-transcribe audio track như Mode A.

@@ -1,9 +1,6 @@
 //! Regression tích hợp: cắt file THẬT qua ffmpeg (input sinh bằng lavfi) → xác nhận pipeline đầu-cuối
 //! (probe → segment_time → ffmpeg `-c copy` → naming/subdir). Bỏ qua nếu máy không có ffmpeg/ffprobe
 //! trên PATH (in cảnh báo, KHÔNG fail) để CI không cài ffmpeg vẫn xanh.
-//!
-//! Desktop (`src-tauri/src/splitter.rs`) nay uỷ thác toàn bộ thuật toán cắt cho crate này → test ở đây
-//! bảo chứng luôn hành vi cắt của desktop Mode B (một nguồn chân lý, không còn bản song sinh).
 
 use core_split::{probe_file, split_file, split_file_into, SplitCriterion};
 use std::path::{Path, PathBuf};
@@ -98,7 +95,7 @@ async fn split_file_into_uses_caller_subdir() {
     let dir = temp_dir("subdir");
     let input = gen_wav(&dir, "clip.wav", 6);
     let out = dir.join("out");
-    // sub tường minh KHÁC stem → đúng cơ chế desktop batch né trùng tên giữa nhiều file nguồn.
+    // sub tường minh KHÁC stem → đúng cơ chế né trùng tên giữa nhiều file nguồn.
     let segs = split_file_into(
         FFMPEG, FFPROBE, &input, SplitCriterion::Parts, 2.0, out.to_str().unwrap(), "clip_2", |_| {},
     )

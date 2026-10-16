@@ -34,7 +34,7 @@ Rust (transcribe.rs) --spawn 1 lần (lazy)--> Python sidecar (transcriber-<targ
    │     ◄─ {"type":"progress", file, pct}    │ faster-whisper segments (PyAV decode trực tiếp)
    │     ◄─ {"type":"done", file, text, txt_path, srt_path}
    └─ (đóng app → kill sidecar)
-UI TranscriptView.vue (Vi*): model status + Transcribe + progress + panel text + save .txt/.srt
+UI TranscriptView.vue (Ui*): model status + Transcribe + progress + panel text + save .txt/.srt
 ```
 
 - **Python sidecar** (`sidecar/transcriber/main.py`): vòng lặp đọc stdin JSON; `WhisperModel(model_dir, device="cpu", compute_type="int8")`; lệnh `ensure_model` (download + progress), `transcribe` (stream progress theo `segment.end / duration`, build `.srt` từ timestamps, ghi `.txt`, trả full text). PyInstaller one-dir → `binaries/transcriber-<target>`.
@@ -48,7 +48,7 @@ UI TranscriptView.vue (Vi*): model status + Transcribe + progress + panel text +
 - Create: `src-tauri/src/transcribe.rs` (sidecar lifecycle + protocol + model orchestration)
 - Create: `src-tauri/binaries/transcriber-x86_64-pc-windows-msvc(.exe)` (output PyInstaller)
 - Modify: `src-tauri/src/commands.rs` (`ensure_model`, `transcribe_files`, `cancel_transcribe`), `src-tauri/tauri.conf.json` (externalBin thêm transcriber), `src-tauri/src/main.rs`
-- Modify: `src/views/TranscriptView.vue` (UI ViUI), `src/composables/use-transcribe.ts` (wrap invoke + listen events), `src/styles.css`
+- Modify: `src/views/TranscriptView.vue` (UI design system), `src/composables/use-transcribe.ts` (wrap invoke + listen events), `src/styles.css`
 
 ## Implementation Steps
 
@@ -58,9 +58,9 @@ UI TranscriptView.vue (Vi*): model status + Transcribe + progress + panel text +
 4. Build script PyInstaller → one-dir, rename theo target → `binaries/transcriber-<target>`.
 5. `transcribe.rs`: spawn sidecar (tauri shell), serde structs cho request/response, đọc stdout theo dòng → emit events; batch queue; kill on drop.
 6. `commands.rs`: `ensure_model`, `transcribe_files(paths[], out_dir, outputs[])`, `cancel`.
-7. `TranscriptView.vue` (**UI bắt buộc ViUI — chỉ Vi*, token-only, WCAG AA**): multi-file picker = `ViButton` + `ViList`; trạng thái model = `ViAlert`/`ViChip` (chưa tải → `ViButton` Tải kèm progress); nút Transcribe = `ViButton` (primary); progress per-file = thanh progress (Vi* progress/wrapper); panel transcript = `ViTextarea` (readonly) + `ViButton` Copy (`ViIcon` Tabler copy); nút lưu .txt/.srt = `ViButton` + link mở (`ViButton`/`ViIcon`). Tra component/token qua ViUI MCP.
+7. `TranscriptView.vue` (**UI bắt buộc design system — chỉ Ui*, token-only, WCAG AA**): multi-file picker = `UiButton` + `UiList`; trạng thái model = `UiAlert`/`UiChip` (chưa tải → `UiButton` Tải kèm progress); nút Transcribe = `UiButton` (primary); progress per-file = thanh progress (Ui* progress/wrapper); panel transcript = `UiTextarea` (readonly) + `UiButton` Copy (`UiIcon` Tabler copy); nút lưu .txt/.srt = `UiButton` + link mở (`UiButton`/`UiIcon`). Tra component/token qua MCP design system.
 8. Test: tải model 1 lần; transcribe 1 file mp3 tiếng Việt → text hợp lý + srt timestamp đúng; batch 2 file (model không reload); ngắt mạng sau khi tải → vẫn chạy (offline).
-9. **Verify design system**: ViUI MCP `validate_brand_usage` + `review_design_tokens` trên `TranscriptView.vue` → 0 vi phạm.
+9. **Verify design system**: MCP design system `validate_brand_usage` + `review_design_tokens` trên `TranscriptView.vue` → 0 vi phạm.
 
 ## Todo List
 
@@ -69,9 +69,9 @@ UI TranscriptView.vue (Vi*): model status + Transcribe + progress + panel text +
 - [x] requirements.txt (pin version) + PyInstaller build script (onefile — onedir cân nhắc P5)
 - [x] transcribe.rs lifecycle (std::process persistent + spawn lazy + reader thread + Drop/Exit kill)
 - [x] commands ensure_model/transcribe_files/cancel/model_status
-- [x] TranscriptView.vue UI (Vi* + token + WCAG): model status, transcribe, progress, panel copy, mở .txt/.srt
+- [x] TranscriptView.vue UI (Ui* + token + WCAG): model status, transcribe, progress, panel copy, mở .txt/.srt
 - [x] **test transcribe thật tiếng Việt** (audio 11.6′): frozen binary CPU int8 → text + srt OK. large 9.5′, medium 3.27′.
-- [x] ViUI MCP `validate_brand_usage` → 0 vi phạm (TranscriptView). *`review_design_tokens` không chạy được (MCP sandbox).*
+- [x] MCP design system `validate_brand_usage` → 0 vi phạm (TranscriptView). *`review_design_tokens` không chạy được (MCP sandbox).*
 - [x] sidecar smoke: ready + shutdown sạch (exit 0); faster-whisper import OK trên Python 3.14
 - [x] **PyInstaller build** transcriber-x86_64-pc-windows-msvc.exe (91.6MB, onefile) + externalBin
 - [x] **Fix CUDA**: frozen binary thiếu cublas64_12.dll → CPU int8 thuần (bỏ nhánh GPU)

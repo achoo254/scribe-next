@@ -1,11 +1,9 @@
 //! core-split — thuật toán cắt media thuần (ffmpeg segment muxer, `-c copy` lossless).
 //!
-//! Tách khỏi Tauri: spawn ffmpeg/ffprobe qua `tokio::process` (không dùng tauri shell sidecar),
-//! tiến độ báo qua callback (không dùng `app.emit`). Caller truyền tường minh `ffmpeg_path` +
+//! Spawn ffmpeg/ffprobe qua `tokio::process`, tiến độ báo qua callback. Caller truyền tường minh `ffmpeg_path` +
 //! `ffprobe_path` (bắt buộc — `probe_file`/`size_cut_times` spawn ffprobe, không phải ffmpeg).
 //!
-//! Dùng chung: desktop (wrapper Tauri) + server (SplitWorker). Bản extract này phục vụ server;
-//! desktop tiếp tục dùng bản `src-tauri/src/splitter.rs` cho tới khi rewire kèm regression test.
+//! Người dùng: server (SplitWorker).
 
 mod probe;
 mod split;
@@ -93,8 +91,7 @@ pub(crate) fn stem_of(path: &str) -> String {
         .to_string()
 }
 
-/// Tạo `tokio::process::Command`; trên Windows set `CREATE_NO_WINDOW` để không nháy console
-/// (tiền lệ desktop `cuda.rs`). No-op trên Linux/macOS (server chạy Linux).
+/// Tạo `tokio::process::Command`; trên Windows set `CREATE_NO_WINDOW` để không nháy console. No-op trên Linux/macOS (server chạy Linux).
 pub(crate) fn new_command(program: &str) -> tokio::process::Command {
     #[allow(unused_mut)]
     let mut cmd = tokio::process::Command::new(program);

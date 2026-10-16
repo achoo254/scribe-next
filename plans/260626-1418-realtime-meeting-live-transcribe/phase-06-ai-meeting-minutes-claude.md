@@ -43,7 +43,7 @@ Biên bản .md/.docx → lưu phía CLIENT (nhất quán "server không ôm d�
 ## Related Code Files
 
 - Create: module/endpoint "tạo biên bản" (vị trí tùy quyết định a/b) gọi Anthropic SDK.
-- Create: UI "Tạo biên bản AI" trong app (Vue + ViUI) — nút sau khi họp kết thúc, chọn model + ngôn ngữ + có dịch không.
+- Create: UI "Tạo biên bản AI" trong app (Vue + design system) — nút sau khi họp kết thúc, chọn model + ngôn ngữ + có dịch không.
 - Read for context: transcript output Phase 3 (caption-as-record), retention store Phase 5.
 - Reference: skill `claude-api` (model id, adaptive thinking, structured outputs) — đọc trước khi code.
 

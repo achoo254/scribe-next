@@ -1,9 +1,9 @@
-# Brainstorm — Tính năng non-AI làm phong phú OneScribe
+# Brainstorm — Tính năng non-AI làm phong phú Scribe
 
 - Ngày: 2026-07-14
 - Chế độ: brainstorm (không flag --html/--wiki)
 - Trạng thái: ĐÃ CHỐT hướng + sequence + scope Wave 1
-- Bối cảnh: OneScribe Web = ghi + xử lý media, **cố tình KHÔNG AI** (box .65 không GPU; transcript là P2 chờ hạ tầng)
+- Bối cảnh: Scribe Web = ghi + xử lý media, **cố tình KHÔNG AI** (box .65 không GPU; transcript là P2 chờ hạ tầng)
 
 ## Vấn đề (problem-first)
 
@@ -11,7 +11,7 @@ User hỏi "thêm tính năng gì (non-AI) cho phong phú". Vấn đề thật b
 
 ## Năng lực sẵn có (scout)
 
-- Stack: Vue 3 + Vuetify/ViUI · Rust axum + MongoDB · ffmpeg qua crate `core-split` (`split_file`, `remux_copy_to_mkv`, `probe_file`, `size_cut_times`).
+- Stack: Vue 3 + Vuetify/design system · Rust axum + MongoDB · ffmpeg qua crate `core-split` (`split_file`, `remux_copy_to_mkv`, `probe_file`, `size_cut_times`).
 - Job queue + worker (`jobs.rs` + `worker/split_worker.rs`) + tải zip; output kind=`output`; quota 5GB; retention 14 ngày.
 - Đang có: Ghi (mic/system/màn hình), Cắt file (phút/MB/số phần), lịch sử/phát lại, tải (từng/ngày/tất cả), quản lý tệp non-recording.
 - Auth Google; deploy staging .65 sau Cloudflare (origin-bypass được chấp nhận → endpoint public cần phòng abuse thêm).
@@ -62,8 +62,8 @@ User hỏi "thêm tính năng gì (non-AI) cho phong phú". Vấn đề thật b
 
 **Touchpoints (dự kiến):**
 - `crates/core-split/src/` — thêm `convert_file` / `extract_audio` / `trim_file` (+ test ffmpeg thật, khớp pattern `tests/split_file_ffmpeg.rs`).
-- `server/onescribe-be/src/jobs.rs` + `models/job.rs` + `worker/split_worker.rs` — tổng quát job có `op` (split | convert | trim | extract) + params; output single-file → tải qua `/api/files/:id?download=1` đã có.
-- `server/onescribe-be/src/files.rs` — (nếu cần) không đổi; output đã liệt kê ở `manage_list`.
+- `server/scribe-be/src/jobs.rs` + `models/job.rs` + `worker/split_worker.rs` — tổng quát job có `op` (split | convert | trim | extract) + params; output single-file → tải qua `/api/files/:id?download=1` đã có.
+- `server/scribe-be/src/files.rs` — (nếu cần) không đổi; output đã liệt kê ở `manage_list`.
 - FE: `web/src/composables/use-splitter.ts` (tổng quát hoá thành media-job) hoặc composable mới; UI trong `SplitView.vue` / thêm hành động ở `RecordingHistory.vue` ("Xuất MP3/MP4", "Trim").
 
 **Rủi ro / quyết định cho /ck:plan:**

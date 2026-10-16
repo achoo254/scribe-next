@@ -1,6 +1,6 @@
 # Review: Chép lời bằng OpenAI (BYOK) — thay đổi chưa commit trên `main`
 
-Ngày: 2026-10-15 · Người review: code-reviewer · Spec: `plans/260728-1609-onescribe-ios-app-ghi-nen-khoa-man-hinh/phase-06-ban-hoan-chinh-sau-buoi-ghi.md` (T1–T6 coi là quyết định chủ sở hữu, chỉ kiểm code có làm đúng không)
+Ngày: 2026-10-15 · Người review: code-reviewer · Spec: `plans/260728-1609-scribe-ios-app-ghi-nen-khoa-man-hinh/phase-06-ban-hoan-chinh-sau-buoi-ghi.md` (T1–T6 coi là quyết định chủ sở hữu, chỉ kiểm code có làm đúng không)
 
 ## Phạm vi
 
@@ -24,7 +24,7 @@ Không có lỗi rò key ra Mongo/log/argv hay vượt quyền người dùng.
 ## High
 
 ### H1. Race giữa `enqueue` và `put`: lượt chép báo lỗi sai VÀ key bị kẹt vĩnh viễn trong RAM
-`server/onescribe-be/src/transcribe/mod.rs:111-115` (cùng `:246-249`)
+`server/scribe-be/src/transcribe/mod.rs:111-115` (cùng `:246-249`)
 
 ```rust
 transcript::enqueue(&state.db, oid, &user.0, &run_id, openai::MODEL).await?;   // doc đã "queued" trên Mongo
@@ -43,7 +43,7 @@ if let Err(e) = transcript::enqueue(&state.db, oid, &user.0, &run_id, openai::MO
 ```
 
 ### H2. Key không bao giờ được dọn khi file bị xoá lúc đang chờ (xoá tay, retention, cắt bản ghi)
-`server/onescribe-be/src/models/transcript.rs:175-181`, `models/file.rs:213-220`, `transcribe/mod.rs:43-65`
+`server/scribe-be/src/models/transcript.rs:175-181`, `models/file.rs:213-220`, `transcribe/mod.rs:43-65`
 
 `file::delete_doc` → `transcript::delete` xoá doc `transcripts`, nhưng `PendingKeys` không hề biết. Doc đã mất nên không bao giờ được claim → entry `(run_id, ApiKey)` ở lại mãi. Cũng xảy ra với job "Cắt bản ghi" (`jobs.rs:274`) và retention sweep (`retention.rs:65`). Cùng loại với H1: vi phạm T3 và là rò bộ nhớ chứa bí mật (một phiên 180 đoạn = 180 bản sao key).
 

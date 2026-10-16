@@ -3,7 +3,7 @@ import { cn } from "../../lib/cn";
 
 export type WordmarkProps = Omit<ComponentProps<"span">, "children">;
 
-/** "OneScribe" in bold JetBrains Mono; "One" uses violet step 11. */
+/** "Scribe" in bold JetBrains Mono, the "S" in violet step 11. */
 export function Wordmark({ className, ...rest }: WordmarkProps) {
 	return (
 		<span
@@ -13,7 +13,7 @@ export function Wordmark({ className, ...rest }: WordmarkProps) {
 			)}
 			{...rest}
 		>
-			<span className="text-primary">One</span>Scribe
+			<span className="text-primary">S</span>cribe
 		</span>
 	);
 }
@@ -26,7 +26,7 @@ export interface BrandMarkProps {
 
 /**
  * App mark: sound wave (primary) turning into transcript lines (accent),
- * the same drawing as the desktop app icon, coloured by tokens.
+ * the same drawing as the app icon, coloured by tokens.
  */
 export function BrandMark({ size = 28, className }: BrandMarkProps) {
 	return (

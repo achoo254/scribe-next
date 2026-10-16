@@ -1,5 +1,5 @@
 /* =====================================================================
-   ONESCRIBE DESIGN TOKENS (same system as localman-next)
+   SCRIBE DESIGN TOKENS (same system as localman-next)
    The ONLY file in the repo allowed to hold colour literals and raw px
    spacing values. Every other stylesheet and component references these
    custom properties (enforced by `npm run check:tokens`).

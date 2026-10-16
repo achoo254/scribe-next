@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Scribe Web — Plan Review</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --bg-soft: #171a21;
+    --bg-card: #1c2029;
+    --border: #2a2f3a;
+    --text: #e6e9ef;
+    --text-dim: #9aa3b2;
+    --text-faint: #6b7383;
+    --accent: #6ea8fe;
+    --accent-soft: #1e2a44;
+    --green: #3fb950;
+    --green-soft: #12291a;
+    --red: #f85149;
+    --red-soft: #2d1516;
+    --orange: #e3853b;
+    --orange-soft: #2e1f12;
+    --yellow: #d4b23f;
+    --yellow-soft: #2a2512;
+    --purple: #a371f7;
+    --mono: ui-monospace, "Cascadia Code", "SF Mono", Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #f6f7f9;
+      --bg-soft: #eef0f3;
+      --bg-card: #ffffff;
+      --border: #dde1e8;
+      --text: #1c2029;
+      --text-dim: #5a6472;
+      --text-faint: #8a93a2;
+      --accent: #2563eb;
+      --accent-soft: #e5edff;
+      --green: #1a7f37;
+      --green-soft: #dcfce4;
+      --red: #cf222e;
+      --red-soft: #ffdcdc;
+      --orange: #bc4c00;
+      --orange-soft: #ffe6cc;
+      --yellow: #9a6700;
+      --yellow-soft: #fff3c4;
+      --purple: #8250df;
+    }
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    line-height: 1.6;
+    font-size: 15px;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 20px 80px; }
+
+  /* Header */
+  header {
+    background: linear-gradient(135deg, var(--accent-soft), var(--bg-soft));
+    border-bottom: 1px solid var(--border);
+    padding: 40px 20px 34px;
+    margin-bottom: 34px;
+  }
+  header .inner { max-width: 1080px; margin: 0 auto; }
+  .eyebrow { color: var(--accent); font-size: 12px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+  h1 { font-size: 30px; line-height: 1.2; margin: 8px 0 6px; font-weight: 800; letter-spacing: -.02em; }
+  .subtitle { color: var(--text-dim); font-size: 15px; max-width: 780px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: var(--bg-card); border: 1px solid var(--border);
+    padding: 5px 11px; border-radius: 999px; font-size: 12.5px; font-weight: 600;
+  }
+  .chip.ok { color: var(--green); border-color: color-mix(in srgb, var(--green) 40%, var(--border)); }
+  .chip.warn { color: var(--orange); border-color: color-mix(in srgb, var(--orange) 40%, var(--border)); }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+
+  section { margin-top: 40px; }
+  h2 {
+    font-size: 19px; font-weight: 700; letter-spacing: -.01em;
+    display: flex; align-items: center; gap: 10px; margin-bottom: 16px;
+    padding-bottom: 10px; border-bottom: 1px solid var(--border);
+  }
+  h2 .num {
+    font-family: var(--mono); font-size: 13px; color: var(--accent);
+    background: var(--accent-soft); border-radius: 6px; padding: 2px 8px; font-weight: 700;
+  }
+  h3 { font-size: 15px; font-weight: 700; margin: 22px 0 10px; color: var(--text); }
+  p { color: var(--text-dim); margin-bottom: 10px; }
+  strong { color: var(--text); font-weight: 650; }
+  code { font-family: var(--mono); font-size: .88em; background: var(--bg-soft); padding: 1px 5px; border-radius: 4px; color: var(--accent); }
+
+  /* Architecture diagram */
+  .diagram {
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px;
+    overflow-x: auto; padding: 18px;
+  }
+  .diagram pre {
+    font-family: var(--mono); font-size: 12.5px; line-height: 1.55; color: var(--text-dim);
+    white-space: pre; min-width: 620px;
+  }
+  .diagram pre b { color: var(--accent); font-weight: 700; }
+  .diagram pre .g { color: var(--green); }
+
+  /* Cards grid */
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
+  .card {
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px;
+    padding: 16px 16px 14px; position: relative; transition: border-color .15s;
+  }
+  .card:hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
+  .card .phead { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+  .card .pnum { font-family: var(--mono); font-weight: 800; font-size: 13px; color: var(--accent); }
+  .card h4 { font-size: 15px; font-weight: 700; }
+  .card .pdesc { color: var(--text-dim); font-size: 13.5px; margin-top: 4px; }
+  .card .pmeta { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+  .badge {
+    font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 6px;
+    text-transform: uppercase; letter-spacing: .04em;
+  }
+  .badge.pending { background: var(--bg-soft); color: var(--text-faint); border: 1px solid var(--border); }
+  .badge.p1 { background: var(--red-soft); color: var(--red); }
+  .badge.p2 { background: var(--accent-soft); color: var(--accent); }
+  .badge.gate { background: var(--purple); color: #fff; }
+  .card .fixes { margin-top: 12px; padding-top: 11px; border-top: 1px dashed var(--border); font-size: 12.5px; color: var(--text-faint); }
+  .card .fixes b { color: var(--text-dim); }
+
+  /* Tables */
+  .tbl-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 12px; }
+  table { border-collapse: collapse; width: 100%; font-size: 13.5px; min-width: 560px; }
+  th, td { text-align: left; padding: 10px 13px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { background: var(--bg-soft); font-weight: 700; color: var(--text-dim); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; position: sticky; top: 0; }
+  tr:last-child td { border-bottom: none; }
+  td.sev { white-space: nowrap; font-weight: 700; }
+  .sev-c { color: var(--red); }
+  .sev-h { color: var(--orange); }
+  .sev-m { color: var(--yellow); }
+  .pill { display: inline-block; font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 5px; white-space: nowrap; }
+  .pill.acc { background: var(--green-soft); color: var(--green); }
+  .num-cell { font-family: var(--mono); font-weight: 700; color: var(--text-faint); }
+
+  /* Callout */
+  .callout {
+    background: var(--orange-soft); border: 1px solid color-mix(in srgb, var(--orange) 45%, var(--border));
+    border-left: 4px solid var(--orange); border-radius: 10px; padding: 15px 17px; margin-top: 8px;
+  }
+  .callout.info { background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); border-left-color: var(--accent); }
+  .callout .ctitle { font-weight: 700; color: var(--text); margin-bottom: 5px; display: flex; align-items: center; gap: 7px; }
+  .callout p { margin-bottom: 0; color: var(--text-dim); font-size: 13.5px; }
+
+  /* Decision / prereq lists */
+  ul.clean { list-style: none; }
+  ul.clean li { padding: 9px 0 9px 26px; border-bottom: 1px solid var(--border); position: relative; color: var(--text-dim); font-size: 14px; }
+  ul.clean li:last-child { border-bottom: none; }
+  ul.clean li::before { content: ""; position: absolute; left: 4px; top: 15px; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+  ul.clean li.chk::before { content: "✓"; background: none; color: var(--green); font-weight: 800; top: 8px; left: 2px; font-size: 14px; }
+  ul.clean li b { color: var(--text); }
+
+  .dec-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px,1fr)); gap: 12px; }
+  .dec {
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; padding: 13px 15px;
+  }
+  .dec .k { font-size: 12px; color: var(--text-faint); text-transform: uppercase; letter-spacing: .05em; font-weight: 700; }
+  .dec .v { font-size: 15px; color: var(--text); font-weight: 700; margin-top: 3px; }
+  .dec .n { font-size: 12.5px; color: var(--text-dim); margin-top: 3px; }
+
+  .steps { counter-reset: step; }
+  .steps .step { position: relative; padding: 4px 0 18px 44px; border-left: 2px solid var(--border); margin-left: 14px; }
+  .steps .step:last-child { border-left-color: transparent; }
+  .steps .step::before {
+    counter-increment: step; content: counter(step);
+    position: absolute; left: -15px; top: 0; width: 28px; height: 28px; border-radius: 50%;
+    background: var(--accent); color: #fff; font-weight: 800; font-size: 13px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .steps .step h4 { font-size: 14.5px; font-weight: 700; margin-bottom: 3px; }
+  .steps .step p { font-size: 13.5px; margin: 0; }
+
+  footer { margin-top: 50px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--text-faint); font-size: 12.5px; text-align: center; }
+
+  .stat-row { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 18px; }
+  .stat { flex: 1; min-width: 120px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; padding: 13px 15px; }
+  .stat .big { font-size: 26px; font-weight: 800; font-family: var(--mono); }
+  .stat .lbl { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
+  .stat.c .big { color: var(--red); }
+  .stat.h .big { color: var(--orange); }
+  .stat.m .big { color: var(--yellow); }
+  .stat.t .big { color: var(--accent); }
+</style>
+</head>
+<body>
+<header>
+  <div class="inner">
+    <div class="eyebrow">Plan Review · 2026-07-11</div>
+    <h1>Scribe Web — media ghi + cắt</h1>
+    <p class="subtitle">Web hóa Scribe làm <strong>ghi + cắt media, bỏ hoàn toàn AI transcribe</strong> (box .65 không GPU). BE Rust/axum → 1 static musl binary · FE Vue3/Vite+design system · MongoDB · ffmpeg server-side · deploy qua nginx :80 + Cloudflare DNS proxied. Định vị = frontend nền tảng, chừa chỗ cắm transcribe khi có GPU.</p>
+    <div class="chips">
+      <span class="chip ok"><span class="dot"></span>Red-team ✅ 15+1 finding</span>
+      <span class="chip ok"><span class="dot"></span>Validate ✅ 5 quyết định</span>
+      <span class="chip ok"><span class="dot"></span>Consistency sweep · 0 mâu thuẫn</span>
+      <span class="chip warn"><span class="dot"></span>Chờ prerequisite trước cook</span>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <!-- KIẾN TRÚC -->
+  <section id="arch">
+    <h2><span class="num">01</span>Kiến trúc</h2>
+    <div class="diagram">
+<pre>
+ Browser (Vue3+Vite+UI)        CF DNS proxied        Box .65 (103.72.98.65)
+ ─ Ghi: getUserMedia /       ──── TLS edge ────▶   <b>nginx listen :80</b>  (bề mặt public DUY NHẤT)
+     getDisplayMedia                                 ├─ location /     → FE static (dist)
+ ─ Cắt: chọn file + tiêu chí                          └─ location /api  → proxy 127.0.0.1:PORT
+ ─ Lịch sử + player                                        │
+ ─ Tiến độ qua <b>poll 1-2s</b>              ┌──────────────┘
+                                            ▼
+                              <b>BE Rust/axum</b> (systemd, 127.0.0.1 only — KHÔNG public)
+                              ─ Auth: Google OAuth2 → JWT cookie (key tự sinh runtime)
+                              ─ REST: /api/auth /upload /jobs /files /me
+                              ─ Job queue (MongoDB coll `jobs`, conc=1, nice+CPUQuota)
+                                 ├─ <span class="g">SplitWorker</span>      = ffmpeg -c copy (crate core-split)
+                                 └─ <span class="g">TranscribeWorker</span> = STUB (cắm sau khi có GPU)
+                              ─ MongoDB: DB riêng `$DB_NAME`
+                              ─ Storage FS: /data/{userId}/{recordings,outputs}
+                              ─ Sweep: purge 14 ngày + quota 5GB/user
+
+ Build: FE → Vite dist/ (nginx serve) · BE → cargo musl static (env compile-time) → scp → systemd
+</pre>
+    </div>
+    <div class="callout info" style="margin-top:14px">
+      <div class="ctitle">🔑 Nguyên tắc thiết kế</div>
+      <p>1 static musl binary self-contained (env nhúng compile-time, TLS out-bound = rustls, không link OpenSSL) → server KHÔNG cần env/node_modules/runtime. Repo AI-built 100% → ưu tiên correctness + compiler safety. DRY: tách <code>crates/core-split</code> từ <code>src-tauri/src/splitter.rs</code> dùng chung desktop + web.</p>
+    </div>
+  </section>
+
+  <!-- PHASES -->
+  <section id="phases">
+    <h2><span class="num">02</span>5 Phases (tuần tự)</h2>
+    <div class="grid">
+      <div class="card">
+        <div class="phead"><span class="pnum">Phase 1</span><span class="badge gate">Gate</span></div>
+        <h4>Foundation &amp; deploy gate</h4>
+        <div class="pdesc">Cargo workspace + extract core-split + axum skeleton → chứng minh <b>musl binary chạy sạch trên .65</b> (không lib/env/node_modules) TRƯỚC khi xây feature. FE scaffold Vue3/design system.</div>
+        <div class="pmeta"><span class="badge p1">P1</span><span class="badge pending">pending · 2-3d</span></div>
+        <div class="fixes"><b>Red-team áp:</b> cài ffmpeg/ffprobe server · core-split thêm ffprobe_path + CREATE_NO_WINDOW · systemd CPUQuota/MemoryMax · nginx set_real_ip_from + firewall CF · workspace default-members.</div>
+      </div>
+      <div class="card">
+        <div class="phead"><span class="pnum">Phase 2</span></div>
+        <h4>Auth Google OAuth</h4>
+        <div class="pdesc">OAuth2 auth-code → verify id_token qua JWKS (RS256 + email_verified) → JWT cookie httpOnly. Middleware guard mọi <code>/api/*</code>. FE login + route guard.</div>
+        <div class="pmeta"><span class="badge p1">P1</span><span class="badge pending">pending · 2d</span></div>
+        <div class="fixes"><b>Red-team áp:</b> JWT key tự sinh runtime (không bake) · check email_verified · pin oauth2 =4.4.x · allowlist mặc định TẮT (audit-only).</div>
+      </div>
+      <div class="card">
+        <div class="phead"><span class="pnum">Phase 3</span></div>
+        <h4>Mode B — Cắt file</h4>
+        <div class="pdesc">Upload chunked (append thẳng disk, resume stateless theo <code>.part</code>) → cắt phút/MB/parts bằng SplitWorker (<code>-c copy</code>) qua job queue → tải zip.</div>
+        <div class="pmeta"><span class="badge p1">P1</span><span class="badge pending">pending · 2-3d</span></div>
+        <div class="fixes"><b>Red-team áp:</b> sessionId server-gen + ownership · size cap 2GB reject sớm · quota tăng dần · job running→queued khi restart · trait Worker · poll thay SSE.</div>
+      </div>
+      <div class="card">
+        <div class="phead"><span class="pnum">Phase 4</span></div>
+        <h4>Mode A — Ghi</h4>
+        <div class="pdesc">getUserMedia/getDisplayMedia + Web Audio mix → MediaRecorder → endpoint streaming riêng → lịch sử + player. Cắt live = ghi liền → server cắt.</div>
+        <div class="pmeta"><span class="badge p2">P2</span><span class="badge pending">pending · 3d</span></div>
+        <div class="fixes"><b>Gate + red-team:</b> webm remux+copy (đã chốt) · endpoint append-only (không totalChunks) · disk-free 2× cho remux · disclosure parity vs desktop.</div>
+      </div>
+      <div class="card">
+        <div class="phead"><span class="pnum">Phase 5</span></div>
+        <h4>Retention &amp; hardening</h4>
+        <div class="pdesc">Sweep purge 14 ngày (nguồn xoá DUY NHẤT) + quota 5GB + rate-limit + magic-byte + audit-log + security pass. Áp lên mọi phase trước.</div>
+        <div class="pmeta"><span class="badge p1">P1</span><span class="badge pending">pending · 2d</span></div>
+        <div class="fixes"><b>Red-team áp:</b> BỎ TTL index native (đua sweep→orphan) · quota tăng dần · rate-limit real-IP sau firewall CF · allowlist "công tắc khẩn".</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- RED TEAM -->
+  <section id="redteam">
+    <h2><span class="num">03</span>Red-Team — 15 finding + 1 bổ sung (tất cả accepted)</h2>
+    <div class="stat-row">
+      <div class="stat c"><div class="big">5</div><div class="lbl">Critical</div></div>
+      <div class="stat h"><div class="big">7</div><div class="lbl">High</div></div>
+      <div class="stat m"><div class="big">3</div><div class="lbl">Medium</div></div>
+      <div class="stat t"><div class="big">4</div><div class="lbl">Reviewer song song</div></div>
+    </div>
+    <p>30 finding thô từ 4 lens thù địch (Security Adversary · Failure Mode Analyst · Assumption Destroyer · Scope &amp; Complexity Critic) → khử trùng lặp → 15 finding, mọi cái có bằng chứng <code>file:line</code>.</p>
+    <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>#</th><th>Severity</th><th>Finding</th><th>Fix</th><th>Phase</th></tr></thead>
+      <tbody>
+        <tr><td class="num-cell">1</td><td class="sev sev-c">Critical</td><td>TTL index Mongo đua với sweep → orphan disk chắc chắn</td><td>Bỏ TTL native, sweep là nguồn xoá duy nhất</td><td>P5</td></tr>
+        <tr><td class="num-cell">2</td><td class="sev sev-c">Critical</td><td>Rate-limit tin <code>CF-Connecting-IP</code> nhưng không chặn truy cập thẳng origin → bypass</td><td><code>set_real_ip_from</code> + firewall :80 dải CF</td><td>P1+P5</td></tr>
+        <tr><td class="num-cell">3</td><td class="sev sev-c">Critical</td><td>Quota chỉ enforce ở finalize → DoS disk shared</td><td>Check tăng dần khi append + giới hạn session</td><td>P3+P5</td></tr>
+        <tr><td class="num-cell">4</td><td class="sev sev-c">Critical</td><td>JWT_SECRET bake compile-time (HS256) → forge session bất kỳ user</td><td>Tự sinh key runtime <code>chmod 600</code> + TTL ngắn</td><td>P2</td></tr>
+        <tr><td class="num-cell">5</td><td class="sev sev-c">Critical</td><td>ffmpeg/ffprobe chưa có bước cài trên .65 → SplitWorker chết runtime</td><td>Cài ffmpeg/ffprobe + path từ config</td><td>P1+P3</td></tr>
+        <tr><td class="num-cell">6</td><td class="sev sev-h">High</td><td>core-split extract thiếu ffprobe_path + spawn Tauri→tokio mất path-resolve/CREATE_NO_WINDOW</td><td>Thêm ffprobe_path + resolve path + window flag + test tự động</td><td>P1</td></tr>
+        <tr><td class="num-cell">7</td><td class="sev sev-h">High</td><td>Upload protocol chưa xong: resumable "chốt ở cook" + Phase 4 không có totalChunks</td><td>Resume stateless theo <code>.part</code> + endpoint streaming riêng</td><td>P3+P4</td></tr>
+        <tr><td class="num-cell">8</td><td class="sev sev-h">High</td><td><code>sessionId</code> do client gửi → IDOR / path-traversal</td><td>BE sinh UUID bind userId + verify ownership</td><td>P3</td></tr>
+        <tr><td class="num-cell">9</td><td class="sev sev-h">High</td><td>Không kiểm <code>email_verified</code> → allowlist domain bị vòng</td><td>Bắt buộc <code>email_verified == true</code></td><td>P2</td></tr>
+        <tr><td class="num-cell">10</td><td class="sev sev-h">High</td><td>systemd unit thiếu CPUQuota/MemoryMax → ffmpeg chiếm cả box shared</td><td><code>CPUQuota=200%</code> + <code>MemoryMax</code> + ffmpeg <code>-threads</code></td><td>P1</td></tr>
+        <tr><td class="num-cell">11</td><td class="sev sev-h">High</td><td>oauth2 v5 typestate rewrite (không "minor") → snippet v4.4 không compile</td><td>Pin <code>oauth2 = "=4.4.x"</code> hoặc viết lại v5</td><td>P2</td></tr>
+        <tr><td class="num-cell">12</td><td class="sev sev-h">High</td><td>plan.md gán nhầm gate webm cho Phase 3 (thật ở Phase 4)</td><td>Sửa plan.md → gate Phase 4</td><td>plan</td></tr>
+        <tr><td class="num-cell">13</td><td class="sev sev-m">Medium</td><td>Workspace <code>env!()</code> làm <code>cargo check --workspace</code> fail trên máy dev thiếu secret</td><td><code>default-members</code> loại scribe-be</td><td>P1</td></tr>
+        <tr><td class="num-cell">14</td><td class="sev sev-m">Medium</td><td>Không có số size-cap cụ thể xuyên suốt plan</td><td>Chốt 2GB/file, reject từ chunk đầu</td><td>P3</td></tr>
+        <tr><td class="num-cell">15</td><td class="sev sev-m">Medium</td><td>ffmpeg chạy input không tin cậy không sandbox</td><td>Allowlist mặc định + timeout + pin version</td><td>P3+P5</td></tr>
+        <tr><td class="num-cell">+1</td><td class="sev sev-h">High</td><td>Job <code>running</code> không hồi phục sau crash/restart → kẹt vĩnh viễn (sót khi dedup)</td><td>Reset running→queued khi start + heartbeat + sweep</td><td>P3</td></tr>
+      </tbody>
+    </table>
+    </div>
+  </section>
+
+  <!-- VALIDATE -->
+  <section id="validate">
+    <h2><span class="num">04</span>Validate — 5 quyết định đã chốt</h2>
+    <div class="dec-grid">
+      <div class="dec"><div class="k">Domain</div><div class="v">$DEPLOY_DOMAIN</div><div class="n">CF DNS proxied → nginx :80 .65</div></div>
+      <div class="dec"><div class="k">Allowlist Google</div><div class="v">MỞ mọi tài khoản</div><div class="n">audit-only · override khuyến nghị red-team</div></div>
+      <div class="dec"><div class="k">Retention</div><div class="v">14 ngày</div><div class="n">auto-purge qua sweep job</div></div>
+      <div class="dec"><div class="k">Quota / Size cap</div><div class="v">5GB / user · 2GB / file</div><div class="n">reject từ chunk đầu</div></div>
+      <div class="dec"><div class="k">Cắt recording webm</div><div class="v">remux + copy</div><div class="n">sai số vài giây · verify gate P4</div></div>
+    </div>
+    <div class="callout" style="margin-top:16px">
+      <div class="ctitle">⚠️ Trade-off quyết định "mở đăng ký"</div>
+      <p>Bạn chọn mở mọi tài khoản Google thay vì allowlist → bề mặt abuse disk + ffmpeg chạy input lạ TĂNG. Tuyến phòng thủ chuyển hoàn toàn sang: <strong>quota 5GB + size cap 2GB + quota tăng dần khi append + rate-limit theo real-IP (cần firewall CF) + ffmpeg timeout/version-pin + audit-log mọi email</strong>. Allowlist giữ dạng "công tắc khẩn" bật nhanh (đổi = rebuild binary).</p>
+    </div>
+  </section>
+
+  <!-- PREREQ -->
+  <section id="prereq">
+    <h2><span class="num">05</span>Chờ bạn cung cấp trước <code>/ck:cook</code></h2>
+    <p>Đây là secret/value (không phải quyết định) — chỉ cần khi tới Phase 2. Phase 1 (workspace + core-split + musl + deploy skeleton) chạy được ngay không cần các mục này.</p>
+    <ul class="clean">
+      <li><b>Google OAuth client:</b> <code>GOOGLE_CLIENT_ID</code> + <code>GOOGLE_CLIENT_SECRET</code>, redirect URI <code>https://$DEPLOY_DOMAIN/api/auth/callback</code>, consent screen</li>
+      <li><b>MongoDB URI</b> + tạo DB/user riêng <code>$DB_NAME</code> trên .65</li>
+      <li><b>CF DNS record</b> proxied <code>$DEPLOY_DOMAIN</code> → 103.72.98.65 + dải IP Cloudflare (cho firewall / <code>set_real_ip_from</code>)</li>
+    </ul>
+  </section>
+
+  <!-- NEXT -->
+  <section id="next">
+    <h2><span class="num">06</span>Bước tiếp</h2>
+    <div class="steps">
+      <div class="step"><h4>Cung cấp prerequisite (hoặc bắt đầu Phase 1 trước)</h4><p>Phase 1 là gate de-risk musl binary — không cần OAuth/Mongo. Có thể chạy ngay để chứng minh toolchain trước.</p></div>
+      <div class="step"><h4>Clear context rồi cook</h4><p><code>/clear</code> → <code>/ck:cook "D:\CONG VIEC\scribe-next\plans\dattqh\260711-1657-scribe-web-media-rust\plan.md"</code></p></div>
+      <div class="step"><h4>Review theo phase</h4><p>Agent implement từng phase, chạy test/verify, delegate code-reviewer sau mỗi phase; bạn review diff + output.</p></div>
+    </div>
+  </section>
+
+  <footer>
+    Scribe Web — media ghi+cắt (BE Rust/axum, bỏ AI) · Plan review sinh 2026-07-11 · Red-team ✅ · Validate ✅ · Sweep 0 mâu thuẫn<br>
+    Nguồn: <code>plans/dattqh/260711-1657-scribe-web-media-rust/</code>
+  </footer>
+
+</div>
+</body>
+</html>

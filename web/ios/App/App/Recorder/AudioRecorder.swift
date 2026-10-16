@@ -3,7 +3,7 @@ import Foundation
 import os
 import UIKit
 
-/// Background recording engine, ported from ios-spike (63 minutes measured
+/// Background recording engine, ported from the background-recording spike (in git history; 63 minutes measured
 /// on the phone: locked screen, rotation in ~10 ms, 0 broken segments).
 /// AVAudioSession (background audio) + AVAudioEngine tap → AAC/m4a written
 /// directly, rotated every N minutes so each closed segment is a complete
@@ -38,7 +38,7 @@ final class AudioRecorder {
     /// Recreated after a media services reset (Apple: every audio object
     /// must be rebuilt then).
     private var engine = AVAudioEngine()
-    private let log = Logger(subsystem: "vn.inet.onescribe", category: "recorder")
+    private let log = Logger(subsystem: "com.hoandat.scribe", category: "recorder")
 
     /// Guards the fields below up to `recordingFlag`, shared by the audio
     /// render thread and main.
@@ -99,7 +99,7 @@ final class AudioRecorder {
             if granted {
                 self.attemptStart(attempt: 1)
             } else {
-                self.fail("Ứng dụng chưa được cấp quyền Micro — vào Cài đặt → OneScribe → Micro để bật.")
+                self.fail("Ứng dụng chưa được cấp quyền Micro — vào Cài đặt → Scribe → Micro để bật.")
             }
         }
     }

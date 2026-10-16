@@ -37,7 +37,7 @@ Không có STOP trigger nào kích hoạt: (a) mọi finding Critical bảo mậ
 | 8 Critical bảo mật phải LANDED, không bị skip dưới áp lực thời gian (C6 role-from-client, C7 caption injection, C8 store no-auth, H1 CSP/XSS→transcribe_files) | **High** | Đưa thành acceptance gate cứng từng phase, không "tùy chọn". H1: `transcribe_files` (commands.rs:146) nhận `paths` tùy ý + csp:null = vuln HIỆN TẠI, meeting khuếch đại. |
 | Monorepo refactor phá đường dẫn cứng (frontendDist `tauri.conf.json:10`, find_script `transcribe.rs:108-117`, build_pyinstaller.ps1, capabilities) | **High** | Checklist H6 trên nhánh riêng; verify CẢ `tauri dev` LẪN `tauri build` release (sidecar binary đúng chỗ) trước khi sang bước 2. Sai frontendDist → màn trắng không báo lỗi. |
 | Adoption: phải cài host desktop + kéo người sang web client mới, bỏ Meet/Zoom | **Medium-High** | Phase 0 value gate trả lời "transcript có đủ dùng không"; cân nhắc companion-mode như fallback định vị. |
-| ViRow/ViCol thiếu ở vi-ui local (16 comp) | **Medium** | Chốt desktop import `@hobui/viui` npm đồng bộ web (giải luôn H5), pin version + `.npmrc` private registry. |
+| UiRow/UiCol thiếu ở ui local (16 comp) | **Medium** | Chốt desktop import `@hobui/ui` npm đồng bộ web (giải luôn H5), pin version + `.npmrc` private registry. |
 | Egress bandwidth ở 8 người = hóa đơn thật | **Medium** | Đo egress/giờ Phase 5; simulcast + giới hạn độ phân giải mặc định. |
 
 ## Recommendations
