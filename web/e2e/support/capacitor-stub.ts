@@ -8,10 +8,28 @@ export interface NativeCall {
 	options: unknown;
 }
 
+/** What `Recorder.getStatus` answers (web/src/features/recorder/native-recorder.ts). */
+export interface NativeRecorderStatus {
+	state: "idle" | "starting" | "recording" | "stopping";
+	elapsedS: number;
+	uploadsWaiting: number;
+	uploadsFailed: number;
+	notice: string;
+}
+
+export const IDLE_RECORDER: NativeRecorderStatus = {
+	state: "idle",
+	elapsedS: 0,
+	uploadsWaiting: 0,
+	uploadsFailed: 0,
+	notice: "",
+};
+
 interface StubOptions {
 	marker: string;
 	globalName: string;
 	email: string;
+	status: NativeRecorderStatus;
 }
 
 /**
@@ -20,19 +38,18 @@ interface StubOptions {
  * iOS shell, the way the real bridge does: `webkit.messageHandlers.bridge`
  * selects the "ios" platform and `PluginHeaders` + `nativePromise` /
  * `nativeCallback` answer the plugin calls of web/src/lib/native.ts and
- * features/recorder/native-recorder.ts with an idle recorder.
+ * features/recorder/native-recorder.ts with a recorder in `status` (idle
+ * unless a spec says otherwise).
  */
-function installCapacitorStub({ marker, globalName, email }: StubOptions) {
-	const idle = {
-		state: "idle",
-		elapsedS: 0,
-		uploadsWaiting: 0,
-		uploadsFailed: 0,
-		notice: "",
-	};
+function installCapacitorStub({
+	marker,
+	globalName,
+	email,
+	status,
+}: StubOptions) {
 	const results: Record<string, unknown> = {
-		"Recorder.getStatus": idle,
-		"Recorder.stop": idle,
+		"Recorder.getStatus": status,
+		"Recorder.stop": { ...status, state: "idle" },
 		"Recorder.start": { sessionId: "e2e-session" },
 		"Recorder.syncUploads": { lostSegments: 0, lostSecondsMax: 0 },
 		"HoandatAuth.signIn": { email },
@@ -75,7 +92,7 @@ function installCapacitorStub({ marker, globalName, email }: StubOptions) {
 				calls.push({ plugin, method, options });
 				return Promise.resolve(results[`${plugin}.${method}`]);
 			},
-			// Listeners never fire: the stub recorder stays idle.
+			// Listeners never fire: the stub recorder keeps its status.
 			nativeCallback: (plugin: string, method: string, options: unknown) => {
 				calls.push({ plugin, method, options });
 				callbackId += 1;
@@ -93,11 +110,13 @@ function installCapacitorStub({ marker, globalName, email }: StubOptions) {
 export async function stubNativeShell(
 	page: Page,
 	email: string,
+	status: NativeRecorderStatus = IDLE_RECORDER,
 ): Promise<void> {
 	await page.addInitScript(installCapacitorStub, {
 		marker: E2E_STUB_MARKER,
 		globalName: NATIVE_STUB_GLOBAL,
 		email,
+		status,
 	});
 }
 

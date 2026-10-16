@@ -18,10 +18,12 @@ test.describe("record page (browser)", () => {
 			await page.goto("/");
 
 			await expect(page.getByTestId("app-shell")).toBeVisible();
-			await expect(page.getByRole("tab", { name: "Ghi âm" })).toHaveAttribute(
-				"aria-selected",
-				"true",
-			);
+			// Role queries skip the nav hidden at this width.
+			await expect(
+				page
+					.getByRole("navigation", { name: "Chức năng" })
+					.getByRole("button", { name: "Ghi âm" }),
+			).toHaveAttribute("aria-current", "page");
 			const history = page.getByTestId("history");
 			await expect(history).toContainText("Họp nhóm sáng thứ Năm.webm");
 			await expect(page.getByTestId("quota")).toBeVisible();

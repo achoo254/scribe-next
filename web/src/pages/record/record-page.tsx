@@ -1,16 +1,18 @@
 import { IconMicrophone, IconPlayerStopFilled } from "@tabler/icons-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
 import { Card } from "../../components/ui/card";
 import { ProgressBar } from "../../components/ui/progress-bar";
 import { refreshStorage } from "../../features/files/file-queries";
 import { supportsScreenCapture } from "../../features/recorder/media-capture";
+import type { Recorder } from "../../features/recorder/recorder";
 import type { RecordSources } from "../../features/recorder/recorder-messages";
 import { useRecorder } from "../../features/recorder/use-recorder";
 import { isJobBusy } from "../../features/split/split-job";
 import { useSplitJob } from "../../features/split/use-split-job";
+import { useReportSessionActivity } from "../../layout/session-activity";
 import { isNativeShell } from "../../lib/api";
 import { formatClock, parsePositiveNumber } from "../../lib/format";
 import { LiveMonitor } from "./live-monitor";
@@ -38,10 +40,38 @@ export function RecordPage() {
 	return <BrowserRecordPage />;
 }
 
+/** Resolves once the recorder is no longer saving a recording. */
+function saved(recorder: Recorder): Promise<void> {
+	return new Promise((resolve) => {
+		const unsubscribe = recorder.subscribe(() => {
+			if (recorder.getState().finalizing) return;
+			unsubscribe();
+			resolve();
+		});
+		if (!recorder.getState().finalizing) {
+			unsubscribe();
+			resolve();
+		}
+	});
+}
+
 function BrowserRecordPage() {
 	const queryClient = useQueryClient();
 	const rec = useRecorder();
 	const split = useSplitJob();
+	const { recorder } = rec;
+	// Sign-out saves the recording first (stop uploads the last chunks and
+	// finalizes), so nothing is sent after the session is gone.
+	const stopRecording = useCallback(async () => {
+		await recorder.stop();
+		await saved(recorder);
+	}, [recorder]);
+	useReportSessionActivity("browser-recorder", {
+		recording: rec.recording || rec.starting || rec.finalizing,
+		segmentsWaiting: 0,
+		fileUploading: false,
+		stopRecording,
+	});
 	const [sources, setSources] = useState<RecordSources>({
 		mic: true,
 		systemAudio: false,

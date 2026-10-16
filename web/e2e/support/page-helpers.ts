@@ -30,13 +30,26 @@ export interface A11yFinding {
 	targets: string[];
 }
 
-/** WCAG 2.0/2.1 A and AA violations of impact "serious" or "critical". */
+/**
+ * WCAG 2.0/2.1 A and AA violations of impact "serious" or "critical".
+ * `include` limits the scan to one element, e.g. an open menu: Radix marks
+ * the rest of the page `aria-hidden` while it traps focus in the menu, which
+ * axe reports as `aria-hidden-focus` although nothing outside can be reached.
+ */
 export async function seriousA11yViolations(
 	page: Page,
+	include?: string,
 ): Promise<A11yFinding[]> {
-	const results = await new AxeBuilder({ page })
-		.withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
-		.analyze();
+	const builder = new AxeBuilder({ page }).withTags([
+		"wcag2a",
+		"wcag2aa",
+		"wcag21a",
+		"wcag21aa",
+	]);
+	const results = await (include
+		? builder.include(include)
+		: builder
+	).analyze();
 	return results.violations
 		.filter(
 			(violation) =>

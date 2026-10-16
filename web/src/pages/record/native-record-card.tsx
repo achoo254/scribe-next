@@ -7,6 +7,7 @@ import { Card } from "../../components/ui/card";
 import { SegmentedControl } from "../../components/ui/segmented-control";
 import { userKeyOf } from "../../features/recorder/native-recorder";
 import { useNativeRecorder } from "../../features/recorder/use-native-recorder";
+import { useReportSessionActivity } from "../../layout/session-activity";
 import { formatClock } from "../../lib/format";
 import { LevelMeter } from "./live-monitor";
 
@@ -28,6 +29,12 @@ export function NativeRecordCard() {
 	const { user } = useAuth();
 	const [minutes, setMinutes] = useState<SegmentMinutes>("1");
 	const busy = rec.recording || rec.starting || rec.finalizing;
+	// Signing out stops the Swift recorder itself (RecorderPlugin.signOut).
+	useReportSessionActivity("native-recorder", {
+		recording: busy,
+		segmentsWaiting: rec.uploadsWaiting,
+		fileUploading: false,
+	});
 
 	async function toggle(): Promise<void> {
 		if (rec.recording) {

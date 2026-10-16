@@ -39,7 +39,7 @@ export function LoginPage() {
 	return (
 		<main
 			data-id="login"
-			className="grid min-h-dvh grid-rows-[auto_1fr] gap-4 px-gutter py-4"
+			className="grid min-h-dvh grid-rows-[auto_1fr] gap-4 px-gutter pt-[calc(var(--space-4)+env(safe-area-inset-top))] pb-[calc(var(--space-4)+env(safe-area-inset-bottom))]"
 		>
 			<div className="flex justify-end">
 				<ThemeToggle data-id="login-theme" />

@@ -235,10 +235,11 @@
 
 	#app {
 		overflow-x: clip;
-		/* viewport-fit=cover (index.html): keep content clear of the notch,
-		   status bar and home indicator in the iOS app and on iPhone Safari. */
-		padding: env(safe-area-inset-top) env(safe-area-inset-right)
-			env(safe-area-inset-bottom) env(safe-area-inset-left);
+		/* viewport-fit=cover (index.html): keep content clear of the notch
+		   in landscape. Top and bottom insets belong to each layout (the
+		   sticky top bar, the footer, the sign-in page), so the bar's
+		   background also covers the status bar while the page scrolls. */
+		padding: 0 env(safe-area-inset-right) 0 env(safe-area-inset-left);
 	}
 
 	a {

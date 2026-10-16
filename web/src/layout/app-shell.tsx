@@ -1,114 +1,77 @@
-import {
-	IconFileText,
-	IconMicrophone,
-	IconScissors,
-} from "@tabler/icons-react";
 import { useCallback, useState } from "react";
 import { useAuth } from "../auth/auth-context";
 import { QuotaBar } from "../components/quota-bar";
-import {
-	Tabs,
-	TabsContent,
-	TabsList,
-	TabsTrigger,
-} from "../components/ui/tabs";
+import { cn } from "../lib/cn";
 import { RecordPage } from "../pages/record/record-page";
 import { SplitPage } from "../pages/split/split-page";
 import { TranscriptPage } from "../pages/transcript/transcript-page";
-import { AppTopBar } from "./app-top-bar";
+import { AppFooter } from "./app-footer";
+import { AppHeader, type AppTab } from "./app-header";
+import {
+	SessionActivityProvider,
+	useSessionActivityState,
+} from "./session-activity";
+import { MAIN_CLASS, MAIN_ID, SkipLink } from "./skip-link";
 import { OpenTranscriptContext } from "./transcript-nav";
 
-type AppTab = "record" | "split" | "transcript";
-
-function isAppTab(value: string): value is AppTab {
-	return value === "record" || value === "split" || value === "transcript";
-}
-
 /**
- * The signed-in app: top bar, tabs, quota. Every tab stays mounted while
- * hidden, so a recording, a split job or an open transcript keeps its state
- * when the user switches tabs. The Transcript tab exists only for users who
- * may transcribe.
+ * The signed-in app: skip link, sticky top bar with the nav and the
+ * account menu, quota, the pages, footer. Every page stays mounted while
+ * hidden, so a recording, a split job or an open transcript keeps its
+ * state when the user switches pages. The Transcript page exists only for
+ * users who may transcribe.
  */
 export function AppShell() {
 	const { user } = useAuth();
 	const canTranscribe = Boolean(user?.canTranscribe);
 	const [selected, setTab] = useState<AppTab>("record");
-	// The tab disappears if the permission is withdrawn while it is open.
+	// The page disappears if the permission is withdrawn while it is open.
 	const tab = selected === "transcript" && !canTranscribe ? "record" : selected;
 	const [openKey, setOpenKey] = useState<string | null>(null);
 	const openTranscript = useCallback((key: string) => {
 		setOpenKey(key);
 		setTab("transcript");
 	}, []);
+	const session = useSessionActivityState();
 
 	return (
 		<OpenTranscriptContext.Provider
 			value={canTranscribe ? openTranscript : null}
 		>
-			<div
-				data-id="app-shell"
-				className="mx-auto grid w-full max-w-230 gap-4 px-gutter pt-4 pb-10 sm:pt-6"
-			>
-				<AppTopBar />
-				<Tabs
-					value={tab}
-					onValueChange={(value) => {
-						if (isAppTab(value)) setTab(value);
-					}}
-					className="grid gap-4"
-				>
-					<TabsList className="px-0" aria-label="Chức năng">
-						<TabsTrigger value="record" data-id="tab-record" className="gap-2">
-							<IconMicrophone size={18} aria-hidden="true" />
-							Ghi âm
-						</TabsTrigger>
-						<TabsTrigger value="split" data-id="tab-split" className="gap-2">
-							<IconScissors size={18} aria-hidden="true" />
-							Cắt file
-						</TabsTrigger>
-						{canTranscribe ? (
-							<TabsTrigger
-								value="transcript"
-								data-id="tab-transcript"
-								className="gap-2"
-							>
-								<IconFileText size={18} aria-hidden="true" />
-								Transcript
-							</TabsTrigger>
-						) : null}
-					</TabsList>
-					<QuotaBar />
-					<TabsContent
-						value="record"
-						forceMount
-						className="data-[state=inactive]:hidden"
-					>
-						<RecordPage />
-					</TabsContent>
-					<TabsContent
-						value="split"
-						forceMount
-						className="data-[state=inactive]:hidden"
-					>
-						<SplitPage active={tab === "split"} />
-					</TabsContent>
-					{canTranscribe ? (
-						<TabsContent
-							value="transcript"
-							forceMount
-							className="data-[state=inactive]:hidden"
-						>
-							<TranscriptPage
-								active={tab === "transcript"}
-								openKey={openKey}
-								onOpenKeyChange={setOpenKey}
-								canTranscribe={canTranscribe}
-							/>
-						</TabsContent>
+			<SessionActivityProvider value={session.publish}>
+				<div data-id="app-shell" className="flex min-h-dvh flex-col">
+					<SkipLink />
+					{user ? (
+						<AppHeader
+							user={user}
+							tab={tab}
+							onTabChange={setTab}
+							activity={session.activity}
+							beforeSignOut={session.stopRecordings}
+						/>
 					) : null}
-				</Tabs>
-			</div>
+					<main id={MAIN_ID} tabIndex={-1} className={cn(MAIN_CLASS, "flex-1")}>
+						<QuotaBar />
+						<div data-id="page-record" hidden={tab !== "record"}>
+							<RecordPage />
+						</div>
+						<div data-id="page-split" hidden={tab !== "split"}>
+							<SplitPage active={tab === "split"} />
+						</div>
+						{canTranscribe ? (
+							<div data-id="page-transcript" hidden={tab !== "transcript"}>
+								<TranscriptPage
+									active={tab === "transcript"}
+									openKey={openKey}
+									onOpenKeyChange={setOpenKey}
+									canTranscribe={canTranscribe}
+								/>
+							</div>
+						) : null}
+					</main>
+					<AppFooter />
+				</div>
+			</SessionActivityProvider>
 		</OpenTranscriptContext.Provider>
 	);
 }

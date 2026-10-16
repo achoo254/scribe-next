@@ -15,6 +15,7 @@ import { refreshStorage } from "../../features/files/file-queries";
 import { type JobCriterion, isJobBusy } from "../../features/split/split-job";
 import { useSplitJob } from "../../features/split/use-split-job";
 import { useChunkedUpload } from "../../features/upload/use-chunked-upload";
+import { useReportSessionActivity } from "../../layout/session-activity";
 import { downloadPaths, useDownload } from "../../lib/download";
 import { formatDuration } from "../../lib/format";
 import { ManagedFilesCard } from "./managed-files-card";
@@ -35,6 +36,11 @@ export function SplitPage({ active }: { active: boolean }) {
 	const [value, setValue] = useState("10");
 	const amount = parseSplitValue(criterion, value);
 	const busy = isJobBusy(job.status);
+	useReportSessionActivity("file-upload", {
+		recording: false,
+		segmentsWaiting: 0,
+		fileUploading: upload.uploading,
+	});
 
 	// Uploads and segments count against the quota.
 	useEffect(() => {

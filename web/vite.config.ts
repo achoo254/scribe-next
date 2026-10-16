@@ -30,6 +30,19 @@ function vendorChunk(id: string): string | undefined {
 	return VENDOR_CHUNKS.find(([, pattern]) => pattern.test(name))?.[0];
 }
 
+/** True for `https://host[:port]` with nothing after the origin. */
+function isHttpOrigin(value: string): boolean {
+	try {
+		const url = new URL(value);
+		return (
+			(url.protocol === "https:" || url.protocol === "http:") &&
+			url.origin === value.replace(/\/$/, "")
+		);
+	} catch {
+		return false;
+	}
+}
+
 export default defineConfig(({ command, mode }) => {
 	// Without VITE_NATIVE_API_ORIGIN the iPhone app has no backend; fail the build
 	// instead. Read from web/.env (not in git, copy web/.env.example; see
@@ -40,6 +53,14 @@ export default defineConfig(({ command, mode }) => {
 		if (missing.length > 0) {
 			throw new Error(
 				`Missing ${missing.join(", ")} for mode "${mode}": create web/.env from web/.env.example.`,
+			);
+		}
+		// Optional (src/lib/idp.ts has the default), but a typo must not ship
+		// account links that silently point at the default IdP.
+		const idp = env.VITE_IDP_ORIGIN;
+		if (idp && !isHttpOrigin(idp)) {
+			throw new Error(
+				`VITE_IDP_ORIGIN must be an http(s) origin such as https://auth.hoandat.com, got "${idp}".`,
 			);
 		}
 	}

@@ -1,4 +1,5 @@
 import { common } from "./common";
+import { layout } from "./layout";
 import { ui } from "./ui";
 
 /**
@@ -8,5 +9,6 @@ import { ui } from "./ui";
  */
 export const vi = {
 	common,
+	layout,
 	ui,
 } as const;
