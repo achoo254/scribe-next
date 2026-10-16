@@ -1,7 +1,7 @@
 ---
 title: "Refactor UI/UX Scribe theo format hệ sinh thái hoandat"
 description: "Chép khung, primitive và i18n của Localman sang Scribe; điều hướng bằng URL giữ trạng thái ghi; dựng lại các trang; Playwright + ảnh chụp sáng/tối"
-status: pending
+status: in-progress
 priority: P1
 effort: L
 created: 2026-10-16
@@ -37,7 +37,7 @@ Khảo sát 16/10 (hai báo cáo Explore, đo lại bằng `diff`):
 
 | # | Phase | Tier | Status | Phụ thuộc |
 |---|---|---|---|---|
-| 1 | [Nền: sync primitive, i18n, Playwright](./phase-01-foundation.md) | M | Pending | — |
+| 1 | [Nền: sync primitive, i18n, Playwright](./phase-01-foundation.md) | M | Completed | — |
 | 2 | [Khung app: top bar, account menu, footer, layout](./phase-02-app-shell.md) | M | Pending | 1 |
 | 3 | [Điều hướng URL + provider giữ trạng thái](./phase-03-routes-and-state.md) | L | Pending | 2 |
 | 4 | [Dựng lại các trang theo pattern Localman](./phase-04-pages.md) | L | Pending | 3 |

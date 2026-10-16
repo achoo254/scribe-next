@@ -8,14 +8,16 @@
 	},
 	"scripts": {
 		"dev": "vite",
-		"build": "tsc --noEmit && vite build",
+		"build": "tsc --noEmit && vite build && npm run check:dist",
 		"preview": "vite preview",
 		"lint": "biome check .",
 		"lint:fix": "biome check --fix .",
-		"typecheck": "tsc --noEmit && tsc -p scripts/tsconfig.json",
+		"typecheck": "tsc --noEmit && tsc -p scripts/tsconfig.json && tsc -p e2e/tsconfig.json",
 		"test": "vitest run",
 		"test:watch": "vitest",
+		"test:e2e": "playwright test --config e2e/playwright.config.ts",
 		"check:tokens": "tsx scripts/check-tokens.ts",
+		"check:dist": "tsx e2e/check-dist.ts",
 		"ios:device": "scripts/ios-device.sh",
 		"ios:sync": "npm run build && cap sync ios"
 	},
@@ -25,6 +27,7 @@
 		"@fontsource/inter": "^5.2.0",
 		"@fontsource/jetbrains-mono": "^5.2.0",
 		"@radix-ui/react-dialog": "^1.1.14",
+		"@radix-ui/react-dropdown-menu": "^2.1.25",
 		"@radix-ui/react-tabs": "1.1.22",
 		"@radix-ui/react-toast": "^1.2.14",
 		"@radix-ui/react-tooltip": "^1.2.7",
@@ -35,8 +38,10 @@
 		"react-router": "^7.6.0"
 	},
 	"devDependencies": {
+		"@axe-core/playwright": "^4.14.0",
 		"@biomejs/biome": "1.9.4",
 		"@capacitor/cli": "8.5.3",
+		"@playwright/test": "^1.64.1",
 		"@tailwindcss/vite": "^4.1.0",
 		"@testing-library/jest-dom": "^6.6.0",
 		"@testing-library/react": "^16.3.0",

@@ -6,3 +6,7 @@ dist
 # .env giữ cục bộ, không commit (dev local và build prod dùng chung)
 .env.*
 !.env.example
+
+# Playwright output (screenshots baselines in e2e/specs/*-snapshots stay in git)
+e2e/test-results
+e2e/playwright-report

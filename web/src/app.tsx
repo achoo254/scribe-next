@@ -5,6 +5,7 @@ import { AuthProvider } from "./auth/auth-context";
 import { RequireAuth, RequireGuest } from "./auth/require-auth";
 import { ToastProvider } from "./components/ui/toast";
 import { TooltipProvider } from "./components/ui/tooltip";
+import { I18nProvider } from "./i18n/i18n-provider";
 import { AppShell } from "./layout/app-shell";
 import { LoginPage } from "./pages/login-page";
 
@@ -66,14 +67,16 @@ export function AppRoutes() {
 
 export function App({ queryClient }: { queryClient: QueryClient }) {
 	return (
-		<QueryClientProvider client={queryClient}>
-			<TooltipProvider>
-				<ToastProvider>
-					<AuthProvider>
-						<AppRoutes />
-					</AuthProvider>
-				</ToastProvider>
-			</TooltipProvider>
-		</QueryClientProvider>
+		<I18nProvider>
+			<QueryClientProvider client={queryClient}>
+				<TooltipProvider>
+					<ToastProvider>
+						<AuthProvider>
+							<AppRoutes />
+						</AuthProvider>
+					</ToastProvider>
+				</TooltipProvider>
+			</QueryClientProvider>
+		</I18nProvider>
 	);
 }

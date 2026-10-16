@@ -1,6 +1,7 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import { IconX } from "@tabler/icons-react";
 import { type ReactNode, type RefObject, useRef } from "react";
+import { useT } from "../../i18n/i18n-context";
 import { cn } from "../../lib/cn";
 import { IconButton } from "./icon-button";
 
@@ -26,7 +27,7 @@ export interface ModalProps {
 	/** Usually a <ModalFooter>; stays pinned below the scrolling body. */
 	footer?: ReactNode;
 	children?: ReactNode;
-	/** Name of the close button; "Đóng" by default. */
+	/** Name of the close button; "Close" in the current language by default. */
 	closeLabel?: string;
 	/**
 	 * What receives focus on open: an element ref, or "dialog" for the frame
@@ -77,6 +78,7 @@ export function Modal({
 	onCloseAutoFocus,
 	"data-id": dataId,
 }: ModalProps) {
+	const t = useT();
 	const content = useRef<HTMLDivElement>(null);
 
 	function focusInitial(event: Event) {
@@ -124,7 +126,7 @@ export function Modal({
 							</Dialog.Title>
 							<Dialog.Close asChild>
 								<IconButton
-									label={closeLabel ?? "Đóng"}
+									label={closeLabel ?? t("common.actions.close")}
 									icon={<IconX size={18} aria-hidden="true" />}
 								/>
 							</Dialog.Close>

@@ -14,6 +14,7 @@ import {
 	useRef,
 	useState,
 } from "react";
+import { useT } from "../../i18n/i18n-context";
 
 /** Longer than the slowest motion token so the exit animation can finish. */
 const EXIT_DELAY_MS = 400;
@@ -64,6 +65,7 @@ export function ToastProvider({
 	label,
 	closeLabel,
 }: ToastProviderProps) {
+	const t = useT();
 	const [items, setItems] = useState<ToastItem[]>([]);
 	const nextId = useRef(0);
 
@@ -81,7 +83,10 @@ export function ToastProvider({
 
 	return (
 		<ToastContext.Provider value={api}>
-			<RadixToast.Provider label={label ?? "Thông báo"} swipeDirection="down">
+			<RadixToast.Provider
+				label={label ?? t("ui.toast.region")}
+				swipeDirection="down"
+			>
 				{children}
 				{items.map(({ id, title, description, tone = "success", duration }) => {
 					const { tone: toneClass, Icon } = TONES[tone];
@@ -113,7 +118,7 @@ export function ToastProvider({
 								) : null}
 							</div>
 							<RadixToast.Close
-								aria-label={closeLabel ?? "Đóng thông báo"}
+								aria-label={closeLabel ?? t("ui.toast.close")}
 								className="-m-1 cursor-pointer rounded-xs p-1 text-icon-muted hover:text-fg"
 							>
 								<IconX size={16} aria-hidden="true" />
