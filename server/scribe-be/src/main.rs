@@ -10,6 +10,7 @@ mod error;
 mod files;
 mod jobs;
 mod models;
+mod notify;
 mod oidc;
 mod rate_limit;
 mod recordings;

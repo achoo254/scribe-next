@@ -131,6 +131,10 @@ async fn admit(state: &AppState, claims: &crate::oidc::IdClaims) -> Result<Strin
     if linked {
         audit::record(state, Some(&user_id), "auth.link", doc! { "email": email });
     }
+    if user::find_profile(&state.db, &user_id).await?.is_some_and(|p| p.blocked) {
+        audit::record(state, Some(&user_id), "auth.login_denied", doc! { "reason": "blocked" });
+        return Err(AppError::Forbidden("tài khoản đã bị khoá".into()));
+    }
     Ok(user_id)
 }
 
@@ -503,9 +507,11 @@ pub async fn require_auth(
             let session = sessions::find(&state.db, &token)
                 .await?
                 .ok_or_else(|| AppError::Unauthorized("phiên đã hết hạn, đăng nhập lại".into()))?;
-            // Allowlist có thể đã đổi từ lúc đăng nhập (build mới): kiểm lại mỗi lần cache hết hạn.
-            let email = user::find_profile(&state.db, &session.user_id).await?.map(|p| p.email).unwrap_or_default();
-            if !state.config.email_allowed(&email) {
+            // Allowlist có thể đã đổi từ lúc đăng nhập (build mới), tài khoản có thể vừa bị khoá: kiểm lại
+            // mỗi lần cache hết hạn.
+            let profile = user::find_profile(&state.db, &session.user_id).await?;
+            let allowed = profile.is_some_and(|p| !p.blocked && state.config.email_allowed(&p.email));
+            if !allowed {
                 let removed = sessions::delete_by_user(&state.db, &session.user_id, None).await?;
                 state.session_cache.forget(&removed);
                 return Err(AppError::Unauthorized("tài khoản không còn được phép".into()));

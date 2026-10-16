@@ -34,7 +34,7 @@ Thao tác ghi prod; người dùng đã đồng ý các hạng mục phần B. M
 ## 7b — Đổi đăng nhập + domain (một chiều)
 
 1. DNS `A scribe.hoandat.com → 103.72.98.65` proxied (như `auth.hoandat.com`), zone SSL "full", origin dùng chứng chỉ tự ký chung `/etc/pki/nginx/server.{crt,key}`.
-2. vhost `scribe.hoandat.com` từ `deploy/nginx-scribe.conf` (`nginx -t` trước reload); vhost cũ thành 301 sang domain mới (giữ ≥ 30 ngày).
+2. vhost `scribe.hoandat.com` từ `deploy/nginx-scribe.conf` (443 ssl với chứng chỉ chung, 80 → https; `nginx -t` trước reload). **Bỏ hẳn domain cũ** (người dùng chốt 16/10 13:05, không 301): xoá vhost `onescribe.conf` (`scribe.inetdev.io.vn`) trong cùng cửa sổ, sau khi domain mới đã chạy; sao lưu tệp vhost cũ vào thư mục sao lưu của lượt.
 3. IdP đã có `scribe-web`/`scribe-mobile` (Phase 4). Deploy backend + web bản OIDC (Phase 5–6) với `PUBLIC_URL=https://scribe.hoandat.com`; cài app iPhone mới (`VITE_NATIVE_API_ORIGIN=https://scribe.hoandat.com`).
 4. Kiểm: đăng nhập web, user cũ được ghép theo email giữ nguyên bản ghi; iPhone đăng nhập, ghi, tải lên; back-channel logout web.
 - Rollback 7b: không quay về Firebase (người dùng chốt); lỗi ⟹ sửa tiến. Trước 7b phải có bằng chứng thử đủ trên dev local (Phase 6).
@@ -45,4 +45,4 @@ Bật `TRANSCRIBE_OPEN` (build lại) khi 7b chạy ổn vài ngày (Jev 0,98) *
 
 ## Dọn (mỗi bước hỏi trước)
 
-Tắt hẳn `onescribe-be`, xoá db `onescribe`, thư mục cũ, bỏ 301 sau 30 ngày; xoá sao lưu cũ sau khi người dùng xác nhận ổn định.
+Bản cũ đã xoá ngày 16/10 (xem kết quả 7a); domain cũ bỏ ở 7b. Còn: xoá sao lưu `/root/onescribe-backup-20261016-124301/` khi người dùng xác nhận ổn định.

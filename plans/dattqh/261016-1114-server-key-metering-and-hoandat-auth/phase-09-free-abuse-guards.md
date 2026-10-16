@@ -1,7 +1,7 @@
 ---
 phase: 9
 title: "Chống lạm dụng gói free (trước khi mở 7c)"
-status: pending
+status: completed
 priority: P1
 effort: "M"
 dependencies: [5]
@@ -25,3 +25,11 @@ Người dùng chốt 2026-10-16 ("bộ đầy đủ, giữ quỹ $10"; Jev 0,72
 - Test Mongo thật: giới hạn ngày và IP không vượt khi đua; hoàn đúng cả sổ ngày/IP; tài khoản mới bị chặn tới đúng giờ; tài khoản bị chặn mất phiên ngay và không xếp được chép lời; gói `plus` không bị các giới hạn này.
 - Dev local: gửi Telegram thử tới chat của chủ sản phẩm (người dùng xác nhận đã nhận).
 - Không lộ token Telegram trong log/audit.
+
+## Kết quả (2026-10-16 13:12, chưa deploy)
+
+- Làm khác plan: tuổi tài khoản tính từ `createdAt` (user mới đã có sẵn), không thêm `firstSeenAt`. Sổ ngày/IP nằm trong cùng chuỗi `Charge::books()` của giữ chỗ/hoàn/quyết toán; doc lượt lưu `day`/`ip`.
+- Thêm `TOO_LONG_FOR_FREE` (review M2): lượt dài hơn giới hạn ngày không bao giờ chạy được thì báo riêng, không hẹn giờ.
+- Review `plans/dattqh/reports/code-reviewer-261016-1310-free-abuse-guards.md`: đã sửa H1 (worker bỏ qua tài khoản bị khoá), M1 (quyết toán đi hết các sổ dù một sổ lỗi), M2, các mục thấp (`blocked: true` sửa tay, timeout 10 giây cho Telegram, tên trường log, dùng chung múi giờ). Để lại: M3 (IPv6 /64 dễ né, CGNAT dễ chặn nhầm — chính sách, chờ người dùng), TTL cho doc theo ngày (nhỏ), `recompute` không sửa sổ ngày/IP (sổ tự hết hạn theo ngày).
+- Kiểm: clippy `-D warnings` sạch, 33 test thường, 5 test Mongo thật (đua 6 lượt chỉ 3 lượt qua giới hạn ngày; IP; plus không bị giới hạn; hoàn trả cả sổ ngày/IP; khoá/mở khoá), E2E dev 14/14 (tài khoản mới, DAILY_LIMIT, TOO_LONG_FOR_FREE, IP_LIMIT, IP khác, plus, `admin block` xoá phiên, phiên mới bị 401, audit). Lượt giả dừng ở ffmpeg, không gọi OpenAI.
+- Chưa: bot Telegram riêng + chat id (người dùng cung cấp), gửi thử `admin notify-test`.

@@ -17,7 +17,8 @@ use crate::audit;
 use crate::auth::UserId;
 use crate::error::AppError;
 use crate::files::{content_disposition_attachment, sanitize_filename};
-use crate::models::usage::{self, Blocked};
+use crate::models::usage::{self, Blocked, Charge};
+use crate::notify;
 use crate::models::{file, plan, transcript, transcript_doc, user};
 use crate::state::AppState;
 use axum::extract::{Query, State};
@@ -115,19 +116,63 @@ async fn billable_seconds(state: &AppState, f: &file::FileDoc) -> Result<i64, Ap
     Ok(duration.ceil() as i64)
 }
 
-fn blocked_error(blocked: Blocked, used_s: i64, limit_s: i64) -> AppError {
+/// Giờ mở lại cho người dùng đọc (giờ Việt Nam).
+fn vn_time(at: chrono::DateTime<chrono::Utc>) -> String {
+    at.with_timezone(&usage::vietnam()).format("%H:%M ngày %d/%m").to_string()
+}
+
+fn blocked_error(blocked: &Blocked, used_s: i64, limit_s: i64, now: chrono::DateTime<chrono::Utc>) -> AppError {
     let (used_minutes, limit_minutes) = (usage::used_minutes(used_s), limit_s / 60);
-    let (code, message) = match blocked {
+    let (code, message, retry_at) = match blocked {
         Blocked::UserQuota => (
             "QUOTA_EXCEEDED",
             format!("Không đủ phút chép lời: tháng này đã dùng {used_minutes}/{limit_minutes} phút."),
+            usage::next_reset(now),
+        ),
+        Blocked::DailyLimit => (
+            "DAILY_LIMIT",
+            format!("Gói miễn phí chép được {limit_minutes} phút mỗi ngày, hôm nay đã dùng {used_minutes} phút. Mở lại lúc 0 giờ."),
+            usage::next_day(now),
+        ),
+        Blocked::IpLimit => (
+            "IP_LIMIT",
+            format!("Mạng bạn đang dùng đã hết {limit_minutes} phút chép lời miễn phí của hôm nay. Mở lại lúc 0 giờ."),
+            usage::next_day(now),
         ),
         Blocked::FreePool | Blocked::TotalCap => (
             "CAP_REACHED",
             "Chép lời đã dùng hết hạn mức chung của tháng này, sẽ mở lại đầu tháng sau.".to_string(),
+            usage::next_reset(now),
         ),
     };
-    AppError::Quota { code, message, used_minutes, limit_minutes }
+    AppError::Quota { code, message, used_minutes, limit_minutes, retry_at: Some(retry_at.to_rfc3339()) }
+}
+
+/// Gói free: tài khoản mới phải chờ `free_delay_hours` từ lúc tạo. User không có `createdAt` là user cũ.
+fn too_new(profile: &user::Profile, delay_hours: i64, now: chrono::DateTime<chrono::Utc>) -> Option<AppError> {
+    let created = chrono::DateTime::from_timestamp_millis(profile.created_at?.timestamp_millis())?;
+    let opens = created + chrono::Duration::hours(delay_hours);
+    (now < opens).then(|| AppError::Quota {
+        code: "ACCOUNT_TOO_NEW",
+        message: format!("Tài khoản mới dùng được chép lời miễn phí từ {}.", vn_time(opens)),
+        used_minutes: 0,
+        limit_minutes: 0,
+        retry_at: Some(opens.to_rfc3339()),
+    })
+}
+
+/// Một tài khoản hoặc IP chạm giới hạn ngày lần thứ 3 trong ngày: báo chủ sản phẩm (một lần mỗi ngày).
+async fn note_repeated_block(state: &AppState, charge: &Charge, blocked: &Blocked, email: &str) {
+    let Some(day) = &charge.day else { return };
+    let ip = charge.ip.as_deref().unwrap_or("?");
+    let (key, who) = match blocked {
+        Blocked::DailyLimit => (format!("daily:{}:{day}", charge.user_id), format!("tài khoản {email}")),
+        Blocked::IpLimit => (format!("ip:{ip}:{day}"), format!("IP {ip}")),
+        _ => return,
+    };
+    if usage::count_hit(&state.db, &key).await == 3 {
+        notify::send(state, format!("{who} chạm giới hạn chép lời miễn phí trong ngày lần thứ 3 ({day})."));
+    }
 }
 
 /// `POST /api/transcripts` — giữ chỗ phút rồi xếp hàng chép các bản ghi của chính người dùng.
@@ -139,6 +184,9 @@ pub async fn create(
     let profile = user::find_profile(&state.db, &user.0)
         .await?
         .ok_or_else(|| AppError::Unauthorized("user không tồn tại".into()))?;
+    if profile.blocked {
+        return Err(AppError::Forbidden("tài khoản đã bị khoá".into()));
+    }
     if !state.config.transcribe_allowed(&profile.email) {
         return Err(AppError::Forbidden("tài khoản này chưa được dùng chép lời".into()));
     }
@@ -168,23 +216,37 @@ pub async fn create(
     let rerun = transcript::statuses_for_files(&state.db, &user.0, &files).await?.len();
 
     let now = chrono::Utc::now();
-    let month = usage::month_key(now);
     let plan = plan::effective(profile.plan.as_deref(), profile.plan_until, mongodb::bson::DateTime::now());
     let limits = state.config.transcribe_limits;
-    let charge = match usage::reserve(&state.db, &user.0, plan, &month, total, &limits).await? {
-        Ok(charge) => charge,
-        Err(blocked) => {
-            let used = usage::month_usage(&state.db, &user.0, &month).await?;
-            let (used_s, limit_s) = match blocked {
-                Blocked::UserQuota => (used.user_seconds, plan.limit_seconds(&limits)),
-                Blocked::FreePool => (used.free_pool_seconds, limits.free_pool_seconds),
-                Blocked::TotalCap => (used.total_seconds, limits.monthly_cap_seconds),
-            };
-            audit::record(&state, Some(&user.0), "transcript.blocked", doc! { "reason": format!("{blocked:?}") });
-            return Err(blocked_error(blocked, used_s, limit_s));
+    if plan == plan::Plan::Free {
+        if let Some(e) = too_new(&profile, limits.free_delay_hours, now) {
+            audit::record(&state, Some(&user.0), "transcript.blocked", doc! { "reason": "AccountTooNew" });
+            return Err(e);
         }
-    };
-    note_cap_levels(&state, &month).await;
+    }
+    if plan == plan::Plan::Free && total > limits.free_daily_seconds.min(limits.free_ip_daily_seconds) {
+        let max = limits.free_daily_seconds.min(limits.free_ip_daily_seconds) / 60;
+        return Err(AppError::Quota {
+            code: "TOO_LONG_FOR_FREE",
+            message: format!(
+                "Gói miễn phí chép tối đa {max} phút mỗi ngày, các bản ghi đã chọn dài {} phút. Chọn ít bản ghi hơn.",
+                usage::used_minutes(total)
+            ),
+            used_minutes: usage::used_minutes(total),
+            limit_minutes: max,
+            retry_at: None,
+        });
+    }
+    let ip = audit::CLIENT_IP.try_with(|ip| usage::ip_bucket(ip)).ok().flatten();
+    let charge = Charge::new(&user.0, plan, now, ip);
+    let user_limit = plan.limit_seconds(&limits);
+    if let Err(blocked) = usage::reserve(&state.db, &charge, user_limit, total, &limits).await? {
+        let used_s = usage::blocked_usage(&state.db, &charge, &blocked).await?;
+        audit::record(&state, Some(&user.0), "transcript.blocked", doc! { "reason": format!("{blocked:?}") });
+        note_repeated_block(&state, &charge, &blocked, &profile.email).await;
+        return Err(blocked_error(&blocked, used_s, usage::limit_of(&blocked, user_limit, &limits), now));
+    }
+    note_cap_levels(&state, &charge.month).await;
 
     // Từ đây không có `?`: file nào không vào được hàng thì trả lại phần đã giữ cho file đó.
     let mut queued = 0;
@@ -217,21 +279,23 @@ pub async fn create(
     Ok(Json(json!({ "queued": queued, "skipped": files.len() - queued })))
 }
 
-/// Ghi `audit_events` khi quỹ free / trần tổng chạm 80% và 100% (mỗi mốc một lần mỗi tháng).
+/// Quỹ free qua 50/80/100% và trần tổng qua 80/100%: ghi `audit_events` và báo Telegram, mỗi mốc một
+/// lần mỗi tháng.
 async fn note_cap_levels(state: &AppState, month: &str) {
     let Ok(used) = usage::month_usage(&state.db, "-", month).await else { return };
     let limits = state.config.transcribe_limits;
-    for (pool, used_s, limit_s) in [
-        ("free", used.free_pool_seconds, limits.free_pool_seconds),
-        ("all", used.total_seconds, limits.monthly_cap_seconds),
+    for (pool, label, used_s, limit_s, levels) in [
+        ("free", "Quỹ chép lời miễn phí", used.free_pool_seconds, limits.free_pool_seconds, &[100, 80, 50][..]),
+        ("all", "Trần chi phí chép lời", used.total_seconds, limits.monthly_cap_seconds, &[100, 80][..]),
     ] {
-        for (level, action) in [(100, "transcript.cap_reached"), (80, "transcript.cap_80")] {
-            if limit_s > 0 && used_s * 100 >= limit_s * level {
-                if usage::mark_once(&state.db, &format!("{action}:{pool}:{month}")).await {
-                    audit::record(state, None, action, doc! { "pool": pool, "month": month, "seconds": used_s });
-                }
-                break;
-            }
+        let Some(&level) = levels.iter().find(|&&level| limit_s > 0 && used_s * 100 >= limit_s * level) else {
+            continue;
+        };
+        let action = if level == 100 { "transcript.cap_reached".to_string() } else { format!("transcript.cap_{level}") };
+        if usage::mark_once(&state.db, &format!("{action}:{pool}:{month}")).await {
+            audit::record(state, None, &action, doc! { "pool": pool, "month": month, "seconds": used_s });
+            let (used_m, limit_m) = (usage::used_minutes(used_s), limit_s / 60);
+            notify::send(state, format!("{label} tháng {month} đã dùng {level}% ({used_m}/{limit_m} phút)."));
         }
     }
 }
@@ -454,6 +518,7 @@ async fn run(state: &AppState, t: &transcript::TranscriptDoc) {
             if state.transcriber.trip() {
                 tracing::error!("key OpenAI của server không dùng được ({e}) — ngắt chép lời tới khi khởi động lại");
                 audit::record(state, None, "transcript.key_invalid", doc! { "reason": &e });
+                notify::send(state, format!("Key OpenAI của server không dùng được ({e}); chép lời tạm ngưng tới khi thay key và khởi động lại."));
             }
             record(db, t.id, &t.run_id, Outcome::Failed(PAUSED)).await;
         }
@@ -470,6 +535,10 @@ async fn transcribe_file(
     t: &transcript::TranscriptDoc,
     key: &ApiKey,
 ) -> Result<(String, Vec<Sentence>, usize), String> {
+    // Khoá sau khi đã xếp hàng: không gửi audio nữa; lượt đóng với 0 giây đã gửi nên được hoàn hết.
+    if user::find_profile(&state.db, &t.user_id).await.ok().flatten().is_some_and(|p| p.blocked) {
+        return Err("tài khoản đã bị khoá".into());
+    }
     let f = file::get_owned(&state.db, &t.file_id(), &t.user_id)
         .await
         .map_err(|e| {
@@ -498,22 +567,22 @@ async fn transcribe_file(
 async fn reserve_shortfall(state: &AppState, t: &transcript::TranscriptDoc, duration: f64) -> Result<(), String> {
     // Chạy lại sau khởi động lại: phần đã gửi ở lần trước đã tính, lần này gửi lại cả file.
     let extra = duration.ceil() as i64 + t.sent_s - t.charged_s;
-    let Some(month) = t.month.as_deref().filter(|_| extra > 0) else { return Ok(()) };
+    let Some(charge) = t.charge().filter(|_| extra > 0) else { return Ok(()) };
     let plan = if t.free_pool { plan::Plan::Free } else { plan::Plan::Plus };
     let limits = state.config.transcribe_limits;
     let fail = |e: AppError| {
         tracing::warn!(file = %t.file_id(), "giữ thêm phút lỗi: {e:?}");
         "không giữ được phút chép lời, thử lại sau".to_string()
     };
-    match usage::reserve(&state.db, &t.user_id, plan, month, extra, &limits).await.map_err(fail)? {
-        Ok(charge) => {
+    match usage::reserve(&state.db, &charge, plan.limit_seconds(&limits), extra, &limits).await.map_err(fail)? {
+        Ok(()) => {
             if !transcript::add_charge(&state.db, t.id, &t.run_id, extra).await.map_err(fail)? {
                 usage::settle(&state.db, &charge, -extra).await.map_err(fail)?;
                 return Err(CANCELLED.into());
             }
             Ok(())
         }
-        Err(_) => Err("bản ghi dài hơn số phút còn lại trong tháng".into()),
+        Err(_) => Err("bản ghi dài hơn số phút chép lời còn lại".into()),
     }
 }
 
@@ -600,6 +669,29 @@ async fn transcribe_path(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn new_free_accounts_wait_for_the_delay() {
+        let created: chrono::DateTime<chrono::Utc> = "2026-10-16T05:00:00Z".parse().expect("giờ");
+        let profile = |created_at: Option<chrono::DateTime<chrono::Utc>>| user::Profile {
+            email: "a@x.vn".into(),
+            plan: None,
+            plan_until: None,
+            created_at: created_at.map(|c| mongodb::bson::DateTime::from_millis(c.timestamp_millis())),
+            blocked: false,
+        };
+        let just_before = created + chrono::Duration::hours(24) - chrono::Duration::seconds(1);
+        let Some(AppError::Quota { code, retry_at, message, .. }) = too_new(&profile(Some(created)), 24, just_before) else {
+            panic!("phải chặn tài khoản mới");
+        };
+        assert_eq!(code, "ACCOUNT_TOO_NEW");
+        assert_eq!(retry_at.as_deref(), Some("2026-10-17T05:00:00+00:00"));
+        assert!(message.contains("12:00 ngày 17/10"), "{message}");
+        assert!(too_new(&profile(Some(created)), 24, created + chrono::Duration::hours(24)).is_none());
+        // User cũ không có `createdAt`, và giới hạn 0 giờ: không chặn.
+        assert!(too_new(&profile(None), 24, created).is_none());
+        assert!(too_new(&profile(Some(created)), 0, created).is_none());
+    }
 
     /// Chép thật qua OpenAI (tốn tiền, cần mạng): `OPENAI_API_KEY_FILE=<tệp chứa key>
     /// TRANSCRIBE_SAMPLE=<tệp audio> TRANSCRIBE_OUT=<tệp txt> cargo test live_openai -- --ignored`.

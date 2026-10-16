@@ -55,6 +55,11 @@ pub struct TranscriptDoc {
     /// Lượt có tính vào quỹ chung của gói free không.
     #[serde(rename = "freePool", default)]
     pub free_pool: bool,
+    /// Gói free: ngày của sổ ngày và khoá sổ IP (`usage::Charge`).
+    #[serde(default)]
+    pub day: Option<String>,
+    #[serde(default)]
+    pub ip: Option<String>,
     /// Lượt còn chạy, sổ còn mở.
     #[serde(default)]
     pub open: bool,
@@ -71,8 +76,14 @@ impl TranscriptDoc {
         self.id.to_hex()
     }
 
-    fn charge(&self) -> Option<Charge> {
-        Some(Charge { user_id: self.user_id.clone(), month: self.month.clone()?, free_pool: self.free_pool })
+    pub fn charge(&self) -> Option<Charge> {
+        Some(Charge {
+            user_id: self.user_id.clone(),
+            month: self.month.clone()?,
+            free_pool: self.free_pool,
+            day: self.day.clone(),
+            ip: self.ip.clone(),
+        })
     }
 }
 
@@ -91,6 +102,8 @@ async fn settle_closed(db: &Database, before: &TranscriptDoc) {
         "userId": &before.user_id,
         "month": &charge.month,
         "freePool": charge.free_pool,
+        "day": &charge.day,
+        "ip": &charge.ip,
         "chargedS": before.charged_s,
         "sentS": before.sent_s,
         "at": DateTime::now(),
@@ -140,6 +153,8 @@ pub async fn enqueue(
                     "sentS": 0_i64,
                     "month": &charge.month,
                     "freePool": charge.free_pool,
+                    "day": &charge.day,
+                    "ip": &charge.ip,
                     "open": true,
                     "settled": false,
                     "attempts": 0,
@@ -458,7 +473,19 @@ pub async fn delete(db: &Database, file_id: ObjectId) -> Result<(), AppError> {
 mod tests {
     use super::*;
     use crate::config::TranscribeLimits;
-    use crate::models::plan::Plan;
+
+    /// Giữ chỗ gói free trên sổ giả: ngày và IP dùng chính chuỗi `month` để dọn chung một regex.
+    async fn take(db: &Database, user: &str, month: &str, need: i64, limits: &TranscribeLimits) -> Charge {
+        let charge = Charge {
+            user_id: user.to_string(),
+            month: month.to_string(),
+            free_pool: true,
+            day: Some(month.to_string()),
+            ip: Some(format!("ip-{month}")),
+        };
+        usage::reserve(db, &charge, limits.free_seconds, need, limits).await.expect("giữ").expect("đủ");
+        charge
+    }
 
     /// Vòng đời hàng đợi + sổ phút trên Mongo thật (DB dev): `TRANSCRIPT_TEST_MONGO_URI=<uri>
     /// TRANSCRIPT_TEST_DB_NAME=<db> cargo test transcript_queue -- --ignored`. User và tháng giả riêng, tự dọn.
@@ -475,6 +502,9 @@ mod tests {
             plus_seconds: 10_000,
             free_pool_seconds: 10_000,
             monthly_cap_seconds: 10_000,
+            free_daily_seconds: 10_000,
+            free_ip_daily_seconds: 10_000,
+            free_delay_hours: 0,
         };
         let used = |db: Database, user: String, month: String| async move {
             usage::month_usage(&db, &user, &month).await.expect("đọc sổ").user_seconds
@@ -482,7 +512,7 @@ mod tests {
         let (a, b, c) = (ObjectId::new(), ObjectId::new(), ObjectId::new());
 
         // Giữ 100 giây cho a và b, xếp hàng.
-        let charge = usage::reserve(&db, &user, Plan::Free, &month, 100, &limits).await.expect("giữ").expect("đủ");
+        let charge = take(&db, &user, &month, 100, &limits).await;
         assert!(enqueue(&db, a, &user, "run-1", "m", &charge, 60).await.expect("a"));
         assert!(enqueue(&db, b, &user, "run-1", "m", &charge, 40).await.expect("b"));
         // Xếp lại a khi a đang queued: bị từ chối (người gọi hoàn phần của nó).
@@ -499,7 +529,7 @@ mod tests {
         assert_eq!(used(db.clone(), user.clone(), month.clone()).await, 65);
 
         // Chép lại b (run-2) rồi lượt cũ run-1 mới báo lỗi muộn: không chạm run-2.
-        let charge2 = usage::reserve(&db, &user, Plan::Free, &month, 40, &limits).await.expect("giữ").expect("đủ");
+        let charge2 = take(&db, &user, &month, 40, &limits).await;
         assert!(enqueue(&db, b, &user, "run-2", "m", &charge2, 40).await.expect("b lại"));
         assert!(!finish_failed(&db, b, "run-1", "muộn").await.expect("muộn"));
         assert!(!add_sent(&db, b, "run-1", 99).await.expect("gửi muộn"));
@@ -511,7 +541,7 @@ mod tests {
         assert_eq!(used(db.clone(), user.clone(), month.clone()).await, 75);
 
         // Khởi động lại khi c đang chạy: lần một xếp lại, lần hai dừng và quyết toán.
-        let charge3 = usage::reserve(&db, &user, Plan::Free, &month, 30, &limits).await.expect("giữ").expect("đủ");
+        let charge3 = take(&db, &user, &month, 30, &limits).await;
         assert!(enqueue(&db, c, &user, "run-1", "m", &charge3, 30).await.expect("c"));
         let coll = db.collection::<TranscriptDoc>(COLL);
         coll.update_one(doc! { "_id": c }, doc! { "$set": { "status": "running" } }).await.expect("chạy");
@@ -529,7 +559,7 @@ mod tests {
 
         // Đóng được ghi nhưng báo lỗi (giả lập: open=false, settled=false), rồi thử lại: quyết toán đúng một lần.
         let d = ObjectId::new();
-        let charge4 = usage::reserve(&db, &user, Plan::Free, &month, 20, &limits).await.expect("giữ").expect("đủ");
+        let charge4 = take(&db, &user, &month, 20, &limits).await;
         assert!(enqueue(&db, d, &user, "run-1", "m", &charge4, 20).await.expect("d"));
         assert!(add_sent(&db, d, "run-1", 8).await.expect("sent d"));
         coll.update_one(doc! { "_id": d }, doc! { "$set": { "open": false, "settled": false, "status": "failed" } })

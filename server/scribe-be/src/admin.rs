@@ -3,6 +3,9 @@
 //! ```text
 //! scribe-be admin set-plan <email> <free|plus> [--until YYYY-MM-DD]
 //! scribe-be admin usage [--email <email>] [--month YYYY-MM] [--recompute [--apply]]
+//! scribe-be admin block <email> [--reason <lý do>]
+//! scribe-be admin unblock <email>
+//! scribe-be admin notify-test
 //! ```
 //!
 //! Chạy bằng user của service (`sudo -u <user> <binary> admin …`). Không khởi worker, sweeper hay
@@ -10,7 +13,7 @@
 
 use crate::config::Config;
 use crate::error::AppError;
-use crate::models::{plan, transcript, usage, user};
+use crate::models::{plan, session as sessions, transcript, usage, user};
 use chrono::{NaiveDate, TimeZone, Utc};
 use futures_util::StreamExt;
 use mongodb::bson::{doc, DateTime, Document};
@@ -23,13 +26,21 @@ pub async fn run(config: &Config, db: &Database, args: &[String]) -> Result<Valu
     match command.as_str() {
         "set-plan" => set_plan(db, rest).await,
         "usage" => show_usage(config, db, rest).await,
+        "block" => block(db, rest, true).await,
+        "unblock" => block(db, rest, false).await,
+        "notify-test" => {
+            crate::notify::deliver(&reqwest::Client::new(), config, "Thử kênh báo động của Scribe.").await?;
+            Ok(json!({ "sent": true }))
+        }
         _ => Err(usage_text()),
     }
 }
 
 fn usage_text() -> String {
     "dùng: scribe-be admin set-plan <email> <free|plus> [--until YYYY-MM-DD] | \
-     scribe-be admin usage [--email <email>] [--month YYYY-MM] [--recompute [--apply]]"
+     scribe-be admin usage [--email <email>] [--month YYYY-MM] [--recompute [--apply]] | \
+     scribe-be admin block <email> [--reason <lý do>] | scribe-be admin unblock <email> | \
+     scribe-be admin notify-test"
         .into()
 }
 
@@ -85,6 +96,22 @@ async fn set_plan(db: &Database, args: &[String]) -> Result<Value, String> {
     let until_text = until.and_then(|u| u.try_to_rfc3339_string().ok());
     audit(db, Some(&user_id), "admin.set_plan", doc! { "plan": chosen.name(), "until": until_text.clone() }).await;
     Ok(json!({ "userId": user_id, "plan": chosen.name(), "until": until_text }))
+}
+
+/// Khoá: chặn đăng nhập và chép lời, xoá mọi phiên (server đang chạy còn nhớ phiên tối đa 30 giây; app
+/// iPhone mất thiết bị ở lần làm mới kế tiếp). Mở khoá chỉ xoá dấu khoá.
+async fn block(db: &Database, args: &[String], on: bool) -> Result<Value, String> {
+    let email = args.first().ok_or_else(usage_text)?;
+    let user_id = one_user(db, email).await?;
+    let reason = flag(args, "--reason").unwrap_or("không ghi lý do");
+    user::set_blocked(db, &user_id, on.then_some(reason)).await.map_err(err)?;
+    if !on {
+        audit(db, Some(&user_id), "admin.unblock", doc! {}).await;
+        return Ok(json!({ "userId": user_id, "blocked": false }));
+    }
+    let removed = sessions::delete_by_user(db, &user_id, None).await.map_err(err)?;
+    audit(db, Some(&user_id), "admin.block", doc! { "reason": reason, "sessions": removed.len() as i64 }).await;
+    Ok(json!({ "userId": user_id, "blocked": true, "sessionsRemoved": removed.len() }))
 }
 
 async fn show_usage(config: &Config, db: &Database, args: &[String]) -> Result<Value, String> {

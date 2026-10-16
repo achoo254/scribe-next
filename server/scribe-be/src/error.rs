@@ -17,8 +17,9 @@ pub enum AppError {
     TooLarge(String),
     /// 429 — rate-limit theo IP (red-team #2).
     TooManyRequests(String),
-    /// 403 kèm số — hết phút chép lời (`QUOTA_EXCEEDED`) hoặc hạn mức chung (`CAP_REACHED`).
-    Quota { code: &'static str, message: String, used_minutes: i64, limit_minutes: i64 },
+    /// 403 kèm số — hết phút chép lời (`QUOTA_EXCEEDED`, `DAILY_LIMIT`, `IP_LIMIT`), hạn mức chung
+    /// (`CAP_REACHED`) hoặc tài khoản còn mới (`ACCOUNT_TOO_NEW`); `retry_at` = lúc mở lại (RFC 3339).
+    Quota { code: &'static str, message: String, used_minutes: i64, limit_minutes: i64, retry_at: Option<String> },
     /// 503 — tính năng tạm ngưng (vd key OpenAI của server hỏng).
     Unavailable(String),
     Internal(String),
@@ -43,12 +44,13 @@ impl AppError {
 
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
-        if let AppError::Quota { code, message, used_minutes, limit_minutes } = &self {
+        if let AppError::Quota { code, message, used_minutes, limit_minutes, retry_at } = &self {
             let body = json!({
                 "error": message,
                 "code": code,
                 "usedMinutes": used_minutes,
                 "limitMinutes": limit_minutes,
+                "retryAt": retry_at,
             });
             return (StatusCode::FORBIDDEN, Json(body)).into_response();
         }

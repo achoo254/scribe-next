@@ -112,6 +112,10 @@ pub struct Profile {
     pub email: String,
     pub plan: Option<String>,
     pub plan_until: Option<DateTime>,
+    /// Lúc tạo tài khoản; user rất cũ không có trường này (coi như đã lâu).
+    pub created_at: Option<DateTime>,
+    /// Quản trị đã khoá tài khoản (`admin block`): không đăng nhập, không chép lời.
+    pub blocked: bool,
 }
 
 pub async fn find_profile(db: &Database, user_id: &str) -> Result<Option<Profile>, AppError> {
@@ -119,14 +123,31 @@ pub async fn find_profile(db: &Database, user_id: &str) -> Result<Option<Profile
     let doc = db
         .collection::<Document>(COLL)
         .find_one(doc! { "_id": oid })
-        .projection(doc! { "email": 1, "plan": 1, "planUntil": 1 })
+        .projection(doc! { "email": 1, "plan": 1, "planUntil": 1, "createdAt": 1, "blocked": 1 })
         .await
         .map_err(|e| AppError::Internal(format!("mongo find user: {e}")))?;
     Ok(doc.map(|d| Profile {
         email: d.get_str("email").unwrap_or_default().to_string(),
         plan: d.get_str("plan").ok().map(str::to_string),
         plan_until: d.get_datetime("planUntil").ok().copied(),
+        created_at: d.get_datetime("createdAt").ok().copied(),
+        // Dấu khoá do CLI ghi là `{at, reason}`; `true` sửa tay cũng tính là khoá.
+        blocked: d.get_document("blocked").is_ok() || d.get_bool("blocked").unwrap_or(false),
     }))
+}
+
+/// Khoá (`Some(lý do)`) hoặc mở khoá (`None`) tài khoản. Trả `false` khi không có user.
+pub async fn set_blocked(db: &Database, user_id: &str, reason: Option<&str>) -> Result<bool, AppError> {
+    let oid = ObjectId::parse_str(user_id).map_err(|_| AppError::BadRequest("user id không hợp lệ".into()))?;
+    let update = match reason {
+        Some(reason) => doc! { "$set": { "blocked": { "at": DateTime::now(), "reason": reason } } },
+        None => doc! { "$unset": { "blocked": "" } },
+    };
+    db.collection::<Document>(COLL)
+        .update_one(doc! { "_id": oid }, update)
+        .await
+        .map(|r| r.matched_count > 0)
+        .map_err(|e| AppError::Internal(format!("mongo block user: {e}")))
 }
 
 /// Các user có email này (không phân biệt hoa thường). Dùng cho CLI admin: phải khớp đúng một user.
@@ -220,6 +241,14 @@ mod tests {
         // Nhiều user mới không có `firebaseUid` không đụng index unique.
         let (third, _) = find_or_link(&db, &format!("acc3_{tag}"), &format!("n3-{tag}@x.vn"), None).await.expect("mới");
         assert_eq!(find_id_by_sub(&db, &format!("acc3_{tag}")).await.expect("tìm"), Some(third.clone()));
+
+        // User mới có `createdAt`; khoá rồi mở khoá.
+        let profile = find_profile(&db, &third).await.expect("đọc").expect("có");
+        assert!(profile.created_at.is_some() && !profile.blocked);
+        assert!(set_blocked(&db, &third, Some("thử")).await.expect("khoá"));
+        assert!(find_profile(&db, &third).await.expect("đọc").expect("có").blocked);
+        assert!(set_blocked(&db, &third, None).await.expect("mở"));
+        assert!(!find_profile(&db, &third).await.expect("đọc").expect("có").blocked);
 
         coll.delete_many(doc! { "email": { "$regex": tag.as_str() } }).await.expect("dọn");
     }
