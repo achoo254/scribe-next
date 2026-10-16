@@ -1,6 +1,6 @@
 import { IconArrowLeft, IconPencil, IconTrash } from "@tabler/icons-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AudioPlayer, type MediaSeek } from "../../components/media-player";
 import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
@@ -31,6 +31,7 @@ import {
 	useTranscriptDoc,
 } from "../../features/transcript-docs/transcript-docs-queries";
 import type { ExportScope } from "../../features/transcript/transcript-api";
+import { LeaveGuard } from "../../layout/leave-guard";
 import { errorMessage, isNativeShell } from "../../lib/api";
 import {
 	downloadPaths,
@@ -44,10 +45,9 @@ import { ReaderSegment } from "./reader-segment";
 
 export interface TranscriptReaderProps {
 	transcriptKey: string;
-	/** The Transcript tab is shown: only then does it load and poll. */
-	active: boolean;
 	canTranscribe: boolean;
-	onBack: () => void;
+	/** `replace` after a delete, so back/swipe does not reopen the deleted doc. */
+	onBack: (options?: { replace?: boolean }) => void;
 }
 
 interface Playback {
@@ -69,13 +69,12 @@ function exportScope(detail: TranscriptDetail): ExportScope {
  */
 export function TranscriptReader({
 	transcriptKey,
-	active,
 	canTranscribe,
 	onBack,
 }: TranscriptReaderProps) {
 	const queryClient = useQueryClient();
 	const download = useDownload();
-	const { detail, statuses } = useTranscriptDoc(transcriptKey, active);
+	const { detail, statuses } = useTranscriptDoc(transcriptKey);
 	const rename = useRenameTranscript();
 	const save = useSaveSegment();
 	const remove = useDeleteTranscript();
@@ -91,6 +90,14 @@ export function TranscriptReader({
 	const [titleError, setTitleError] = useState("");
 	const [confirmDelete, setConfirmDelete] = useState(false);
 	const [rerun, setRerun] = useState<TranscriptSegment | null>(null);
+	// Deleted: open editors no longer matter, so leaving is not guarded.
+	// Navigating from an effect lets `LeaveGuard` (a child, whose effects
+	// run first) drop its blocker before the navigation starts.
+	const [removed, setRemoved] = useState(false);
+	useEffect(() => {
+		if (removed) onBack({ replace: true });
+	}, [removed, onBack]);
+	const unsaved = !removed && (editing !== null || titleDraft !== null);
 
 	const doc = detail.data;
 	const segments = doc?.segments ?? [];
@@ -374,6 +381,7 @@ export function TranscriptReader({
 			) : null}
 
 			{transcribe.dialog}
+			<LeaveGuard when={unsaved} data-id="reader-leave" />
 			<ConfirmModal
 				open={rerun !== null}
 				onOpenChange={(next) => {
@@ -397,7 +405,7 @@ export function TranscriptReader({
 				confirmLabel="Xoá"
 				onConfirm={async () => {
 					await remove.mutateAsync(transcriptKey);
-					onBack();
+					setRemoved(true);
 				}}
 				data-id="reader-delete-confirm"
 			>
@@ -415,7 +423,7 @@ function BackButton({ onBack }: { onBack: () => void }) {
 			className="justify-self-start"
 			data-id="reader-back"
 			leadingIcon={<IconArrowLeft size={16} aria-hidden="true" />}
-			onClick={onBack}
+			onClick={() => onBack()}
 		>
 			Danh sách
 		</Button>

@@ -1,32 +1,26 @@
 import { IconMicrophone, IconPlayerStopFilled } from "@tabler/icons-react";
-import { useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useState } from "react";
 import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
 import { Card } from "../../components/ui/card";
 import { ProgressBar } from "../../components/ui/progress-bar";
-import { refreshStorage } from "../../features/files/file-queries";
 import { supportsScreenCapture } from "../../features/recorder/media-capture";
-import type { Recorder } from "../../features/recorder/recorder";
-import type { RecordSources } from "../../features/recorder/recorder-messages";
-import { useRecorder } from "../../features/recorder/use-recorder";
 import { isJobBusy } from "../../features/split/split-job";
-import { useSplitJob } from "../../features/split/use-split-job";
-import { useReportSessionActivity } from "../../layout/session-activity";
 import { isNativeShell } from "../../lib/api";
 import { formatClock, parsePositiveNumber } from "../../lib/format";
 import { LiveMonitor } from "./live-monitor";
 import { NativeRecordCard } from "./native-record-card";
 import { RecordSourcesField } from "./record-sources";
+import { useBrowserRecordState } from "./record-state";
 import { RecordingHistory } from "./recording-history";
 import { SplitAfterRecording } from "./split-after-recording";
 
 const canScreen = supportsScreenCapture();
 
 /**
- * "Ghi âm" tab (Mode A): sources → record/stop → history and playback.
+ * "Ghi âm" page (Mode A): sources → record/stop → history and playback.
  * In the iOS app the Swift recorder replaces the browser one (mic only:
- * iOS gives no system sound or screen to a regular app).
+ * iOS gives no system sound or screen to a regular app). The recording
+ * itself lives in `RecordStateProvider`, so it outlives this page.
  */
 export function RecordPage() {
 	if (isNativeShell()) {
@@ -40,45 +34,18 @@ export function RecordPage() {
 	return <BrowserRecordPage />;
 }
 
-/** Resolves once the recorder is no longer saving a recording. */
-function saved(recorder: Recorder): Promise<void> {
-	return new Promise((resolve) => {
-		const unsubscribe = recorder.subscribe(() => {
-			if (recorder.getState().finalizing) return;
-			unsubscribe();
-			resolve();
-		});
-		if (!recorder.getState().finalizing) {
-			unsubscribe();
-			resolve();
-		}
-	});
-}
-
 function BrowserRecordPage() {
-	const queryClient = useQueryClient();
-	const rec = useRecorder();
-	const split = useSplitJob();
-	const { recorder } = rec;
-	// Sign-out saves the recording first (stop uploads the last chunks and
-	// finalizes), so nothing is sent after the session is gone.
-	const stopRecording = useCallback(async () => {
-		await recorder.stop();
-		await saved(recorder);
-	}, [recorder]);
-	useReportSessionActivity("browser-recorder", {
-		recording: rec.recording || rec.starting || rec.finalizing,
-		segmentsWaiting: 0,
-		fileUploading: false,
-		stopRecording,
-	});
-	const [sources, setSources] = useState<RecordSources>({
-		mic: true,
-		systemAudio: false,
-		screen: false,
-	});
-	const [splitEnabled, setSplitEnabled] = useState(false);
-	const [splitMinutes, setSplitMinutes] = useState("10");
+	const {
+		rec,
+		split,
+		sources,
+		setSources,
+		splitEnabled,
+		setSplitEnabled,
+		splitMinutes,
+		setSplitMinutes,
+		toggle,
+	} = useBrowserRecordState();
 
 	const locked = rec.recording || rec.finalizing;
 	const noSource = !sources.mic && !sources.systemAudio && !sources.screen;
@@ -89,37 +56,6 @@ function BrowserRecordPage() {
 		(needsScreen && !canScreen) ||
 		(splitEnabled && minutes === null);
 	const splitBusy = isJobBusy(split.status);
-
-	// A finished cut (done: segments replace the recording; failed: the
-	// original is still there) changes the history and the quota.
-	useEffect(() => {
-		if (split.status === "done" || split.status === "failed") {
-			void refreshStorage(queryClient, ["recordings"]);
-		}
-	}, [split.status, queryClient]);
-
-	async function toggle(): Promise<void> {
-		if (!rec.recording) {
-			split.reset();
-			await rec.recorder.start(sources);
-			return;
-		}
-		const result = await rec.recorder.stop();
-		if (!result) return;
-		if (splitEnabled && minutes !== null) {
-			// The history refreshes when the job ends, so the original does
-			// not flash in before being replaced by its segments.
-			void refreshStorage(queryClient);
-			await split.start({
-				inputFileId: result.fileId,
-				criterion: "minutes",
-				value: minutes,
-				recordingSplit: true,
-			});
-		} else {
-			void refreshStorage(queryClient, ["recordings"]);
-		}
-	}
 
 	return (
 		<div data-id="record" className="grid gap-4">

@@ -29,15 +29,14 @@ function anyPending(items: readonly TranscriptSummary[] | undefined): boolean {
 	return (items ?? []).some((item) => item.pending > 0);
 }
 
-/** Transcripts of the user; polls only while the tab is open and something runs. */
-export function useTranscriptDocsQuery(active: boolean) {
+/** Transcripts of the user; polls while the page is open and something runs. */
+export function useTranscriptDocsQuery() {
 	return useQuery({
 		queryKey: transcriptDocKeys.list,
 		queryFn: () => listTranscriptDocs(),
-		enabled: active,
 		refetchOnMount: "always",
 		refetchInterval: (query) =>
-			active && anyPending(query.state.data) ? LIST_POLL_MS : false,
+			anyPending(query.state.data) ? LIST_POLL_MS : false,
 	});
 }
 
@@ -46,12 +45,11 @@ export function useTranscriptDocsQuery(active: boolean) {
  * `/status` route is polled; the full transcript reloads when a segment
  * changes state (finished, failed, queued again).
  */
-export function useTranscriptDoc(key: string, active: boolean) {
+export function useTranscriptDoc(key: string) {
 	const queryClient = useQueryClient();
 	const detail = useQuery({
 		queryKey: transcriptDocKeys.detail(key),
 		queryFn: () => fetchTranscriptDoc(key),
-		enabled: active,
 	});
 	const pending = (detail.data?.segments ?? []).some((s) =>
 		isPending(s.status),
@@ -59,7 +57,7 @@ export function useTranscriptDoc(key: string, active: boolean) {
 	const status = useQuery({
 		queryKey: transcriptDocKeys.status(key),
 		queryFn: () => fetchTranscriptStatus(key),
-		enabled: active && pending,
+		enabled: pending,
 		refetchInterval: STATUS_POLL_MS,
 	});
 

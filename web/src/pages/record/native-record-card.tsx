@@ -1,17 +1,11 @@
 import { IconMicrophone, IconPlayerStopFilled } from "@tabler/icons-react";
-import { useState } from "react";
-import { useAuth } from "../../auth/auth-context";
 import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
 import { Card } from "../../components/ui/card";
 import { SegmentedControl } from "../../components/ui/segmented-control";
-import { userKeyOf } from "../../features/recorder/native-recorder";
-import { useNativeRecorder } from "../../features/recorder/use-native-recorder";
-import { useReportSessionActivity } from "../../layout/session-activity";
 import { formatClock } from "../../lib/format";
 import { LevelMeter } from "./live-monitor";
-
-type SegmentMinutes = "1" | "5" | "10";
+import { useNativeRecordState } from "./record-state";
 
 const SEGMENT_OPTIONS = [
 	{ value: "1", label: "1 phút", "data-id": "native-segment-1" },
@@ -22,29 +16,12 @@ const SEGMENT_OPTIONS = [
 /**
  * "Ghi âm" in the iOS app: the Swift engine records the microphone in
  * segments that keep going on the lock screen and during calls, and
- * uploads each finished segment to "Lịch sử ghi".
+ * uploads each finished segment to "Lịch sử ghi". State and the segment
+ * length live in `RecordStateProvider`, so they survive leaving the page.
  */
 export function NativeRecordCard() {
-	const rec = useNativeRecorder();
-	const { user } = useAuth();
-	const [minutes, setMinutes] = useState<SegmentMinutes>("1");
+	const { rec, minutes, setMinutes, toggle } = useNativeRecordState();
 	const busy = rec.recording || rec.starting || rec.finalizing;
-	// Signing out stops the Swift recorder itself (RecorderPlugin.signOut).
-	useReportSessionActivity("native-recorder", {
-		recording: busy,
-		segmentsWaiting: rec.uploadsWaiting,
-		fileUploading: false,
-	});
-
-	async function toggle(): Promise<void> {
-		if (rec.recording) {
-			await rec.recorder.stop();
-			return;
-		}
-		if (!user) return;
-		const key = rec.userKey ?? (await userKeyOf(user.email));
-		await rec.recorder.start(key, Number(minutes));
-	}
 
 	return (
 		<Card data-id="native-record" className="grid gap-4 p-4 sm:p-6">

@@ -31,7 +31,20 @@ export default defineConfig({
 		screenshot: "only-on-failure",
 	},
 	projects: [
-		{ name: "chromium-desktop", use: { ...devices["Desktop Chrome"] } },
+		{
+			name: "chromium-desktop",
+			use: {
+				...devices["Desktop Chrome"],
+				// A real MediaRecorder over a synthetic microphone, granted
+				// without a prompt: the recording specs upload real chunks.
+				launchOptions: {
+					args: [
+						"--use-fake-device-for-media-stream",
+						"--use-fake-ui-for-media-stream",
+					],
+				},
+			},
+		},
 		{ name: "webkit-iphone", use: { ...devices["iPhone 15"] } },
 	],
 	webServer: {

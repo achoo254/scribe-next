@@ -15,6 +15,21 @@ if (
 	globalThis.PointerEvent = TestPointerEvent as typeof PointerEvent;
 }
 
+/*
+ * Copied from localman-next apps/web/src/test/setup.ts: React Router's
+ * data router builds a `Request` (Node/undici) with an AbortSignal from
+ * jsdom, which undici rejects. Tests never abort navigations, so the
+ * test-only Request drops the foreign signal.
+ */
+const NodeRequest = globalThis.Request;
+class TestRequest extends NodeRequest {
+	constructor(input: RequestInfo | URL, init?: RequestInit) {
+		const { signal: _signal, ...rest } = init ?? {};
+		super(input, rest);
+	}
+}
+globalThis.Request = TestRequest;
+
 afterEach(() => {
 	cleanup();
 });

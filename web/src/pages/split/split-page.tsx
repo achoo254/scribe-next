@@ -4,60 +4,39 @@ import {
 	IconRefresh,
 	IconScissors,
 } from "@tabler/icons-react";
-import { useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
+import { useRef } from "react";
 import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
 import { Card } from "../../components/ui/card";
 import { MeterBar } from "../../components/ui/meter-bar";
 import { ProgressBar } from "../../components/ui/progress-bar";
-import { refreshStorage } from "../../features/files/file-queries";
-import { type JobCriterion, isJobBusy } from "../../features/split/split-job";
-import { useSplitJob } from "../../features/split/use-split-job";
-import { useChunkedUpload } from "../../features/upload/use-chunked-upload";
-import { useReportSessionActivity } from "../../layout/session-activity";
+import { isJobBusy } from "../../features/split/split-job";
 import { downloadPaths, useDownload } from "../../lib/download";
 import { formatDuration } from "../../lib/format";
 import { ManagedFilesCard } from "./managed-files-card";
 import { SplitCriteria, parseSplitValue } from "./split-criteria";
+import { useSplitPageState } from "./split-state";
 
 /**
- * "Cắt file" tab (Mode B): upload a file → choose how to cut → download
- * the segments as a zip. `active` is true while the tab is shown.
+ * "Cắt file" page (Mode B): upload a file → choose how to cut → download
+ * the segments as a zip. File, upload and job live in `SplitPageProvider`,
+ * so they go on while another page is shown.
  */
-export function SplitPage({ active }: { active: boolean }) {
-	const queryClient = useQueryClient();
+export function SplitPage() {
 	const download = useDownload();
-	const upload = useChunkedUpload();
-	const job = useSplitJob();
+	const {
+		upload,
+		job,
+		file,
+		criterion,
+		setCriterion,
+		value,
+		setValue,
+		choose,
+	} = useSplitPageState();
 	const input = useRef<HTMLInputElement>(null);
-	const [file, setFile] = useState<File | null>(null);
-	const [criterion, setCriterion] = useState<JobCriterion>("minutes");
-	const [value, setValue] = useState("10");
 	const amount = parseSplitValue(criterion, value);
 	const busy = isJobBusy(job.status);
-	useReportSessionActivity("file-upload", {
-		recording: false,
-		segmentsWaiting: 0,
-		fileUploading: upload.uploading,
-	});
-
-	// Uploads and segments count against the quota.
-	useEffect(() => {
-		if (upload.result) void refreshStorage(queryClient, ["managed"]);
-	}, [upload.result, queryClient]);
-	useEffect(() => {
-		if (job.status === "done") void refreshStorage(queryClient, ["managed"]);
-	}, [job.status, queryClient]);
-
-	async function choose(next: File | undefined): Promise<void> {
-		if (!next) return;
-		setFile(next);
-		// Clear the previous file's result so its zip is not downloaded by mistake.
-		job.reset();
-		upload.reset();
-		await upload.upload(next);
-	}
 
 	return (
 		<div data-id="split" className="grid gap-4">
@@ -71,7 +50,8 @@ export function SplitPage({ active }: { active: boolean }) {
 						className="hidden"
 						data-id="split-file-input"
 						onChange={(event) => {
-							void choose(event.target.files?.[0]);
+							const next = event.target.files?.[0];
+							if (next) void choose(next);
 							// The same file can be chosen again later.
 							event.target.value = "";
 						}}
@@ -191,7 +171,7 @@ export function SplitPage({ active }: { active: boolean }) {
 				) : null}
 			</Card>
 
-			<ManagedFilesCard active={active} />
+			<ManagedFilesCard />
 		</div>
 	);
 }

@@ -1,32 +1,34 @@
+import { useCallback } from "react";
+import { Navigate, useNavigate, useParams } from "react-router";
+import { PATHS, transcriptPath } from "../../layout/app-paths";
 import { TranscriptList } from "./transcript-list";
 import { TranscriptReader } from "./transcript-reader";
 
-export interface TranscriptPageProps {
-	/** The tab is shown: lists and readers load and poll only then. */
-	active: boolean;
-	/** Transcript open in the reader; null shows the list. */
-	openKey: string | null;
-	onOpenKeyChange: (key: string | null) => void;
-	canTranscribe: boolean;
+/** `/transcripts`: every transcript; a tap opens `/transcripts/:key`. */
+export function TranscriptListPage() {
+	const navigate = useNavigate();
+	return <TranscriptList onOpen={(key) => navigate(transcriptPath(key))} />;
 }
 
-/** Tab "Transcript": the list, or one transcript in the reader. */
-export function TranscriptPage({
-	active,
-	openKey,
-	onOpenKeyChange,
-	canTranscribe,
-}: TranscriptPageProps) {
-	if (openKey) {
-		return (
-			<TranscriptReader
-				key={openKey}
-				transcriptKey={openKey}
-				active={active}
-				canTranscribe={canTranscribe}
-				onBack={() => onOpenKeyChange(null)}
-			/>
-		);
-	}
-	return <TranscriptList active={active} onOpen={onOpenKeyChange} />;
+/**
+ * `/transcripts/:key`: one transcript. The router hands over the decoded
+ * key (`s:<id>` arrives as `s%3A<id>`). Only routed for users who may
+ * transcribe.
+ */
+export function TranscriptReaderPage() {
+	const { key } = useParams();
+	const navigate = useNavigate();
+	const back = useCallback(
+		(options?: { replace?: boolean }) => navigate(PATHS.transcripts, options),
+		[navigate],
+	);
+	if (!key) return <Navigate to={PATHS.transcripts} replace />;
+	return (
+		<TranscriptReader
+			key={key}
+			transcriptKey={key}
+			canTranscribe
+			onBack={back}
+		/>
+	);
 }

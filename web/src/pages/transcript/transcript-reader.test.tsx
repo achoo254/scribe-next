@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
@@ -71,15 +71,15 @@ const DETAIL: TranscriptDetail = {
 function renderReader(routes: Parameters<typeof fakeFetch>[0] = {}) {
 	const fake = fakeFetch({ [`GET ${PATH}`]: jsonResponse(DETAIL), ...routes });
 	vi.stubGlobal("fetch", fake.fetcher);
-	const { queryClient } = renderWithProviders(
+	const { queryClient, router } = renderWithProviders(
 		<TranscriptReader
 			transcriptKey={KEY}
-			active
 			canTranscribe
 			onBack={() => undefined}
 		/>,
+		{ routes: [{ path: "/split", element: <p>trang cắt file</p> }] },
 	);
-	return { ...fake, queryClient };
+	return { ...fake, queryClient, router };
 }
 
 afterEach(() => {
@@ -201,5 +201,36 @@ describe("TranscriptReader", () => {
 			within(dialog).getByRole("button", { name: "Chép lời" }),
 		).toBeDisabled();
 		expect(fake.calls.some((c) => c.method === "POST")).toBe(false);
+	});
+
+	it("asks before leaving the page with an unsaved edit", async () => {
+		const { router } = renderReader();
+		const header = await screen.findByText(/Đoạn 1 ·/);
+		const section = header.closest("section") as HTMLElement;
+		await userEvent.click(within(section).getByRole("button", { name: "Sửa" }));
+
+		await act(() => router.navigate("/split"));
+		const dialog = await screen.findByRole("dialog", { name: "Rời trang" });
+		expect(router.state.location.pathname).toBe("/");
+		// Stay: the draft is still open.
+		await userEvent.click(within(dialog).getByRole("button", { name: "Huỷ" }));
+		await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+		expect(screen.getByRole("textbox", { name: "Câu 1" })).toBeInTheDocument();
+		expect(router.state.location.pathname).toBe("/");
+
+		await act(() => router.navigate("/split"));
+		await userEvent.click(
+			await screen.findByRole("button", { name: "Vẫn rời trang" }),
+		);
+		expect(await screen.findByText("trang cắt file")).toBeInTheDocument();
+		expect(router.state.location.pathname).toBe("/split");
+	});
+
+	it("leaves without asking when nothing is being edited", async () => {
+		const { router } = renderReader();
+		await screen.findByText(/Đoạn 1 ·/);
+		await act(() => router.navigate("/split"));
+		expect(await screen.findByText("trang cắt file")).toBeInTheDocument();
+		expect(screen.queryByRole("dialog")).toBeNull();
 	});
 });

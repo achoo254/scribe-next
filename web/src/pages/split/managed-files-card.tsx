@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
 import { Card } from "../../components/ui/card";
@@ -23,9 +23,9 @@ const ROW =
 /**
  * Uploads and split segments: they count against the quota but are not
  * recordings, so they are listed (and can be deleted) here. Re-read each
- * time the tab opens.
+ * time the page opens (`refetchOnMount: "always"`).
  */
-export function ManagedFilesCard({ active }: { active: boolean }) {
+export function ManagedFilesCard() {
 	const query = useManagedFilesQuery();
 	const download = useDownload();
 	const remove = useDeleteFiles();
@@ -36,11 +36,6 @@ export function ManagedFilesCard({ active }: { active: boolean }) {
 		[files],
 	);
 	const outputs = useMemo(() => groupOutputsByJob(files), [files]);
-	const { refetch } = query;
-
-	useEffect(() => {
-		if (active) void refetch();
-	}, [active, refetch]);
 
 	if (query.isError) {
 		return <Alert tone="danger">{query.error.message}</Alert>;

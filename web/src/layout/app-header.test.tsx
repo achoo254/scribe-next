@@ -1,6 +1,6 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter } from "react-router";
+import { MemoryRouter, useLocation } from "react-router";
 import { describe, expect, it, vi } from "vitest";
 import type { CurrentUser } from "../auth/auth-api";
 
@@ -9,29 +9,26 @@ vi.mock("../auth/auth-context", () => ({
 }));
 
 const { AppHeader } = await import("./app-header");
-const { IDLE_ACTIVITY } = await import("./session-activity");
 
 function user(canTranscribe: boolean): CurrentUser {
 	return { email: "minh.anh@example.com", canTranscribe };
 }
 
-function renderHeader(
-	canTranscribe = true,
-	tab: "record" | "split" = "record",
-) {
-	const onTabChange = vi.fn();
-	const view = render(
-		<MemoryRouter>
-			<AppHeader
-				user={user(canTranscribe)}
-				tab={tab}
-				onTabChange={onTabChange}
-				activity={IDLE_ACTIVITY}
-				beforeSignOut={async () => undefined}
-			/>
+function Location() {
+	return <output data-testid="location">{useLocation().pathname}</output>;
+}
+
+function renderHeader(canTranscribe = true, path = "/record") {
+	return render(
+		<MemoryRouter initialEntries={[path]}>
+			<AppHeader user={user(canTranscribe)} />
+			<Location />
 		</MemoryRouter>,
 	);
-	return { onTabChange, ...view };
+}
+
+function location(): string | null {
+	return screen.getByTestId("location").textContent;
 }
 
 /** The wide nav and the compact row under the bar (one shows per width). */
@@ -40,42 +37,48 @@ function navs() {
 }
 
 describe("AppHeader", () => {
-	it("links the wordmark home and goes back to Ghi âm", async () => {
-		const { onTabChange } = renderHeader(true, "split");
+	it("links the wordmark to Ghi âm", async () => {
+		renderHeader(true, "/split");
 		const home = screen.getByRole("link", { name: "Scribe, về trang Ghi âm" });
-		expect(home).toHaveAttribute("href", "/");
+		expect(home).toHaveAttribute("href", "/record");
 		await userEvent.click(home);
-		expect(onTabChange).toHaveBeenCalledWith("record");
+		expect(location()).toBe("/record");
 	});
 
-	it("marks the current page in both navs", () => {
-		renderHeader(true, "split");
+	it("marks the page of the URL in both navs, also under /transcripts/:key", () => {
+		renderHeader(true, "/transcripts/s%3Aaaaaaaaa-1111");
 		expect(navs()).toHaveLength(2);
 		for (const nav of navs()) {
-			const current = within(nav).getByRole("button", { name: "Cắt file" });
-			expect(current).toHaveAttribute("aria-current", "page");
 			expect(
-				within(nav).getByRole("button", { name: "Ghi âm" }),
+				within(nav).getByRole("link", { name: "Transcript" }),
+			).toHaveAttribute("aria-current", "page");
+			expect(
+				within(nav).getByRole("link", { name: "Ghi âm" }),
 			).not.toHaveAttribute("aria-current");
 		}
 	});
 
-	it("switches pages from the nav", async () => {
-		const { onTabChange } = renderHeader();
+	it("changes the URL from the nav", async () => {
+		renderHeader();
 		const [wide] = navs();
 		if (!wide) throw new Error("no nav");
+		await userEvent.click(within(wide).getByRole("link", { name: "Cắt file" }));
+		expect(location()).toBe("/split");
+		expect(
+			within(wide).getByRole("link", { name: "Cắt file" }),
+		).toHaveAttribute("aria-current", "page");
 		await userEvent.click(
-			within(wide).getByRole("button", { name: "Transcript" }),
+			within(wide).getByRole("link", { name: "Transcript" }),
 		);
-		expect(onTabChange).toHaveBeenCalledWith("transcript");
+		expect(location()).toBe("/transcripts");
 	});
 
 	it("hides Transcript from users who may not transcribe", () => {
 		renderHeader(false);
 		for (const nav of navs()) {
-			expect(within(nav).getAllByRole("button")).toHaveLength(2);
+			expect(within(nav).getAllByRole("link")).toHaveLength(2);
 			expect(
-				within(nav).queryByRole("button", { name: "Transcript" }),
+				within(nav).queryByRole("link", { name: "Transcript" }),
 			).toBeNull();
 		}
 	});

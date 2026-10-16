@@ -1,4 +1,4 @@
-/** App shell: top bar, account menu, sign-out confirmation, footer. */
+/** App shell: top bar, account menu, sign-out and leave confirmations, footer. */
 export const layout = {
 	skipLink: "Bỏ qua tới nội dung chính",
 	appHeader: {
@@ -30,5 +30,16 @@ export const layout = {
 	},
 	footer: {
 		links: "Liên kết tài khoản",
+	},
+	leaveGuard: {
+		title: "Rời trang",
+		question: "Rời trang khi chưa lưu?",
+		detail: "Phần đang sửa chưa được lưu sẽ mất.",
+		confirm: "Vẫn rời trang",
+	},
+	pageError: {
+		title: "Trang này gặp lỗi",
+		body: "Bản ghi đang chạy (nếu có) vẫn tiếp tục. Mở trang khác hoặc tải lại trang.",
+		reload: "Tải lại trang",
 	},
 } as const;

@@ -20,7 +20,9 @@ export interface NativeRecorderApi extends NativeRecorderState {
 /**
  * The Swift recorder bound to React: attaches its events, re-reads its
  * status when the page becomes visible, and on mount recovers what a
- * killed session left behind and resumes uploads for this account.
+ * killed session left behind and resumes uploads for this account. Used
+ * once, by `RecordStateProvider` (signed-in session), so the upload sync
+ * runs once per sign-in rather than on every visit of /record.
  */
 export function useNativeRecorder(): NativeRecorderApi {
 	const queryClient = useQueryClient();

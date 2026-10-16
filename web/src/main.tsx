@@ -1,8 +1,8 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { BrowserRouter } from "react-router";
 import { App, createQueryClient } from "./app";
 import { watchThemeColor } from "./lib/theme";
+import { createAppRouter } from "./routes";
 import "./styles/global.css";
 
 const container = document.getElementById("app");
@@ -12,8 +12,6 @@ watchThemeColor();
 
 createRoot(container).render(
 	<StrictMode>
-		<BrowserRouter>
-			<App queryClient={createQueryClient()} />
-		</BrowserRouter>
+		<App queryClient={createQueryClient()} router={createAppRouter()} />
 	</StrictMode>,
 );

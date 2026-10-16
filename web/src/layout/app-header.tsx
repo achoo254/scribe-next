@@ -1,6 +1,6 @@
 /* Copied from localman-next apps/web/src/components/layout/app-header.tsx.
-   Scribe changes: the nav switches the shell's in-page views (no URL per
-   page yet) and below 640px becomes a segmented row under the bar; no
+   Scribe changes: below 640px the nav becomes a segmented row under the
+   bar; no
    feature flags, workspace switcher, docs, language switcher or
    notification bell; the bar clears the iPhone status bar
    (safe-area-inset-top). */
@@ -9,7 +9,7 @@ import {
 	IconMicrophone,
 	IconScissors,
 } from "@tabler/icons-react";
-import { Link } from "react-router";
+import { Link, NavLink } from "react-router";
 import type { CurrentUser } from "../auth/auth-api";
 import { BrandMark, Wordmark } from "../components/brand/wordmark";
 import { buttonClassName } from "../components/ui/button";
@@ -17,50 +17,49 @@ import { useT } from "../i18n/i18n-context";
 import { isNativeShell } from "../lib/api";
 import { cn } from "../lib/cn";
 import { AccountControls } from "./account-controls";
-import type { SessionActivity } from "./session-activity";
+import { PATHS } from "./app-paths";
+import { useSessionActivity } from "./session-activity";
 
-export type AppTab = "record" | "split" | "transcript";
-
+/** `NavLink` sets `aria-current="page"` on the page shown (and its children). */
 const NAV_ITEM_CLASS = cn(
 	buttonClassName({ variant: "ghost", size: "sm" }),
-	"aria-[current=page]:bg-primary/10 aria-[current=page]:text-primary",
+	"no-underline aria-[current=page]:bg-primary/10 aria-[current=page]:text-primary",
 );
 
 export interface AppHeaderProps {
 	user: CurrentUser;
-	tab: AppTab;
-	onTabChange: (tab: AppTab) => void;
-	activity: SessionActivity;
-	beforeSignOut: () => Promise<void>;
 }
 
 /**
  * Signed-in top bar: wordmark (home: Ghi âm) and the nav on the left,
  * the account menu on the right. Sticky, so the nav stays in reach.
  */
-export function AppHeader({
-	user,
-	tab,
-	onTabChange,
-	activity,
-	beforeSignOut,
-}: AppHeaderProps) {
+export function AppHeader({ user }: AppHeaderProps) {
 	const t = useT();
+	const session = useSessionActivity();
 	const items: ReadonlyArray<{
-		value: AppTab;
+		id: string;
+		to: string;
 		label: string;
 		Icon: typeof IconMicrophone;
 	}> = [
 		{
-			value: "record",
+			id: "record",
+			to: PATHS.record,
 			label: t("layout.appHeader.record"),
 			Icon: IconMicrophone,
 		},
-		{ value: "split", label: t("layout.appHeader.split"), Icon: IconScissors },
+		{
+			id: "split",
+			to: PATHS.split,
+			label: t("layout.appHeader.split"),
+			Icon: IconScissors,
+		},
 		...(user.canTranscribe
 			? [
 					{
-						value: "transcript" as const,
+						id: "transcript",
+						to: PATHS.transcripts,
 						label: t("layout.appHeader.transcript"),
 						Icon: IconFileText,
 					},
@@ -69,18 +68,16 @@ export function AppHeader({
 	];
 
 	function navItems(prefix: string, className: string) {
-		return items.map(({ value, label, Icon }) => (
-			<button
-				key={value}
-				type="button"
-				data-id={`${prefix}-${value}`}
-				aria-current={tab === value ? "page" : undefined}
-				onClick={() => onTabChange(value)}
+		return items.map(({ id, to, label, Icon }) => (
+			<NavLink
+				key={id}
+				to={to}
+				data-id={`${prefix}-${id}`}
 				className={cn(NAV_ITEM_CLASS, className)}
 			>
 				<Icon size={16} aria-hidden="true" />
 				{label}
-			</button>
+			</NavLink>
 		));
 	}
 
@@ -91,10 +88,9 @@ export function AppHeader({
 		>
 			<div className="mx-auto flex min-h-(--topbar-h) w-full max-w-page items-center gap-3 px-gutter">
 				<Link
-					to="/"
+					to={PATHS.record}
 					data-id="topbar-home"
 					aria-label={t("layout.appHeader.home")}
-					onClick={() => onTabChange("record")}
 					className="flex items-center gap-2 rounded-sm no-underline"
 				>
 					<BrandMark size={28} />
@@ -110,8 +106,8 @@ export function AppHeader({
 				<div className="ml-auto flex items-center gap-2">
 					<AccountControls
 						user={user}
-						activity={activity}
-						beforeSignOut={beforeSignOut}
+						activity={session.activity}
+						beforeSignOut={session.stopRecordings}
 						compact={isNativeShell()}
 					/>
 				</div>

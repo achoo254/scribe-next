@@ -14,13 +14,12 @@ import { formatDateTime, formatDuration } from "../../lib/format";
 import { TranscriptionQuota } from "./transcription-quota";
 
 export interface TranscriptListProps {
-	active: boolean;
 	onOpen: (key: string) => void;
 }
 
 /** Every transcript of the user, newest first; a tap opens the reader. */
-export function TranscriptList({ active, onOpen }: TranscriptListProps) {
-	const query = useTranscriptDocsQuery(active);
+export function TranscriptList({ onOpen }: TranscriptListProps) {
+	const query = useTranscriptDocsQuery();
 	const items = query.data ?? [];
 
 	return (

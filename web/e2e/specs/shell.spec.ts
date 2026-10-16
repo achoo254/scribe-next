@@ -46,7 +46,7 @@ for (const scheme of COLOR_SCHEMES) {
 				topbar.getByRole("link", { name: "Scribe, về trang Ghi âm" }),
 			).toBeVisible();
 			const nav = topbar.getByRole("navigation", { name: "Chức năng" });
-			await expect(nav.getByRole("button")).toHaveText([
+			await expect(nav.getByRole("link")).toHaveText([
 				"Ghi âm",
 				"Cắt file",
 				"Transcript",
@@ -109,28 +109,27 @@ for (const scheme of COLOR_SCHEMES) {
 	});
 }
 
-test("the nav switches pages without unmounting them", async ({
-	page,
-	isMobile,
-}) => {
+test("the nav opens each page at its URL", async ({ page, isMobile }) => {
 	await preparePage(page, "light");
 	await stubApi(page);
 	await openApp(page, isMobile);
+	await expect(page).toHaveURL(/\/record$/);
 	const nav = page
 		.getByTestId("topbar")
 		.getByRole("navigation", { name: "Chức năng" });
 
-	await nav.getByRole("button", { name: "Cắt file" }).click();
-	await expect(nav.getByRole("button", { name: "Cắt file" })).toHaveAttribute(
+	await nav.getByRole("link", { name: "Cắt file" }).click();
+	await expect(page).toHaveURL(/\/split$/);
+	await expect(nav.getByRole("link", { name: "Cắt file" })).toHaveAttribute(
 		"aria-current",
 		"page",
 	);
 	await expect(page.getByTestId("split")).toBeVisible();
-	// Still in the DOM, only hidden: a running recording would go on.
-	await expect(page.getByTestId("record")).toBeHidden();
-	await expect(page.getByTestId("record")).toHaveCount(1);
+	// The page left is unmounted; its state lives above the routes.
+	await expect(page.getByTestId("record")).toHaveCount(0);
 
 	await page.getByRole("link", { name: "Scribe, về trang Ghi âm" }).click();
+	await expect(page).toHaveURL(/\/record$/);
 	await expect(page.getByTestId("record")).toBeVisible();
 });
 
