@@ -38,3 +38,7 @@ Gói P2 trong `docs/project-roadmap.md` (phần xuất tệp). Dịch Việt↔A
 - Cổng: clippy 0 cảnh báo; cargo test 131 đạt (16 bỏ qua, cần Mongo/OpenAI); biome sạch; typecheck sạch; vitest 340/340; build đạt;
   e2e 85/85 (lần chạy đầu có test liên kết chat chờ popup quá 30 giây, chạy riêng 3/3 đạt, chạy lại cả bộ đạt).
 - Chưa deploy.
+
+## Deploy 17/10 12:32
+Chủ dự án cho phép. Build từ `0b9a636`. Sao lưu `/root/scribe-backup-20261017-123216`, binary sha256 `ceda253185914d31…`, `index-DJ9MfXIF.js`,
+health ok, `NRestarts=0`, không ERROR/WARN; `GET /api/transcripts/export?format=docx` chưa đăng nhập trả 401.

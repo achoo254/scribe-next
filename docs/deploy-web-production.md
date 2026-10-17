@@ -274,7 +274,7 @@ curl -s  "https://$DEPLOY_DOMAIN/api/health"   # liveness
 - **Cloudflare:** `scribe.hoandat.com` proxied, SSL "Full" (CF↔origin là HTTPS, chứng chỉ tự ký chung của box); `http://` → 301 `https://`. Domain cũ `scribe.inetdev.io.vn` đã bỏ (vhost và DNS đã xoá, không 301).
 - **IdP:** `scribe-web` và `scribe-mobile` bật trên hoandat-auth; `SCRIBE_WEB_CLIENT_SECRET` nằm trong `/var/www/hoandat-auth/.env`.
 - **MongoDB `.65`:** auth ENABLED; `MONGO_URI` dùng user riêng `scribe` (database + authSource = `scribe`). **mongod dùng chung cho team theo chủ đích** → cổng `27017` mở ra ngoài + mật khẩu chia sẻ là **cố ý**, KHÔNG firewall về localhost / KHÔNG rotate (team cần kết nối trực tiếp).
-- **Sao lưu:** `/root/scribe-backup-<ts>/` (mới nhất `20261017-111120`, trước khi lên chép trực tiếp; `20261017-072952` có kèm `files-expiry-before.json` là hạn tệp trước khi đổi sang gói free 7 ngày) và `/root/onescribe-backup-20261016-124301/` (dump db `onescribe` trước đổi tên). Không có cron backup.
+- **Sao lưu:** `/root/scribe-backup-<ts>/` (mới nhất `20261017-123216`, trước khi lên xuất VTT/Markdown/Word; `20261017-111120` trước chép trực tiếp; `20261017-072952` có kèm `files-expiry-before.json` là hạn tệp trước khi đổi sang gói free 7 ngày) và `/root/onescribe-backup-20261016-124301/` (dump db `onescribe` trước đổi tên). Không có cron backup.
 
 ## Log và audit
 
