@@ -8,6 +8,7 @@ import {
 	apiJson,
 	apiUrl,
 	isNativeShell,
+	nativeSafeBody,
 } from "./api";
 
 afterEach(() => {
@@ -113,5 +114,50 @@ describe("apiFetch", () => {
 			status: 0,
 			message: expect.stringContaining("Không kết nối được máy chủ"),
 		});
+	});
+});
+
+describe("nativeSafeBody", () => {
+	const chunk = new Blob([new Uint8Array([0, 1, 2, 255])]).slice(1, 4);
+
+	it("keeps a Blob as it is on the web", () => {
+		expect(nativeSafeBody(chunk, null, false)).toBe(chunk);
+	});
+
+	it("sends a Blob as a File with the same bytes in the native shell", async () => {
+		const body = nativeSafeBody(chunk, "application/octet-stream", true);
+		expect(body).toBeInstanceOf(File);
+		expect((body as File).type).toBe("application/octet-stream");
+		// jsdom's File has no arrayBuffer(); FileReader reads it.
+		const buffer = await new Promise<ArrayBuffer>((resolve, reject) => {
+			const reader = new FileReader();
+			reader.onload = () => resolve(reader.result as ArrayBuffer);
+			reader.onerror = () => reject(reader.error);
+			reader.readAsArrayBuffer(body as File);
+		});
+		const bytes = new Uint8Array(buffer);
+		expect([...bytes]).toEqual([1, 2, 255]);
+	});
+
+	it("leaves Files, strings and empty bodies alone", () => {
+		const file = new File(["a"], "a.m4a");
+		expect(nativeSafeBody(file, null, true)).toBe(file);
+		expect(nativeSafeBody("{}", null, true)).toBe("{}");
+		expect(nativeSafeBody(undefined, null, true)).toBeUndefined();
+	});
+
+	it("wraps the chunk apiFetch sends from the native shell", async () => {
+		Reflect.set(globalThis, "Capacitor", { isNativePlatform: () => true });
+		const sent: unknown[] = [];
+		const fetcher: typeof fetch = async (_url, init) => {
+			sent.push(init?.body);
+			return new Response("{}", { status: 200 });
+		};
+		await apiFetch(
+			"/api/upload/chunk",
+			{ method: "POST", body: chunk },
+			fetcher,
+		);
+		expect(sent[0]).toBeInstanceOf(File);
 	});
 });

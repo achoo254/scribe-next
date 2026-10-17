@@ -125,6 +125,25 @@ export interface ApiRequest extends Omit<RequestInit, "body"> {
 }
 
 /**
+ * The body as the native shell can send it. CapacitorHttp (which carries
+ * every fetch in the iOS app) only encodes a `File` as binary: a plain
+ * `Blob` such as `file.slice()` is refused before it leaves the phone, so
+ * a chunk is wrapped in a `File` there. Same bytes, no copy on the web.
+ * The File carries the request's `contentType`: Capacitor sends the
+ * File's own type too, and a second, empty one would race with it.
+ */
+export function nativeSafeBody(
+	body: BodyInit | null | undefined,
+	contentType: string | null,
+	native: boolean = isNativeShell(),
+): BodyInit | null | undefined {
+	if (native && body instanceof Blob && !(body instanceof File)) {
+		return new File([body], "chunk", { type: contentType ?? body.type });
+	}
+	return body;
+}
+
+/**
  * Sends a request and returns the response when it is 2xx; anything else
  * throws an `ApiError` carrying the backend's message or `fallbackError`.
  */
@@ -139,7 +158,7 @@ export async function apiFetch(
 	fetcher: typeof fetch = fetch,
 ): Promise<Response> {
 	const requestHeaders = new Headers(headers);
-	let body = init.body;
+	let body = nativeSafeBody(init.body, requestHeaders.get("Content-Type"));
 	if (json !== undefined) {
 		requestHeaders.set("Content-Type", "application/json");
 		body = JSON.stringify(json);
