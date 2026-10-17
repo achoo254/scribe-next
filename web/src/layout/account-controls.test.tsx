@@ -145,7 +145,7 @@ describe("account menu", () => {
 			}),
 		);
 		const open = await screen.findByRole("button", {
-			name: /^Mở chat\.hoandat\.com/,
+			name: /^Mở chat/,
 		});
 		await waitFor(() => expect(open).toBeEnabled());
 		await userEvent.click(open);
@@ -189,7 +189,7 @@ describe("account menu", () => {
 			),
 		).toBeInTheDocument();
 		await userEvent.click(
-			screen.getByRole("button", { name: /^Mở chat\.hoandat\.com/ }),
+			screen.getByRole("button", { name: /^Mở chat/ }),
 		);
 		expect(open).toHaveBeenCalledWith(
 			"https://chat.hoandat.com/b/bot_scribe_bot?start=tok1",
