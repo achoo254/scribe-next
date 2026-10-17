@@ -74,10 +74,16 @@ export async function fetchTranscripts(
 /** What to export: listed files, or every segment of an iPhone session (any length). */
 export type ExportScope = { fileIds: readonly string[] } | { session: string };
 
+/**
+ * Export formats: plain text, subtitles (SRT, WebVTT), and a meeting
+ * document (Markdown, Word) with the minutes and bookmarks.
+ */
+export type ExportFormat = "txt" | "srt" | "vtt" | "md" | "docx";
+
 /** Download path of the transcripts of `scope`, joined in recording order. */
 export function transcriptExportPath(
 	scope: ExportScope,
-	format: "txt" | "srt",
+	format: ExportFormat,
 	name: string,
 ): string {
 	const query = new URLSearchParams(

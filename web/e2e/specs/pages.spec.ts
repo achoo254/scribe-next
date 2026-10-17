@@ -133,6 +133,25 @@ for (const scheme of COLOR_SCHEMES) {
 			expect(
 				await seriousA11yViolations(page, '[data-id="reader-menu-content"]'),
 			).toEqual([]);
+			await page.keyboard.press("Escape");
+			await expect(menu).toBeHidden();
+
+			await page.getByTestId("reader-download").click();
+			const formats = page.getByRole("menu");
+			await expect(formats.getByRole("menuitem")).toHaveText([
+				"TXT",
+				"SRT",
+				"VTT",
+				"Markdown",
+				"Word (.docx)",
+			]);
+			await expect(formats).toHaveScreenshot(`reader-download-${scheme}.png`);
+			expect(
+				await seriousA11yViolations(
+					page,
+					'[data-id="reader-download-content"]',
+				),
+			).toEqual([]);
 			expect(api.unexpected).toEqual([]);
 		});
 

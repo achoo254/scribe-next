@@ -1,6 +1,7 @@
 import { IconArrowRight, IconFileText } from "@tabler/icons-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
+import { TranscriptDownloadMenu } from "../../components/transcript-download-menu";
 import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
@@ -19,8 +20,7 @@ import type { ExportScope } from "../../features/transcript/transcript-api";
 import { useTranscriptsQuery } from "../../features/transcript/transcript-queries";
 import { useT } from "../../i18n/i18n-context";
 import { useOpenTranscript } from "../../layout/transcript-nav";
-import { errorMessage, isNativeShell } from "../../lib/api";
-import { downloadPaths, useDownload } from "../../lib/download";
+import { errorMessage } from "../../lib/api";
 import { formatClock } from "../../lib/format";
 import { useTranscribe } from "./use-transcribe";
 
@@ -52,7 +52,6 @@ export function TranscriptPanel({
 }: TranscriptPanelProps) {
 	const t = useT();
 	const toast = useToast();
-	const download = useDownload();
 	const queryClient = useQueryClient();
 	const openTranscript = useOpenTranscript();
 	const fileIds = useMemo(() => parts.map((p) => p.fileId), [parts]);
@@ -189,32 +188,11 @@ export function TranscriptPanel({
 					</Button>
 				) : null}
 				{merged.done > 0 && !busy ? (
-					<>
-						<Button
-							size="sm"
-							variant="ghost"
-							data-id={`${dataId}-txt`}
-							onClick={() =>
-								download(downloadPaths.transcript(scope, "txt", name))
-							}
-						>
-							{isNativeShell()
-								? t("transcript.reader.saveTxt")
-								: t("transcript.reader.downloadTxt")}
-						</Button>
-						<Button
-							size="sm"
-							variant="ghost"
-							data-id={`${dataId}-srt`}
-							onClick={() =>
-								download(downloadPaths.transcript(scope, "srt", name))
-							}
-						>
-							{isNativeShell()
-								? t("transcript.reader.saveSrt")
-								: t("transcript.reader.downloadSrt")}
-						</Button>
-					</>
+					<TranscriptDownloadMenu
+						scope={scope}
+						name={name}
+						data-id={`${dataId}-download`}
+					/>
 				) : null}
 			</div>
 

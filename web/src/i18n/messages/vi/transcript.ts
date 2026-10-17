@@ -18,6 +18,9 @@ export const transcript = {
 			"Bản ghi này dùng khoảng <strong>{minutes} phút</strong> trong <strong>{left} phút</strong> còn lại của tháng này.",
 		notEnough: "Không đủ phút còn lại cho bản ghi này.",
 	},
+	download: {
+		menu: "Tải xuống",
+	},
 	panel: {
 		done: "Đã chép lời",
 		partial: "Đã chép {done}/{total} đoạn",
@@ -116,10 +119,6 @@ export const transcript = {
 		saveTitle: "Lưu tên",
 		renamed: "Đã đổi tên bản chép lời",
 		menu: "Thao tác với bản chép lời",
-		downloadTxt: "Tải .txt",
-		downloadSrt: "Tải .srt",
-		saveTxt: "Lưu .txt",
-		saveSrt: "Lưu .srt",
 		delete: "Xoá bản chép lời",
 		deleteTitle: "Xoá bản chép lời",
 		deleteQuestion: "Xoá bản chép lời “{name}”?",

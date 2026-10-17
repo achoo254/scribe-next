@@ -1,15 +1,13 @@
-import { IconFileText, IconPencil, IconTrash } from "@tabler/icons-react";
+import { IconPencil, IconTrash } from "@tabler/icons-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AudioPlayer, type MediaSeek } from "../../components/media-player";
+import { TranscriptDownloadMenu } from "../../components/transcript-download-menu";
 import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
 import { Card } from "../../components/ui/card";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
-import {
-	DropdownMenuItem,
-	DropdownMenuSeparator,
-} from "../../components/ui/dropdown-menu";
+import { DropdownMenuItem } from "../../components/ui/dropdown-menu";
 import { IconButton } from "../../components/ui/icon-button";
 import { Input } from "../../components/ui/input";
 import { LoadError } from "../../components/ui/load-error";
@@ -46,13 +44,8 @@ import type { ExportScope } from "../../features/transcript/transcript-api";
 import { useT } from "../../i18n/i18n-context";
 import { LeaveGuard } from "../../layout/leave-guard";
 import { PageHeader } from "../../layout/page-header";
-import { errorMessage, isNativeShell } from "../../lib/api";
-import {
-	downloadPaths,
-	preloadMedia,
-	useDownload,
-	useMediaSource,
-} from "../../lib/download";
+import { errorMessage } from "../../lib/api";
+import { preloadMedia, useMediaSource } from "../../lib/download";
 import { formatDateTime, formatDuration } from "../../lib/format";
 import { useDelayedFlag } from "../../lib/use-delayed-flag";
 import { useTranscribe } from "../record/use-transcribe";
@@ -122,7 +115,6 @@ export function TranscriptReader({
 	const t = useT();
 	const toast = useToast();
 	const queryClient = useQueryClient();
-	const download = useDownload();
 	const { detail, statuses } = useTranscriptDoc(transcriptKey);
 	const skeleton = useDelayedFlag(detail.isPending);
 	const rename = useRenameTranscript();
@@ -314,37 +306,18 @@ export function TranscriptReader({
 								onClick={() => setTitleDraft(doc.title ?? "")}
 							/>
 						) : null}
+						{anyDone ? (
+							<TranscriptDownloadMenu
+								scope={scope}
+								name={title}
+								data-id="reader-download"
+								compact
+							/>
+						) : null}
 						<RowActionsMenu
 							label={t("transcript.reader.menu")}
 							data-id="reader-menu"
 						>
-							{anyDone ? (
-								<>
-									<DropdownMenuItem
-										data-id="reader-txt"
-										icon={<IconFileText size={16} aria-hidden="true" />}
-										onSelect={() =>
-											download(downloadPaths.transcript(scope, "txt", title))
-										}
-									>
-										{isNativeShell()
-											? t("transcript.reader.saveTxt")
-											: t("transcript.reader.downloadTxt")}
-									</DropdownMenuItem>
-									<DropdownMenuItem
-										data-id="reader-srt"
-										icon={<IconFileText size={16} aria-hidden="true" />}
-										onSelect={() =>
-											download(downloadPaths.transcript(scope, "srt", title))
-										}
-									>
-										{isNativeShell()
-											? t("transcript.reader.saveSrt")
-											: t("transcript.reader.downloadSrt")}
-									</DropdownMenuItem>
-									<DropdownMenuSeparator />
-								</>
-							) : null}
 							<DropdownMenuItem
 								danger
 								data-id="reader-delete"

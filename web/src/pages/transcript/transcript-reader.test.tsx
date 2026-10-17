@@ -299,11 +299,9 @@ describe("TranscriptReader header", () => {
 			screen.getByRole("navigation", { name: "Đường dẫn" }),
 		).toHaveTextContent(`Lời đã chép/${title}`);
 
+		expect(screen.getByRole("button", { name: "Tải xuống" })).toBeVisible();
 		screen.getByRole("button", { name: "Thao tác với bản chép lời" }).focus();
 		await userEvent.keyboard("{Enter}");
-		expect(
-			await screen.findByRole("menuitem", { name: "Tải .txt" }),
-		).toBeInTheDocument();
 		await userEvent.click(
 			screen.getByRole("menuitem", { name: "Xoá bản chép lời" }),
 		);
