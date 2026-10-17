@@ -9,7 +9,11 @@ import UIKit
 /// merging its own state.
 ///
 /// Events: `state`, `elapsed`, `level`, `segment`, `notice`, `failure`,
-/// `uploads`, `needsSignIn`, `quotaFull`.
+/// `uploads`, `needsSignIn`, `quotaFull`, `bookmarkAdded`.
+///
+/// Bookmarks pressed on the lock screen or AirPods (`NowPlayingBookmarks`)
+/// are saved here first; the web layer pulls them (`takePendingBookmarks`),
+/// sends them through its own queue, then `ackBookmarks` forgets them.
 @objc(RecorderPlugin)
 public class RecorderPlugin: CAPPlugin, CAPBridgedPlugin {
     public let identifier = "RecorderPlugin"
@@ -20,11 +24,15 @@ public class RecorderPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "getStatus", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "syncUploads", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "signOut", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "takePendingBookmarks", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "ackBookmarks", returnType: CAPPluginReturnPromise),
     ]
 
     private let recorder = AudioRecorder()
     private let store = SegmentStore.shared
     private let queue = UploadQueue.shared
+    private let bookmarks = NativeBookmarkStore()
+    private let nowPlaying = NowPlayingBookmarks()
     /// Signed-in account (main thread).
     private var userKey: String?
     /// Account the current recording belongs to: its segments go there even
@@ -203,6 +211,56 @@ public class RecorderPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
+    /// `{ userKey }` → `{ bookmarks: [{ id, sessionId, positionS, createdAt }] }`,
+    /// oldest first. They stay stored until acknowledged.
+    @objc func takePendingBookmarks(_ call: CAPPluginCall) {
+        guard let userKey = call.getString("userKey"), !userKey.isEmpty else {
+            call.reject("Thiếu thông tin tài khoản.", "NO_USER")
+            return
+        }
+        DispatchQueue.main.async {
+            call.resolve(["bookmarks": self.bookmarks.pending(userKey: userKey).map(\.json)])
+        }
+    }
+
+    /// `{ userKey, ids }`: the web queue took care of these bookmarks.
+    @objc func ackBookmarks(_ call: CAPPluginCall) {
+        guard let userKey = call.getString("userKey"), !userKey.isEmpty else {
+            call.reject("Thiếu thông tin tài khoản.", "NO_USER")
+            return
+        }
+        let ids = Set((call.getArray("ids") ?? []).compactMap { $0 as? String })
+        DispatchQueue.main.async {
+            do {
+                try self.bookmarks.remove(ids: ids, userKey: userKey)
+                call.resolve()
+            } catch {
+                call.reject("Không cập nhật được dấu mốc trên máy: \(error.localizedDescription)", "STORE")
+            }
+        }
+    }
+
+    /// A lock-screen or AirPods press: saved to disk at once at the recorder
+    /// clock. Returns the position for the Now Playing feedback, nil if not saved.
+    private func addNativeBookmark() -> Double? {
+        guard recorder.state == .recording, let sessionId = recorder.sessionId, let owner = recordingUserKey
+        else { return nil }
+        let bookmark = NativeBookmark(id: NativeBookmark.newId(), sessionId: sessionId,
+                                      positionS: recorder.recordedSeconds, createdAt: Date())
+        do {
+            try bookmarks.append(bookmark, userKey: owner)
+        } catch {
+            lastNotice = "Không lưu được dấu mốc: \(error.localizedDescription)"
+            notifyListeners("notice", data: ["message": lastNotice])
+            return nil
+        }
+        // Off screen the WebView is suspended: it pulls when it comes back.
+        if UIApplication.shared.applicationState == .active {
+            notifyListeners("bookmarkAdded", data: bookmark.json)
+        }
+        return bookmark.positionS
+    }
+
     // MARK: Events
 
     private func status() -> [String: Any] {
@@ -221,9 +279,15 @@ public class RecorderPlugin: CAPPlugin, CAPBridgedPlugin {
     private func handle(_ event: AudioRecorder.Event) {
         switch event {
         case .state(let state):
+            if state == .recording {
+                nowPlaying.start { [weak self] in self?.addNativeBookmark() }
+            } else if state == .idle {
+                nowPlaying.stop()
+            }
             notifyListeners("state", data: ["state": state.rawValue])
         case .elapsed(let seconds):
             elapsed = seconds
+            nowPlaying.update(elapsed: seconds)
             // The WebView is suspended off screen; it re-reads getStatus()
             // when visible, so do not queue thousands of evaluations.
             if UIApplication.shared.applicationState == .active {

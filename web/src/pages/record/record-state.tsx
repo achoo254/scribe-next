@@ -10,7 +10,11 @@ import {
 } from "react";
 import { useAuth } from "../../auth/auth-context";
 import { refreshStorage } from "../../features/files/file-queries";
-import { userKeyOf } from "../../features/recorder/native-recorder";
+import { NativeBookmarkSync } from "../../features/recorder/native-bookmarks";
+import {
+	NativeRecorderPlugin,
+	userKeyOf,
+} from "../../features/recorder/native-recorder";
 import type { Recorder } from "../../features/recorder/recorder";
 import type { RecordSources } from "../../features/recorder/recorder-messages";
 import {
@@ -219,6 +223,26 @@ export function NativeRecordProvider({ children }: { children: ReactNode }) {
 	const { user } = useAuth();
 	const [minutes, setMinutes] = useState<SegmentMinutes>("1");
 	const { queue, ...bookmarks } = useBookmarkQueue();
+
+	// Bookmarks pressed on the lock screen or with AirPods, saved by Swift.
+	const email = user?.email ?? null;
+	useEffect(() => {
+		if (!email) return;
+		let sync: NativeBookmarkSync | null = null;
+		let cancelled = false;
+		userKeyOf(email)
+			.then((key) => {
+				if (cancelled) return;
+				sync = new NativeBookmarkSync(NativeRecorderPlugin, queue, key);
+				sync.start();
+			})
+			// No key, no pull: the bookmarks stay on the phone for the next launch.
+			.catch(() => undefined);
+		return () => {
+			cancelled = true;
+			sync?.stop();
+		};
+	}, [email, queue]);
 
 	async function toggle(): Promise<void> {
 		if (rec.recorder.getState().recording) {

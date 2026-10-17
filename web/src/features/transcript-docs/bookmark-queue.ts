@@ -48,6 +48,17 @@ interface Item {
 	at: number;
 	recording: number;
 	status: ItemStatus;
+	onSettled?: () => void;
+}
+
+export interface MarkOptions {
+	/**
+	 * Id made elsewhere (a bookmark the iOS app saved while the page was
+	 * suspended): marking the same id again does not queue it twice.
+	 */
+	id?: string;
+	/** Called once the bookmark is sent, refused or dropped — not retried any more. */
+	onSettled?: () => void;
 }
 
 export type SendBookmark = (
@@ -106,14 +117,23 @@ export class BookmarkQueue {
 	};
 
 	/** Queues a bookmark at `at` seconds of the transcript `key`. */
-	mark = (key: string, at: number): void => {
+	mark = (key: string, at: number, options: MarkOptions = {}): void => {
 		if (this.disposed || !Number.isFinite(at)) return;
+		const known = options.id
+			? this.items.find((item) => item.id === options.id)
+			: undefined;
+		if (known) {
+			// Already queued: the first copy reports when it settles.
+			if (known.status !== "pending") options.onSettled?.();
+			return;
+		}
 		this.items.push({
-			id: newBookmarkId(),
+			id: options.id ?? newBookmarkId(),
 			key,
 			at: Math.max(0, at),
 			recording: this.recording,
 			status: "pending",
+			onSettled: options.onSettled,
 		});
 		this.publish();
 		this.kick();
@@ -147,6 +167,7 @@ export class BookmarkQueue {
 					await this.send(next.key, next.at, next.id);
 					next.status = "sent";
 					this.attempt = 0;
+					next.onSettled?.();
 				} catch (cause) {
 					if (isTransient(cause)) {
 						this.retryLater();
@@ -155,10 +176,12 @@ export class BookmarkQueue {
 					this.attempt = 0;
 					if (isGone(cause)) {
 						next.status = "dropped";
+						next.onSettled?.();
 						this.publish();
 						continue;
 					}
 					next.status = "failed";
+					next.onSettled?.();
 					if (next.recording === this.recording) {
 						this.lastError = errorMessage(cause);
 					}

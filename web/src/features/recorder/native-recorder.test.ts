@@ -30,6 +30,8 @@ function fakePlugin(
 		})),
 		syncUploads: vi.fn(async () => ({ lostSegments: 0, lostSecondsMax: 0 })),
 		signOut: vi.fn(async () => undefined),
+		takePendingBookmarks: vi.fn(async () => ({ bookmarks: [] })),
+		ackBookmarks: vi.fn(async () => undefined),
 		addListener: vi.fn(async (event: string, handler: Handler) => {
 			const set = handlers.get(event) ?? new Set<Handler>();
 			set.add(handler);

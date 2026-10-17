@@ -42,6 +42,10 @@ const native = vi.hoisted(() => {
 		getStatus: vi.fn(async (): Promise<Status> => idle),
 		syncUploads: vi.fn(async () => ({ lostSegments: 0, lostSecondsMax: 0 })),
 		signOut: vi.fn(async () => undefined),
+		takePendingBookmarks: vi.fn(
+			async (): Promise<{ bookmarks: unknown[] }> => ({ bookmarks: [] }),
+		),
+		ackBookmarks: vi.fn(async () => undefined),
 		addListener: vi.fn(async (event: string, handler: Handler) => {
 			const set = handlers.get(event) ?? new Set<Handler>();
 			set.add(handler);
@@ -209,9 +213,10 @@ describe("RecordStateProvider (iOS app)", () => {
 	it("keeps Swift's state and the segment length across visits, syncing uploads once", async () => {
 		const router = renderRoutes(NativeRecordProvider, <NativeRecordCard />);
 		await waitFor(() => expect(native.plugin.syncUploads).toHaveBeenCalled());
-		// Every plugin event the page uses is listened to (state … quotaFull), once.
+		// Every plugin event the page uses is listened to (state … quotaFull, plus
+		// the native bookmark pull's bookmarkAdded and state), once.
 		await waitFor(() =>
-			expect(native.plugin.addListener).toHaveBeenCalledTimes(9),
+			expect(native.plugin.addListener).toHaveBeenCalledTimes(11),
 		);
 		await userEvent.click(screen.getByRole("button", { name: "5 phút" }));
 
@@ -235,7 +240,7 @@ describe("RecordStateProvider (iOS app)", () => {
 		expect(screen.getByText("Đang ghi — 2:05")).toBeInTheDocument();
 		expect(native.plugin.syncUploads).toHaveBeenCalledTimes(1);
 		// Listeners were attached once, not again per visit.
-		expect(native.plugin.addListener).toHaveBeenCalledTimes(9);
+		expect(native.plugin.addListener).toHaveBeenCalledTimes(11);
 	});
 
 	it("bookmarks at the session position Swift reports, without stopping", async () => {
@@ -248,7 +253,7 @@ describe("RecordStateProvider (iOS app)", () => {
 		vi.stubGlobal("fetch", fake.fetcher);
 		renderRoutes(NativeRecordProvider, <NativeRecordCard />);
 		await waitFor(() =>
-			expect(native.plugin.addListener).toHaveBeenCalledTimes(9),
+			expect(native.plugin.addListener).toHaveBeenCalledTimes(11),
 		);
 		await userEvent.click(screen.getByRole("button", { name: "Bắt đầu ghi" }));
 		act(() => {
@@ -283,5 +288,34 @@ describe("RecordStateProvider (iOS app)", () => {
 		expect(bodies[1]).toMatchObject({ at: 75, id: expect.any(String) });
 		expect(native.plugin.stop).not.toHaveBeenCalled();
 		expect(screen.getByText("Đang ghi — 1:15")).toBeInTheDocument();
+	});
+
+	it("sends bookmarks Swift saved on the lock screen, then lets Swift forget them", async () => {
+		const fake = fakeFetch({
+			"POST /api/transcript-docs/s%3Aabc/bookmarks": [
+				jsonResponse({ id: "0123456789abcdef01234567", at: 42, label: null }),
+			],
+		});
+		vi.stubGlobal("fetch", fake.fetcher);
+		native.plugin.takePendingBookmarks.mockResolvedValueOnce({
+			bookmarks: [
+				{
+					id: "0123456789abcdef01234567",
+					sessionId: "abc",
+					positionS: 42,
+					createdAt: "2026-10-17T01:00:00Z",
+				},
+			],
+		});
+		renderRoutes(NativeRecordProvider, <NativeRecordCard />);
+		await waitFor(() =>
+			expect(native.plugin.ackBookmarks).toHaveBeenCalledWith({
+				userKey: expect.any(String),
+				ids: ["0123456789abcdef01234567"],
+			}),
+		);
+		expect(fake.calls.map((call) => call.body)).toEqual([
+			{ at: 42, id: "0123456789abcdef01234567" },
+		]);
 	});
 });

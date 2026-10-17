@@ -133,4 +133,26 @@ describe("bookmark queue", () => {
 		expect(send).toHaveBeenCalledTimes(2);
 		expect(queue.getState().waiting).toBe(0);
 	});
+
+	it("keeps an id made elsewhere, queues it once and reports when it settles", async () => {
+		const send = vi
+			.fn<(key: string, at: number, id: string) => Promise<unknown>>()
+			.mockRejectedValueOnce(new ApiError(409, "đầy"))
+			.mockResolvedValue({});
+		const queue = new BookmarkQueue(send);
+		const settled = vi.fn();
+		const id = "0123456789abcdef01234567";
+		queue.mark("s:x", 4, { id, onSettled: () => settled("a") });
+		queue.mark("s:x", 4, { id, onSettled: () => settled("b") });
+		queue.mark("s:x", 9, { onSettled: () => settled("c") });
+		await settle();
+		expect(send.mock.calls.map((call) => call[2])[0]).toBe(id);
+		expect(send).toHaveBeenCalledTimes(2);
+		// Refused (409) settles too: retrying would never help.
+		expect(settled.mock.calls).toEqual([["a"], ["c"]]);
+		// Marked again after it settled: reported at once, not resent.
+		queue.mark("s:x", 4, { id, onSettled: () => settled("d") });
+		expect(settled).toHaveBeenLastCalledWith("d");
+		expect(send).toHaveBeenCalledTimes(2);
+	});
 });

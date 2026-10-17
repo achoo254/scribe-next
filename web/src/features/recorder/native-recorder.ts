@@ -29,6 +29,20 @@ interface NativeStatus {
 	notice: string;
 }
 
+/**
+ * A bookmark pressed on the lock screen, in Control Center or with AirPods
+ * while the page was suspended; Swift keeps it on disk until acknowledged.
+ */
+export interface NativeBookmark {
+	/** 24 hex digits: the server saves it once however often it is sent. */
+	id: string;
+	/** Its transcript is `s:<sessionId>`. */
+	sessionId: string;
+	/** Session position when pressed, from the recorder's own clock. */
+	positionS: number;
+	createdAt: string;
+}
+
 export interface RecorderNativePlugin {
 	start(options: { userKey: string; segmentMinutes?: number }): Promise<{
 		sessionId: string;
@@ -40,6 +54,12 @@ export interface RecorderNativePlugin {
 		lostSecondsMax: number;
 	}>;
 	signOut(): Promise<void>;
+	/** Bookmarks saved by Swift and not acknowledged yet (absent from older app builds). */
+	takePendingBookmarks(options: { userKey: string }): Promise<{
+		bookmarks: unknown[];
+	}>;
+	/** Swift forgets these bookmarks: the web queue took care of them. */
+	ackBookmarks(options: { userKey: string; ids: string[] }): Promise<void>;
 	addListener(
 		event:
 			| "state"
@@ -51,7 +71,8 @@ export interface RecorderNativePlugin {
 			| "uploads"
 			| "uploaded"
 			| "needsSignIn"
-			| "quotaFull",
+			| "quotaFull"
+			| "bookmarkAdded",
 		handler: (data: Record<string, unknown>) => void,
 	): Promise<{ remove: () => Promise<void> }>;
 }
