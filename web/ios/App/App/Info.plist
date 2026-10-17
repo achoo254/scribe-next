@@ -26,6 +26,8 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>Scribe dùng camera khi bạn chọn quay video để tải lên và chép lời.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Scribe dùng micro để ghi âm cuộc họp, kể cả khi màn hình khoá.</string>
 	<key>UIApplicationSceneManifest</key>
