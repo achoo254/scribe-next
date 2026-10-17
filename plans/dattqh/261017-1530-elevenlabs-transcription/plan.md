@@ -30,7 +30,7 @@ biệt người nói. Nghiên cứu dữ liệu: `plans/dattqh/reports/researche
      hiện số phút cả phiên. Đây là cái giá để nhãn người nói nhất quán trong cả phiên.
    - Phiên không có đoạn nào đang chạy mới xếp được (một đoạn đang `queued/running` ⟹ từ chối cả phiên, hoàn phút).
 3. **Câu:** dựng từ timestamp từng từ của ElevenLabs (mốc thật, bỏ mốc ước lượng). Tách tại `. ? ! …`, tại chỗ đổi người
-   nói, tại khoảng ngừng ≥ 1,2 giây, và câu dài hơn 120 ký tự tách tiếp ở dấu phẩy rồi theo từ (cùng độ dài như hiện
+   nói, tại khoảng ngừng ≥ 1,5 giây, và câu dài hơn 120 ký tự tách tiếp ở dấu phẩy rồi theo từ (cùng độ dài như hiện
    nay). Mỗi câu có `speaker` (`s0`, `s1`… đánh số lại theo thứ tự xuất hiện trong lượt).
 4. **Người nói:** `transcript_docs.speakers = {names: {s0: "Người 1", …}}`, đặt lại về nhãn mặc định khi một lượt chép xong
    (lượt mới gán lại id). Đọc: id không có tên lưu ⟹ "Người N+1". Đổi tên: `PATCH …/speakers` áp cho mọi chỗ; v1 chỉ đổi
@@ -81,6 +81,25 @@ biệt người nói. Nghiên cứu dữ liệu: `plans/dattqh/reports/researche
 | 1. Backend: cấu hình nhà cung cấp, client ElevenLabs, dựng câu từ từ, lượt phiên (ghép, chia lại), người nói, xuất, biên bản, đo lường, trần giờ, test Rust | L | done |
 | 2. Web: nhãn người nói, hộp đổi tên, gửi cả phiên, vitest, e2e | M | done |
 | 3. Tài liệu, cổng kiểm tra, chạy thật một lần, commit, push | S | done |
+
+## Sửa sau review (`plans/dattqh/reports/code-reviewer-261017-1543-elevenlabs-review.md`)
+| Mục | Cách sửa |
+|---|---|
+| H2 | ElevenLabs từ chối chắc chắn (mọi lỗi trừ hết thời gian chờ, mất kết nối sau khi gửi, trả 200 không đọc được) ⟹ trừ lại giây đã ghi của từng đoạn (sổ phút người dùng và trần USD quyết toán theo đó) và hoàn giờ ElevenLabs. Sổ lỗi giữa lúc ghi giây ⟹ hoàn các đoạn đã ghi |
+| H1 | Hết hoãn: đoạn của phiên chưa từng được xếp (tải lên sau lúc bấm) được xếp vào cùng `runId`, cùng sổ; phút giữ lúc chạy |
+| H3 | Đoạn bị xoá/chép lại giữa chừng chỉ bỏ đoạn đó; các đoạn còn lại vẫn chép và ghi kết quả |
+| M1 | Xếp các đoạn ở trạng thái `held` rồi bật `queued` cùng lúc bằng một `update_many`; khởi động lại bật hộ lượt xếp dở; client thấy `queued` |
+| M2 | Đo thời lượng và giữ phút từng đoạn; đoạn hỏng chỉ lỗi riêng, phần còn lại ghép và gửi |
+| M3 | Web hỏi trước khi chép lại cả phiên làm mất câu sửa hoặc tên người nói đã đổi (panel, nút chép phần còn lại, nút chép lại) |
+| M4 | Mỗi đầu vào `atrim`+`apad` đúng thời lượng đo rồi mới `concat`: mốc không trôi |
+| L1 | Chỉ thử lại khi chưa kết nối được hoặc ElevenLabs trả 429/5xx; mất kết nối sau khi gửi thì không gửi lại |
+| L2 | Panic: đóng mọi file còn mở của lượt |
+| L3 | Ghi chú `el_hold:<runId>`; khởi động lại hoàn giờ ElevenLabs của lượt bị cắt ngang |
+| L4 | Lỗi ffmpeg chỉ ghi log; người dùng thấy câu chung (cả luồng OpenAI) |
+| L5 | Plan theo mã: ngừng ≥ 1,5 giây |
+| L6 | `POST /api/transcripts` trả thêm `files` |
+| L7 | Hộp đổi tên chỉ nạp lại tên khi mở, không xoá chữ đang gõ khi đọc lại nền |
+| L8 | Deploy khi hàng đợi chép lời rỗng (ghi chú deploy, không có mã) |
 
 ## Kết quả (17/10)
 - Chạy thật qua đúng đường của server (`whole::tests::live_elevenlabs_transcribes_a_two_segment_session`): 2 đoạn × 60 giây
