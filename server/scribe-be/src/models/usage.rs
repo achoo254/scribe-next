@@ -240,6 +240,54 @@ pub async fn settle_provider(db: &Database, month: &str, delta: i64) -> Result<(
     add(db, &provider_doc(month), delta).await
 }
 
+fn provider_hold_mark(run_id: &str) -> String {
+    format!("el_hold:{run_id}")
+}
+
+/// Ghi phần giờ ElevenLabs lượt `run_id` đang giữ (xoá khi lượt quyết toán xong): tiến trình chết giữa lượt thì lần
+/// khởi động sau hoàn phần này ([`refund_provider_holds`]) vì lượt sẽ chạy lại và giữ lại từ đầu.
+pub async fn hold_provider(db: &Database, run_id: &str, month: &str, seconds: i64) -> Result<(), AppError> {
+    db.collection::<Document>("transcribe_marks")
+        .replace_one(
+            doc! { "_id": provider_hold_mark(run_id) },
+            doc! { "_id": provider_hold_mark(run_id), "month": month, "seconds": seconds, "at": DateTime::now() },
+        )
+        .upsert(true)
+        .await
+        .map(|_| ())
+        .map_err(|e| AppError::Internal(format!("ghi phần giữ giờ ElevenLabs: {e}")))
+}
+
+/// Lượt đã quyết toán sổ giờ: bỏ ghi chú giữ chỗ.
+pub async fn release_provider_hold(db: &Database, run_id: &str) {
+    if let Err(e) = db.collection::<Document>("transcribe_marks").delete_one(doc! { "_id": provider_hold_mark(run_id) }).await {
+        tracing::warn!(run = run_id, "bỏ ghi chú giữ giờ ElevenLabs lỗi: {e}");
+    }
+}
+
+/// Khởi động: hoàn phần giờ ElevenLabs các lượt bị cắt ngang còn giữ. Trả số lượt đã hoàn.
+pub async fn refund_provider_holds(db: &Database) -> Result<u64, AppError> {
+    use futures_util::StreamExt;
+    let coll = db.collection::<Document>("transcribe_marks");
+    let read = |e: mongodb::error::Error| AppError::Internal(format!("đọc phần giữ giờ ElevenLabs: {e}"));
+    let mut cur = coll.find(doc! { "_id": { "$regex": "^el_hold:" } }).await.map_err(read)?;
+    let mut holds = Vec::new();
+    while let Some(d) = cur.next().await {
+        holds.push(d.map_err(read)?);
+    }
+    let mut refunded = 0;
+    for hold in holds {
+        let (Ok(id), Ok(month)) = (hold.get_str("_id"), hold.get_str("month")) else { continue };
+        let seconds = hold.get_i64("seconds").or_else(|_| hold.get_i32("seconds").map(i64::from)).unwrap_or(0);
+        // Xoá trước, hoàn sau: chạy lại sau lỗi không hoàn hai lần.
+        if coll.delete_one(doc! { "_id": id }).await.map_err(read)?.deleted_count > 0 {
+            settle_provider(db, month, -seconds).await?;
+            refunded += 1;
+        }
+    }
+    Ok(refunded)
+}
+
 /// Giây ElevenLabs đã dùng trong tháng.
 pub async fn provider_seconds(db: &Database, month: &str) -> Result<i64, AppError> {
     seconds_of(db, &provider_doc(month)).await
@@ -469,6 +517,16 @@ mod tests {
         assert!(provider_exhausted(&db, &month).await.expect("hết"));
         assert!(clear_provider_exhausted(&db, &month).await.expect("gỡ"));
         assert!(!provider_exhausted(&db, &month).await.expect("đã gỡ"));
+        // Lượt bị cắt ngang còn giữ 30 giây: khởi động lại hoàn đúng một lần; lượt đã quyết toán không bị hoàn.
+        let (cut, finished) = (format!("run-{}", uuid::Uuid::new_v4()), format!("run-{}", uuid::Uuid::new_v4()));
+        assert!(reserve_provider(&db, &month, 30, 1_000).await.expect("giữ"));
+        hold_provider(&db, &cut, &month, 30).await.expect("ghi giữ");
+        hold_provider(&db, &finished, &month, 10).await.expect("ghi giữ");
+        release_provider_hold(&db, &finished).await;
+        assert!(refund_provider_holds(&db).await.expect("hoàn") >= 1);
+        assert_eq!(provider_seconds(&db, &month).await.expect("đọc"), 59);
+        refund_provider_holds(&db).await.expect("hoàn lại");
+        assert_eq!(provider_seconds(&db, &month).await.expect("đọc"), 59, "không hoàn hai lần");
 
         db.collection::<Document>(COLL)
             .delete_many(doc! { "_id": { "$regex": format!("{month}$") } })

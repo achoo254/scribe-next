@@ -30,7 +30,9 @@ pub async fn speech_spans(ffmpeg: &str, path: &str, duration: f64) -> Result<Vec
         .map_err(|e| format!("chạy ffmpeg: {e}"))?;
     let stderr = String::from_utf8_lossy(&out.stderr);
     if !out.status.success() {
-        return Err(format!("ffmpeg không đọc được bản ghi: {}", last_line(&stderr)));
+        // Chi tiết (có đường dẫn tệp chứa id người dùng) chỉ vào log.
+        tracing::warn!("ffmpeg không đọc được bản ghi: {}", last_line(&stderr));
+        return Err(super::elevenlabs::ENCODE_FAILED.into());
     }
     let silences = chunking::parse_silencedetect(&stderr, duration);
     Ok(chunking::speech_from_silences(&silences, duration))
@@ -51,7 +53,8 @@ pub async fn encode_chunk(ffmpeg: &str, path: &str, chunk: Span) -> Result<(Vec<
         .map_err(|e| format!("chạy ffmpeg: {e}"))?;
     if !out.status.success() || out.stdout.is_empty() {
         let stderr = String::from_utf8_lossy(&out.stderr);
-        return Err(format!("ffmpeg không nén được mảnh: {}", last_line(&stderr)));
+        tracing::warn!("ffmpeg không nén được mảnh: {}", last_line(&stderr));
+        return Err(super::elevenlabs::ENCODE_FAILED.into());
     }
     let peak = chunking::parse_max_volume(&String::from_utf8_lossy(&out.stderr));
     Ok((out.stdout, peak))

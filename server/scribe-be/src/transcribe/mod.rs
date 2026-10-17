@@ -328,11 +328,12 @@ pub async fn create(
     let model = state.transcriber.provider().model();
     let mut queued = 0;
     for unit in &units {
-        // Một lượt mỗi đơn vị: cả phiên iPhone chung một `runId` để worker gom lại thành một request.
+        // Một lượt mỗi đơn vị: cả phiên iPhone chung một `runId` để worker gom lại thành một request. Xếp ở trạng thái
+        // chờ bật rồi bật cùng lúc: worker không nhận lượt khi mới xếp được một phần (phiên bị tách làm nhiều request).
         let run_id = uuid::Uuid::new_v4().to_string();
         for &oid in &unit.files {
             let need = needs.get(&oid).copied().unwrap_or(0);
-            let ok = match transcript::enqueue(&state.db, oid, &user.0, &run_id, model, &charge, need).await {
+            let ok = match transcript::enqueue_held(&state.db, oid, &user.0, &run_id, model, &charge, need).await {
                 Ok(ok) => ok,
                 // Mongo standalone có thể báo lỗi dù đã ghi: đọc lại theo `runId` trước khi hoàn.
                 Err(e) => {
@@ -346,6 +347,10 @@ pub async fn create(
                 tracing::error!(file = %oid, need, "hoàn phút cho file không xếp được lỗi: {e:?}");
             }
         }
+        // Bật lỗi thì lượt vẫn ở trạng thái chờ bật: lần khởi động sau bật hộ (`requeue_interrupted`).
+        if let Err(e) = transcript::release_held(&state.db, &user.0, &run_id).await {
+            tracing::error!(run = %run_id, "bật lượt chép lời lỗi: {e:?}");
+        }
     }
     if queued == 0 {
         return Err(AppError::Conflict("các bản ghi này đang được chép".into()));
@@ -356,7 +361,8 @@ pub async fn create(
     if rerun > 0 {
         audit::record(&state, Some(&user.0), "transcript.rerun", doc! { "files": rerun as i64 });
     }
-    Ok(Json(json!({ "queued": queued, "skipped": requested.len().saturating_sub(queued) })))
+    // `files`: số file đã xếp (gồm các đoạn kéo theo khi chép cả phiên), `queued` giữ cho app cũ (cùng số).
+    Ok(Json(json!({ "queued": queued, "files": queued, "skipped": requested.len().saturating_sub(queued) })))
 }
 
 /// Một đơn vị xếp hàng: một file, hoặc mọi đoạn của một phiên iPhone khi chép cả phiên trong một request.
@@ -392,7 +398,7 @@ async fn queue_units(
         let busy = transcript::statuses_for_files(&state.db, user_id, &ids)
             .await?
             .iter()
-            .any(|r| r.status == "queued" || r.status == "running");
+            .any(|r| transcript::ACTIVE.contains(&r.status.as_str()));
         if !busy && !ids.is_empty() {
             units.push(QueueUnit { files: ids, docs: parts });
         }
@@ -465,7 +471,7 @@ pub async fn get(
             // Không trả `text` (trùng nội dung với `sentences`): trang hỏi lại mỗi 2 giây khi đang chép.
             json!({
                 "fileId": t.file_id(),
-                "status": t.status,
+                "status": transcript::public_status(&t.status),
                 "progress": t.progress,
                 "error": t.error,
                 "sentences": t.sentences,
@@ -631,6 +637,12 @@ async fn export_files(state: &AppState, user_id: &str, q: &ExportQuery) -> Resul
 
 /// Khởi động: lượt bị cắt ngang được xếp lại (lượt đã bị cắt hai lần thì dừng); rồi chạy hàng đợi nền.
 pub async fn start_worker(state: AppState) {
+    // Lượt bị cắt ngang còn giữ giờ ElevenLabs: hoàn trước, lượt chạy lại sẽ giữ lại từ đầu.
+    match usage::refund_provider_holds(&state.db).await {
+        Ok(0) => {}
+        Ok(n) => tracing::info!("hoàn giờ ElevenLabs của {n} lượt bị cắt ngang"),
+        Err(e) => tracing::warn!("hoàn giờ ElevenLabs của lượt dở lỗi: {e:?}"),
+    }
     match transcript::requeue_interrupted(&state.db).await {
         Ok((requeued, stopped)) if requeued + stopped > 0 => {
             tracing::info!("chép lời dở sau khởi động lại: {requeued} lượt chạy lại, {stopped} lượt dừng")
@@ -642,12 +654,19 @@ pub async fn start_worker(state: AppState) {
         loop {
             match transcript::claim_next(&state.db).await {
                 Ok(Some(t)) => {
-                    let (file_id, run_id) = (t.id, t.run_id.clone());
+                    let (file_id, run_id, user_id) = (t.id, t.run_id.clone(), t.user_id.clone());
                     let st = state.clone();
-                    // Panic trong một lượt không được giết vòng hàng đợi.
+                    // Panic trong một lượt không được giết vòng hàng đợi. Lượt cả phiên có nhiều file: đóng hết, không
+                    // chỉ file worker đã nhận (các file khác sẽ kẹt `running` tới lần khởi động sau).
                     if let Err(e) = tokio::spawn(async move { run(&st, &t).await }).await {
                         tracing::error!(file = %file_id, "chép lời panic: {e}");
-                        record(&state.db, file_id, &run_id, Outcome::Failed("lỗi nội bộ khi chép")).await;
+                        match transcript::fail_open_run(&state.db, &user_id, &run_id, INTERNAL_ERROR).await {
+                            Ok(_) => {}
+                            Err(e) => {
+                                tracing::error!(file = %file_id, "đóng lượt sau panic lỗi: {e:?}");
+                                record(&state.db, file_id, &run_id, Outcome::Failed(INTERNAL_ERROR)).await;
+                            }
+                        }
                     }
                 }
                 Ok(None) => {
@@ -661,6 +680,9 @@ pub async fn start_worker(state: AppState) {
         }
     });
 }
+
+/// Người dùng thấy câu này khi một lượt dừng vì lỗi lập trình (panic).
+const INTERNAL_ERROR: &str = "lỗi nội bộ khi chép";
 
 enum Outcome<'a> {
     Done { text: &'a str, sentences: &'a [Sentence] },

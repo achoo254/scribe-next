@@ -158,7 +158,7 @@ fn assemble(
             offset_s: offset,
             duration_s,
             has_video: f.has_video.unwrap_or(false),
-            status: t.map_or_else(|| "none".to_string(), |t| t.status.clone()),
+            status: t.map_or_else(|| "none".to_string(), |t| transcript::public_status(&t.status).to_string()),
             progress: t.map_or(0.0, |t| t.progress),
             error: t.and_then(|t| t.error.clone()),
             run_id: t.map(|t| t.run_id.clone()),

@@ -120,8 +120,23 @@ pub async fn ensure_indexes(db: &Database) -> Result<(), String> {
     Ok(())
 }
 
+/// Trạng thái của file đã xếp nhưng chưa được nhận: worker chỉ lấy `queued`. Một lượt nhiều file (cả phiên) xếp ở
+/// trạng thái này rồi mới bật cùng lúc ([`release_held`]), để worker không nhận lượt khi mới xếp được một phần.
+pub const HELD: &str = "held";
+/// Trạng thái còn trong hàng đợi (chưa kết thúc).
+pub const ACTIVE: [&str; 3] = ["queued", "running", HELD];
+
+/// Trạng thái trả cho client: [`HELD`] (chỉ tồn tại trong lúc xếp) là `queued`.
+pub fn public_status(status: &str) -> &str {
+    if status == HELD {
+        "queued"
+    } else {
+        status
+    }
+}
+
 /// Xếp hàng (hoặc xếp lại) một file với phần phút đã giữ; xoá kết quả cũ. Trả `false` khi file đang
-/// `queued/running` (một lượt khác giữ nó): người gọi hoàn phần vừa giữ.
+/// `queued/running/held` (một lượt khác giữ nó): người gọi hoàn phần vừa giữ.
 pub async fn enqueue(
     db: &Database,
     file_id: ObjectId,
@@ -131,14 +146,53 @@ pub async fn enqueue(
     charge: &Charge,
     charged_s: i64,
 ) -> Result<bool, AppError> {
+    enqueue_as(db, file_id, user_id, run_id, model, charge, charged_s, "queued").await
+}
+
+/// Như [`enqueue`] nhưng ở trạng thái [`HELD`]: chưa được nhận cho tới khi [`release_held`].
+pub async fn enqueue_held(
+    db: &Database,
+    file_id: ObjectId,
+    user_id: &str,
+    run_id: &str,
+    model: &str,
+    charge: &Charge,
+    charged_s: i64,
+) -> Result<bool, AppError> {
+    enqueue_as(db, file_id, user_id, run_id, model, charge, charged_s, HELD).await
+}
+
+/// Bật mọi file [`HELD`] của lượt `run_id` sang `queued` trong một lệnh.
+pub async fn release_held(db: &Database, user_id: &str, run_id: &str) -> Result<u64, AppError> {
+    db.collection::<TranscriptDoc>(COLL)
+        .update_many(
+            doc! { "userId": user_id, "runId": run_id, "status": HELD },
+            doc! { "$set": { "status": "queued", "updatedAt": DateTime::now() } },
+        )
+        .await
+        .map(|r| r.modified_count)
+        .map_err(|e| AppError::Internal(format!("bật lượt chép lời: {e}")))
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn enqueue_as(
+    db: &Database,
+    file_id: ObjectId,
+    user_id: &str,
+    run_id: &str,
+    model: &str,
+    charge: &Charge,
+    charged_s: i64,
+    status: &str,
+) -> Result<bool, AppError> {
     let res = db
         .collection::<TranscriptDoc>(COLL)
         .update_one(
-            doc! { "_id": file_id, "userId": user_id, "status": { "$nin": ["queued", "running"] } },
+            doc! { "_id": file_id, "userId": user_id, "status": { "$nin": ACTIVE.to_vec() } },
             doc! {
                 "$set": {
                     "userId": user_id,
-                    "status": "queued",
+                    "status": status,
                     "progress": 0.0,
                     "runId": run_id,
                     "text": "",
@@ -218,6 +272,24 @@ pub async fn defer_run(db: &Database, user_id: &str, run_id: &str, until: DateTi
         .await
         .map(|_| ())
         .map_err(|e| AppError::Internal(format!("hoãn lượt chép lời: {e}")))
+}
+
+/// Id mọi file của lượt `run_id` (mọi trạng thái).
+pub async fn run_file_ids(db: &Database, user_id: &str, run_id: &str) -> Result<std::collections::HashSet<ObjectId>, AppError> {
+    let read = |e: mongodb::error::Error| AppError::Internal(format!("đọc file của lượt: {e}"));
+    let mut cur = db
+        .collection::<bson::Document>(COLL)
+        .find(doc! { "userId": user_id, "runId": run_id })
+        .projection(doc! { "_id": 1 })
+        .await
+        .map_err(read)?;
+    let mut out = std::collections::HashSet::new();
+    while let Some(d) = cur.next().await {
+        if let Ok(id) = d.map_err(read)?.get_object_id("_id") {
+            out.insert(id);
+        }
+    }
+    Ok(out)
 }
 
 /// Nhận các file còn chờ của cùng lượt `run_id` (chép cả phiên trong một request) → running, trả mọi file đang chạy
@@ -315,11 +387,35 @@ pub async fn finish_failed(db: &Database, file_id: ObjectId, run_id: &str, error
     close_run(db, file_id, run_id, doc! { "status": "failed", "error": error, "updatedAt": DateTime::now() }).await
 }
 
+/// Panic giữa lượt: mọi file còn mở của lượt `run_id` đóng với lỗi `error` (không chỉ file worker đã nhận).
+pub async fn fail_open_run(db: &Database, user_id: &str, run_id: &str, error: &str) -> Result<u64, AppError> {
+    let mut cur = db
+        .collection::<TranscriptDoc>(COLL)
+        .find(doc! { "userId": user_id, "runId": run_id, "open": true })
+        .await
+        .map_err(|e| AppError::Internal(format!("đọc lượt dở: {e}")))?;
+    let mut ids = Vec::new();
+    while let Some(t) = cur.next().await {
+        ids.push(t.map_err(|e| AppError::Internal(format!("đọc lượt dở: {e}")))?.id);
+    }
+    let mut closed = 0;
+    for id in ids {
+        if finish_failed(db, id, run_id, error).await? {
+            closed += 1;
+        }
+    }
+    Ok(closed)
+}
+
 /// Khi khởi động: lượt đang `running` bị cắt ngang thì xếp lại (key server luôn có sẵn). Lượt đã bị cắt
 /// ngang một lần rồi thì dừng hẳn và quyết toán, tránh vòng khởi động lại cứ chi tiền mãi.
 /// Trả (số lượt xếp lại, số lượt dừng).
 pub async fn requeue_interrupted(db: &Database) -> Result<(u64, u64), AppError> {
     let coll = db.collection::<TranscriptDoc>(COLL);
+    // Lượt xếp dở (tiến trình chết trước khi bật): bật luôn, phút đã giữ.
+    coll.update_many(doc! { "status": HELD }, doc! { "$set": { "status": "queued", "updatedAt": DateTime::now() } })
+        .await
+        .map_err(|e| AppError::Internal(format!("bật lượt xếp dở: {e}")))?;
     // Lượt dở do bản cũ (trước khi có sổ phút) để lại: không có sổ để chạy tiếp ⟹ báo lỗi như trước.
     let legacy = coll
         .update_many(
@@ -385,7 +481,7 @@ pub async fn statuses(db: &Database, user_id: &str) -> Result<Vec<(String, Strin
     while let Some(r) = cur.next().await {
         let d = r.map_err(|e| AppError::Internal(format!("đọc trạng thái chép lời: {e}")))?;
         if let (Ok(id), Ok(status)) = (d.get_object_id("_id"), d.get_str("status")) {
-            out.push((id.to_hex(), status.to_string()));
+            out.push((id.to_hex(), public_status(status).to_string()));
         }
     }
     Ok(out)
@@ -404,7 +500,7 @@ pub struct RunStatus {
 fn run_status(d: &bson::Document) -> Option<RunStatus> {
     Some(RunStatus {
         file_id: d.get_object_id("_id").ok()?,
-        status: d.get_str("status").ok()?.to_string(),
+        status: public_status(d.get_str("status").ok()?).to_string(),
         progress: d.get_f64("progress").unwrap_or(0.0),
         run_id: d.get_str("runId").unwrap_or_default().to_string(),
         error: d.get_str("error").ok().map(str::to_string),

@@ -23,37 +23,55 @@ pub struct Transcript {
     pub duration_s: Option<f64>,
 }
 
-/// Một hay nhiều tệp (theo thứ tự, nối liền nhau) → Opus mono 16 kHz 32 kbps trong bộ nhớ (~14 MB mỗi giờ), kèm âm
-/// lượng đỉnh (dB) đo trong cùng lần giải mã (`None` khi ffmpeg không báo).
-pub async fn encode(ffmpeg: &str, paths: &[&str]) -> Result<(Vec<u8>, Option<f64>), String> {
-    if paths.is_empty() {
+/// Một hay nhiều tệp `(đường dẫn, thời lượng đo được)` theo thứ tự, nối liền nhau → Opus mono 16 kHz 32 kbps trong bộ
+/// nhớ (~14 MB mỗi giờ), kèm âm lượng đỉnh (dB) đo trong cùng lần giải mã (`None` khi ffmpeg không báo). Lỗi chỉ ghi
+/// log chi tiết (đường dẫn có id người dùng), người dùng thấy câu chung.
+pub async fn encode(ffmpeg: &str, inputs: &[(&str, f64)]) -> Result<(Vec<u8>, Option<f64>), String> {
+    if inputs.is_empty() {
         return Err("không có tệp nào để chép".into());
     }
     let mut cmd = Command::new(ffmpeg);
     cmd.args(["-hide_banner", "-nostats", "-loglevel", "info"]);
-    for path in paths {
+    for (path, _) in inputs {
         cmd.args(["-i", path]);
     }
-    cmd.args(["-filter_complex", &concat_filter(paths.len()), "-map", "[a]", "-vn"])
+    let durations: Vec<f64> = inputs.iter().map(|(_, d)| *d).collect();
+    cmd.args(["-filter_complex", &concat_filter(&durations), "-map", "[a]", "-vn"])
         .args(["-ac", "1", "-ar", "16000", "-c:a", "libopus", "-b:a", "32k", "-f", "ogg", "pipe:1"]);
-    let out = cmd.stdin(Stdio::null()).kill_on_drop(true).output().await.map_err(|e| format!("chạy ffmpeg: {e}"))?;
+    let out = cmd.stdin(Stdio::null()).kill_on_drop(true).output().await.map_err(|e| {
+        tracing::warn!("chạy ffmpeg lỗi: {e}");
+        ENCODE_FAILED.to_string()
+    })?;
     if !out.status.success() || out.stdout.is_empty() {
         let stderr = String::from_utf8_lossy(&out.stderr);
-        let last = stderr.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or("").trim().to_string();
-        return Err(format!("ffmpeg không nén được bản ghi: {last}"));
+        let last = stderr.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or("").trim();
+        tracing::warn!("ffmpeg không nén được bản ghi: {last}");
+        return Err(ENCODE_FAILED.into());
     }
     let peak = chunking::parse_max_volume(&String::from_utf8_lossy(&out.stderr));
     Ok((out.stdout, peak))
 }
 
-/// `[0:a:0][1:a:0]…concat=n=N:v=0:a=1,volumedetect[a]`: nối audio các tệp liền nhau (mốc đoạn sau = tổng thời lượng
-/// các đoạn trước, như màn hình đọc) và đo âm lượng đỉnh của cả bản ghép.
-fn concat_filter(inputs: usize) -> String {
-    let streams: String = (0..inputs).map(|i| format!("[{i}:a:0]")).collect();
-    format!("{streams}concat=n={inputs}:v=0:a=1,volumedetect[a]")
+/// Người dùng thấy câu này khi ffmpeg hỏng (không lộ đường dẫn tệp trên server).
+pub const ENCODE_FAILED: &str = "Không đọc được audio của bản ghi để chép lời.";
+
+/// Mỗi đầu vào cắt/đệm im lặng đúng bằng thời lượng đo được (`atrim` + `apad`, mốc đặt lại từ 0) rồi nối liền và đo
+/// âm lượng đỉnh: mốc đoạn sau luôn bằng tổng thời lượng đo của các đoạn trước, kể cả khi độ trễ AAC làm audio giải
+/// mã dài/ngắn hơn vài chục ms mỗi đoạn (phiên 180 đoạn không bị trôi mốc).
+fn concat_filter(durations: &[f64]) -> String {
+    let mut graph = String::new();
+    for (i, d) in durations.iter().enumerate() {
+        let d = d.max(0.0);
+        graph.push_str(&format!("[{i}:a:0]atrim=end={d:.3},apad=whole_dur={d:.3},asetpts=N/SR/TB[a{i}];"));
+    }
+    let streams: String = (0..durations.len()).map(|i| format!("[a{i}]")).collect();
+    graph.push_str(&format!("{streams}concat=n={}:v=0:a=1,volumedetect[a]", durations.len()));
+    graph
 }
 
-/// Gửi audio đã nén. Lỗi mạng, 429 (trừ hết credit) và 5xx thì thử lại tối đa [`HTTP_RETRIES`] lần.
+/// Gửi audio đã nén. Chỉ thử lại (tối đa [`HTTP_RETRIES`] lần) khi chắc chắn ElevenLabs chưa xử lý: không kết nối được,
+/// hoặc ElevenLabs trả 429 (trừ hết credit) / 5xx. Mất kết nối sau khi đã gửi audio hay hết thời gian chờ thì không gửi
+/// lại (có thể đã bị tính tiền) — xem [`maybe_billed`].
 pub async fn transcribe(
     http: &reqwest::Client,
     url: &str,
@@ -78,16 +96,21 @@ pub async fn transcribe(
         let last = attempt == HTTP_RETRIES;
         let response = match sent {
             Ok(r) => r,
-            Err(e) if !last => {
-                tracing::warn!(attempt, timeout = e.is_timeout(), "gọi ElevenLabs lỗi mạng, thử lại");
+            Err(e) if e.is_connect() && !last => {
+                tracing::warn!(attempt, "không kết nối được ElevenLabs, thử lại");
                 super::openai::backoff(attempt).await;
                 continue;
             }
-            Err(e) if e.is_timeout() => return Err("ElevenLabs: quá thời gian chờ phản hồi".into()),
-            Err(_) => return Err("ElevenLabs: không kết nối được".into()),
+            Err(e) if e.is_connect() => return Err(UNREACHABLE.into()),
+            Err(e) if e.is_timeout() => return Err(TIMED_OUT.into()),
+            Err(_) => return Err(LOST.into()),
         };
         let status = response.status().as_u16();
-        let body = response.text().await.unwrap_or_default();
+        let body = match response.text().await {
+            Ok(body) => body,
+            Err(_) if (200..300).contains(&status) => return Err(LOST.into()),
+            Err(_) => String::new(),
+        };
         if (200..300).contains(&status) {
             return parse(&body);
         }
@@ -99,6 +122,17 @@ pub async fn transcribe(
         return Err(api_error(status, &body));
     }
     Err("ElevenLabs: hết số lần thử".into())
+}
+
+const UNREACHABLE: &str = "ElevenLabs: không kết nối được";
+const TIMED_OUT: &str = "ElevenLabs: quá thời gian chờ phản hồi";
+const LOST: &str = "ElevenLabs: mất kết nối sau khi đã gửi audio";
+const UNREADABLE: &str = "ElevenLabs trả dữ liệu không đọc được";
+
+/// Lỗi mà ElevenLabs có thể đã xử lý (và tính tiền) audio: hết thời gian chờ, mất kết nối sau khi gửi, trả 200 mà
+/// không đọc được. Mọi lỗi khác là từ chối chắc chắn: không tính tiền, người gọi hoàn phút.
+pub fn maybe_billed(e: &str) -> bool {
+    e == TIMED_OUT || e == LOST || e == UNREADABLE
 }
 
 #[derive(Deserialize)]
@@ -122,7 +156,7 @@ struct RawWord {
 
 /// Chỉ giữ phần tử `type = word` có mốc (bỏ khoảng trắng và sự kiện âm thanh); mốc hỏng thì bỏ từ đó.
 fn parse(body: &str) -> Result<Transcript, String> {
-    let raw: RawResponse = serde_json::from_str(body).map_err(|_| "ElevenLabs trả dữ liệu không đọc được".to_string())?;
+    let raw: RawResponse = serde_json::from_str(body).map_err(|_| UNREADABLE.to_string())?;
     let words = raw
         .words
         .into_iter()
@@ -183,9 +217,59 @@ mod tests {
     use std::sync::Arc;
 
     #[test]
-    fn concat_filter_joins_every_input_and_measures_the_peak() {
-        assert_eq!(concat_filter(1), "[0:a:0]concat=n=1:v=0:a=1,volumedetect[a]");
-        assert_eq!(concat_filter(3), "[0:a:0][1:a:0][2:a:0]concat=n=3:v=0:a=1,volumedetect[a]");
+    fn concat_filter_pins_every_input_to_its_measured_length() {
+        assert_eq!(
+            concat_filter(&[60.0, 29.5]),
+            "[0:a:0]atrim=end=60.000,apad=whole_dur=60.000,asetpts=N/SR/TB[a0];\
+             [1:a:0]atrim=end=29.500,apad=whole_dur=29.500,asetpts=N/SR/TB[a1];\
+             [a0][a1]concat=n=2:v=0:a=1,volumedetect[a]"
+        );
+    }
+
+    #[test]
+    fn only_lost_or_timed_out_requests_may_be_billed() {
+        for e in [TIMED_OUT, LOST, UNREADABLE] {
+            assert!(maybe_billed(e), "{e}");
+        }
+        for e in [UNREACHABLE, KEY_INVALID, QUOTA_EXHAUSTED, "Dịch vụ chép lời đang lỗi (HTTP 500), thử lại sau."] {
+            assert!(!maybe_billed(e), "{e}");
+        }
+    }
+
+    /// Thời lượng bản ghép bằng đúng tổng thời lượng đo, kể cả khi một đầu vào dài hơn (bị cắt) hay ngắn hơn (được
+    /// đệm). Cần ffmpeg (bỏ qua nếu máy không có).
+    #[tokio::test]
+    async fn merged_audio_is_exactly_the_sum_of_measured_lengths() {
+        let dir = std::env::temp_dir().join(format!("scribe-concat-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).expect("tạo thư mục");
+        let make = |name: &str, seconds: &str| {
+            let path = dir.join(name);
+            std::process::Command::new("ffmpeg")
+                .args(["-v", "error", "-y", "-f", "lavfi", "-i", &format!("sine=frequency=440:duration={seconds}")])
+                .args(["-c:a", "aac", "-b:a", "64k"])
+                .arg(&path)
+                .status()
+                .ok()
+                .filter(|s| s.success())
+                .map(|_| path.to_string_lossy().to_string())
+        };
+        let (Some(a), Some(b)) = (make("a.m4a", "3.0"), make("b.m4a", "2.0")) else {
+            eprintln!("bỏ qua: không có ffmpeg");
+            return;
+        };
+        // Đo nói đoạn a dài 2,5 giây (cắt bớt) và b dài 2,6 giây (đệm thêm): bản ghép phải dài 5,1 giây.
+        let (audio, peak) = encode("ffmpeg", &[(&a, 2.5), (&b, 2.6)]).await.expect("nén");
+        assert!(peak.is_some_and(|p| p > -20.0), "{peak:?}");
+        let out = dir.join("out.ogg");
+        std::fs::write(&out, audio).expect("ghi");
+        let probe = std::process::Command::new("ffprobe")
+            .args(["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0"])
+            .arg(&out)
+            .output()
+            .expect("ffprobe");
+        let seconds: f64 = String::from_utf8_lossy(&probe.stdout).trim().parse().expect("thời lượng");
+        assert!((seconds - 5.1).abs() < 0.03, "{seconds}");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
