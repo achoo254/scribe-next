@@ -3,12 +3,17 @@
 //! [Red-team #13] Dùng `option_env!` (KHÔNG `env!`) → máy dev thiếu secret vẫn `cargo check`/build
 //! được (fallback về localhost). Production: `build.rs` bake giá trị thật lúc build.
 
-/// Size cap mỗi file (2GB — chốt validate 2026-07-11, ~40% quota 5GB). Red-team #14.
-pub const MAX_FILE_SIZE_BYTES: u64 = 2 * 1024 * 1024 * 1024;
-/// Quota mỗi user (5GB — chốt validate). Red-team #3.
-pub const QUOTA_BYTES: u64 = 5 * 1024 * 1024 * 1024;
-/// Retention: file tự xoá sau N ngày (14 — chốt validate). Red-team #1: sweep là nguồn xoá DUY NHẤT
-/// (KHÔNG dùng TTL index native → tránh Mongo xoá doc out-of-band làm mồ côi file disk).
+const MIB: u64 = 1024 * 1024;
+/// Dung lượng theo gói (chủ dự án chốt 17/10/2026). Gói free: tổng 200 MB, mỗi tệp tối đa 200 MB, tệp tự
+/// xoá sau 7 ngày. Gói plus giữ mức cũ: tổng 5 GB, mỗi tệp tối đa 2 GB, 14 ngày. Áp qua `plan::Plan::storage`.
+pub const FREE_QUOTA_BYTES: u64 = 200 * MIB;
+pub const FREE_MAX_FILE_BYTES: u64 = 200 * MIB;
+pub const FREE_RETENTION_DAYS: i64 = 7;
+pub const PLUS_QUOTA_BYTES: u64 = 5 * 1024 * MIB;
+pub const PLUS_MAX_FILE_BYTES: u64 = 2 * 1024 * MIB;
+/// Hạn giữ tệp dài nhất (gói plus, 14 ngày): doc cũ thiếu `expiresAt` và job cũ dùng mốc này. Red-team #1:
+/// sweep là nguồn xoá DUY NHẤT (KHÔNG dùng TTL index native → tránh Mongo xoá doc out-of-band làm mồ côi
+/// file disk).
 pub const RETENTION_DAYS: i64 = 14;
 
 /// Giá `gpt-4o-mini-transcribe` theo phút audio gửi đi (USD) — dùng để đổi trần chi phí ra giây.

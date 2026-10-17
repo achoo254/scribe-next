@@ -104,8 +104,8 @@ pub fn schedule_file(db: &Database, user_id: &str, file_id: ObjectId) {
     tokio::spawn(async move {
         match file::list_owned_by_ids(&db, &user_id, &[file_id]).await {
             Ok(files) => {
-                if let Some(f) = files.into_iter().find(|f| f.kind == "recording") {
-                    schedule(&db, &user_id, &file::session_key(&f.name, file_id));
+                if let Some(key) = files.into_iter().find(|f| file::is_history_kind(&f.kind)).and_then(|f| f.session_key()) {
+                    schedule(&db, &user_id, &key);
                 }
             }
             Err(e) => tracing::warn!(file = %file_id, "đọc file để dựng index lỗi: {e:?}"),
@@ -134,8 +134,8 @@ async fn transcribed_sessions(db: &Database) -> Result<BTreeSet<(String, String)
     for (user_id, ids) in done {
         let wanted: Vec<ObjectId> = ids.into_iter().collect();
         for f in file::list_owned_by_ids(db, &user_id, &wanted).await? {
-            if let Some(id) = f.id.filter(|_| f.kind == "recording") {
-                out.insert((user_id.clone(), file::session_key(&f.name, id)));
+            if let Some(key) = f.session_key().filter(|_| file::is_history_kind(&f.kind)) {
+                out.insert((user_id.clone(), key));
             }
         }
     }
@@ -263,7 +263,7 @@ mod tests {
         let key = format!("s:{session}");
         let (a, b) = (ObjectId::new(), ObjectId::new());
         for (id, index) in [(a, 0), (b, 1)] {
-            let f = file::FileDoc::new_recording(&user, &format!("{session}#{index}"), "/nonexistent", 1, 60.0, false, id);
+            let f = file::FileDoc::new_recording(file::Owner { user_id: &user, plan: crate::models::plan::Plan::Free }, &format!("{session}#{index}"), "/nonexistent", 1, 60.0, false, id);
             file::create(&db, f).await.expect("tạo file");
         }
         let charge = crate::models::usage::Charge { user_id: user.clone(), month: "test".into(), free_pool: false, day: None };

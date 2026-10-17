@@ -3,7 +3,8 @@
 use crate::audit;
 use crate::auth::UserId;
 use crate::error::AppError;
-use crate::models::file::{self, FileDoc};
+use crate::models::file::{self, FileDoc, Owner};
+use crate::models::user;
 use crate::models::transcript_doc;
 use crate::models::job::{self, Job, SegRef};
 use crate::state::AppState;
@@ -200,9 +201,18 @@ async fn run_job(state: &AppState, job: &Job) {
 
 /// Mode B (Cắt file): lưu mỗi đoạn thành `kind:output` (tải zip). KHÔNG đụng input file.
 async fn finish_output_split(state: &AppState, job_id: &str, user_id: &str, segs: Vec<OutputSeg>) {
+    let plan = match user::effective_plan(&state.db, user_id).await {
+        Ok(plan) => plan,
+        Err(e) => {
+            cleanup_seg_files(&segs);
+            let _ = job::finish_failed(&state.db, job_id, &format!("đọc gói của user: {e:?}")).await;
+            return;
+        }
+    };
+    let owner = Owner { user_id, plan };
     let mut refs = Vec::with_capacity(segs.len());
     for s in segs {
-        let doc = FileDoc::new_output(user_id, job_id, &s.name, &s.path, s.size as i64);
+        let doc = FileDoc::new_output(owner, job_id, &s.name, &s.path, s.size as i64);
         match file::create(&state.db, doc).await {
             Ok(fid) => refs.push(SegRef { name: s.name, file_id: fid }),
             Err(e) => {
@@ -236,12 +246,20 @@ async fn finish_recording_split(state: &AppState, job: &Job, job_id: &str, segs:
         }
     };
     let base = input.name.clone();
+    let plan = match user::effective_plan(&state.db, &job.user_id).await {
+        Ok(plan) => plan,
+        Err(e) => {
+            cleanup_seg_files(&segs);
+            let _ = job::finish_failed(&state.db, job_id, &format!("đọc gói của user: {e:?}")).await;
+            return;
+        }
+    };
 
     let mut refs = Vec::with_capacity(segs.len());
     for (i, s) in segs.iter().enumerate() {
         let name = format!("{base} — Phần {:02}", i + 1);
         let doc = FileDoc::new_recording(
-            &job.user_id,
+            Owner { user_id: &job.user_id, plan },
             &name,
             &s.path,
             s.size as i64,
@@ -288,7 +306,7 @@ async fn finish_recording_split(state: &AppState, job: &Job, job_id: &str, segs:
 /// Đoạn của phiên iPhone (`s:`) giữ mốc ở doc phiên, không chép.
 async fn move_bookmarks(state: &AppState, job_id: &str, input: &FileDoc, segs: &[OutputSeg], refs: &[SegRef]) {
     let Some(input_id) = input.id else { return };
-    let from_key = file::session_key(&input.name, input_id);
+    let from_key = file::session_key(&input.kind, &input.name, input_id);
     if !from_key.starts_with("f:") {
         return;
     }
@@ -297,7 +315,7 @@ async fn move_bookmarks(state: &AppState, job_id: &str, input: &FileDoc, segs: &
         .zip(refs)
         .filter_map(|(s, r)| {
             let id = ObjectId::parse_str(&r.file_id).ok()?;
-            Some((file::session_key(&r.name, id), s.duration_s.unwrap_or(0.0)))
+            Some((file::session_key("recording", &r.name, id), s.duration_s.unwrap_or(0.0)))
         })
         .collect();
     if pieces.len() != refs.len() {

@@ -2,9 +2,10 @@
 
 use crate::audit;
 use crate::auth::UserId;
-use crate::config::{QUOTA_BYTES, RETENTION_DAYS};
 use crate::error::AppError;
-use crate::models::{file, transcript};
+use crate::models::file::FileDoc;
+use crate::models::{file, job, transcript, user};
+use crate::recordings;
 use crate::state::AppState;
 use axum::body::Body;
 use axum::extract::{Path, Query, State};
@@ -20,12 +21,16 @@ use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use tokio_util::io::ReaderStream;
 use uuid::Uuid;
 
-/// `GET /api/files` — lịch sử ghi của user (recording), mới nhất trước.
+/// Mỗi phút một user được bấm "Xoá tất cả" tối đa chừng này lần.
+const DELETE_ALL_PER_MINUTE: u32 = 3;
+
+/// `GET /api/files` — lịch sử ghi của user (bản ghi + tệp tải lên), mới nhất trước.
 pub async fn list(
     State(state): State<AppState>,
     Extension(user): Extension<UserId>,
 ) -> Result<Json<Value>, AppError> {
-    let recs = file::list_recordings(&state.db, &user.0).await?;
+    let recs = file::list_history(&state.db, &user.0).await?;
+    let retention_days = user::effective_plan(&state.db, &user.0).await?.storage().retention_days;
     let transcripts: HashMap<String, String> = transcript::statuses(&state.db, &user.0).await?.into_iter().collect();
     let items: Vec<Value> = recs
         .iter()
@@ -44,8 +49,8 @@ pub async fn list(
             })
         })
         .collect();
-    // retentionDays: FE tính hạn tự-xoá từng file = createdAt + retentionDays (khớp chính sách sweep).
-    Ok(Json(json!({ "items": items, "retentionDays": RETENTION_DAYS })))
+    // retentionDays theo gói hiện tại: FE hiện hạn tự xoá ước tính = createdAt + retentionDays.
+    Ok(Json(json!({ "items": items, "retentionDays": retention_days })))
 }
 
 /// `GET /api/files/manage` — file KHÔNG phải bản ghi (upload Cắt file + đoạn output) để UI quản lý
@@ -55,6 +60,7 @@ pub async fn manage_list(
     Extension(user): Extension<UserId>,
 ) -> Result<Json<Value>, AppError> {
     let files = file::list_non_recordings(&state.db, &user.0).await?;
+    let retention_days = user::effective_plan(&state.db, &user.0).await?.storage().retention_days;
     let items: Vec<Value> = files
         .iter()
         .map(|f| {
@@ -68,16 +74,84 @@ pub async fn manage_list(
             })
         })
         .collect();
-    Ok(Json(json!({ "items": items, "retentionDays": RETENTION_DAYS })))
+    Ok(Json(json!({ "items": items, "retentionDays": retention_days })))
 }
 
-/// `GET /api/me/usage` — dung lượng đã dùng + quota của user (FE QuotaBar).
+/// `GET /api/me/usage` — dung lượng đã dùng và giới hạn lưu trữ theo gói của user.
 pub async fn usage(
     State(state): State<AppState>,
     Extension(user): Extension<UserId>,
 ) -> Result<Json<Value>, AppError> {
     let used = file::user_usage_bytes(&state.db, &user.0).await?;
-    Ok(Json(json!({ "usageBytes": used, "quotaBytes": QUOTA_BYTES })))
+    let plan = user::effective_plan(&state.db, &user.0).await?;
+    let storage = plan.storage();
+    Ok(Json(json!({
+        "usageBytes": used,
+        "quotaBytes": storage.quota_bytes,
+        "maxFileBytes": storage.max_file_bytes,
+        "retentionDays": storage.retention_days,
+        "plan": plan.name(),
+    })))
+}
+
+/// Chia lịch sử ghi thành file "Xoá tất cả" được xoá và file phải chừa: thuộc phiên ghi đang mở
+/// (`active_keys`, khoá phiên) hoặc là đầu vào của job cắt đang chạy (`busy_inputs`, id hex).
+fn split_for_delete_all<'a>(
+    files: &'a [FileDoc],
+    active_keys: &HashSet<String>,
+    busy_inputs: &HashSet<String>,
+) -> (Vec<&'a FileDoc>, Vec<&'a FileDoc>) {
+    files.iter().partition(|f| {
+        let busy = f.id.is_some_and(|id| busy_inputs.contains(&id.to_hex()));
+        let active = f.session_key().is_some_and(|key| active_keys.contains(&key));
+        !busy && !active
+    })
+}
+
+/// Xoá đĩa rồi doc (như xoá tay). Lỗi đĩa khác NotFound → giữ doc (không mồ côi file), trả lỗi.
+async fn remove_file_and_doc(db: &mongodb::Database, f: &FileDoc) -> Result<(), AppError> {
+    match tokio::fs::remove_file(&f.path).await {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(AppError::Internal(format!("xoá file disk: {e}"))),
+    }
+    file::delete_doc(db, f).await
+}
+
+/// `DELETE /api/files` — "Xoá tất cả" trong Lịch sử ghi: mọi bản ghi và tệp tải lên của user, kèm bản chép
+/// lời, biên bản, dấu mốc và câu trong index (qua `file::delete_doc`). Chừa file của phiên ghi đang mở và đầu
+/// vào job cắt đang chạy. Đoạn cắt (`output`) quản lý ở trang Cắt file, không xoá ở đây.
+pub async fn delete_all(
+    State(state): State<AppState>,
+    Extension(user): Extension<UserId>,
+) -> Result<Json<Value>, AppError> {
+    if !state.rate.allow(&format!("delete_all:{}", user.0), DELETE_ALL_PER_MINUTE) {
+        return Err(AppError::TooManyRequests("thao tác quá nhanh, thử lại sau một phút".into()));
+    }
+    let files = file::list_history(&state.db, &user.0).await?;
+    let active_keys = recordings::active_session_keys(&state, &user.0).await?;
+    let busy_inputs: HashSet<String> = job::busy_inputs(&state.db, &user.0).await?.into_iter().collect();
+    let (targets, kept) = split_for_delete_all(&files, &active_keys, &busy_inputs);
+    let (mut deleted, mut failed, mut bytes) = (0_i64, 0_i64, 0_i64);
+    for f in targets {
+        match remove_file_and_doc(&state.db, f).await {
+            Ok(()) => {
+                deleted += 1;
+                bytes += f.size.max(0);
+            }
+            Err(e) => {
+                failed += 1;
+                tracing::warn!(path = %f.path, "xoá tất cả: bỏ qua file lỗi: {e:?}");
+            }
+        }
+    }
+    let skipped = kept.len() as i64;
+    let details = doc! { "deleted": deleted, "skipped": skipped, "failed": failed, "bytes": bytes };
+    audit::record(&state, Some(&user.0), "file.delete_all", details);
+    if deleted == 0 && failed > 0 {
+        return Err(AppError::Internal("xoá tất cả: không xoá được file nào".into()));
+    }
+    Ok(Json(json!({ "deleted": deleted, "skipped": skipped, "failed": failed, "bytes": bytes })))
 }
 
 /// `DELETE /api/files/:id` — xoá file của user (recording). Ownership bắt buộc; xoá disk TRƯỚC → doc
@@ -90,12 +164,7 @@ pub async fn delete(
     let f = file::get_owned(&state.db, &id, &user.0)
         .await?
         .ok_or_else(|| AppError::NotFound("file không tồn tại".into()))?;
-    match tokio::fs::remove_file(&f.path).await {
-        Ok(()) => {}
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-        Err(e) => return Err(AppError::Internal(format!("xoá file disk: {e}"))),
-    }
-    file::delete_doc(&state.db, &f).await?;
+    remove_file_and_doc(&state.db, &f).await?;
     let details = doc! { "fileId": &id, "name": &f.name, "kind": &f.kind, "size": f.size };
     audit::record(&state, Some(&user.0), "file.delete", details);
     Ok(Json(json!({ "ok": true })))
@@ -193,14 +262,14 @@ pub struct ArchiveQuery {
 }
 
 /// `GET /api/files/archive[?from=&to=]` — zip toàn bộ bản ghi của user (hoặc trong khoảng thời gian
-/// cho "tải theo ngày"). Ownership qua list_recordings. Zip dựng ở tmp rồi unlink ngay sau khi mở →
+/// cho "tải theo ngày"). Ownership qua list_history. Zip dựng ở tmp rồi unlink ngay sau khi mở →
 /// tự dọn khi stream xong (không để rác). from/to (ms) do FE tính theo ngày cục bộ → đúng múi giờ user.
 pub async fn archive(
     State(state): State<AppState>,
     Extension(user): Extension<UserId>,
     Query(q): Query<ArchiveQuery>,
 ) -> Result<Response, AppError> {
-    let recs = file::list_recordings(&state.db, &user.0).await?;
+    let recs = file::list_history(&state.db, &user.0).await?;
     let selected: Vec<_> = recs
         .into_iter()
         .filter(|f| {
@@ -368,7 +437,35 @@ fn content_type_for(path: &str) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_range;
+    use super::{parse_range, split_for_delete_all};
+    use crate::models::file::{FileDoc, Owner};
+    use crate::models::plan::Plan;
+    use mongodb::bson::oid::ObjectId;
+    use std::collections::HashSet;
+
+    #[test]
+    fn delete_all_spares_open_recording_sessions_and_busy_split_inputs() {
+        let owner = Owner { user_id: "u", plan: Plan::Free };
+        let rec = |name: &str| FileDoc::new_recording(owner, name, "/r", 10, 1.0, false, ObjectId::new());
+        let files = vec![
+            rec("Họp sáng"),
+            rec("aaaaaaaa-1111#0"),
+            rec("aaaaaaaa-1111#1"),
+            rec("bbbbbbbb-2222#0"),
+            FileDoc::new_upload(owner, "aaaaaaaa-1111#2", "/u.mp3", 10, 1.0, false, ObjectId::new()),
+            rec("Đang cắt"),
+        ];
+        let id = |i: usize| files[i].id.expect("id").to_hex();
+        let active: HashSet<String> = ["s:aaaaaaaa-1111".to_string()].into();
+        let busy: HashSet<String> = [id(5)].into();
+        let (targets, kept) = split_for_delete_all(&files, &active, &busy);
+        let names = |v: Vec<&FileDoc>| v.into_iter().map(|f| f.name.clone()).collect::<Vec<_>>();
+        // Tệp tải lên trùng tên đoạn iPhone vẫn là phiên riêng nên bị xoá.
+        assert_eq!(names(targets), ["Họp sáng", "bbbbbbbb-2222#0", "aaaaaaaa-1111#2"]);
+        assert_eq!(names(kept), ["aaaaaaaa-1111#0", "aaaaaaaa-1111#1", "Đang cắt"]);
+        let (all, none) = split_for_delete_all(&files, &HashSet::new(), &HashSet::new());
+        assert_eq!((all.len(), none.len()), (6, 0));
+    }
 
     #[test]
     fn range_parsing() {

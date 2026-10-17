@@ -136,6 +136,34 @@ pub async fn find_profile(db: &Database, user_id: &str) -> Result<Option<Profile
     }))
 }
 
+/// Gói đang có hiệu lực của user (dung lượng, hạn tệp). Không có user thì là free.
+pub async fn effective_plan(db: &Database, user_id: &str) -> Result<super::plan::Plan, AppError> {
+    let profile = find_profile(db, user_id).await?;
+    let (stored, until) = profile.map_or((None, None), |p| (p.plan, p.plan_until));
+    Ok(super::plan::effective(stored.as_deref(), until, DateTime::now()))
+}
+
+/// `_id` (hex) của các user đang có gói plus hiệu lực lúc `now`.
+pub async fn plus_user_ids(db: &Database, now: DateTime) -> Result<Vec<String>, AppError> {
+    let read = |e: MongoError| AppError::Internal(format!("mongo users theo gói: {e}"));
+    let mut cur = db
+        .collection::<Document>(COLL)
+        .find(doc! { "plan": "plus" })
+        .projection(doc! { "_id": 1, "plan": 1, "planUntil": 1 })
+        .await
+        .map_err(read)?;
+    let mut out = Vec::new();
+    while let Some(d) = futures_util::StreamExt::next(&mut cur).await {
+        let d = d.map_err(read)?;
+        let until = d.get_datetime("planUntil").ok().copied();
+        let plan = super::plan::effective(d.get_str("plan").ok(), until, now);
+        if let (super::plan::Plan::Plus, Ok(id)) = (plan, d.get_object_id("_id")) {
+            out.push(id.to_hex());
+        }
+    }
+    Ok(out)
+}
+
 /// Khoá (`Some(lý do)`) hoặc mở khoá (`None`) tài khoản. Trả `false` khi không có user.
 pub async fn set_blocked(db: &Database, user_id: &str, reason: Option<&str>) -> Result<bool, AppError> {
     let oid = ObjectId::parse_str(user_id).map_err(|_| AppError::BadRequest("user id không hợp lệ".into()))?;

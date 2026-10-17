@@ -4,19 +4,23 @@
 //!
 //! Khác upload: init KHÔNG cần size (stream mở); finalize → `files{kind:recording}` + probe duration.
 //! Red-team: #8 sessionId UUID server-sinh + verify userId (chống IDOR/traversal); #7 append-only
-//! stateless (độ dài `.part` = nguồn sự thật, không cần totalChunks); #3 quota tăng dần; #14 size cap.
+//! stateless (độ dài `.part` = nguồn sự thật, không cần totalChunks); #3 quota tăng dần; #14 size cap. Quota và
+//! cỡ tệp tối đa theo gói của user (`plan::Plan::storage`). Chunk làm vượt giới hạn bị cắt bỏ (413) nhưng
+//! phần đã nhận giữ nguyên: bản ghi vẫn finalize được tới lúc đầy.
 
 use crate::audit;
 use crate::auth::UserId;
-use crate::config::{MAX_FILE_SIZE_BYTES, QUOTA_BYTES};
 use crate::error::AppError;
-use crate::models::file::{self, FileDoc};
+use crate::models::file::{self, FileDoc, Owner};
+use crate::models::user;
 use crate::state::AppState;
 use axum::body::Bytes;
 use axum::extract::{Query, State};
 use axum::{Extension, Json};
 use mongodb::bson::{doc, oid::ObjectId, DateTime, Document};
+use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::io::SeekFrom;
 use tokio::io::{AsyncSeekExt, AsyncWriteExt};
 use uuid::Uuid;
@@ -44,10 +48,11 @@ pub async fn init(
     Extension(user): Extension<UserId>,
     Json(req): Json<InitReq>,
 ) -> Result<Json<InitResp>, AppError> {
+    let storage = user::effective_plan(&state.db, &user.0).await?.storage();
     let usage = file::user_usage_bytes(&state.db, &user.0).await?;
     let inflight = user_inflight_bytes(&state, &user.0).await;
-    if usage + inflight >= QUOTA_BYTES {
-        return Err(AppError::TooLarge("đã đầy quota 5GB — xoá bớt để ghi tiếp".into()));
+    if usage + inflight >= storage.quota_bytes {
+        return Err(AppError::TooLarge(storage.quota_message()));
     }
     let session_id = Uuid::new_v4().to_string();
     let file_id = ObjectId::new();
@@ -113,15 +118,21 @@ pub async fn chunk(
     f.flush().await.ok();
 
     let written = tokio::fs::metadata(&part).await.map(|m| m.len()).unwrap_or(0);
-    if written > MAX_FILE_SIZE_BYTES {
-        let _ = tokio::fs::remove_file(&part).await;
-        return Err(AppError::TooLarge("bản ghi vượt giới hạn 2GB".into()));
-    }
-    let usage = file::user_usage_bytes(&state.db, &user.0).await?;
-    let inflight = user_inflight_bytes(&state, &user.0).await;
-    if usage + inflight > QUOTA_BYTES {
-        let _ = tokio::fs::remove_file(&part).await;
-        return Err(AppError::TooLarge("vượt quota 5GB (gồm cả bản ghi đang dở)".into()));
+    let storage = user::effective_plan(&state.db, &user.0).await?.storage();
+    let over = if written > storage.max_file_bytes {
+        Some(storage.file_too_large_message())
+    } else {
+        let usage = file::user_usage_bytes(&state.db, &user.0).await?;
+        let inflight = user_inflight_bytes(&state, &user.0).await;
+        (usage + inflight > storage.quota_bytes).then(|| storage.quota_message())
+    };
+    if let Some(message) = over {
+        // Bỏ đúng chunk vừa ghi, giữ phần client đã được xác nhận: bản ghi finalize được tới lúc đầy.
+        if let Err(e) = f.set_len(current_len).await {
+            tracing::warn!("cắt chunk vượt giới hạn lỗi ({e}) — bỏ cả .part");
+            let _ = tokio::fs::remove_file(&part).await;
+        }
+        return Err(AppError::TooLarge(message));
     }
     Ok(Json(WrittenResp { written }))
 }
@@ -155,7 +166,8 @@ pub async fn finalize(
         .await
         .map_err(|_| AppError::BadRequest("chưa có dữ liệu ghi".into()))?
         .len();
-    if size == 0 || size > MAX_FILE_SIZE_BYTES {
+    let plan = user::effective_plan(&state.db, &user.0).await?;
+    if size == 0 || size > plan.storage().max_file_bytes {
         let _ = tokio::fs::remove_file(&part).await;
         return Err(AppError::BadRequest("kích thước bản ghi không hợp lệ".into()));
     }
@@ -219,12 +231,12 @@ pub async fn finalize(
     let name = session.get_str("name").unwrap_or("Bản ghi").to_string();
     let file_id = file::create(
         &state.db,
-        FileDoc::new_recording(&user.0, &name, &final_path, size as i64, duration_s, has_video, id),
+        FileDoc::new_recording(Owner { user_id: &user.0, plan }, &name, &final_path, size as i64, duration_s, has_video, id),
     )
     .await?;
     // Đoạn iPhone tới muộn (sau các đoạn đứng sau nó): mốc giây theo cả phiên của các đoạn sau nó dời theo,
     // nên dựng lại index của phiên. Bản ghi một file mới chưa có câu nào để dựng.
-    let key = file::session_key(&name, id);
+    let key = file::session_key("recording", &name, id);
     if key.starts_with("s:") {
         crate::search::index::schedule(&state.db, &user.0, &key);
     }
@@ -295,6 +307,30 @@ pub(crate) async fn owns_pending_file(state: &AppState, user_id: &str, file_id: 
         .await
         .map(|d| d.is_some())
         .map_err(|e| AppError::Internal(format!("tra session ghi: {e}")))
+}
+
+/// Khoá phiên chép lời (`s:<phiên iPhone>`, `f:<id giữ trước>`) của các phiên ghi đang mở của user: "Xoá tất
+/// cả" chừa các file này (phiên iPhone còn đang ghi, các đoạn trước đã lên server).
+pub(crate) async fn active_session_keys(state: &AppState, user_id: &str) -> Result<HashSet<String>, AppError> {
+    let read = |e: mongodb::error::Error| AppError::Internal(format!("tra phiên ghi đang mở: {e}"));
+    let mut cur = state
+        .db
+        .collection::<Document>(SESSIONS)
+        .find(doc! { "userId": user_id })
+        .projection(doc! { "name": 1, "fileId": 1 })
+        .await
+        .map_err(read)?;
+    let mut keys = HashSet::new();
+    while let Some(d) = cur.next().await {
+        let d = d.map_err(read)?;
+        if let Ok(id) = d.get_object_id("fileId") {
+            keys.insert(format!("f:{}", id.to_hex()));
+        }
+        if let Some((session, _)) = d.get_str("name").ok().and_then(file::parse_segment_name) {
+            keys.insert(format!("s:{session}"));
+        }
+    }
+    Ok(keys)
 }
 
 /// Path `.part` — session PHẢI là UUID hợp lệ (chống path-traversal).

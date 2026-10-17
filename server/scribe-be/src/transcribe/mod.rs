@@ -198,8 +198,8 @@ pub async fn create(
     if owned.len() != files.len() {
         return Err(AppError::NotFound("bản ghi không tồn tại".into()));
     }
-    if owned.iter().any(|f| f.kind != "recording") {
-        return Err(AppError::BadRequest("chỉ chép lời được bản ghi".into()));
+    if owned.iter().any(|f| !file::is_history_kind(&f.kind)) {
+        return Err(AppError::BadRequest("chỉ chép lời được bản ghi hoặc tệp tải lên".into()));
     }
     let mut needs = HashMap::new();
     for f in &owned {
@@ -364,7 +364,7 @@ pub async fn export(
     let docs = transcript::list_owned(&state.db, &user.0, &ids).await?;
     let by_id: HashMap<ObjectId, &transcript::TranscriptDoc> = docs.iter().map(|t| (t.id, t)).collect();
     // Câu sửa theo phiên của từng file (một truy vấn), áp theo luật `runId` như màn hình đọc.
-    let keys: Vec<String> = files.iter().filter_map(|f| Some(file::session_key(&f.name, f.id?))).collect();
+    let keys: Vec<String> = files.iter().filter_map(file::FileDoc::session_key).collect();
     let edits: HashMap<String, transcript_doc::SessionDoc> = transcript_doc::get_many(&state.db, &user.0, &keys)
         .await?
         .into_iter()
@@ -378,7 +378,7 @@ pub async fn export(
         let done = by_id.get(&id).filter(|t| t.status == "done");
         let sentences = match done {
             Some(t) => {
-                let edit = edits.get(&file::session_key(&f.name, id)).and_then(|d| d.edits.get(&id.to_hex()));
+                let edit = edits.get(&file::session_key(&f.kind, &f.name, id)).and_then(|d| d.edits.get(&id.to_hex()));
                 docs::effective_sentences(t, edit).0
             }
             None => Vec::new(),

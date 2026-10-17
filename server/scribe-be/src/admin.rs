@@ -6,14 +6,15 @@
 //! scribe-be admin block <email> [--reason <lý do>]
 //! scribe-be admin unblock <email>
 //! scribe-be admin notify-test
+//! scribe-be admin shorten-free-retention [--apply]
 //! ```
 //!
 //! Chạy bằng user của service (`sudo -u <user> <binary> admin …`). Không khởi worker, sweeper hay
 //! session key: chỉ nối Mongo, làm việc, in JSON, ghi `audit_events`.
 
-use crate::config::Config;
+use crate::config::{Config, FREE_RETENTION_DAYS};
 use crate::error::AppError;
-use crate::models::{plan, session as sessions, transcript, usage, user};
+use crate::models::{file, plan, session as sessions, transcript, usage, user};
 use chrono::{NaiveDate, TimeZone, Utc};
 use futures_util::StreamExt;
 use mongodb::bson::{doc, DateTime, Document};
@@ -28,6 +29,7 @@ pub async fn run(config: &Config, db: &Database, args: &[String]) -> Result<Valu
         "usage" => show_usage(config, db, rest).await,
         "block" => block(db, rest, true).await,
         "unblock" => block(db, rest, false).await,
+        "shorten-free-retention" => shorten_free_retention(db, args.iter().any(|a| a == "--apply")).await,
         "notify-test" => {
             crate::notify::deliver(&reqwest::Client::new(), config, "Thử kênh báo động của Scribe.").await?;
             Ok(json!({ "sent": true }))
@@ -40,7 +42,7 @@ fn usage_text() -> String {
     "dùng: scribe-be admin set-plan <email> <free|plus> [--until YYYY-MM-DD] | \
      scribe-be admin usage [--email <email>] [--month YYYY-MM] [--recompute [--apply]] | \
      scribe-be admin block <email> [--reason <lý do>] | scribe-be admin unblock <email> | \
-     scribe-be admin notify-test"
+     scribe-be admin notify-test | scribe-be admin shorten-free-retention [--apply]"
         .into()
 }
 
@@ -118,6 +120,29 @@ async fn block(db: &Database, args: &[String], on: bool) -> Result<Value, String
         audit(db, Some(&user_id), "chat.unlink", doc! { "reason": "blocked" }).await;
     }
     Ok(json!({ "userId": user_id, "blocked": true, "sessionsRemoved": removed.len(), "chatUnlinked": unlinked }))
+}
+
+/// Tệp của user gói free (mọi user không có gói plus hiệu lực) đã tạo trước khi hạn free còn 7 ngày: rút
+/// `expiresAt` về `min(expiresAt, createdAt + 7 ngày)`. Mặc định chỉ đếm; `--apply` mới ghi. Tệp đã quá 7
+/// ngày bị sweep retention xoá ở vòng kế tiếp (tối đa một giờ), nên sao lưu trước khi `--apply`.
+async fn shorten_free_retention(db: &Database, apply: bool) -> Result<Value, String> {
+    let plus = user::plus_user_ids(db, DateTime::now()).await.map_err(err)?;
+    let (files, users, due_now) = file::count_longer_than(db, doc! { "$nin": &plus }, FREE_RETENTION_DAYS).await.map_err(err)?;
+    let mut out = json!({
+        "applied": apply,
+        "retentionDays": FREE_RETENTION_DAYS,
+        "plusUsersSkipped": plus.len(),
+        "freeUsers": users,
+        "files": files,
+        "expireOnNextSweep": due_now,
+    });
+    if apply {
+        let changed = file::shorten_expiry(db, doc! { "$nin": &plus }, FREE_RETENTION_DAYS).await.map_err(err)?;
+        out["changed"] = json!(changed);
+        let details = doc! { "files": changed as i64, "users": users as i64, "days": FREE_RETENTION_DAYS };
+        audit(db, None, "admin.shorten_free_retention", details).await;
+    }
+    Ok(out)
 }
 
 async fn show_usage(config: &Config, db: &Database, args: &[String]) -> Result<Value, String> {

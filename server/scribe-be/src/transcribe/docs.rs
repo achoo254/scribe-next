@@ -264,10 +264,9 @@ pub async fn list(State(state): State<AppState>, Extension(user): Extension<User
     // Bản ghi theo khoá phiên, giữ thứ tự gặp (mới nhất trước); chỉ phiên có transcript.
     let mut order: Vec<String> = Vec::new();
     let mut sessions: HashMap<String, Vec<(u32, FileDoc)>> = HashMap::new();
-    for f in file::list_recordings(&state.db, &user.0).await? {
-        let Some(id) = f.id else { continue };
-        let key = file::session_key(&f.name, id);
-        let index = file::parse_segment_name(&f.name).map_or(0, |(_, index)| index);
+    for f in file::list_history(&state.db, &user.0).await? {
+        let Some(key) = f.session_key() else { continue };
+        let index = f.segment_index();
         let entry = sessions.entry(key.clone()).or_insert_with(|| {
             order.push(key);
             Vec::new()
@@ -488,7 +487,7 @@ mod tests {
     use mongodb::bson::DateTime;
 
     fn recording(name: &str, duration_s: Option<f64>) -> FileDoc {
-        FileDoc::new_recording("u", name, "/tmp/x", 1, duration_s.unwrap_or(0.0), false, ObjectId::new())
+        FileDoc::new_recording(file::Owner { user_id: "u", plan: crate::models::plan::Plan::Free }, name, "/tmp/x", 1, duration_s.unwrap_or(0.0), false, ObjectId::new())
     }
 
     fn done(f: &FileDoc, run_id: &str, sentences: Vec<Sentence>) -> TranscriptDoc {

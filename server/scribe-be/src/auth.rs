@@ -467,18 +467,39 @@ pub async fn me(
         .await?
         .ok_or_else(|| AppError::Unauthorized("user không tồn tại".into()))?;
     let can_transcribe = state.config.transcribe_allowed(&profile.email);
+    let plan = plan::effective(profile.plan.as_deref(), profile.plan_until, mongodb::bson::DateTime::now());
+    // Hạn chỉ có nghĩa khi gói plus còn hiệu lực (gói đã hết hạn thì là free, không có hạn).
+    let plan_until = profile
+        .plan_until
+        .filter(|_| plan == plan::Plan::Plus)
+        .and_then(|d| d.try_to_rfc3339_string().ok());
+    let storage = plan.storage();
+    let plan_info = json!({
+        "name": plan.name(),
+        "until": plan_until,
+        "quotaBytes": storage.quota_bytes,
+        "maxFileBytes": storage.max_file_bytes,
+        "retentionDays": storage.retention_days,
+    });
     let transcription = if can_transcribe {
         let now = chrono::Utc::now();
         let month = usage::month_key(now);
         let used = usage::month_usage(&state.db, &user.0, &month).await?;
-        let plan = plan::effective(profile.plan.as_deref(), profile.plan_until, mongodb::bson::DateTime::now());
         let limits = state.config.transcribe_limits;
         let pool_full = plan == plan::Plan::Free && used.free_pool_seconds >= limits.free_pool_seconds;
+        // Gói free còn giới hạn theo ngày (giờ Việt Nam); gói plus không có.
+        let daily = if plan == plan::Plan::Free {
+            let used_today = usage::day_usage_seconds(&state.db, &user.0, &usage::day_key(now)).await?;
+            json!({ "usedMinutes": usage::used_minutes(used_today), "limitMinutes": limits.free_daily_seconds / 60 })
+        } else {
+            Value::Null
+        };
         json!({
             "plan": plan.name(),
-            "planUntil": profile.plan_until.and_then(|d| d.try_to_rfc3339_string().ok()),
+            "planUntil": plan_until,
             "usedMinutes": usage::used_minutes(used.user_seconds),
             "limitMinutes": plan.limit_seconds(&limits) / 60,
+            "daily": daily,
             "resetsAt": usage::next_reset(now).to_rfc3339(),
             "capReached": pool_full || used.total_seconds >= limits.monthly_cap_seconds,
             "paused": !state.transcriber.ready(),
@@ -486,7 +507,12 @@ pub async fn me(
     } else {
         Value::Null
     };
-    Ok(Json(json!({ "email": profile.email, "canTranscribe": can_transcribe, "transcription": transcription })))
+    Ok(Json(json!({
+        "email": profile.email,
+        "canTranscribe": can_transcribe,
+        "plan": plan_info,
+        "transcription": transcription,
+    })))
 }
 
 /// Middleware: cookie phiên → phiên còn hạn trong Mongo (cache 30 giây) → gắn `UserId`. Thiếu/sai → 401.

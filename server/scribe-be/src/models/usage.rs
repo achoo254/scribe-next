@@ -277,6 +277,11 @@ pub async fn month_usage(db: &Database, user_id: &str, month: &str) -> Result<Mo
     })
 }
 
+/// Giây đã dùng trên sổ ngày (gói free) của user trong ngày `day` (`YYYY-MM-DD` giờ Việt Nam).
+pub async fn day_usage_seconds(db: &Database, user_id: &str, day: &str) -> Result<i64, AppError> {
+    seconds_of(db, &day_doc(user_id, day)).await
+}
+
 /// Đánh dấu một mốc (vd "đã báo 80% trần tháng 10") — `true` chỉ ở lần đầu.
 pub async fn mark_once(db: &Database, marker: &str) -> bool {
     db.collection::<Document>("transcribe_marks")

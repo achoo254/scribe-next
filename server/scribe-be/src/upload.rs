@@ -1,13 +1,14 @@
 //! Upload chunked — append thẳng disk (KHÔNG buffer RAM cả file). sessionId server-gen + bind user.
 //!
 //! Red-team: #8 sessionId UUID server-sinh + verify userId + validate UUID (chống IDOR/traversal);
-//! #7 resumable stateless (độ dài `.part` trên disk = nguồn sự thật); #14 size cap 2GB; #3 quota tăng dần.
+//! #7 resumable stateless (độ dài `.part` trên disk = nguồn sự thật); #14 size cap; #3 quota tăng dần. Cỡ tệp
+//! tối đa và quota theo gói của user (`plan::Plan::storage`).
 
 use crate::audit;
 use crate::auth::UserId;
-use crate::config::{MAX_FILE_SIZE_BYTES, QUOTA_BYTES};
 use crate::error::AppError;
-use crate::models::file::{self, FileDoc};
+use crate::models::file::{self, FileDoc, Owner};
+use crate::models::user;
 use crate::state::AppState;
 use axum::body::Bytes;
 use axum::extract::{Query, State};
@@ -19,6 +20,7 @@ use tokio::io::{AsyncSeekExt, AsyncWriteExt};
 use uuid::Uuid;
 
 const SESSIONS: &str = "upload_sessions";
+const MAX_NAME_CHARS: usize = 200;
 
 #[derive(Deserialize)]
 pub struct InitReq {
@@ -41,14 +43,16 @@ pub async fn init(
         return Err(AppError::BadRequest("size không hợp lệ".into()));
     }
     let size = req.size as u64;
-    if size > MAX_FILE_SIZE_BYTES {
-        return Err(AppError::TooLarge("file vượt giới hạn 2GB".into()));
+    let storage = user::effective_plan(&state.db, &user.0).await?.storage();
+    if size > storage.max_file_bytes {
+        return Err(AppError::TooLarge(storage.file_too_large_message()));
     }
     let usage = file::user_usage_bytes(&state.db, &user.0).await?;
     let inflight = user_inflight_bytes(&state, &user.0).await;
-    if usage + inflight + size > QUOTA_BYTES {
-        return Err(AppError::TooLarge("vượt quota 5GB (gồm cả upload đang dở)".into()));
+    if usage + inflight + size > storage.quota_bytes {
+        return Err(AppError::TooLarge(storage.quota_message()));
     }
+    let name = display_name(&req.name);
     let session_id = Uuid::new_v4().to_string();
     tokio::fs::create_dir_all(tmp_dir(&state, &user.0))
         .await
@@ -59,13 +63,13 @@ pub async fn init(
         .insert_one(doc! {
             "_id": &session_id,
             "userId": &user.0,
-            "name": &req.name,
+            "name": &name,
             "expectedSize": req.size,
             "createdAt": DateTime::now(),
         })
         .await
         .map_err(|e| AppError::Internal(format!("tạo session: {e}")))?;
-    let details = doc! { "session": &session_id, "name": &req.name, "size": req.size };
+    let details = doc! { "session": &session_id, "name": &name, "size": req.size };
     audit::record(&state, Some(&user.0), "upload.start", details);
     Ok(Json(InitResp { session_id }))
 }
@@ -113,16 +117,17 @@ pub async fn chunk(
 
     let written = tokio::fs::metadata(&part).await.map(|m| m.len()).unwrap_or(0);
     // Size cap + quota tăng dần — abort sớm, dọn .part để không ăn disk (box shared).
-    if written > MAX_FILE_SIZE_BYTES {
+    let storage = user::effective_plan(&state.db, &user.0).await?.storage();
+    if written > storage.max_file_bytes {
         let _ = tokio::fs::remove_file(&part).await;
-        return Err(AppError::TooLarge("file vượt giới hạn 2GB".into()));
+        return Err(AppError::TooLarge(storage.file_too_large_message()));
     }
     // Quota = committed + TẤT CẢ .part đang dở (gồm .part vừa ghi) → chặn lấp disk qua nhiều session bỏ dở.
     let usage = file::user_usage_bytes(&state.db, &user.0).await?;
     let inflight = user_inflight_bytes(&state, &user.0).await;
-    if usage + inflight > QUOTA_BYTES {
+    if usage + inflight > storage.quota_bytes {
         let _ = tokio::fs::remove_file(&part).await;
-        return Err(AppError::TooLarge("vượt quota 5GB (gồm cả upload đang dở)".into()));
+        return Err(AppError::TooLarge(storage.quota_message()));
     }
     Ok(Json(WrittenResp { written }))
 }
@@ -169,7 +174,8 @@ pub async fn finalize(
         .await
         .map_err(|_| AppError::BadRequest("chưa có dữ liệu upload".into()))?
         .len();
-    if size == 0 || size > MAX_FILE_SIZE_BYTES {
+    let plan = user::effective_plan(&state.db, &user.0).await?;
+    if size == 0 || size > plan.storage().max_file_bytes {
         let _ = tokio::fs::remove_file(&part).await;
         return Err(AppError::BadRequest("kích thước file không hợp lệ".into()));
     }
@@ -193,15 +199,15 @@ pub async fn finalize(
         .await
         .map_err(|e| AppError::Internal(format!("rename upload: {e}")))?;
 
-    let duration_s = core_split::probe_file(&state.config.ffprobe_path, &final_path)
-        .await
-        .map(|i| i.duration_s)
-        .unwrap_or(0.0);
+    let info = core_split::probe_file(&state.config.ffprobe_path, &final_path).await.ok();
+    let duration_s = info.as_ref().map_or(0.0, |i| i.duration_s);
+    let has_video = info.as_ref().is_some_and(|i| !i.vcodec.is_empty());
 
     let name = session.get_str("name").unwrap_or("upload").to_string();
+    let owner = Owner { user_id: &user.0, plan };
     let file_id = file::create(
         &state.db,
-        FileDoc::new_upload(&user.0, &name, &final_path, size as i64, id),
+        FileDoc::new_upload(owner, &name, &final_path, size as i64, duration_s, has_video, id),
     )
     .await?;
 
@@ -219,6 +225,12 @@ pub async fn finalize(
     };
     audit::record(&state, Some(&user.0), "upload.finish", details);
     Ok(Json(FinalizeResp { file_id, name, duration_s }))
+}
+
+/// Tên tệp do client gửi, hiện ở "Lịch sử ghi": bỏ khoảng trắng hai đầu, tối đa [`MAX_NAME_CHARS`] ký tự.
+fn display_name(raw: &str) -> String {
+    let name: String = raw.trim().chars().take(MAX_NAME_CHARS).collect();
+    if name.is_empty() { "Tệp tải lên".into() } else { name }
 }
 
 fn tmp_dir(state: &AppState, user_id: &str) -> String {
@@ -265,4 +277,16 @@ async fn load_session(
 fn part_path(state: &AppState, user_id: &str, session_id: &str) -> Result<String, AppError> {
     Uuid::parse_str(session_id).map_err(|_| AppError::BadRequest("session id không hợp lệ".into()))?;
     Ok(format!("{}/{}.part", tmp_dir(state, user_id), session_id))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn display_names_are_trimmed_and_capped() {
+        assert_eq!(display_name("  họp.mp3 "), "họp.mp3");
+        assert_eq!(display_name("   "), "Tệp tải lên");
+        assert_eq!(display_name(&"á".repeat(300)).chars().count(), MAX_NAME_CHARS);
+    }
 }

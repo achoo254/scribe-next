@@ -18,6 +18,21 @@ pub async fn ensure_indexes(db: &Database) -> Result<(), String> {
     Ok(())
 }
 
+/// Id file đầu vào của các job cắt đang chờ hoặc đang chạy của user ("Xoá tất cả" chừa các file này).
+pub async fn busy_inputs(db: &Database, user_id: &str) -> Result<Vec<String>, AppError> {
+    let read = |e: mongodb::error::Error| AppError::Internal(format!("tra job đang chạy: {e}"));
+    let mut cur = db
+        .collection::<Job>(COLL)
+        .find(doc! { "userId": user_id, "status": { "$in": ["queued", "running"] } })
+        .await
+        .map_err(read)?;
+    let mut out = Vec::new();
+    while let Some(j) = futures_util::StreamExt::next(&mut cur).await {
+        out.push(j.map_err(read)?.input_file_id);
+    }
+    Ok(out)
+}
+
 /// Tham chiếu 1 đoạn kết quả (trả cho FE).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SegRef {
