@@ -32,3 +32,8 @@ Yêu cầu chủ dự án 17/10/2026 06:44. Áp cho **gói free**; gói plus gi�
 
 ## Bổ sung 06:52
 - Hiện gói đang dùng (Free/Plus, hạn nếu có) và gom phần dùng lượng thành một thẻ gọn: lưu trữ, phút chép lời tháng, phút hôm nay (free), ghi chú tự xoá.
+
+## Review 17/10 07:20
+Không Critical/High. Sửa: M1 hạ gói giữa lúc ghi làm mất cả bản ghi lúc finalize; M2 ngày tự xoá hiện theo gói hiện tại thay vì `expiresAt`;
+M3 xoá tất cả chưa tha phiên iPhone đang ghi; Low: `keepalive` cho xoá thật, làm mới lịch sử khi dừng vì đầy. Chi tiết: `reports/code-reviewer-261017-0714-free-tier-review.md`.
+Chủ dự án 07:16: tệp trang Cắt file không hiện trong "Lịch sử ghi" (và không bị "Xoá tất cả").
