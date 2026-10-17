@@ -2,6 +2,7 @@ import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { RecordingList } from "../../features/files/files-api";
+import { PENDING_DELETES_KEY } from "../../features/files/use-undoable-delete";
 import { fakeFetch, jsonResponse } from "../../test/fake-fetch";
 import { renderWithProviders } from "../../test/render-with-providers";
 import { RecordingHistory } from "./recording-history";
@@ -27,6 +28,7 @@ const LIST: RecordingList = {
 
 afterEach(() => {
 	vi.unstubAllGlobals();
+	window.localStorage.clear();
 });
 
 function renderHistory(routes: Parameters<typeof fakeFetch>[0]) {
@@ -119,6 +121,32 @@ describe("RecordingHistory", () => {
 		await act(() => vi.advanceTimersByTimeAsync(5_100));
 		await waitFor(() => expect(deletes(fake.calls)).toEqual(["/api/files/f1"]));
 		expect(await screen.findByText("Chưa có bản ghi nào")).toBeVisible();
+	});
+
+	it("sends a delete the app was closed on during its undo window", async () => {
+		// Left by an earlier run: the iOS app was swiped away in the background.
+		window.localStorage.setItem(PENDING_DELETES_KEY, JSON.stringify(["f1"]));
+		const fake = renderHistory({
+			"GET /api/files": [jsonResponse(LIST), jsonResponse({ items: [] })],
+			"DELETE /api/files/f1": new Response(null, { status: 204 }),
+		});
+		await waitFor(() => expect(deletes(fake.calls)).toEqual(["/api/files/f1"]));
+		expect(await screen.findByText("Chưa có bản ghi nào")).toBeVisible();
+		expect(screen.queryByText("Họp nhóm.webm")).toBeNull();
+		expect(screen.queryByRole("button", { name: "Hoàn tác" })).toBeNull();
+		await waitFor(() =>
+			expect(window.localStorage.getItem(PENDING_DELETES_KEY)).toBeNull(),
+		);
+	});
+
+	it("remembers a delete while it can be undone, and forgets it on undo", async () => {
+		renderHistory({ "GET /api/files": jsonResponse(LIST) });
+		await userEvent.click(
+			await screen.findByRole("button", { name: "Xoá Họp nhóm.webm" }),
+		);
+		expect(window.localStorage.getItem(PENDING_DELETES_KEY)).toBe('["f1"]');
+		await userEvent.click(screen.getByRole("button", { name: "Hoàn tác" }));
+		expect(window.localStorage.getItem(PENDING_DELETES_KEY)).toBeNull();
 	});
 
 	it("restores the item on “Hoàn tác” and never deletes it", async () => {

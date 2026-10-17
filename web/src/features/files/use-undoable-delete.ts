@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useToast } from "../../components/ui/toast";
 import { useT } from "../../i18n/i18n-context";
 import { ApiError } from "../../lib/api";
-import { refreshStorage } from "./file-queries";
+import { fileKeys, refreshStorage } from "./file-queries";
 import { deleteFile } from "./files-api";
 
 /** How long "Hoàn tác" stays offered before the files are really deleted. */
@@ -25,6 +25,48 @@ export interface UndoableDelete {
 	remove: (ids: readonly string[], label: string) => void;
 }
 
+/**
+ * Ids whose undo window is open or whose DELETE may not have gone out,
+ * kept across app restarts. The iOS app runs no script in the background
+ * (no `pagehide`; `pause`/`visibilitychange` only arrive on return), so an
+ * app swiped away during the undo window would otherwise never delete.
+ */
+export const PENDING_DELETES_KEY = "scribe.pendingDeletes";
+
+function readPending(): string[] {
+	try {
+		const stored: unknown = JSON.parse(
+			window.localStorage.getItem(PENDING_DELETES_KEY) ?? "[]",
+		);
+		return Array.isArray(stored)
+			? stored.filter((id): id is string => typeof id === "string")
+			: [];
+	} catch {
+		return [];
+	}
+}
+
+function writePending(ids: readonly string[]): void {
+	try {
+		if (ids.length > 0) {
+			window.localStorage.setItem(PENDING_DELETES_KEY, JSON.stringify(ids));
+		} else {
+			window.localStorage.removeItem(PENDING_DELETES_KEY);
+		}
+	} catch {
+		// Storage unavailable (private mode, full): the in-page flow still works.
+	}
+}
+
+function rememberPending(ids: readonly string[]): void {
+	writePending([...new Set([...readPending(), ...ids])]);
+}
+
+function forgetPending(ids: readonly string[]): void {
+	const done = new Set(ids);
+	writePending(readPending().filter((id) => !done.has(id)));
+}
+
 /** A file that is already gone counts as deleted (e.g. "Xoá tất cả" ran first). */
 async function deleteQuietly(id: string, keepalive: boolean): Promise<void> {
 	try {
@@ -40,7 +82,9 @@ async function deleteQuietly(id: string, keepalive: boolean): Promise<void> {
  * offers "Hoàn tác" for `UNDO_MS`, and the DELETE requests are sent only
  * when that toast closes. Undo puts the items back and sends nothing.
  * Leaving the page (unmount, tab close) sends what is still pending right
- * away, with `keepalive` so the browser finishes it.
+ * away, with `keepalive` so the browser finishes it. Ids still pending when
+ * the page or app was closed before that (`PENDING_DELETES_KEY`) are
+ * deleted, without a new undo, the next time the history mounts.
  */
 export function useUndoableDelete(): UndoableDelete {
 	const t = useT();
@@ -73,6 +117,7 @@ export function useUndoableDelete(): UndoableDelete {
 			const results = await Promise.allSettled(
 				entry.ids.map((id) => deleteQuietly(id, true)),
 			);
+			forgetPending(entry.ids);
 			const failed = results.filter((r) => r.status === "rejected");
 			const { t: tr, toast: toasts, queryClient: client } = latest.current;
 			if (failed.length > 0) {
@@ -91,13 +136,26 @@ export function useUndoableDelete(): UndoableDelete {
 		for (const entry of pending.current) {
 			window.clearTimeout(entry.timer);
 			entry.settled = true;
-			for (const id of entry.ids) {
-				void deleteQuietly(id, true).catch(() => undefined);
-			}
+			const { ids } = entry;
+			void Promise.allSettled(ids.map((id) => deleteQuietly(id, true))).then(
+				() => forgetPending(ids),
+			);
 			latest.current.toast.dismiss(entry.toastId);
 		}
 		pending.current.clear();
 	}, []);
+
+	// Deletes the page or app was closed on before they were sent.
+	useEffect(() => {
+		const left = readPending();
+		if (left.length === 0) return;
+		show(left, false);
+		// The list read on mount may answer before these deletes land: drop
+		// it, so the refresh after them is a new read, not that one.
+		void latest.current.queryClient
+			.cancelQueries({ queryKey: fileKeys.recordings })
+			.then(() => commit({ ids: left, toastId: 0, timer: 0, settled: false }));
+	}, [commit, show]);
 
 	useEffect(() => {
 		window.addEventListener("pagehide", flush);
@@ -118,6 +176,7 @@ export function useUndoableDelete(): UndoableDelete {
 		(ids: readonly string[], label: string) => {
 			if (ids.length === 0) return;
 			show(ids, false);
+			rememberPending(ids);
 			const entry: PendingDelete = {
 				ids,
 				toastId: 0,
@@ -139,6 +198,7 @@ export function useUndoableDelete(): UndoableDelete {
 						if (entry.settled) return;
 						entry.settled = true;
 						pending.current.delete(entry);
+						forgetPending(ids);
 						show(ids, true);
 					},
 				},
