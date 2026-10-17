@@ -69,4 +69,56 @@ describe("TranscriptDownloadMenu", () => {
 		});
 		expect(screen.queryByRole("menu")).toBeNull();
 	});
+
+	it("offers no language without a translation", async () => {
+		renderWithProviders(
+			<TranscriptDownloadMenu
+				scope={{ fileIds: ["a"] }}
+				name="Họp"
+				data-id="dl"
+			/>,
+		);
+		await userEvent.click(
+			await screen.findByRole("button", { name: "Tải xuống" }),
+		);
+		await screen.findAllByRole("menuitem");
+		expect(screen.queryAllByRole("menuitemradio")).toEqual([]);
+	});
+
+	it("downloads the chosen translation in any format", async () => {
+		asNative();
+		renderWithProviders(
+			<TranscriptDownloadMenu
+				scope={{ session: "aaaaaaaa-1111" }}
+				name="Họp đầu tuần"
+				data-id="dl"
+				languages={["vi", "en"]}
+			/>,
+		);
+		await userEvent.click(
+			await screen.findByRole("button", { name: "Tải xuống" }),
+		);
+		const languages = await screen.findAllByRole("menuitemradio");
+		expect(languages.map((item) => item.textContent)).toEqual([
+			"Gốc",
+			"Tiếng Anh",
+			"Tiếng Việt",
+		]);
+		expect(languages[0]).toHaveAttribute("aria-checked", "true");
+		await userEvent.click(languages[1] as HTMLElement);
+		// Picking the language keeps the menu open for the format.
+		expect(
+			await screen.findByRole("menuitemradio", { name: "Tiếng Anh" }),
+		).toHaveAttribute("aria-checked", "true");
+		await userEvent.click(screen.getByRole("menuitem", { name: "SRT" }));
+		const query = new URLSearchParams({
+			session: "aaaaaaaa-1111",
+			format: "srt",
+			name: "Họp đầu tuần",
+			lang: "en",
+		});
+		expect(share).toHaveBeenCalledWith({
+			url: `${NATIVE_API_ORIGIN}/api/transcripts/export?${query.toString()}`,
+		});
+	});
 });

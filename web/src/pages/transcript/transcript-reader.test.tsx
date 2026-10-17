@@ -6,6 +6,7 @@ import type {
 	TranscriptDetail,
 	TranscriptMinutes,
 	TranscriptSegment,
+	TranscriptTranslation,
 } from "../../features/transcript-docs/transcript-docs-api";
 import { fakeFetch, jsonResponse } from "../../test/fake-fetch";
 import { renderWithProviders } from "../../test/render-with-providers";
@@ -565,5 +566,205 @@ describe("TranscriptReader bookmarks", () => {
 			within(list).getByRole("button", { name: "Nghe từ 1:35" }),
 		);
 		expect(screen.getByText("Đang ở đoạn 3")).toBeInTheDocument();
+	});
+});
+
+describe("TranscriptReader translation", () => {
+	const TRANSLATION: TranscriptTranslation = {
+		lang: "en",
+		status: "done",
+		done: 3,
+		total: 3,
+		error: null,
+		model: "gpt-4.1-mini",
+		updatedAt: "2026-10-17T05:00:00Z",
+		outdated: 1,
+		missing: 1,
+		segments: [
+			{
+				fileId: "a",
+				sentences: [
+					{ text: "a one (en).", outdated: false },
+					{ text: "a two (en).", outdated: true },
+				],
+			},
+			{
+				fileId: "c",
+				sentences: [null, { text: "c two (en).", outdated: false }],
+			},
+			{ fileId: "d", sentences: [] },
+		],
+	};
+	const RUNNING = {
+		...TRANSLATION,
+		status: "running",
+		done: 0,
+		total: 3,
+		outdated: 0,
+		missing: 4,
+		segments: [],
+	} satisfies TranscriptTranslation;
+	const TRANSLATED: TranscriptDetail = {
+		...DETAIL,
+		translations: [{ lang: "en", status: "done" }],
+	};
+
+	it("Dịch picks a language, shows progress, then the translation beside each sentence", async () => {
+		const fake = renderReader({
+			[`GET ${PATH}`]: [jsonResponse(DETAIL), jsonResponse(TRANSLATED)],
+			[`POST ${PATH}/translation`]: jsonResponse(
+				{ lang: "en", status: "running", done: 0, total: 3, error: null },
+				202,
+			),
+			// Read on picking the language, again after the POST, then once the run ends.
+			[`GET ${PATH}/translation`]: [
+				jsonResponse(RUNNING),
+				jsonResponse(RUNNING),
+				jsonResponse(TRANSLATION),
+			],
+			[`GET ${PATH}/translation/status`]: [
+				jsonResponse({
+					lang: "en",
+					status: "running",
+					done: 1,
+					total: 3,
+					error: null,
+				}),
+				jsonResponse({
+					lang: "en",
+					status: "done",
+					done: 3,
+					total: 3,
+					error: null,
+				}),
+			],
+		});
+		await userEvent.click(await screen.findByRole("button", { name: "Dịch" }));
+		await userEvent.click(
+			await screen.findByRole("menuitemradio", { name: "Tiếng Anh" }),
+		);
+		expect(
+			fake.calls.find(
+				(c) => c.method === "POST" && c.url.endsWith("/translation"),
+			)?.body,
+		).toEqual({ lang: "en" });
+		expect(
+			await screen.findByText(/Đang dịch sang Tiếng Anh… \d\/3 câu/),
+		).toBeInTheDocument();
+
+		// Song song: the original with its translation, the tap still plays it.
+		// The status poll (every 2 s) says the run ended: the sentences reload.
+		const line = await screen.findByRole(
+			"button",
+			{ name: /a hai\..*a two \(en\)\./ },
+			{ timeout: 4000 },
+		);
+		expect(within(line).getByText("bản dịch cũ")).toBeInTheDocument();
+		expect(screen.getByRole("button", { name: "Song song" })).toHaveAttribute(
+			"aria-pressed",
+			"true",
+		);
+		expect(
+			screen.getByRole("button", { name: "Dịch: Tiếng Anh" }),
+		).toBeInTheDocument();
+		await userEvent.click(line);
+		expect(line).toHaveAttribute("aria-current", "true");
+		const reads = fake.calls.filter((c) =>
+			c.url.includes("/translation?lang=en"),
+		);
+		expect(reads.length).toBeGreaterThanOrEqual(2);
+
+		// Bản dịch: translations only; a sentence without one keeps the original.
+		await userEvent.click(screen.getByRole("button", { name: "Bản dịch" }));
+		expect(screen.queryByText("a một.")).toBeNull();
+		expect(screen.getByText("a one (en).")).toBeInTheDocument();
+		expect(screen.getByText("c một.")).toBeInTheDocument();
+
+		await userEvent.click(screen.getByRole("button", { name: "Gốc" }));
+		expect(screen.queryByText("a one (en).")).toBeNull();
+		expect(screen.getByText("a một.")).toBeInTheDocument();
+	});
+
+	it("opens on a stored translation and translates only the edited sentences again", async () => {
+		const fake = renderDoc(
+			{ translations: [{ lang: "en", status: "done" }] },
+			{
+				[`GET ${PATH}/translation`]: jsonResponse(TRANSLATION),
+				[`POST ${PATH}/translation`]: jsonResponse(
+					{ lang: "en", status: "running", done: 0, total: 2, error: null },
+					202,
+				),
+			},
+		);
+		expect(
+			await screen.findByText("1 câu đã sửa sau khi dịch."),
+		).toBeInTheDocument();
+		// Opens on the original; the translation is one tap away.
+		expect(screen.getByRole("button", { name: "Gốc" })).toHaveAttribute(
+			"aria-pressed",
+			"true",
+		);
+		await userEvent.click(
+			screen.getByRole("button", { name: "Dịch lại câu đã sửa" }),
+		);
+		await waitFor(() =>
+			expect(
+				fake.calls.filter(
+					(c) => c.method === "POST" && c.url.endsWith("/translation"),
+				),
+			).toHaveLength(1),
+		);
+	});
+
+	it("says when the daily translation allowance opens again", async () => {
+		renderReader({
+			[`POST ${PATH}/translation`]: jsonResponse(
+				{
+					error: "Hôm nay đã dùng 3/3 lượt dịch. Mở lại lúc 0 giờ.",
+					code: "TRANSLATE_DAILY_LIMIT",
+					usedMinutes: 3,
+					limitMinutes: 3,
+					retryAt: "2026-10-16T17:00:00+00:00",
+				},
+				403,
+			),
+			[`GET ${PATH}/translation`]: jsonResponse({
+				...RUNNING,
+				status: "none",
+				total: 0,
+			}),
+		});
+		await userEvent.click(await screen.findByRole("button", { name: "Dịch" }));
+		await userEvent.click(
+			await screen.findByRole("menuitemradio", { name: "Tiếng Việt" }),
+		);
+		expect(
+			await screen.findByText(
+				"Hôm nay đã dùng 3/3 lượt dịch. Mở lại lúc 00:00 17/10.",
+			),
+		).toBeInTheDocument();
+	});
+
+	it("offers to resume a run that stopped part way", async () => {
+		renderDoc(
+			{ translations: [{ lang: "vi", status: "failed" }] },
+			{
+				[`GET ${PATH}/translation`]: jsonResponse({
+					...TRANSLATION,
+					lang: "vi",
+					status: "failed",
+					error: "Lượt dịch bị ngắt giữa chừng. Bấm dịch tiếp để làm nốt.",
+				}),
+			},
+		);
+		expect(
+			await screen.findByText(/Lượt dịch bị ngắt giữa chừng/),
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole("button", { name: "Dịch tiếp" }),
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole("button", { name: "Dịch: Tiếng Việt" }),
+		).toBeInTheDocument();
 	});
 });

@@ -1,6 +1,7 @@
 import { IconBookmark, IconPencil, IconRefresh } from "@tabler/icons-react";
 import { memo, useState } from "react";
 import { Alert } from "../../components/ui/alert";
+import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { controlClassName } from "../../components/ui/input";
 import {
@@ -10,12 +11,15 @@ import {
 import type {
 	Bookmark,
 	TranscriptSegment,
+	TranslatedSentence,
+	TranslationLang,
 } from "../../features/transcript-docs/transcript-docs-api";
 import { useT } from "../../i18n/i18n-context";
 import type { Translate } from "../../i18n/translate";
 import { errorMessage } from "../../lib/api";
 import { cn } from "../../lib/cn";
 import { formatClock } from "../../lib/format";
+import type { TranslationView } from "./translation-controls";
 
 export interface ReaderSegmentProps {
 	segment: TranscriptSegment;
@@ -30,6 +34,12 @@ export interface ReaderSegmentProps {
 	canTranscribe: boolean;
 	/** Bookmarks inside this segment (session times), in order. */
 	bookmarks?: readonly Bookmark[];
+	/** How sentences show once translated; "original" without a translation. */
+	view?: TranslationView;
+	/** Language of `translation` (the `lang` of its text). */
+	translationLang?: TranslationLang;
+	/** Translation of each sentence by index; null = not translated. */
+	translation?: readonly (TranslatedSentence | null)[];
 	onPlay: (fileId: string, seconds: number) => void;
 	onEditingChange: (fileId: string, editing: boolean) => void;
 	/** Saves against `runId`, the run the draft was started on. */
@@ -38,6 +48,54 @@ export interface ReaderSegmentProps {
 }
 
 const NO_BOOKMARKS: readonly Bookmark[] = [];
+
+/** A translated sentence, with "bản dịch cũ" when its source changed since. */
+function Translated({
+	sentence,
+	lang,
+	muted,
+}: {
+	sentence: TranslatedSentence;
+	lang: TranslationLang | undefined;
+	muted: boolean;
+}) {
+	const t = useT();
+	return (
+		<span lang={lang} className={muted ? "text-muted" : undefined}>
+			{sentence.text}
+			{sentence.outdated ? (
+				<Badge tone="warning" className="ml-2 align-middle">
+					{t("transcript.translate.outdatedMark")}
+				</Badge>
+			) : null}
+		</span>
+	);
+}
+
+/** The text of one sentence in the chosen view. */
+function SentenceText({
+	text,
+	view,
+	lang,
+	translated,
+}: {
+	text: string;
+	view: TranslationView;
+	lang: TranslationLang | undefined;
+	translated: TranslatedSentence | null;
+}) {
+	if (view === "original" || !translated) return <span>{text}</span>;
+	if (view === "translation") {
+		return <Translated sentence={translated} lang={lang} muted={false} />;
+	}
+	// Song song: the translation under the sentence on a phone, beside it when wide.
+	return (
+		<span className="grid min-w-0 flex-1 gap-1 sm:grid-cols-2 sm:gap-4">
+			<span>{text}</span>
+			<Translated sentence={translated} lang={lang} muted />
+		</span>
+	);
+}
 
 /** "Dấu mốc 1:23 · label" beside the sentence it was pressed during. */
 function BookmarkMark({ bookmark }: { bookmark: Bookmark }) {
@@ -97,6 +155,9 @@ export const ReaderSegment = memo(function ReaderSegment({
 	editLocked,
 	canTranscribe,
 	bookmarks = NO_BOOKMARKS,
+	view = "original",
+	translationLang,
+	translation,
 	onPlay,
 	onEditingChange,
 	onSave,
@@ -277,7 +338,12 @@ export const ReaderSegment = memo(function ReaderSegment({
 								<span className="flex-none pt-0.5 font-mono text-muted text-sm tabular-nums">
 									{formatClock(segment.offsetS + sentence.start)}
 								</span>
-								<span>{sentence.text}</span>
+								<SentenceText
+									text={sentence.text}
+									view={view}
+									lang={translationLang}
+									translated={translation?.[index] ?? null}
+								/>
 							</button>
 						</li>
 					))}

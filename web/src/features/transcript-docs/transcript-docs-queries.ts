@@ -1,4 +1,9 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+	skipToken,
+	useMutation,
+	useQuery,
+	useQueryClient,
+} from "@tanstack/react-query";
 import { useEffect } from "react";
 import { ApiError } from "../../lib/api";
 import { fileKeys } from "../files/file-queries";
@@ -7,15 +12,21 @@ import { isPending, needsReload } from "./reader-model";
 import {
 	type TranscriptDetail,
 	type TranscriptSummary,
+	type TranscriptTranslation,
+	type TranslationLang,
+	type TranslationProgress,
 	createSummary,
 	deleteBookmark,
 	deleteTranscript,
 	fetchTranscriptDoc,
 	fetchTranscriptStatus,
+	fetchTranslation,
+	fetchTranslationStatus,
 	listTranscriptDocs,
 	renameTranscript,
 	saveSegmentTexts,
 	shareSummary,
+	startTranslation,
 } from "./transcript-docs-api";
 
 /** Status poll of an open transcript while segments are being transcribed. */
@@ -28,6 +39,10 @@ export const transcriptDocKeys = {
 	list: ["transcript-docs", "list"] as const,
 	detail: (key: string) => ["transcript-docs", "detail", key] as const,
 	status: (key: string) => ["transcript-docs", "status", key] as const,
+	translation: (key: string, lang: TranslationLang) =>
+		["transcript-docs", "translation", key, lang] as const,
+	translationStatus: (key: string, lang: TranslationLang) =>
+		["transcript-docs", "translation-status", key, lang] as const,
 };
 
 function anyPending(items: readonly TranscriptSummary[] | undefined): boolean {
@@ -187,5 +202,77 @@ export function useDeleteBookmark(key: string) {
 			queryClient.invalidateQueries({
 				queryKey: transcriptDocKeys.detail(key),
 			}),
+	});
+}
+
+/**
+ * The translation of a transcript into `lang` (none while `lang` is null).
+ * While a run is going, only the light `/translation/status` route is
+ * polled; the sentences reload once the run ends (done or failed).
+ */
+export function useTranslation(key: string, lang: TranslationLang | null) {
+	const queryClient = useQueryClient();
+	const translation = useQuery({
+		queryKey: transcriptDocKeys.translation(key, lang ?? "en"),
+		queryFn: lang ? () => fetchTranslation(key, lang) : skipToken,
+	});
+	const running = lang !== null && translation.data?.status === "running";
+	const status = useQuery({
+		queryKey: transcriptDocKeys.translationStatus(key, lang ?? "en"),
+		queryFn: lang ? () => fetchTranslationStatus(key, lang) : skipToken,
+		enabled: running,
+		refetchInterval: STATUS_POLL_MS,
+	});
+
+	const progress = status.data;
+	useEffect(() => {
+		// The loaded sentences say running, the live status says the run ended.
+		if (!lang || !running || !progress || progress.status === "running") {
+			return;
+		}
+		void queryClient.invalidateQueries({
+			queryKey: transcriptDocKeys.translation(key, lang),
+		});
+		void queryClient.invalidateQueries({
+			queryKey: transcriptDocKeys.detail(key),
+		});
+	}, [lang, running, progress, key, queryClient]);
+
+	const data: TranscriptTranslation | undefined = lang
+		? translation.data
+		: undefined;
+	return {
+		translation: data,
+		/** Live progress while running, else the loaded translation's own. */
+		progress: running && progress ? progress : data,
+		query: translation,
+	};
+}
+
+/**
+ * "Dịch" into a language: the reply (`running`, or `done` when nothing was
+ * left) shows at once; the sentences and the transcript's list of
+ * translations reload from the server.
+ */
+export function useStartTranslation(key: string) {
+	const queryClient = useQueryClient();
+	return useMutation({
+		mutationFn: (lang: TranslationLang) => startTranslation(key, lang),
+		onSuccess: (progress: TranslationProgress, lang) => {
+			// A status left from an earlier run must not end this one.
+			queryClient.removeQueries({
+				queryKey: transcriptDocKeys.translationStatus(key, lang),
+			});
+			queryClient.setQueryData<TranscriptTranslation>(
+				transcriptDocKeys.translation(key, lang),
+				(old) => (old ? { ...old, ...progress } : old),
+			);
+			void queryClient.invalidateQueries({
+				queryKey: transcriptDocKeys.translation(key, lang),
+			});
+			void queryClient.invalidateQueries({
+				queryKey: transcriptDocKeys.detail(key),
+			});
+		},
 	});
 }

@@ -31,6 +31,8 @@ import type {
 	Bookmark,
 	TranscriptDetail,
 	TranscriptSegment,
+	TranslationLang,
+	TranslationState,
 } from "../../features/transcript-docs/transcript-docs-api";
 import {
 	transcriptDocKeys,
@@ -39,6 +41,7 @@ import {
 	useRenameTranscript,
 	useSaveSegment,
 	useTranscriptDoc,
+	useTranslation,
 } from "../../features/transcript-docs/transcript-docs-queries";
 import type { ExportScope } from "../../features/transcript/transcript-api";
 import { useT } from "../../i18n/i18n-context";
@@ -53,6 +56,10 @@ import { AskCard } from "../search/ask-card";
 import { BookmarkList } from "./bookmark-list";
 import { MinutesCard } from "./minutes-card";
 import { ReaderSegment } from "./reader-segment";
+import {
+	TranslationControls,
+	type TranslationView,
+} from "./translation-controls";
 
 export interface TranscriptReaderProps {
 	transcriptKey: string;
@@ -70,6 +77,7 @@ interface Playback {
 }
 
 const NO_BOOKMARKS: Bookmark[] = [];
+const NO_TRANSLATIONS: TranslationState[] = [];
 
 /**
  * Brings the sentence at `seconds` of `segment` into view and focuses it
@@ -159,6 +167,20 @@ export function TranscriptReader({
 		() => bookmarksBySegment(segments, bookmarks),
 		[segments, bookmarks],
 	);
+	const available = doc?.translations ?? NO_TRANSLATIONS;
+	const [chosenLang, setChosenLang] = useState<TranslationLang | null>(null);
+	const [view, setView] = useState<TranslationView>("original");
+	const lang = chosenLang ?? available[0]?.lang ?? null;
+	const { translation, progress } = useTranslation(transcriptKey, lang);
+	const translated = useMemo(
+		() =>
+			new Map(
+				(translation?.segments ?? []).map((s) => [s.fileId, s.sentences]),
+			),
+		[translation],
+	);
+	const shownView: TranslationView =
+		translation && translation.status !== "none" ? view : "original";
 	const toSend = untranscribed(segments);
 	const pending = segments.filter((s) => isPending(s.status)).length;
 
@@ -310,6 +332,7 @@ export function TranscriptReader({
 							<TranscriptDownloadMenu
 								scope={scope}
 								name={title}
+								languages={available.map((a) => a.lang)}
 								data-id="reader-download"
 								compact
 							/>
@@ -404,6 +427,19 @@ export function TranscriptReader({
 			/>
 
 			<Card data-id="reader-body" className="grid gap-4 p-4 sm:p-6">
+				{anyDone && (canTranscribe || available.length > 0) ? (
+					<TranslationControls
+						transcriptKey={transcriptKey}
+						available={available}
+						lang={lang}
+						onLangChange={setChosenLang}
+						view={shownView}
+						onViewChange={setView}
+						translation={translation}
+						progress={progress}
+						canTranslate={canTranscribe}
+					/>
+				) : null}
 				{pending > 0 ? (
 					<Alert tone="info" data-id="reader-progress">
 						{t("transcript.progress", {
@@ -458,6 +494,9 @@ export function TranscriptReader({
 								editLocked={editing !== null && editing !== segment.fileId}
 								canTranscribe={canTranscribe}
 								bookmarks={marks.get(segment.fileId)}
+								view={shownView}
+								translationLang={lang ?? undefined}
+								translation={translated.get(segment.fileId)}
 								onPlay={play}
 								onEditingChange={onEditingChange}
 								onSave={saveSegment}

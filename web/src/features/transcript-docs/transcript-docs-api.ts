@@ -81,6 +81,52 @@ export interface Bookmark {
 	label: string | null;
 }
 
+/** Language a transcript is translated into. */
+export type TranslationLang = "en" | "vi";
+
+/**
+ * Latest translation run of one language. `failed` also covers a run cut
+ * short by a server restart; translating again finishes what is left.
+ */
+export type TranslationStatus = "none" | "running" | "done" | "failed";
+
+/** A stored translation of the transcript (`GET /api/transcript-docs/:key`). */
+export interface TranslationState {
+	lang: TranslationLang;
+	status: TranslationStatus;
+}
+
+/** Progress of the latest run; `done`/`total` count sentences of that run. */
+export interface TranslationProgress extends TranslationState {
+	done: number;
+	total: number;
+	error: string | null;
+}
+
+export interface TranslatedSentence {
+	text: string;
+	/** The sentence was edited (or transcribed again) after it was translated. */
+	outdated: boolean;
+}
+
+/**
+ * The translation lined up with the reader: per segment, one entry per
+ * sentence of `TranscriptSegment.sentences` (null = not translated, or an
+ * empty sentence).
+ */
+export interface TranscriptTranslation extends TranslationProgress {
+	model: string | null;
+	updatedAt: string | null;
+	/** Sentences whose translation is outdated. */
+	outdated: number;
+	/** Sentences with no translation yet (transcribed after the last run). */
+	missing: number;
+	segments: {
+		fileId: string;
+		sentences: (TranslatedSentence | null)[];
+	}[];
+}
+
 export interface TranscriptDetail {
 	key: string;
 	title: string | null;
@@ -93,6 +139,8 @@ export interface TranscriptDetail {
 	summary?: TranscriptMinutes | null;
 	/** Sorted by `at`. */
 	bookmarks?: Bookmark[];
+	/** Stored translations (absent from older backends). */
+	translations?: TranslationState[];
 }
 
 export interface SegmentRunStatus {
@@ -270,6 +318,59 @@ export async function deleteBookmark(
 		{
 			method: "DELETE",
 			fallbackError: activeTranslator().t("errors.transcripts.deleteBookmark"),
+		},
+		fetcher,
+	);
+}
+
+/** The translation into `lang`, lined up with the reader's sentences. */
+export function fetchTranslation(
+	key: string,
+	lang: TranslationLang,
+	fetcher: typeof fetch = fetch,
+): Promise<TranscriptTranslation> {
+	return apiJson<TranscriptTranslation>(
+		docPath(key, `/translation?lang=${lang}`),
+		{ fallbackError: activeTranslator().t("errors.transcripts.translation") },
+		fetcher,
+	);
+}
+
+/** Progress of the latest run into `lang`, without sentences: what to poll. */
+export function fetchTranslationStatus(
+	key: string,
+	lang: TranslationLang,
+	fetcher: typeof fetch = fetch,
+): Promise<TranslationProgress> {
+	return apiJson<TranslationProgress>(
+		docPath(key, `/translation/status?lang=${lang}`),
+		{
+			fallbackError: activeTranslator().t(
+				"errors.transcripts.translationProgress",
+			),
+		},
+		fetcher,
+	);
+}
+
+/**
+ * Translates the sentences of the transcript that have no translation into
+ * `lang` yet, or an outdated one. Answers `running` (202) while the server
+ * works through them, or `done` with `total: 0` when nothing was left.
+ * Refusals carry a code: `NOT_TRANSCRIBED` (409), `TRANSLATE_DAILY_LIMIT` /
+ * `TRANSLATE_MONTHLY_LIMIT` / `CAP_REACHED` (403, with `retryAt`).
+ */
+export function startTranslation(
+	key: string,
+	lang: TranslationLang,
+	fetcher: typeof fetch = fetch,
+): Promise<TranslationProgress> {
+	return apiJson<TranslationProgress>(
+		docPath(key, "/translation"),
+		{
+			method: "POST",
+			json: { lang },
+			fallbackError: activeTranslator().t("errors.transcripts.translate"),
 		},
 		fetcher,
 	);

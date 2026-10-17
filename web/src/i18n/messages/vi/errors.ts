@@ -24,6 +24,9 @@ export const errors = {
 		share: "Không gửi được sang chat",
 		bookmark: "Không lưu được dấu mốc",
 		deleteBookmark: "Không xoá được dấu mốc",
+		translate: "Không dịch được",
+		translation: "Không tải được bản dịch",
+		translationProgress: "Không tải được tiến độ dịch",
 	},
 	search: {
 		search: "Không tìm được trong bản chép lời",

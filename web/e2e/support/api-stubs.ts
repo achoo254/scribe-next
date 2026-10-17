@@ -21,6 +21,8 @@ import type {
 	TranscriptDetail,
 	TranscriptMinutes,
 	TranscriptSummary,
+	TranscriptTranslation,
+	TranslationProgress,
 } from "../../src/features/transcript-docs/transcript-docs-api";
 import type { Transcript } from "../../src/features/transcript/transcript-api";
 import { E2E_ORIGIN } from "./e2e-origin";
@@ -50,6 +52,11 @@ export interface ApiFixtures {
 	search: SearchReply;
 	/** What `POST /api/ask` answers, whatever the question. */
 	answer: AskReply;
+	/**
+	 * What `GET /api/transcript-docs/:key/translation` answers once a run
+	 * started by `POST …/translation` has ended (its `lang` is the one asked).
+	 */
+	translation: TranscriptTranslation | null;
 	/** Replies that win over the stub's own, by `METHOD /path` (e.g. an error). */
 	replies: Record<string, StubReply>;
 }
@@ -196,6 +203,7 @@ export function apiFixtures(overrides: Partial<ApiFixtures> = {}): ApiFixtures {
 		minutes: STUB_MINUTES,
 		search: { results: [], total: 0 },
 		answer: { answer: "Không tìm thấy trong bản ghi.", citations: [] },
+		translation: null,
 		replies: {},
 		...overrides,
 	};
@@ -240,6 +248,10 @@ export interface ApiStub {
 	readonly transcribed: string[][];
 	/** Path of every `DELETE /api/files…`, in order. */
 	readonly deletes: string[];
+	/** `lang` of every `POST /api/transcript-docs/:key/translation`, in order. */
+	readonly translations: string[];
+	/** Query of every `GET /api/transcripts/export`, in order. */
+	readonly exports: URLSearchParams[];
 	/** Stands in for the user sending `/start` to the bot on chat.hoandat.com. */
 	linkChat: () => void;
 }
@@ -249,9 +261,9 @@ export function countOf(stub: ApiStub, call: string): number {
 	return stub.requests.filter((request) => request === call).length;
 }
 
-/** `/api/transcript-docs/<key>/<summary|share|bookmarks>[/<id>]`. */
+/** `/api/transcript-docs/<key>/<summary|share|bookmarks|translation>[/<id>]`. */
 const DOC_ACTION =
-	/^\/api\/transcript-docs\/([^/]+)\/(summary|share|bookmarks)(?:\/([^/]+))?$/;
+	/^\/api\/transcript-docs\/([^/]+)\/(summary|share|bookmarks|translation)(?:\/([^/]+))?$/;
 
 /** A number field of a JSON body, or NaN. */
 function stringField(body: unknown, name: string): string | null {
@@ -293,6 +305,8 @@ export async function stubApi(
 		questions: [],
 		transcribed: [],
 		deletes: [],
+		translations: [],
+		exports: [],
 		linkChat: () => {
 			chatLinked = true;
 		},
@@ -307,6 +321,77 @@ export async function stubApi(
 	// and deletes.
 	let historyItems: RecordingItem[] = [...fixtures.recordings.items];
 	const transcripts = [...fixtures.transcripts];
+	// A translation run: started by the POST, reported running by the first
+	// status poll, done from the second on.
+	let translationRun: { lang: "en" | "vi"; polls: number } | null = null;
+	const translationProgress = (): TranslationProgress | null => {
+		if (!translationRun || !fixtures.translation) return null;
+		const total = fixtures.translation.total;
+		return translationRun.polls < 2
+			? {
+					lang: translationRun.lang,
+					status: "running",
+					done: translationRun.polls,
+					total,
+					error: null,
+				}
+			: {
+					lang: translationRun.lang,
+					status: "done",
+					done: total,
+					total,
+					error: null,
+				};
+	};
+	/** `POST …/translation`, `GET …/translation[/status]?lang=`. */
+	const translationReply = (
+		route: Route,
+		method: string,
+		url: URL,
+		sub: string | undefined,
+	): Promise<void> => {
+		const request = route.request();
+		if (method === "POST") {
+			const asked = stringField(request.postDataJSON(), "lang");
+			stub.translations.push(asked ?? "");
+			translationRun = { lang: asked === "vi" ? "vi" : "en", polls: 0 };
+			return json(route, 202, translationProgress());
+		}
+		const lang = url.searchParams.get("lang") === "vi" ? "vi" : "en";
+		const progress =
+			translationRun?.lang === lang ? translationProgress() : null;
+		if (sub === "status") {
+			if (translationRun) translationRun.polls += 1;
+			const none: TranslationProgress = {
+				lang,
+				status: "none",
+				done: 0,
+				total: 0,
+				error: null,
+			};
+			return json(route, 200, progress ?? none);
+		}
+		if (progress && fixtures.translation) {
+			const body: TranscriptTranslation =
+				progress.status === "done"
+					? { ...fixtures.translation, lang }
+					: { ...fixtures.translation, ...progress, segments: [] };
+			return json(route, 200, body);
+		}
+		const none: TranscriptTranslation = {
+			lang,
+			status: "none",
+			done: 0,
+			total: 0,
+			error: null,
+			model: null,
+			updatedAt: null,
+			outdated: 0,
+			missing: 0,
+			segments: [],
+		};
+		return json(route, 200, none);
+	};
 
 	await page.route(
 		(url) => url.origin !== E2E_ORIGIN,
@@ -355,6 +440,9 @@ export async function stubApi(
 				if (request.method() === "DELETE" && action === "bookmarks" && id) {
 					return json(route, 200, { ok: true });
 				}
+				if (action === "translation") {
+					return translationReply(route, request.method(), url, id);
+				}
 			}
 			if (
 				request.method() === "GET" &&
@@ -364,6 +452,13 @@ export async function stubApi(
 					url.pathname.slice("/api/transcript-docs/".length),
 				);
 				const detail = fixtures.transcriptDetails[key];
+				const progress = translationProgress();
+				if (detail && progress) {
+					return json(route, 200, {
+						...detail,
+						translations: [{ lang: progress.lang, status: progress.status }],
+					});
+				}
 				if (detail) return json(route, 200, detail);
 			}
 			switch (call) {
@@ -431,6 +526,17 @@ export async function stubApi(
 					return json(route, 200, { items: fixtures.managedFiles });
 				case "GET /api/transcript-docs":
 					return json(route, 200, { items: fixtures.transcriptDocs });
+				case "GET /api/transcripts/export":
+					stub.exports.push(url.searchParams);
+					// An attachment: the browser saves it and stays on the page.
+					return route.fulfill({
+						status: 200,
+						contentType: "text/markdown; charset=utf-8",
+						headers: {
+							"Content-Disposition": 'attachment; filename="ban-dich.md"',
+						},
+						body: "# Bản dịch (giả lập)\n",
+					});
 				case "GET /api/transcripts": {
 					const ids = new Set(
 						(url.searchParams.get("ids") ?? "").split(",").filter(Boolean),

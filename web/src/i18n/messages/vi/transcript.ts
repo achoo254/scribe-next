@@ -20,6 +20,36 @@ export const transcript = {
 	},
 	download: {
 		menu: "Tải xuống",
+		language: "Ngôn ngữ",
+		original: "Gốc",
+	},
+	translate: {
+		menu: "Dịch",
+		menuActive: "Dịch: {language}",
+		languages: {
+			en: "Tiếng Anh",
+			vi: "Tiếng Việt",
+		},
+		view: {
+			legend: "Chế độ xem",
+			original: "Gốc",
+			translation: "Bản dịch",
+			both: "Song song",
+		},
+		running: "Đang dịch sang {language}… {done}/{total} câu",
+		starting: "Đang bắt đầu dịch…",
+		failed: "Không dịch được",
+		resume: "Dịch tiếp",
+		outdated: { other: "{count} câu đã sửa sau khi dịch." },
+		missing: { other: "{count} câu chưa có bản dịch." },
+		retranslate: "Dịch lại câu đã sửa",
+		fillMissing: "Dịch phần còn thiếu",
+		outdatedMark: "bản dịch cũ",
+		dailyLimit: "Hôm nay đã dùng {used}/{limit} lượt dịch. Mở lại lúc {time}.",
+		monthlyLimit:
+			"Tháng này tài khoản đã dùng hết hạn mức tóm tắt, hỏi đáp và dịch ({used}/{limit} phút quy đổi). Mở lại lúc {time}.",
+		capReached:
+			"Dịch đã dùng hết hạn mức chung của tháng này, mở lại lúc {time}.",
 	},
 	panel: {
 		done: "Đã chép lời",

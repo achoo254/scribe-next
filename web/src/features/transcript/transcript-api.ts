@@ -80,16 +80,21 @@ export type ExportScope = { fileIds: readonly string[] } | { session: string };
  */
 export type ExportFormat = "txt" | "srt" | "vtt" | "md" | "docx";
 
-/** Download path of the transcripts of `scope`, joined in recording order. */
+/**
+ * Download path of the transcripts of `scope`, joined in recording order;
+ * with `lang`, the stored translation into that language (one transcript only).
+ */
 export function transcriptExportPath(
 	scope: ExportScope,
 	format: ExportFormat,
 	name: string,
+	lang?: "en" | "vi",
 ): string {
 	const query = new URLSearchParams(
 		"session" in scope
 			? { session: scope.session, format, name }
 			: { ids: scope.fileIds.join(","), format, name },
 	);
+	if (lang) query.set("lang", lang);
 	return `/api/transcripts/export?${query.toString()}`;
 }

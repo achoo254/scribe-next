@@ -5,7 +5,12 @@ import {
 	IconFileTypeDocx,
 	IconMarkdown,
 } from "@tabler/icons-react";
-import type { ReactNode } from "react";
+import { type ReactNode, useState } from "react";
+import type { TranslationLang } from "../features/transcript-docs/transcript-docs-api";
+import {
+	TRANSLATION_LANGS,
+	TRANSLATION_LANG_LABEL,
+} from "../features/transcript-docs/translation-langs";
 import type {
 	ExportFormat,
 	ExportScope,
@@ -17,6 +22,10 @@ import {
 	DropdownMenu,
 	DropdownMenuContent,
 	DropdownMenuItem,
+	DropdownMenuLabel,
+	DropdownMenuRadioGroup,
+	DropdownMenuRadioItem,
+	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
 
@@ -62,21 +71,34 @@ export interface TranscriptDownloadMenuProps {
 	"data-id": string;
 	/** Icon-only trigger on phone width (the label stays for screen readers), for crowded headers. */
 	compact?: boolean;
+	/** Stored translations of the transcript: the menu offers them beside the original. */
+	languages?: readonly TranslationLang[];
 }
+
+const NO_LANGUAGES: readonly TranslationLang[] = [];
 
 /**
  * "Tải xuống" button opening the export formats. The backend builds every
  * format, so the web and the iOS app (native download, then share sheet)
- * get the same file.
+ * get the same file. A translated transcript also offers the language
+ * (Gốc or a translation), applied to every format.
  */
 export function TranscriptDownloadMenu({
 	scope,
 	name,
 	"data-id": dataId,
 	compact = false,
+	languages = NO_LANGUAGES,
 }: TranscriptDownloadMenuProps) {
 	const t = useT();
 	const download = useDownload();
+	const [chosen, setChosen] = useState<TranslationLang | "original">(
+		"original",
+	);
+	const offered = TRANSLATION_LANGS.filter((l) => languages.includes(l));
+	// A translation removed meanwhile falls back to the original.
+	const lang =
+		chosen !== "original" && offered.includes(chosen) ? chosen : null;
 	return (
 		<DropdownMenu>
 			<DropdownMenuTrigger asChild>
@@ -93,13 +115,53 @@ export function TranscriptDownloadMenu({
 				</Button>
 			</DropdownMenuTrigger>
 			<DropdownMenuContent data-id={`${dataId}-content`}>
+				{offered.length > 0 ? (
+					<>
+						<DropdownMenuLabel>
+							{t("transcript.download.language")}
+						</DropdownMenuLabel>
+						<DropdownMenuRadioGroup
+							value={lang ?? "original"}
+							onValueChange={(value) =>
+								setChosen(offered.find((l) => l === value) ?? "original")
+							}
+						>
+							<DropdownMenuRadioItem
+								value="original"
+								data-id={`${dataId}-lang-original`}
+								// Picking a language keeps the menu open for the format.
+								onSelect={(event) => event.preventDefault()}
+							>
+								{t("transcript.download.original")}
+							</DropdownMenuRadioItem>
+							{offered.map((code) => (
+								<DropdownMenuRadioItem
+									key={code}
+									value={code}
+									data-id={`${dataId}-lang-${code}`}
+									onSelect={(event) => event.preventDefault()}
+								>
+									{t(TRANSLATION_LANG_LABEL[code])}
+								</DropdownMenuRadioItem>
+							))}
+						</DropdownMenuRadioGroup>
+						<DropdownMenuSeparator />
+					</>
+				) : null}
 				{FORMATS.map(({ format, label, icon }) => (
 					<DropdownMenuItem
 						key={format}
 						data-id={`${dataId}-${format}`}
 						icon={icon}
 						onSelect={() =>
-							download(downloadPaths.transcript(scope, format, name))
+							download(
+								downloadPaths.transcript(
+									scope,
+									format,
+									name,
+									lang ?? undefined,
+								),
+							)
 						}
 					>
 						{label}

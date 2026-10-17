@@ -2,6 +2,7 @@ import type {
 	TranscriptDetail,
 	TranscriptSegment,
 	TranscriptSummary,
+	TranscriptTranslation,
 } from "../../src/features/transcript-docs/transcript-docs-api";
 
 /** An iPhone session of two transcribed one-minute segments. */
@@ -47,4 +48,27 @@ export const DOC_DETAIL: TranscriptDetail = {
 	createdAt: "2026-10-16T08:00:00+07:00",
 	segments: [docSegment(0), docSegment(1)],
 	missingIndexes: [],
+};
+
+/** `DOC_KEY` translated into English; segment 1's sentence was edited since. */
+export const DOC_TRANSLATION: TranscriptTranslation = {
+	lang: "en",
+	status: "done",
+	done: 2,
+	total: 2,
+	error: null,
+	model: "gpt-4.1-mini",
+	updatedAt: "2026-10-16T09:59:00+07:00",
+	outdated: 1,
+	missing: 0,
+	segments: [
+		{
+			fileId: "f-iphone-0",
+			sentences: [{ text: "First sentence of segment 1.", outdated: true }],
+		},
+		{
+			fileId: "f-iphone-1",
+			sentences: [{ text: "First sentence of segment 2.", outdated: false }],
+		},
+	],
 };
