@@ -46,3 +46,6 @@ dist-ssr
 # OS / misc
 Thumbs.db
 
+
+# Python bytecode (scripts/stt-bench)
+*.py[co]
