@@ -125,3 +125,9 @@ biệt người nói. Nghiên cứu dữ liệu: `plans/dattqh/reports/researche
 - Cài tệp key lên server qua stdin (xem `docs/deploy-web-production.md`), rồi build lại với `TRANSCRIBE_PROVIDER` (mặc định
   đã là `elevenlabs`) và khởi động lại.
 - Chép trực tiếp (OpenAI Realtime) phải chuyển trước 26/02/2027.
+
+## Deploy 17/10 16:07
+Chủ dự án cho phép ("deploy luôn"). Key ElevenLabs cài qua stdin vào `ELEVENLABS_KEY_PATH` (chủ `scribe`, quyền 600); thêm `ELEVENLABS_KEY_PATH`
+vào `.env.production`. Build từ `b86b52b`. Hàng đợi rỗng lúc deploy. Sao lưu `/root/scribe-backup-20261017-160739`, binary sha256 `bcd3a76ac0bc540b…`,
+`index-CS5-_r3N.js`, health ok, `NRestarts=0`, journal "chép lời bật (key server) provider=ElevenLabs". Từ server gọi thử ElevenLabs (2 giây tiếng bíp): HTTP 200.
+Chưa kiểm: chép một bản ghi thật trên prod qua giao diện (cần chủ dự án đăng nhập), phiên iPhone nhiều đoạn có nhiều người nói.
