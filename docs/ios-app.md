@@ -17,6 +17,7 @@ Cần trên máy build:
 - Xcode ở `/Applications/Xcode.app` (script tự đặt `DEVELOPER_DIR`, không cần `sudo xcode-select`), Apple ID của team đã đăng nhập trong Xcode.
 - `web/.env` có `VITE_NATIVE_API_ORIGIN` (chép từ `web/.env.example`).
 - Lần đầu cài: trên iPhone vào *Cài đặt → Cài đặt chung → Quản lý VPN & thiết bị* để tin cậy nhà phát triển.
+- Sau mỗi lần Xcode cập nhật: nếu `xcodebuild -checkFirstLaunchStatus` trả khác 0 (17/10/2026, Xcode 27.1 trả 69), chạy `sudo xcodebuild -runFirstLaunch` một lần; nếu không, `devicectl`/`simctl` treo chờ bước này.
 
 ## Cách app hoạt động
 
@@ -24,7 +25,9 @@ Cần trên máy build:
 |---|---|---|
 | Giao diện | `web/dist` đóng gói trong app (`capacitor://localhost`) | Cùng mã với web; nhánh native qua `isNativeShell()` (`web/src/lib/api.ts`) |
 | Điều hướng | `MainViewController.swift` | Mỗi trang có URL; app bật cử chỉ vuốt từ mép trái để lùi/tiến trang (`allowsBackForwardNavigationGestures`, Capacitor để tắt theo mặc định). Link IdP trong account menu và footer mở ở trình duyệt hệ thống |
-| Gọi API | `CapacitorHttp` → `URLSession` | Không bị CORS/`SameSite`; cookie phiên nằm ở `HTTPCookieStorage` |
+| Gọi API | `CapacitorHttp` → `URLSession` | Không bị CORS/`SameSite`; cookie phiên nằm ở `HTTPCookieStorage`. Thân nhị phân chỉ đi đúng khi là `File` (Capacitor gửi base64); `Blob`/`ArrayBuffer` bị từ chối, `Uint8Array` bị hỏng — `apiFetch` tự bọc `Blob` (chunk của "Tải tệp lên", "Cắt file") thành `File`. `keepalive` bị bỏ qua |
+| Chọn tệp | `<input type=file>` của WKWebView | Ảnh / Tệp / Quay video; quay video cần `NSCameraUsageDescription` (có từ 17/10/2026) |
+| Vòng đời trang | WKWebView | Không có `pagehide`; JS không chạy khi app ở nền, `pause`/`visibilitychange` chỉ tới lúc mở lại. Xoá nhanh có hoàn tác vì vậy lưu id đang chờ ở `localStorage` và xoá nốt ở lần mở sau nếu app bị tắt trong lúc chờ |
 | Đăng nhập hoandat-auth | `HoandatAuthPlugin.swift` | Client public `scribe-mobile`: lấy tham số ở `GET /api/auth/native/config`, app tự sinh PKCE + `nonce`, mở `auth.hoandat.com` bằng `ASWebAuthenticationSession`, redirect `com.hoandat.scribe:/auth/callback` → gửi `code` + verifier + `nonce` tới `POST /api/auth/native/exchange`. Backend giữ refresh token IdP (mã hoá), trả cookie phiên + token thiết bị |
 | Tải / lưu / phát file | `NativeFilesPlugin.swift` | Tải kèm cookie; share sheet (Lưu vào Tệp); bản cache để phát và tua |
 | Ghi âm | `Recorder/AudioRecorder.swift` | AVAudioEngine → m4a AAC, đoạn 1/5/10 phút, chạy nền (`UIBackgroundModes: audio`) |
@@ -49,4 +52,5 @@ Cần trên máy build:
 | Đăng xuất khi còn đoạn chưa tải | Đạt (2026-10-16): đoạn 90,8 s ở lại trên máy, `uploaded: false`; server có `recordings/init` 3 s trước `logout` nhưng không có `finalize`, không file nào vào tài khoản. Sau đăng xuất máy có mạng, 08:31:51–08:35:02 (gồm lúc mở app để đăng nhập lại) server không nhận request nào. Đăng nhập lại cùng tài khoản (08:35:02) thì đoạn tồn tải nốt ngay: `finalize` 08:35:03 nối tiếp phiên tải cũ (không `init` mới), ffprobe 90,86 s, đúng một file |
 | Ghi khi đổi trang, vuốt lùi và khoá màn hình (giao diện có URL) | Đạt (2026-10-16): đoạn 1 phút, một phiên, 3 đoạn 60 + 60 + 48 s, `init`/`finalize` 200, không lỗi, không phiên treo |
 | QA cuối giao diện mới (đăng xuất từ menu, theme sáng/tối, safe area) | **Chưa** — hoãn 16/10/2026 theo yêu cầu (không cắm iPhone); web đã kiểm bằng Playwright e2e |
+| Tính năng web 16–17/10 trong vỏ iOS (Simulator iOS 27.0, backend giả lập) | 17/10/2026: tải tệp lên (sau sửa, 6 MB khớp SHA-256), xoá có hoàn tác kể cả khi tắt app, xoá tất cả, thẻ gói, tìm kiếm, hỏi đáp, ghi native + dấu mốc `positionS` đạt. **Chưa** trên máy thật: picker Ảnh/Tệp/Quay video, "Mở chat" sang Safari — danh sách bấm thử ở mục "Lần cắm iPhone tới" của plan |
 | Ghi dài không sạc, đo pin (ngưỡng ≤ 12% / 60 phút) | Đạt (2026-10-16): 48:07 khoá màn hình, đã rút sạc, đoạn 1 phút; pin 76% → 76% (dưới ~2%); server nhận đủ 49 đoạn liền mạch (48 × ~60 s + 3,9 s), tải lên từng phút 08:43:38–09:30:42 |

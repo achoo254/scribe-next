@@ -1,7 +1,7 @@
 ---
 phase: 3
 title: "UI parity tab Ghi âm"
-status: pending
+status: completed
 priority: P1
 effort: "M"
 dependencies: [2]

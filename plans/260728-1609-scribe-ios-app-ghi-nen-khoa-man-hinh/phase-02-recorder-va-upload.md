@@ -1,7 +1,7 @@
 ---
 phase: 2
 title: "Recorder + upload"
-status: pending
+status: completed
 priority: P1
 effort: "L"
 dependencies: [1]

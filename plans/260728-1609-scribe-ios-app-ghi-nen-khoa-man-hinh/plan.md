@@ -20,7 +20,7 @@ source: skill
 
 Đưa Scribe lên iPhone với **đầy đủ tính năng của web app hiện tại**, cộng thứ mà web vĩnh viễn không làm được: **ghi âm tiếp tục khi khoá màn hình, có cuộc gọi đến, hoặc chuyển sang app khác**.
 
-Người dùng: **1 người duy nhất** (chủ sở hữu), cài bằng Apple ID cá nhân (Personal Team `AM5C55N339`, free provisioning), iPhone 15 Pro Max iOS 26.5.2, build trên Mac mini M4 (Xcode 26.6). Nếu chạy ổn thì **sau này có thể đưa lên App Store**.
+Người dùng: **1 người duy nhất** (chủ sở hữu), cài bằng Apple ID cá nhân (Personal Team `AM5C55N339`, free provisioning), iPhone 15 Pro Max iOS 26.5.2, build trên Mac mini M4 (Xcode 26.6; từ 17/10/2026 là Xcode 27.1). Nếu chạy ổn thì **sau này có thể đưa lên App Store**.
 
 Phase 0 (spike) **đã xong và gate xanh** — xem `ios-spike/` (commit `be7bf46`).
 
@@ -181,16 +181,56 @@ Bốn hành vi đã verify, phải hiện diện trong thiết kế client:
 
 | # | Phase | Tier | Trạng thái |
 |---|-------|------|-----------|
-| 1 | [Vỏ Capacitor + transport + auth + parity không-ghi](./phase-01-vo-capacitor-va-auth.md) | **L** | Code xong; Gate 0 đạt trên máy; Gate 1–2 chờ iPhone |
-| 2 | [Recorder + upload](./phase-02-recorder-va-upload.md) | **L** | Code xong + self-test Simulator; checkpoint engine chờ iPhone |
-| 3 | [UI parity tab Ghi âm](./phase-03-ui-parity-tab-ghi-am.md) | **M** | Thẻ ghi native + gom phiên trong Lịch sử ghi xong; QA chờ iPhone |
-| 4 | [Deploy, vận hành, lộ trình App Store](./phase-04-deploy-va-van-hanh.md) | **S** | `npm run ios:device` + `docs/ios-app.md` xong; còn lộ trình App Store |
-| 5 | [Realtime transcript](./phase-05-realtime-transcript.md) | **L** | Pending |
-| 6 | [Chép lời bản ghi bằng OpenAI (key người dùng tự nhập)](./phase-06-ban-hoan-chinh-sau-buoi-ghi.md) | **L** | Đang làm; làm trước Phase 5 |
+| 1 | [Vỏ Capacitor + transport + auth + parity không-ghi](./phase-01-vo-capacitor-va-auth.md) | **L** | Xong. Gate 0 đạt 15/10; đăng nhập hoandat-auth, ghi, tải lên, chép lời, phát lại đạt trên iPhone 16/10. "Tải tệp lên"/"Cắt file" trong app sửa 17/10 (xem dưới), chờ kiểm lại trên máy |
+| 2 | [Recorder + upload](./phase-02-recorder-va-upload.md) | **L** | Xong, QA trên iPhone 16/10 (khoá màn hình, kill app, đăng xuất khi còn đoạn, 48 phút không sạc). Còn: cuộc gọi đến, AirPods, chế độ máy bay |
+| 3 | [UI parity tab Ghi âm](./phase-03-ui-parity-tab-ghi-am.md) | **M** | Xong, QA trên iPhone 16/10. Giao diện mới (refactor 16/10 chiều) chưa cài lên máy — xem "Lần cắm iPhone tới" |
+| 4 | [Deploy, vận hành, lộ trình App Store](./phase-04-deploy-va-van-hanh.md) | **S** | Xong: `pnpm run ios:device`, `docs/ios-app.md`, lộ trình App Store trong `docs/project-roadmap.md` |
+| 5 | [Realtime transcript](./phase-05-realtime-transcript.md) | **L** | Pending — Gate 0 bước 2 (WebSocket khi khoá màn hình) cần iPhone thật |
+| 6 | [Chép lời bản ghi bằng OpenAI (key của server)](./phase-06-ban-hoan-chinh-sau-buoi-ghi.md) | **L** | Xong 16/10: dùng key OpenAI của server, tính phút theo tài khoản (commit `a90a7e8`), mở cho mọi người 16/10 14:19; đã chép lời trên iPhone thật |
 
-Thứ tự: **1 → 2 → 3 → 4**, rồi **6 trước 5** (2026-10-15: Phase 6 không cần iPhone để kiểm phần lớn; key OpenAI do người dùng tự nhập, thay R3 của Phase 5). Phase 5 và 6 thêm ngày 2026-10-15, sau khi đo OpenAI Realtime cho tiếng Việt ([báo cáo](../dattqh/reports/research-261015-1415-realtime-transcription-probe.md)).
+Thứ tự: **1 → 2 → 3 → 4**, rồi **6 trước 5** (2026-10-15: Phase 6 không cần iPhone để kiểm phần lớn). Ngày 16/10 Phase 6 đổi sang key OpenAI của server, tính vào phút của tài khoản — quyết định T1/T3/T4 (key người dùng tự nhập) không còn hiệu lực. Phase 5 và 6 thêm ngày 2026-10-15, sau khi đo OpenAI Realtime cho tiếng Việt ([báo cáo](../dattqh/reports/research-261015-1415-realtime-transcription-probe.md)).
 
 Đổi so với bản 1: Phase 2+3 cũ **gộp làm một** (tách chúng bắt phải sửa `RecordView.vue` ba lượt và dựng UI tạm rồi xoá); Phase 6 cũ **xoá**, nội dung lộ trình App Store thành sản phẩm tài liệu của Phase 4. Phase 1 lên **L** vì gánh thêm tầng transport.
+
+## Cập nhật 2026-10-17 — kiểm tính năng web mới trong vỏ iOS bằng Simulator
+
+Bản cài trên iPhone là bản 16/10 trưa (đăng nhập hoandat-auth). Từ đó web thêm: giao diện hệ sinh thái + URL cho từng trang, biên bản, dấu mốc theo đồng hồ native (`positionS`), tìm kiếm và hỏi đáp, "Tải tệp lên", xoá nhanh có hoàn tác, xoá tất cả, thẻ gói/dùng lượng, liên kết chat.
+
+Không cắm iPhone, kiểm bằng Simulator iOS 27.0 (iPhone 17, bản Debug) trỏ vào **backend giả lập trên máy** (dữ liệu mẫu của e2e, không đăng nhập thật, không chạm prod). Simulator chạy không có cửa sổ (Xcode 27.1 chưa chạy first-launch nên không có Simulator.app), nên thao tác bằng script trong trang (click DOM) chứ không chạm màn hình.
+
+| Hạng mục | Kết quả | Cách kiểm |
+|---|---|---|
+| **Tải tệp lên / Cắt file** | **Lỗi, đã sửa.** `CapacitorHttp` chỉ gửi đúng thân nhị phân khi là `File`; `file.slice()` là `Blob` nên bị từ chối ngay trong native (`CapacitorUrlRequestError 0`) → mọi chunk báo "Không kết nối được máy chủ". `ArrayBuffer` cũng bị từ chối, `Uint8Array` bị đổi thành UTF-8 (hỏng). Sửa: `apiFetch` bọc `Blob` thành `File` khi chạy native (`nativeSafeBody` trong `web/src/lib/api.ts`). Sau sửa: tệp 6 MB, 2 chunk, server nhận đủ 6 291 456 byte, SHA-256 khớp | Simulator |
+| Xoá nhanh có hoàn tác khi app vào nền | **Lỗ hổng, đã sửa.** Trong app không có `pagehide`; `pause`/`visibilitychange` chỉ tới trang **khi app mở lại** (JS không chạy lúc ở nền). Tắt app trong 5 giây hoàn tác thì DELETE không bao giờ gửi, bản ghi quay lại. Sửa: id đang chờ xoá lưu ở `localStorage` (`scribe.pendingDeletes`), lần sau Lịch sử ghi mở thì xoá nốt. Đã kiểm: xoá → kill app → 0 DELETE → mở lại → DELETE gửi ngay | Simulator |
+| `keepalive` qua `CapacitorHttp` | Bị bỏ qua nhưng không hại: request vẫn đi qua `URLSession` (đã thấy server nhận) | Simulator |
+| Chọn tệp: `accept="audio/*,video/*"` | Đúng. **Thiếu `NSCameraUsageDescription`**: menu chọn tệp của iOS có "Quay video", bấm vào sẽ làm app bị hệ thống tắt. Đã thêm chuỗi vào `Info.plist`. Mở picker (Ảnh/Tệp) cần chạm thật | Đọc mã; cần máy thật |
+| Xoá tất cả, thẻ gói + dùng lượng, tìm kiếm, hỏi đáp, trang Lời đã chép | Đạt | Simulator |
+| Hộp liên kết chat | Mở được, tạo link một lần qua native. Bấm "Mở chat" bằng script không mở Safari (không phải cử chỉ thật, WKWebView chặn `window.open`); nút gọi `openExternal` ngay trong click, Capacitor chuyển sang `UIApplication.open` | Simulator + đọc mã; cần máy thật |
+| Ghi native + dấu mốc | Simulator ghi được: `getStatus()` trả `positionS` 6,5 → 8,0 s cùng `elapsedS`, dấu mốc gửi `POST /api/transcript-docs/s:<session>/bookmarks`, giao diện "Đã đánh 1 mốc". Mã Swift `recordedSeconds` đọc dưới `fileLock` | Simulator + đọc mã |
+
+## Lần cắm iPhone tới
+
+Cắm iPhone, mở khoá, rồi:
+
+```bash
+cd web
+pnpm run ios:device
+```
+
+Lưu ý: Xcode đã lên 27.1 và chưa chạy first-launch (`xcodebuild -checkFirstLaunchStatus` trả 69). Nếu script treo ở `devicectl`, chạy `sudo xcodebuild -runFirstLaunch` một lần (cần mật khẩu máy Mac) rồi chạy lại.
+
+Bấm thử trên máy, theo thứ tự:
+
+1. Mở app → vẫn đăng nhập (hoặc đăng nhập lại hoandat-auth); top bar, menu tài khoản, theme sáng/tối, không phần tử nào bị Dynamic Island / home indicator che.
+2. Ghi âm → "Tải tệp lên" → picker mở; chọn **một video trong Ảnh** và **một tệp âm thanh trong Tệp** → thanh tiến độ chạy tới 100%, tệp hiện trong Lịch sử ghi, phát được, bấm "Chép lời" được.
+3. "Tải tệp lên" → chọn **Quay video** → app xin quyền camera (không bị tắt), quay vài giây → tải lên được.
+4. Cắt file: chọn tệp → tải lên 100% → cắt → tải kết quả về máy (share sheet → Lưu vào Tệp).
+5. Lịch sử ghi: xoá một bản ghi → "Hoàn tác" → bản ghi quay lại. Xoá lại, **vuốt tắt app trong 5 giây** → mở lại → bản ghi không còn.
+6. "Xoá tất cả" (dùng tài khoản/dữ liệu thử) → hỏi xác nhận đúng số tệp → danh sách trống, thẻ dùng lượng giảm.
+7. Menu tài khoản → "Liên kết chat" → "Mở chat" → **Safari** mở chat.hoandat.com; xác nhận liên kết; quay lại app thấy "Đã liên kết". Gửi một biên bản sang chat.
+8. Ghi 2–3 phút, khoá màn hình giữa chừng, bấm "Đánh dấu" trước và sau khi khoá → mở bản chép lời, mốc nằm đúng giây.
+9. Tìm kiếm một từ trong bản đã chép → bấm kết quả tua đúng chỗ; hỏi một câu → có trích mốc giây.
+10. Còn nợ từ trước: cuộc gọi đến khi đang ghi, AirPods, chế độ máy bay khi đang tải (cần máy thứ hai + AirPods).
 
 ## Success Criteria (toàn plan)
 

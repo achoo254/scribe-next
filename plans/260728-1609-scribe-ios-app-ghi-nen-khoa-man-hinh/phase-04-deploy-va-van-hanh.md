@@ -1,7 +1,7 @@
 ---
 phase: 4
 title: "Deploy, vận hành, lộ trình App Store"
-status: pending
+status: completed
 priority: P2
 effort: "S"
 dependencies: [3]

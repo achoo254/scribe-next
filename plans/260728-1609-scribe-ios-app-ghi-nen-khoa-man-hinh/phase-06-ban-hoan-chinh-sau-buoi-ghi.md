@@ -1,7 +1,7 @@
 ---
 phase: 6
-title: "Chép lời bản ghi bằng OpenAI (key người dùng tự nhập)"
-status: in-progress
+title: "Chép lời bản ghi bằng OpenAI (key của server)"
+status: completed
 priority: P1
 effort: "L"
 dependencies: [2]
@@ -16,6 +16,8 @@ Người dùng bấm "Chép lời" trên một bản ghi (hoặc cả một phi�
 Logic chuyển từ bản Python đã kiểm chứng `sidecar/transcriber/openai_transcriber.py` (khớp TurboScribe 83,9–84,4%): cắt tại khoảng lặng, nén Opus, gọi song song 4 mảnh, mảnh lặp thì gọi lại với temperature cao hơn. Khác bản desktop: tìm khoảng lặng bằng ffmpeg `silencedetect` thay silero (không cài Python lên server); mốc theo câu, không theo từ.
 
 Phase này không còn phụ thuộc Phase 5: làm trước được, không cần iPhone để kiểm phần lớn.
+
+> **Cập nhật 2026-10-16:** chép lời dùng **key OpenAI của server**, tính vào phút của từng tài khoản (commit `a90a7e8`), mở cho mọi người từ 16/10 14:19 với hạn mức gói free (`docs/project-roadmap.md`). T1, T3, T4 dưới đây không còn hiệu lực; `SecretsPlugin.swift` chỉ còn xoá key người dùng tự nhập ở bản cũ khi đăng xuất. Đã chép lời trên iPhone thật 16/10.
 
 ## Quyết định (2026-10-15)
 

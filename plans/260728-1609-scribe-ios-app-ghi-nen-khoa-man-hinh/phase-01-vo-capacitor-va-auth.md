@@ -1,7 +1,7 @@
 ---
 phase: 1
 title: "Vỏ Capacitor + transport + auth + parity không-ghi"
-status: pending
+status: completed
 priority: P1
 effort: "L"
 dependencies: []
