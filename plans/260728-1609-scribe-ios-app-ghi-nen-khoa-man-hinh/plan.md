@@ -230,7 +230,10 @@ Bấm thử trên máy, theo thứ tự:
 7. Menu tài khoản → "Liên kết chat" → "Mở chat" → **Safari** mở chat.hoandat.com; xác nhận liên kết; quay lại app thấy "Đã liên kết". Gửi một biên bản sang chat.
 8. Ghi 2–3 phút, khoá màn hình giữa chừng, bấm "Đánh dấu" trước và sau khi khoá → mở bản chép lời, mốc nằm đúng giây.
 9. Tìm kiếm một từ trong bản đã chép → bấm kết quả tua đúng chỗ; hỏi một câu → có trích mốc giây.
-10. Còn nợ từ trước: cuộc gọi đến khi đang ghi, AirPods, chế độ máy bay khi đang tải (cần máy thứ hai + AirPods).
+10. Đánh dấu từ màn hình khoá: bắt đầu ghi, khoá máy → màn hình khoá (và Control Center) có mục **"Scribe đang ghi"** với thời gian chạy. Bấm nút tạm dừng ở đó → tiêu đề đổi thành "Đã đánh dấu mm:ss" vài giây, bản ghi **vẫn chạy** (thời gian không dừng). Bấm hai lần thật nhanh → chỉ thêm một mốc.
+11. Đeo AirPods (micro vẫn là micro iPhone) khi đang ghi và khoá máy: bấm 1 lần, rồi bấm 2 lần → mỗi lần thêm một mốc, không dừng ghi. Thử thêm khi AirPods là micro nếu chọn được.
+12. Mở khoá, mở app → nút "Đánh dấu" vẫn chạy như cũ; dừng ghi → mở bản chép lời: các mốc bấm từ màn hình khoá/AirPods nằm đúng giây. Thử thêm: bấm mốc khi khoá → vuốt tắt app → mở lại → mốc vẫn có.
+13. Còn nợ từ trước: cuộc gọi đến khi đang ghi, AirPods, chế độ máy bay khi đang tải (cần máy thứ hai + AirPods).
 
 ## Success Criteria (toàn plan)
 
