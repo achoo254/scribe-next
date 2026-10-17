@@ -73,6 +73,39 @@ pub struct Bookmark {
     pub label: Option<String>,
 }
 
+/// Tên người nói của phiên theo id (`s0`, `s1`…). Lượt chép xong thì đặt lại về nhãn mặc định ([`reset_speakers`]):
+/// lượt mới gán lại id theo thứ tự xuất hiện. Id chưa có tên lưu thì đọc ra nhãn mặc định ([`default_speaker_name`]).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct Speakers {
+    #[serde(default)]
+    pub names: HashMap<String, String>,
+}
+
+/// Tên người nói dài nhất (ký tự).
+pub const MAX_SPEAKER_NAME_CHARS: usize = 40;
+
+/// Id người nói hợp lệ: `s0` … `s99` (ElevenLabs tối đa 32 người).
+pub fn is_speaker_id(id: &str) -> bool {
+    id.strip_prefix('s')
+        .is_some_and(|n| (1..=2).contains(&n.len()) && n.bytes().all(|b| b.is_ascii_digit()) && (n == "0" || !n.starts_with('0')))
+}
+
+/// "Người N": `s0` là người nói xuất hiện đầu tiên ⟹ "Người 1".
+pub fn default_speaker_name(id: &str) -> String {
+    let n = id.strip_prefix('s').and_then(|n| n.parse::<u32>().ok()).unwrap_or(0);
+    format!("Người {}", n + 1)
+}
+
+/// Tên hiển thị của từng id trong `ids`: tên đã lưu, thiếu thì nhãn mặc định.
+pub fn speaker_names<'a>(stored: Option<&Speakers>, ids: impl IntoIterator<Item = &'a str>) -> std::collections::BTreeMap<String, String> {
+    ids.into_iter()
+        .map(|id| {
+            let name = stored.and_then(|s| s.names.get(id)).cloned().unwrap_or_else(|| default_speaker_name(id));
+            (id.to_string(), name)
+        })
+        .collect()
+}
+
 /// Số dấu mốc tối đa của một doc.
 pub const MAX_BOOKMARKS: usize = 200;
 /// Sweep mồ côi chừa doc tạo chưa tới chừng này giờ: dấu mốc của phiên đang ghi có trước file.
@@ -94,6 +127,8 @@ pub struct SessionDoc {
     pub summary: Option<StoredSummary>,
     #[serde(default)]
     pub bookmarks: Vec<Bookmark>,
+    #[serde(default)]
+    pub speakers: Speakers,
 }
 
 /// Câu sửa của đoạn còn dùng được: cùng lượt chép và cùng số câu với câu máy hiện tại.
@@ -201,6 +236,36 @@ pub async fn set_edits(db: &Database, user_id: &str, key: &str, file_id: ObjectI
 pub async fn set_summary(db: &Database, user_id: &str, key: &str, summary: &StoredSummary) -> Result<(), AppError> {
     let value = mongodb::bson::to_bson(summary).map_err(|e| AppError::Internal(format!("mã hoá biên bản: {e}")))?;
     upsert(db, user_id, key, doc! { "$set": { "summary": value, "updatedAt": DateTime::now() } }).await
+}
+
+/// Lượt chép mới xong: tên người nói về nhãn mặc định cho các id của lượt (tên cũ gắn với id của lượt trước).
+pub async fn reset_speakers(db: &Database, user_id: &str, key: &str, ids: &[String]) -> Result<(), AppError> {
+    let names: Document = ids.iter().map(|id| (id.clone(), default_speaker_name(id).into())).collect();
+    upsert(db, user_id, key, doc! { "$set": { "speakers": { "names": names }, "updatedAt": DateTime::now() } }).await
+}
+
+/// Đổi tên người nói: `Some` = đặt tên, `None` = về nhãn mặc định. Id phải hợp lệ ([`is_speaker_id`], an toàn trong
+/// field path).
+pub async fn set_speaker_names(
+    db: &Database,
+    user_id: &str,
+    key: &str,
+    names: &[(String, Option<String>)],
+) -> Result<(), AppError> {
+    let mut set = doc! { "updatedAt": DateTime::now() };
+    let mut unset = Document::new();
+    for (id, name) in names.iter().filter(|(id, _)| is_speaker_id(id)) {
+        let path = format!("speakers.names.{id}");
+        match name {
+            Some(name) => set.insert(path, name.as_str()),
+            None => unset.insert(path, ""),
+        };
+    }
+    let mut update = doc! { "$set": set };
+    if !unset.is_empty() {
+        update.insert("$unset", unset);
+    }
+    upsert(db, user_id, key, update).await
 }
 
 /// Kết quả thêm một dấu mốc.
@@ -409,6 +474,23 @@ mod tests {
     }
 
     #[test]
+    fn speaker_ids_and_default_names() {
+        for id in ["s0", "s1", "s9", "s10", "s31", "s99"] {
+            assert!(is_speaker_id(id), "{id}");
+        }
+        for id in ["s", "s01", "s100", "x0", "s-1", "s1.a", "speaker_0", "s$x"] {
+            assert!(!is_speaker_id(id), "{id}");
+        }
+        assert_eq!(default_speaker_name("s0"), "Người 1");
+        assert_eq!(default_speaker_name("s11"), "Người 12");
+        let stored = Speakers { names: HashMap::from([("s1".to_string(), "Lan".to_string())]) };
+        let names = speaker_names(Some(&stored), ["s0", "s1"]);
+        assert_eq!(names.get("s0").map(String::as_str), Some("Người 1"));
+        assert_eq!(names.get("s1").map(String::as_str), Some("Lan"));
+        assert_eq!(speaker_names(None, ["s2"]).get("s2").map(String::as_str), Some("Người 3"));
+    }
+
+    #[test]
     fn edits_apply_only_to_the_same_run_and_sentence_count() {
         let edit = SegmentEdit { run_id: "run-1".into(), texts: vec!["a".into(), "b".into()] };
         assert_eq!(effective_texts(Some(&edit), "run-1", 2), Some(&edit.texts[..]));
@@ -445,6 +527,35 @@ mod tests {
         assert_eq!(add_bookmark(&db, &user, &key, &mark(999)).await.expect("thêm sau khi xoá"), BookmarkAdd::Added);
         assert_eq!(add_bookmark(&db, &user, &key, &mark(999)).await.expect("gửi lại"), BookmarkAdd::Exists(mark(999)));
         assert_eq!(add_bookmark(&db, &user, &key, &mark(1000)).await.expect("đầy"), BookmarkAdd::Full);
+        delete(&db, &user, &key).await.expect("dọn");
+    }
+
+    /// Tên người nói trên Mongo thật (DB dev): `TRANSCRIPT_TEST_MONGO_URI=<uri> TRANSCRIPT_TEST_DB_NAME=<db> cargo test
+    /// speaker_names_on_real -- --ignored`. Lượt chép xong đặt nhãn mặc định; đổi tên, về mặc định; lượt mới đặt lại.
+    #[tokio::test]
+    #[ignore]
+    async fn speaker_names_on_real_mongo() {
+        let uri = std::env::var("TRANSCRIPT_TEST_MONGO_URI").expect("TRANSCRIPT_TEST_MONGO_URI");
+        let db_name = std::env::var("TRANSCRIPT_TEST_DB_NAME").expect("TRANSCRIPT_TEST_DB_NAME");
+        let db = crate::db::connect(&uri, &db_name).await.expect("kết nối Mongo");
+        ensure_indexes(&db).await.expect("index");
+        let user = format!("selftest-{}", uuid::Uuid::new_v4());
+        let key = format!("f:{}", ObjectId::new().to_hex());
+        let names = |d: SessionDoc| {
+            let mut v: Vec<(String, String)> = d.speakers.names.into_iter().collect();
+            v.sort();
+            v
+        };
+        reset_speakers(&db, &user, &key, &["s0".into(), "s1".into()]).await.expect("đặt mặc định");
+        let d = get(&db, &user, &key).await.expect("get").expect("doc");
+        assert_eq!(names(d), vec![("s0".into(), "Người 1".into()), ("s1".into(), "Người 2".into())]);
+        let renames = [("s1".to_string(), Some("Lan".to_string())), ("s0".to_string(), None), ("bad.x".to_string(), Some("X".to_string()))];
+        set_speaker_names(&db, &user, &key, &renames).await.expect("đổi tên");
+        let d = get(&db, &user, &key).await.expect("get").expect("doc");
+        assert_eq!(names(d), vec![("s1".into(), "Lan".into())], "s0 về mặc định (không lưu), id sai bị bỏ qua");
+        reset_speakers(&db, &user, &key, &["s0".into()]).await.expect("lượt mới");
+        let d = get(&db, &user, &key).await.expect("get").expect("doc");
+        assert_eq!(names(d), vec![("s0".into(), "Người 1".into())]);
         delete(&db, &user, &key).await.expect("dọn");
     }
 

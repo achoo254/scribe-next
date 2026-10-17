@@ -20,8 +20,9 @@ const DEADLINE: Duration = Duration::from_secs(80);
 const MIN_ATTEMPT: Duration = Duration::from_secs(25);
 
 const INSTRUCTIONS: &str = "Bạn là thư ký viết biên bản. Đầu vào là bản chép lời tiếng Việt của một bản ghi \
-(thường là cuộc họp), mỗi dòng có dạng `[giây] câu`, giây tính từ đầu bản ghi. Bản chép lời do máy nghe nên có \
-thể sai chính tả hoặc thiếu chữ.\n\
+(thường là cuộc họp), mỗi dòng có dạng `[giây] câu`, hoặc `[giây] Tên người nói: câu` khi máy đã phân biệt người \
+nói, giây tính từ đầu bản ghi. Tên người nói có thể là nhãn chung như \"Người 1\"; owner chỉ dùng tên người nói khi \
+bản ghi cho thấy người đó nhận việc. Bản chép lời do máy nghe nên có thể sai chính tả hoặc thiếu chữ.\n\
 Viết biên bản bằng tiếng Việt, CHỈ dùng điều có trong bản ghi; không suy diễn, không bịa tên người, con số hay hạn.\n\
 - summary: tóm tắt nội dung chính, 3–10 câu, văn xuôi ngắn gọn.\n\
 - decisions: các điều đã được chốt hoặc thống nhất. text là một câu ngắn; at là giây (số) của dòng nêu điều đó.\n\

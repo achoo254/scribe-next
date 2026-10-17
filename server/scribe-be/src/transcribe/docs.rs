@@ -24,13 +24,15 @@ use mongodb::bson::{doc, oid::ObjectId};
 use mongodb::Database;
 use serde::Deserialize;
 use serde_json::{json, Value};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 /// Tiêu đề dài nhất (ký tự).
 const MAX_TITLE_CHARS: usize = 120;
 /// Một đoạn 1 phút chỉ vài chục câu; trần này chặn body bất thường chứ không chặn người dùng.
 const MAX_SENTENCES: usize = 5000;
 const MAX_SENTENCE_CHARS: usize = 2000;
+/// Số người nói đổi tên tối đa mỗi lần (ElevenLabs tách tối đa 32 người).
+const MAX_SPEAKERS: usize = 32;
 /// Tên đoạn do client đặt: index nhảy vọt không được làm phình danh sách "thiếu đoạn".
 const MAX_MISSING_REPORTED: usize = 200;
 
@@ -74,12 +76,26 @@ pub(super) fn effective_sentences(t: &TranscriptDoc, edit: Option<&SegmentEdit>)
                 .sentences
                 .iter()
                 .zip(texts)
-                .map(|(s, text)| Sentence { start: s.start, end: s.end, text: text.clone() })
+                .map(|(s, text)| Sentence { text: text.clone(), ..s.clone() })
                 .collect();
             (sentences, true, changed)
         }
         None => (t.sentences.clone(), false, 0),
     }
+}
+
+/// Câu với id người nói thay bằng tên hiển thị (xuất tệp): tên đã lưu của phiên, thiếu thì "Người N".
+pub(super) fn name_speakers(sentences: Vec<Sentence>, stored: Option<&transcript_doc::Speakers>) -> Vec<Sentence> {
+    sentences
+        .into_iter()
+        .map(|s| match s.speaker.as_deref() {
+            Some(id) => {
+                let name = stored.and_then(|st| st.names.get(id)).cloned().unwrap_or_else(|| transcript_doc::default_speaker_name(id));
+                Sentence { speaker: Some(name), ..s }
+            }
+            None => s,
+        })
+        .collect()
 }
 
 #[derive(Debug)]
@@ -211,6 +227,34 @@ impl Loaded {
                 let texts = if seg.status == "done" { seg.sentences.iter().map(|s| s.text.as_str()).collect() } else { Vec::new() };
                 (seg.file_id.as_str(), texts)
             })
+            .collect()
+    }
+
+    /// Tên hiển thị của mọi người nói có trong câu đã chép xong: tên người dùng đặt, thiếu thì "Người N".
+    pub fn speaker_names(&self) -> BTreeMap<String, String> {
+        let ids: BTreeSet<&str> = self
+            .segments
+            .iter()
+            .filter(|seg| seg.status == "done")
+            .flat_map(|seg| seg.sentences.iter().filter_map(|s| s.speaker.as_deref()))
+            .collect();
+        transcript_doc::speaker_names(self.doc.as_ref().map(|d| &d.speakers), ids)
+    }
+
+    /// Như [`Self::timed_sentences`], kèm tên người nói của câu (đầu vào biên bản).
+    pub fn timed_named_sentences(&self) -> Vec<(f64, Option<String>, &str)> {
+        let names = self.speaker_names();
+        self.segments
+            .iter()
+            .filter(|seg| seg.status == "done")
+            .flat_map(|seg| {
+                let names = &names;
+                seg.sentences.iter().map(move |s| {
+                    let name = s.speaker.as_deref().and_then(|id| names.get(id).cloned());
+                    (seg.offset_s + s.start, name, s.text.trim())
+                })
+            })
+            .filter(|(_, _, text)| !text.is_empty())
             .collect()
     }
 
@@ -365,6 +409,7 @@ pub async fn get(
         "summary": summary,
         "bookmarks": bookmarks,
         "translations": translations,
+        "speakers": { "names": loaded.speaker_names() },
     })))
 }
 
@@ -419,6 +464,48 @@ pub async fn rename(
     let title_len = title.as_ref().map_or(0, |t| t.chars().count() as i64);
     audit::record(&state, Some(&user.0), "transcript.rename", doc! { "key": &key, "titleLen": title_len });
     Ok(Json(json!({ "title": title })))
+}
+
+#[derive(Deserialize)]
+pub struct SpeakersReq {
+    /// Tên mới theo id người nói; rỗng hoặc `null` = về nhãn mặc định "Người N".
+    names: HashMap<String, Option<String>>,
+}
+
+/// Tên người nói sau khi chuẩn hoá: id hợp lệ, tên gộp khoảng trắng, rỗng = về nhãn mặc định.
+fn normalize_speaker_names(raw: HashMap<String, Option<String>>) -> Result<Vec<(String, Option<String>)>, AppError> {
+    if raw.is_empty() || raw.len() > MAX_SPEAKERS {
+        return Err(AppError::BadRequest(format!("đổi tên từ 1 đến {MAX_SPEAKERS} người nói mỗi lần")));
+    }
+    let mut out = Vec::with_capacity(raw.len());
+    for (id, name) in raw {
+        if !transcript_doc::is_speaker_id(&id) {
+            return Err(AppError::BadRequest("id người nói không hợp lệ".into()));
+        }
+        let name = name.map(|n| n.split_whitespace().collect::<Vec<_>>().join(" ")).filter(|n| !n.is_empty());
+        if name.as_ref().is_some_and(|n| n.chars().count() > transcript_doc::MAX_SPEAKER_NAME_CHARS) {
+            return Err(AppError::BadRequest(format!("tên người nói tối đa {} ký tự", transcript_doc::MAX_SPEAKER_NAME_CHARS)));
+        }
+        out.push((id, name));
+    }
+    out.sort();
+    Ok(out)
+}
+
+/// `PATCH /api/transcript-docs/{key}/speakers` — đổi tên người nói, áp cho mọi câu của phiên (màn hình đọc, xuất tệp,
+/// biên bản). Chỉ đổi tên, không gán lại người nói cho câu. Biên bản không thành "cũ"; index tìm kiếm không đổi.
+pub async fn rename_speakers(
+    State(state): State<AppState>,
+    Extension(user): Extension<UserId>,
+    Path(key): Path<String>,
+    Json(req): Json<SpeakersReq>,
+) -> Result<Json<Value>, AppError> {
+    let names = normalize_speaker_names(req.names)?;
+    session_files(&state.db, &user.0, &key).await?;
+    transcript_doc::set_speaker_names(&state.db, &user.0, &key, &names).await?;
+    audit::record(&state, Some(&user.0), "transcript.speakers", doc! { "key": &key, "speakers": names.len() as i64 });
+    let loaded = load(&state, &user.0, &key).await?;
+    Ok(Json(json!({ "names": loaded.speaker_names() })))
 }
 
 #[derive(Deserialize)]
@@ -529,7 +616,7 @@ mod tests {
     }
 
     fn s(start: f64, end: f64, text: &str) -> Sentence {
-        Sentence { start, end, text: text.into() }
+        Sentence { start, end, text: text.into(), speaker: None }
     }
 
     #[test]
@@ -609,6 +696,56 @@ mod tests {
         let (sentences, edited, changed) = effective_sentences(&t, Some(&edit));
         assert!(!edited && changed == 0);
         assert_eq!(sentences, t.sentences);
+    }
+
+    #[test]
+    fn speaker_names_default_by_id_and_follow_renames() {
+        let a = recording("cccccccc-3333#0", Some(60.0));
+        let b = recording("cccccccc-3333#1", Some(60.0));
+        let named = |start: f64, text: &str, speaker: &str| Sentence { speaker: Some(speaker.into()), ..s(start, start + 1.0, text) };
+        let mut transcripts = HashMap::new();
+        transcripts.insert(a.id.expect("a"), done(&a, "run", vec![named(1.0, "Chào anh.", "s0"), named(3.0, "Chào em.", "s1")]));
+        transcripts.insert(b.id.expect("b"), done(&b, "run", vec![named(2.0, "Bắt đầu nhé.", "s0"), s(5.0, 6.0, "  ")]));
+        let files = vec![(0, a), (1, b)];
+        let segments = assemble(&files, &transcripts, &HashMap::new());
+        let mut doc = transcript_doc::SessionDoc {
+            id: ObjectId::new(),
+            user_id: "u".into(),
+            key: "s:cccccccc-3333".into(),
+            title: None,
+            edits: HashMap::new(),
+            summary: None,
+            bookmarks: Vec::new(),
+            speakers: transcript_doc::Speakers::default(),
+        };
+        doc.speakers.names.insert("s1".into(), "Lan".into());
+        let loaded = Loaded { files, segments, doc: Some(doc) };
+        let names = loaded.speaker_names();
+        assert_eq!(names.into_iter().collect::<Vec<_>>(), vec![("s0".into(), "Người 1".into()), ("s1".into(), "Lan".into())]);
+        assert_eq!(
+            loaded.timed_named_sentences(),
+            vec![
+                (1.0, Some("Người 1".to_string()), "Chào anh."),
+                (3.0, Some("Lan".to_string()), "Chào em."),
+                (62.0, Some("Người 1".to_string()), "Bắt đầu nhé."),
+            ]
+        );
+        // Băm nguồn của biên bản không gồm tên: đổi tên không làm biên bản "cũ".
+        assert_eq!(loaded.timed_sentences(), vec![(1.0, "Chào anh."), (3.0, "Chào em."), (62.0, "Bắt đầu nhé.")]);
+    }
+
+    #[test]
+    fn speaker_renames_are_validated() {
+        let req = |pairs: &[(&str, Option<&str>)]| -> HashMap<String, Option<String>> {
+            pairs.iter().map(|(k, v)| (k.to_string(), v.map(str::to_string))).collect()
+        };
+        let ok = normalize_speaker_names(req(&[("s1", Some("  Chị   Lan ")), ("s0", Some("  ")), ("s2", None)])).expect("hợp lệ");
+        assert_eq!(ok, vec![("s0".into(), None), ("s1".into(), Some("Chị Lan".into())), ("s2".into(), None)]);
+        assert!(normalize_speaker_names(req(&[("speaker_0", Some("A"))])).is_err());
+        assert!(normalize_speaker_names(req(&[("s0.x", Some("A"))])).is_err());
+        assert!(normalize_speaker_names(req(&[])).is_err());
+        assert!(normalize_speaker_names(req(&[("s0", Some(&"ữ".repeat(40)))])).is_ok());
+        assert!(normalize_speaker_names(req(&[("s0", Some(&"ữ".repeat(41)))])).is_err());
     }
 
     #[test]

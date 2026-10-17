@@ -106,6 +106,21 @@ pub fn build_input(sentences: &[(f64, &str)]) -> String {
     out
 }
 
+/// Đầu vào gửi model: như [`build_input`], thêm tên người nói trước câu (`[giây] Tên: câu`) khi bản chép có người
+/// nói. Băm nguồn vẫn tính trên [`build_input`] (không gồm tên) để đổi tên người nói không làm biên bản "cũ".
+pub fn build_named_input(sentences: &[(f64, Option<String>, &str)]) -> String {
+    let mut out = String::new();
+    for (at, name, text) in sentences {
+        let line = text.split_whitespace().collect::<Vec<_>>().join(" ");
+        let at = at.max(0.0).floor() as i64;
+        match name.as_deref().map(str::trim).filter(|n| !n.is_empty()) {
+            Some(name) => out.push_str(&format!("[{at}] {name}: {line}\n")),
+            None => out.push_str(&format!("[{at}] {line}\n")),
+        }
+    }
+    out
+}
+
 /// Băm chữ đầu vào (SHA-256 hex) — so với băm đã lưu để biết biên bản đã cũ.
 pub fn source_hash(input: &str) -> String {
     crate::session::hash_token(input)
@@ -203,7 +218,8 @@ pub async fn create(
             message: "Bản ghi chưa có đoạn nào chép lời xong. Chép lời trước rồi tóm tắt.".into(),
         });
     }
-    let input = build_input(&sentences);
+    let hash = source_hash(&build_input(&sentences));
+    let input = build_named_input(&loaded.timed_named_sentences());
     let chars = input.chars().count();
     if chars > MAX_INPUT_CHARS {
         return Err(AppError::TooLarge("bản chép lời quá dài để tóm tắt".into()));
@@ -212,7 +228,7 @@ pub async fn create(
         user_id: user.0.clone(),
         key,
         plan: plan::effective(profile.plan.as_deref(), profile.plan_until, DateTime::now()),
-        hash: source_hash(&input),
+        hash,
         input,
         chars,
         max_at: loaded.duration_s(),
@@ -292,6 +308,13 @@ mod tests {
         assert_eq!(input, "[0] Xin chào.\n[61] Chốt ngày thứ Hai.\n[0] Lạ.\n");
         assert_eq!(source_hash(&input), source_hash(&input.clone()));
         assert_ne!(source_hash(&input), source_hash("[0] Xin chào.\n"));
+    }
+
+    #[test]
+    fn named_input_adds_speakers_without_changing_the_hash_source() {
+        let named = build_named_input(&[(1.2, Some("Lan".into()), "Chốt  giá."), (5.0, None, "Xong."), (7.0, Some(" ".into()), "Ừ.")]);
+        assert_eq!(named, "[1] Lan: Chốt giá.\n[5] Xong.\n[7] Ừ.\n");
+        assert_eq!(build_named_input(&[(1.2, None, "Chốt giá.")]), build_input(&[(1.2, "Chốt giá.")]));
     }
 
     #[test]

@@ -68,6 +68,14 @@ fn total_doc(month: &str) -> String {
 fn day_doc(user_id: &str, day: &str) -> String {
     format!("d:{user_id}:{day}")
 }
+/// Giây audio ElevenLabs đã tính tiền trong tháng (trần giờ riêng theo gói ElevenLabs, độc lập với trần USD).
+fn provider_doc(month: &str) -> String {
+    format!("el:{month}")
+}
+/// Dấu "ElevenLabs báo hết quota tháng": chặn gửi tới tháng sau hoặc tới khi quản trị gỡ.
+fn provider_exhausted_mark(month: &str) -> String {
+    format!("el_exhausted:{month}")
+}
 
 
 /// Vì sao không giữ được chỗ.
@@ -220,6 +228,44 @@ pub async fn reserve_total(db: &Database, month: &str, need: i64, limits: &Trans
 /// Điều chỉnh trần tổng của tháng (`delta` âm = hoàn phần giữ dư).
 pub async fn settle_total(db: &Database, month: &str, delta: i64) -> Result<(), AppError> {
     add(db, &total_doc(month), delta).await
+}
+
+/// Giữ `need` giây trên sổ giờ ElevenLabs của tháng nếu sau khi giữ vẫn ≤ `limit`. `false` khi đã đủ trần.
+pub async fn reserve_provider(db: &Database, month: &str, need: i64, limit: i64) -> Result<bool, AppError> {
+    take(db, &provider_doc(month), need, limit).await
+}
+
+/// Điều chỉnh sổ giờ ElevenLabs (`delta` âm = hoàn, dương = ElevenLabs tính nhiều hơn phần đã giữ).
+pub async fn settle_provider(db: &Database, month: &str, delta: i64) -> Result<(), AppError> {
+    add(db, &provider_doc(month), delta).await
+}
+
+/// Giây ElevenLabs đã dùng trong tháng.
+pub async fn provider_seconds(db: &Database, month: &str) -> Result<i64, AppError> {
+    seconds_of(db, &provider_doc(month)).await
+}
+
+/// Đánh dấu ElevenLabs đã báo hết quota trong tháng; `true` ở lần đầu (để báo chủ sản phẩm một lần).
+pub async fn mark_provider_exhausted(db: &Database, month: &str) -> bool {
+    mark_once(db, &provider_exhausted_mark(month)).await
+}
+
+/// ElevenLabs đã báo hết quota trong tháng chưa.
+pub async fn provider_exhausted(db: &Database, month: &str) -> Result<bool, AppError> {
+    db.collection::<Document>("transcribe_marks")
+        .count_documents(doc! { "_id": provider_exhausted_mark(month) })
+        .await
+        .map(|n| n > 0)
+        .map_err(|e| AppError::Internal(format!("đọc dấu hết quota: {e}")))
+}
+
+/// Gỡ dấu hết quota (quản trị đã nạp thêm credit). `true` khi có dấu để gỡ.
+pub async fn clear_provider_exhausted(db: &Database, month: &str) -> Result<bool, AppError> {
+    db.collection::<Document>("transcribe_marks")
+        .delete_one(doc! { "_id": provider_exhausted_mark(month) })
+        .await
+        .map(|r| r.deleted_count > 0)
+        .map_err(|e| AppError::Internal(format!("gỡ dấu hết quota: {e}")))
 }
 
 /// Giây đã dùng trên sổ đã chặn lượt `charge` (để báo số cho người dùng).
@@ -411,6 +457,18 @@ mod tests {
         // Hoàn 10 giây của dave trả cả sổ ngày.
         settle(&db, &dave, -10).await.expect("hoàn");
         assert_eq!(blocked_usage(&db, &dave, &Blocked::DailyLimit).await.expect("ngày"), 20);
+
+        // Sổ giờ ElevenLabs: trần riêng, hoàn và chỉnh theo số ElevenLabs tính; dấu hết quota gỡ được.
+        assert!(reserve_provider(&db, &month, 60, 100).await.expect("giữ"));
+        assert!(!reserve_provider(&db, &month, 50, 100).await.expect("vượt trần"));
+        settle_provider(&db, &month, -1).await.expect("chỉnh");
+        assert_eq!(provider_seconds(&db, &month).await.expect("đọc"), 59);
+        assert!(!provider_exhausted(&db, &month).await.expect("chưa hết"));
+        assert!(mark_provider_exhausted(&db, &month).await);
+        assert!(!mark_provider_exhausted(&db, &month).await, "chỉ báo một lần");
+        assert!(provider_exhausted(&db, &month).await.expect("hết"));
+        assert!(clear_provider_exhausted(&db, &month).await.expect("gỡ"));
+        assert!(!provider_exhausted(&db, &month).await.expect("đã gỡ"));
 
         db.collection::<Document>(COLL)
             .delete_many(doc! { "_id": { "$regex": format!("{month}$") } })

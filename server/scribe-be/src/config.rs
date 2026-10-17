@@ -16,8 +16,60 @@ pub const PLUS_MAX_FILE_BYTES: u64 = 2 * 1024 * MIB;
 /// file disk).
 pub const RETENTION_DAYS: i64 = 14;
 
-/// Giá `gpt-4o-mini-transcribe` theo phút audio gửi đi (USD) — dùng để đổi trần chi phí ra giây.
-pub const USD_PER_MINUTE: f64 = 0.003;
+/// Nhà cung cấp chép lời theo tệp (`TRANSCRIBE_PROVIDER`, chủ dự án chốt 17/10/2026): ElevenLabs Scribe v2 mặc định,
+/// OpenAI giữ làm dự phòng một bản phát hành. Chép trực tiếp trên iPhone vẫn dùng OpenAI Realtime.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Provider {
+    #[default]
+    ElevenLabs,
+    OpenAi,
+}
+
+impl Provider {
+    /// `openai` (không phân biệt hoa thường) ⟹ OpenAI; còn lại (kể cả không đặt) ⟹ ElevenLabs.
+    pub fn parse(raw: Option<&str>) -> Provider {
+        match raw.map(str::trim) {
+            Some(v) if v.eq_ignore_ascii_case("openai") => Provider::OpenAi,
+            _ => Provider::ElevenLabs,
+        }
+    }
+
+    /// Nhà cung cấp của bản build này.
+    pub fn from_build() -> Provider {
+        Provider::parse(option_env!("TRANSCRIBE_PROVIDER"))
+    }
+
+    /// Giá một phút audio gửi đi (USD): Scribe v2 0,22 USD/giờ, `gpt-4o-mini-transcribe` 0,003 USD/phút.
+    pub fn usd_per_minute(self) -> f64 {
+        match self {
+            Provider::ElevenLabs => 0.22 / 60.0,
+            Provider::OpenAi => 0.003,
+        }
+    }
+
+    /// Tên model ghi vào lượt chép.
+    pub fn model(self) -> &'static str {
+        match self {
+            Provider::ElevenLabs => "scribe_v2",
+            Provider::OpenAi => "gpt-4o-mini-transcribe",
+        }
+    }
+}
+
+/// Trần giờ audio ElevenLabs mỗi tháng (giờ Việt Nam), mặc định 25 giờ: gói Starter ($6/tháng) có khoảng 27 giờ Scribe
+/// v2, chừa biên. Độc lập với trần USD (trần USD còn gồm chi phí tóm tắt, hỏi đáp, dịch của OpenAI).
+const DEFAULT_ELEVENLABS_MONTHLY_HOURS: f64 = 25.0;
+
+/// `ELEVENLABS_MONTHLY_HOURS` (giờ, số thực ≥ 0) ra giây; sai dạng hoặc âm thì dùng mặc định.
+fn elevenlabs_monthly_seconds(raw: Option<&str>) -> i64 {
+    let hours = raw.and_then(|v| v.trim().parse::<f64>().ok()).filter(|h| h.is_finite() && *h >= 0.0);
+    (hours.unwrap_or(DEFAULT_ELEVENLABS_MONTHLY_HOURS) * 3600.0).round() as i64
+}
+
+/// Giá một phút chép lời của bản build này (USD) — đổi trần chi phí ra giây và quy chi phí tóm tắt ra giây chép lời.
+pub fn usd_per_minute() -> f64 {
+    Provider::from_build().usd_per_minute()
+}
 /// Mặc định hạn mức (người dùng duyệt 2026-10-16 theo gợi ý của Jev); đổi bằng biến build cùng tên.
 const DEFAULT_FREE_MINUTES: i64 = 120;
 const DEFAULT_PLUS_MINUTES: i64 = 3000;
@@ -105,12 +157,13 @@ impl TranscribeLimits {
         plus_minutes: Option<&str>,
         free_pool_usd: Option<&str>,
         cap_usd: Option<&str>,
+        usd_per_minute: f64,
     ) -> Self {
         let minutes =
             |v: Option<&str>, default: i64| v.and_then(|s| s.trim().parse().ok()).filter(|m| *m >= 0).unwrap_or(default);
         let usd_seconds = |v: Option<&str>, default: f64| {
             let usd = v.and_then(|s| s.trim().parse::<f64>().ok()).filter(|c| *c >= 0.0).unwrap_or(default);
-            (usd / USD_PER_MINUTE * 60.0).round() as i64
+            (usd / usd_per_minute * 60.0).round() as i64
         };
         TranscribeLimits {
             free_seconds: minutes(free_minutes, DEFAULT_FREE_MINUTES) * 60,
@@ -159,6 +212,12 @@ pub struct Config {
     pub realtime_emails: Vec<String>,
     /// Tệp chứa key OpenAI của chủ sản phẩm (đọc lúc khởi động; không nhúng key vào binary).
     pub openai_key_path: Option<String>,
+    /// Nhà cung cấp chép lời theo tệp (`TRANSCRIBE_PROVIDER`).
+    pub transcribe_provider: Provider,
+    /// Tệp chứa key ElevenLabs của chủ sản phẩm (`ELEVENLABS_KEY_PATH`, đọc lúc khởi động).
+    pub elevenlabs_key_path: Option<String>,
+    /// Trần giây audio ElevenLabs mỗi tháng (`ELEVENLABS_MONTHLY_HOURS`).
+    pub elevenlabs_monthly_seconds: i64,
     /// `TRANSCRIBE_OPEN=1`: mọi user đăng nhập được chép lời (trong hạn mức gói), không chỉ `TRANSCRIBE_EMAILS`.
     pub transcribe_open: bool,
     pub transcribe_limits: TranscribeLimits,
@@ -223,12 +282,16 @@ impl Config {
             transcribe_emails: parse_csv(option_env!("TRANSCRIBE_EMAILS")),
             realtime_emails: parse_csv(option_env!("REALTIME_EMAILS")),
             openai_key_path: option_env!("OPENAI_KEY_PATH").filter(|p| !p.is_empty()).map(str::to_string),
+            transcribe_provider: Provider::from_build(),
+            elevenlabs_key_path: option_env!("ELEVENLABS_KEY_PATH").filter(|p| !p.is_empty()).map(str::to_string),
+            elevenlabs_monthly_seconds: elevenlabs_monthly_seconds(option_env!("ELEVENLABS_MONTHLY_HOURS")),
             transcribe_open: matches!(option_env!("TRANSCRIBE_OPEN"), Some("1" | "true")),
             transcribe_limits: TranscribeLimits::from_parts(
                 option_env!("TRANSCRIBE_FREE_MINUTES"),
                 option_env!("TRANSCRIBE_PLUS_MINUTES"),
                 option_env!("TRANSCRIBE_FREE_POOL_USD"),
                 option_env!("TRANSCRIBE_MONTHLY_CAP_USD"),
+                usd_per_minute(),
             )
             .with_free_guards(
                 option_env!("TRANSCRIBE_FREE_DAILY_MINUTES"),
@@ -320,17 +383,38 @@ mod tests {
 
     #[test]
     fn limits_default_to_the_approved_numbers_and_ignore_bad_values() {
-        let d = TranscribeLimits::from_parts(None, None, None, None);
+        let openai = Provider::OpenAi.usd_per_minute();
+        let d = TranscribeLimits::from_parts(None, None, None, None, openai);
         assert_eq!((d.free_seconds, d.plus_seconds), (120 * 60, 3000 * 60));
         // $10 / $0.003 mỗi phút ≈ 3333 phút; $30 ≈ 10000 phút.
         assert_eq!((d.free_pool_seconds, d.monthly_cap_seconds), (200_000, 600_000));
-        let c = TranscribeLimits::from_parts(Some("60"), Some("x"), Some("-5"), Some("15"));
+        let c = TranscribeLimits::from_parts(Some("60"), Some("x"), Some("-5"), Some("15"), openai);
         assert_eq!((c.free_seconds, c.plus_seconds), (3600, 3000 * 60));
         assert_eq!((c.free_pool_seconds, c.monthly_cap_seconds), (200_000, 300_000));
         assert_eq!((d.free_daily_seconds, d.free_delay_hours), (1800, 24));
         let g = d.with_free_guards(Some("10"), Some("0"));
         assert_eq!((g.free_daily_seconds, g.free_delay_hours), (600, 0));
         assert_eq!(d.with_free_guards(Some("bad"), Some("-1")).free_daily_seconds, 1800);
+    }
+
+    #[test]
+    fn provider_defaults_to_elevenlabs_and_sets_the_price() {
+        assert_eq!(Provider::parse(None), Provider::ElevenLabs);
+        assert_eq!(Provider::parse(Some("elevenlabs")), Provider::ElevenLabs);
+        assert_eq!(Provider::parse(Some(" OpenAI ")), Provider::OpenAi);
+        assert_eq!(Provider::parse(Some("khác")), Provider::ElevenLabs);
+        // 0,22 USD mỗi giờ audio.
+        assert!((Provider::ElevenLabs.usd_per_minute() * 60.0 - 0.22).abs() < 1e-12);
+        assert_eq!(Provider::OpenAi.usd_per_minute(), 0.003);
+        // Trần $30 với ElevenLabs ≈ 8182 phút; quỹ free $10 ≈ 2727 phút.
+        let d = TranscribeLimits::from_parts(None, None, None, None, Provider::ElevenLabs.usd_per_minute());
+        assert_eq!((d.free_pool_seconds, d.monthly_cap_seconds), (163_636, 490_909));
+        assert_eq!((Provider::ElevenLabs.model(), Provider::OpenAi.model()), ("scribe_v2", "gpt-4o-mini-transcribe"));
+        assert_eq!(elevenlabs_monthly_seconds(None), 90_000);
+        assert_eq!(elevenlabs_monthly_seconds(Some(" 10.5 ")), 37_800);
+        assert_eq!(elevenlabs_monthly_seconds(Some("-1")), 90_000);
+        assert_eq!(elevenlabs_monthly_seconds(Some("x")), 90_000);
+        assert_eq!(elevenlabs_monthly_seconds(Some("0")), 0);
     }
 
     #[test]

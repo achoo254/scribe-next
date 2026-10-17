@@ -3,6 +3,7 @@
 //! ```text
 //! scribe-be admin set-plan <email> <free|plus> [--until YYYY-MM-DD]
 //! scribe-be admin usage [--email <email>] [--month YYYY-MM] [--recompute [--apply]]
+//! scribe-be admin elevenlabs-quota [--month YYYY-MM] [--clear]
 //! scribe-be admin block <email> [--reason <lý do>]
 //! scribe-be admin unblock <email>
 //! scribe-be admin notify-test
@@ -27,6 +28,7 @@ pub async fn run(config: &Config, db: &Database, args: &[String]) -> Result<Valu
     match command.as_str() {
         "set-plan" => set_plan(db, rest).await,
         "usage" => show_usage(config, db, rest).await,
+        "elevenlabs-quota" => elevenlabs_quota(config, db, rest).await,
         "block" => block(db, rest, true).await,
         "unblock" => block(db, rest, false).await,
         "shorten-free-retention" => shorten_free_retention(db, args.iter().any(|a| a == "--apply")).await,
@@ -41,6 +43,7 @@ pub async fn run(config: &Config, db: &Database, args: &[String]) -> Result<Valu
 fn usage_text() -> String {
     "dùng: scribe-be admin set-plan <email> <free|plus> [--until YYYY-MM-DD] | \
      scribe-be admin usage [--email <email>] [--month YYYY-MM] [--recompute [--apply]] | \
+     scribe-be admin elevenlabs-quota [--month YYYY-MM] [--clear] | \
      scribe-be admin block <email> [--reason <lý do>] | scribe-be admin unblock <email> | \
      scribe-be admin notify-test | scribe-be admin shorten-free-retention [--apply]"
         .into()
@@ -158,12 +161,39 @@ async fn show_usage(config: &Config, db: &Database, args: &[String]) -> Result<V
         "freePool": { "usedMinutes": current.free_pool_seconds / 60, "limitMinutes": limits.free_pool_seconds / 60 },
         "total": { "usedMinutes": current.total_seconds / 60, "limitMinutes": limits.monthly_cap_seconds / 60 },
     });
+    out["elevenlabs"] = provider_hours(config, db, &month).await?;
     if let Some(id) = &user_id {
         out["user"] = json!({ "userId": id, "usedMinutes": current.user_seconds / 60 });
     }
     if args.iter().any(|a| a == "--recompute") {
         out["recompute"] = recompute(db, &month, args.iter().any(|a| a == "--apply")).await?;
     }
+    Ok(out)
+}
+
+/// Sổ giờ ElevenLabs của tháng: đã dùng, trần, và ElevenLabs đã báo hết quota chưa.
+async fn provider_hours(config: &Config, db: &Database, month: &str) -> Result<Value, String> {
+    let used = usage::provider_seconds(db, month).await.map_err(err)?;
+    let exhausted = usage::provider_exhausted(db, month).await.map_err(err)?;
+    let hours = |s: i64| (s as f64 / 3600.0 * 100.0).round() / 100.0;
+    Ok(json!({
+        "usedMinutes": used / 60,
+        "usedHours": hours(used),
+        "limitHours": hours(config.elevenlabs_monthly_seconds),
+        "quotaExhausted": exhausted,
+    }))
+}
+
+/// Xem sổ giờ ElevenLabs; `--clear` gỡ dấu "hết quota tháng" sau khi đã nạp thêm credit.
+async fn elevenlabs_quota(config: &Config, db: &Database, args: &[String]) -> Result<Value, String> {
+    let month = flag(args, "--month").map(str::to_string).unwrap_or_else(|| usage::month_key(Utc::now()));
+    let mut out = json!({ "month": month });
+    if args.iter().any(|a| a == "--clear") {
+        let cleared = usage::clear_provider_exhausted(db, &month).await.map_err(err)?;
+        audit(db, None, "admin.elevenlabs_quota_clear", doc! { "month": &month, "cleared": cleared }).await;
+        out["cleared"] = json!(cleared);
+    }
+    out["elevenlabs"] = provider_hours(config, db, &month).await?;
     Ok(out)
 }
 

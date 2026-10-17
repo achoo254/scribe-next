@@ -267,7 +267,7 @@ mod tests {
             file::create(&db, f).await.expect("tạo file");
         }
         let charge = crate::models::usage::Charge { user_id: user.clone(), month: "test".into(), free_pool: false, day: None };
-        let s = |start: f64, text: &str| Sentence { start, end: start + 1.0, text: text.into() };
+        let s = |start: f64, text: &str| Sentence { start, end: start + 1.0, text: text.into(), speaker: None };
         for (id, sentences) in [(a, vec![s(1.0, "Chào cả nhà."), s(5.0, "Bàn hợp đồng.")]), (b, vec![s(2.0, "Chốt giá.")])] {
             transcript::enqueue(&db, id, &user, "run-1", "m", &charge, 0).await.expect("enqueue");
             transcript::finish_done(&db, id, "run-1", "", &sentences).await.expect("xong");

@@ -4,7 +4,7 @@ use crate::state::AppState;
 use crate::{access_log, auth, chat_link, files, jobs, rate_limit, realtime, recordings, search, summary, transcribe, translate, upload};
 use axum::extract::DefaultBodyLimit;
 use axum::middleware::{from_fn, from_fn_with_state};
-use axum::routing::{delete, get, post, put};
+use axum::routing::{delete, get, patch, post, put};
 use axum::{Json, Router};
 use serde_json::{json, Value};
 
@@ -19,6 +19,7 @@ pub fn build_router(state: AppState) -> Router {
         )
         .route("/api/transcript-docs/{key}/status", get(transcribe::docs::status))
         .route("/api/transcript-docs/{key}/segments/{file_id}", put(transcribe::docs::save_segment))
+        .route("/api/transcript-docs/{key}/speakers", patch(transcribe::docs::rename_speakers))
         .route("/api/transcript-docs/{key}/summary", post(summary::create))
         .route("/api/transcript-docs/{key}/share", post(summary::share::share))
         .route("/api/transcript-docs/{key}/translation", get(translate::get).post(translate::create))

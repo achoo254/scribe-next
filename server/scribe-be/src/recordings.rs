@@ -339,6 +339,30 @@ pub(crate) async fn active_session_keys(state: &AppState, user_id: &str) -> Resu
     Ok(keys)
 }
 
+/// Một đoạn tải lên bắt đầu quá chừng này (phút) mà chưa finalize thì coi như bỏ dở (app bị gỡ, mất mạng hẳn).
+const UPLOAD_STALE_MINUTES: i64 = 10;
+
+/// Phiên iPhone `session` còn đoạn đang tải lên (mở trong [`UPLOAD_STALE_MINUTES`] phút qua): chép cả phiên nên chờ
+/// đoạn đó lên xong.
+pub(crate) async fn segment_uploading(state: &AppState, user_id: &str, session: &str) -> Result<bool, AppError> {
+    let read = |e: mongodb::error::Error| AppError::Internal(format!("tra đoạn đang tải lên: {e}"));
+    let since = DateTime::from_millis(DateTime::now().timestamp_millis() - UPLOAD_STALE_MINUTES * 60_000);
+    let mut cur = state
+        .db
+        .collection::<Document>(SESSIONS)
+        .find(doc! { "userId": user_id, "createdAt": { "$gt": since } })
+        .projection(doc! { "name": 1 })
+        .await
+        .map_err(read)?;
+    while let Some(d) = cur.next().await {
+        let d = d.map_err(read)?;
+        if d.get_str("name").ok().and_then(file::parse_segment_name).is_some_and(|(s, _)| s == session) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
 /// Path `.part` — session PHẢI là UUID hợp lệ (chống path-traversal).
 fn part_path(state: &AppState, user_id: &str, session_id: &str) -> Result<String, AppError> {
     Uuid::parse_str(session_id).map_err(|_| AppError::BadRequest("session id không hợp lệ".into()))?;

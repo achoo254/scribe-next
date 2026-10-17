@@ -24,7 +24,7 @@ const COLL: &str = "transcripts";
 /// Lượt bị backend khởi động lại cắt ngang lần thứ hai: dừng hẳn thay vì gửi lại audio lần nữa.
 pub const RESTARTED: &str = "Máy chủ đã khởi động lại trong lúc chép. Hãy bấm Chép lời lại.";
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TranscriptDoc {
     #[serde(rename = "_id")]
     pub id: ObjectId,
@@ -196,16 +196,55 @@ pub async fn add_charge(db: &Database, file_id: ObjectId, run_id: &str, seconds:
     Ok(res.matched_count > 0)
 }
 
-/// Lấy lượt chờ lâu nhất → running.
+/// Lấy lượt chờ lâu nhất → running. Lượt bị hoãn ([`defer_run`]) có `updatedAt` ở tương lai: chưa tới lượt.
 pub async fn claim_next(db: &Database) -> Result<Option<TranscriptDoc>, mongodb::error::Error> {
     db.collection::<TranscriptDoc>(COLL)
         .find_one_and_update(
-            doc! { "status": "queued" },
+            doc! { "status": "queued", "updatedAt": { "$lte": DateTime::now() } },
             doc! { "$set": { "status": "running", "updatedAt": DateTime::now() } },
         )
         .sort(doc! { "updatedAt": 1 })
         .return_document(ReturnDocument::After)
         .await
+}
+
+/// Hoãn mọi file còn chờ hoặc vừa nhận của lượt `run_id` (phiên iPhone còn đoạn đang tải lên) tới `until`.
+pub async fn defer_run(db: &Database, user_id: &str, run_id: &str, until: DateTime) -> Result<(), AppError> {
+    db.collection::<TranscriptDoc>(COLL)
+        .update_many(
+            doc! { "userId": user_id, "runId": run_id, "open": true, "status": { "$in": ["queued", "running"] } },
+            doc! { "$set": { "status": "queued", "updatedAt": until } },
+        )
+        .await
+        .map(|_| ())
+        .map_err(|e| AppError::Internal(format!("hoãn lượt chép lời: {e}")))
+}
+
+/// Nhận các file còn chờ của cùng lượt `run_id` (chép cả phiên trong một request) → running, trả mọi file đang chạy
+/// của lượt trừ `except` (file worker vừa lấy).
+pub async fn claim_run_members(
+    db: &Database,
+    user_id: &str,
+    run_id: &str,
+    except: ObjectId,
+) -> Result<Vec<TranscriptDoc>, AppError> {
+    let coll = db.collection::<TranscriptDoc>(COLL);
+    let read = |e: mongodb::error::Error| AppError::Internal(format!("nhận lượt chép cả phiên: {e}"));
+    coll.update_many(
+        doc! { "userId": user_id, "runId": run_id, "status": "queued", "open": true },
+        doc! { "$set": { "status": "running", "updatedAt": DateTime::now() } },
+    )
+    .await
+    .map_err(read)?;
+    let mut cur = coll
+        .find(doc! { "userId": user_id, "runId": run_id, "status": "running", "open": true, "_id": { "$ne": except } })
+        .await
+        .map_err(read)?;
+    let mut out = Vec::new();
+    while let Some(t) = cur.next().await {
+        out.push(t.map_err(read)?);
+    }
+    Ok(out)
 }
 
 /// Đóng lượt `run_id` (đặt `set`, `open: false`) rồi quyết toán. `false` khi lượt đã đóng từ trước
@@ -513,7 +552,7 @@ mod tests {
 
         // a chạy, gửi 50 giây rồi xong ⟹ quyết toán −10. b lỗi sau khi gửi 15 giây ⟹ hoàn 25.
         assert!(add_sent(&db, a, "run-1", 50).await.expect("sent a"));
-        let sentence = Sentence { start: 0.0, end: 1.0, text: "Xin chào.".into() };
+        let sentence = Sentence { start: 0.0, end: 1.0, text: "Xin chào.".into(), speaker: None };
         assert!(finish_done(&db, a, "run-1", "Xin chào.", std::slice::from_ref(&sentence)).await.expect("xong a"));
         assert!(add_sent(&db, b, "run-1", 15).await.expect("sent b"));
         assert!(finish_failed(&db, b, "run-1", "lỗi").await.expect("lỗi b"));
@@ -588,6 +627,57 @@ mod tests {
         db.collection::<bson::Document>(usage::RUNS_COLL).delete_many(doc! { "userId": &user }).await.expect("dọn");
         db.collection::<bson::Document>("transcribe_usage")
             .delete_many(doc! { "_id": { "$regex": format!("{month}$") } })
+            .await
+            .expect("dọn");
+    }
+
+    /// Chép cả phiên trên Mongo thật (DB dev): `TRANSCRIPT_TEST_MONGO_URI=<uri> TRANSCRIPT_TEST_DB_NAME=<db> cargo test
+    /// transcript_whole_session -- --ignored`. Các đoạn chung `runId` được nhận cùng nhau; lượt hoãn chưa tới giờ thì
+    /// không được lấy. User giả riêng, tự dọn.
+    #[tokio::test]
+    #[ignore]
+    async fn transcript_whole_session_run_on_real_mongo() {
+        let uri = std::env::var("TRANSCRIPT_TEST_MONGO_URI").expect("TRANSCRIPT_TEST_MONGO_URI");
+        let db_name = std::env::var("TRANSCRIPT_TEST_DB_NAME").expect("TRANSCRIPT_TEST_DB_NAME");
+        let db = crate::db::connect(&uri, &db_name).await.expect("kết nối Mongo");
+        let user = format!("selftest-{}", uuid::Uuid::new_v4());
+        let run = format!("run-{}", uuid::Uuid::new_v4());
+        let charge = Charge { user_id: user.clone(), month: format!("test-{}", uuid::Uuid::new_v4().simple()), free_pool: false, day: None };
+        let ids = [ObjectId::new(), ObjectId::new(), ObjectId::new()];
+        for id in ids {
+            assert!(enqueue(&db, id, &user, &run, "scribe_v2", &charge, 60).await.expect("xếp"));
+        }
+        let coll = db.collection::<TranscriptDoc>(COLL);
+        let mine = doc! { "userId": &user };
+
+        // Hoãn cả lượt tới tương lai: worker không lấy được file nào của lượt.
+        let later = DateTime::from_millis(DateTime::now().timestamp_millis() + 60_000);
+        defer_run(&db, &user, &run, later).await.expect("hoãn");
+        let deferred = coll.count_documents(doc! { "userId": &user, "status": "queued", "updatedAt": later }).await.expect("đếm");
+        assert_eq!(deferred, 3);
+        // Bộ lọc của `claim_next` (không gọi thẳng: nó lấy lượt chờ của mọi user trong DB dev).
+        let ready = doc! { "userId": &user, "status": "queued", "updatedAt": { "$lte": DateTime::now() } };
+        assert_eq!(coll.count_documents(ready).await.expect("đếm"), 0, "lượt hoãn không được lấy sớm");
+
+        // Hết hoãn: nhận file đầu, rồi các file còn lại của lượt thành running cùng lúc.
+        coll.update_many(mine.clone(), doc! { "$set": { "updatedAt": DateTime::now() } }).await.expect("hết hoãn");
+        coll.update_one(doc! { "_id": ids[0] }, doc! { "$set": { "status": "running" } }).await.expect("nhận đầu");
+        let others = claim_run_members(&db, &user, &run, ids[0]).await.expect("nhận cả lượt");
+        let mut got: Vec<ObjectId> = others.iter().map(|t| t.id).collect();
+        got.sort();
+        let mut want = vec![ids[1], ids[2]];
+        want.sort();
+        assert_eq!(got, want);
+        assert_eq!(coll.count_documents(doc! { "userId": &user, "status": "running" }).await.expect("đếm"), 3);
+        // Lượt khác (runId khác) không bị gom vào.
+        assert!(claim_run_members(&db, &user, "run-khac", ids[0]).await.expect("lượt khác").is_empty());
+
+        for id in ids {
+            delete(&db, id).await.expect("dọn");
+        }
+        db.collection::<bson::Document>(usage::RUNS_COLL).delete_many(mine).await.expect("dọn sổ");
+        db.collection::<bson::Document>("transcribe_usage")
+            .delete_many(doc! { "_id": { "$regex": format!("{}$", charge.month) } })
             .await
             .expect("dọn");
     }

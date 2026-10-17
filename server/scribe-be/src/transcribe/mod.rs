@@ -1,21 +1,26 @@
-//! Chép lời bản ghi bằng OpenAI `gpt-4o-mini-transcribe`, key OpenAI của chủ sản phẩm.
+//! Chép lời bản ghi bằng key của chủ sản phẩm: ElevenLabs Scribe v2 (mặc định, cả tệp hoặc cả phiên iPhone trong một
+//! request, có người nói, xem [`whole`]) hoặc OpenAI `gpt-4o-mini-transcribe` (`TRANSCRIBE_PROVIDER=openai`, cắt mảnh).
 //!
-//! Key nằm trong tệp `OPENAI_KEY_PATH` trên server, đọc một lần lúc khởi động ([`Transcriber`]): không
-//! có trong repo, binary, log hay audit. Tiền là của chủ sản phẩm nên mỗi lượt giữ chỗ phút trong sổ
-//! (`models::usage`) trước khi xếp hàng và quyết toán theo số giây thật sự đã gửi khi kết thúc.
-//! Chỉ email trong `TRANSCRIBE_EMAILS` được dùng, trừ khi bật `TRANSCRIBE_OPEN`.
+//! Key nằm trong tệp `ELEVENLABS_KEY_PATH` / `OPENAI_KEY_PATH` trên server, đọc một lần lúc khởi động ([`Transcriber`]):
+//! không có trong repo, binary, log hay audit. Key OpenAI còn dùng cho tóm tắt, hỏi đáp, dịch và chép trực tiếp. Tiền
+//! là của chủ sản phẩm nên mỗi lượt giữ chỗ phút trong sổ (`models::usage`) trước khi xếp hàng và quyết toán theo số
+//! giây thật sự đã gửi khi kết thúc. Chỉ email trong `TRANSCRIBE_EMAILS` được dùng, trừ khi bật `TRANSCRIBE_OPEN`.
 //!
-//! Hàng đợi riêng (collection `transcripts`), chạy tuần tự từng file, mỗi file gọi song song
-//! [`PARALLEL`] mảnh — không chặn hàng đợi Cắt file. Backend khởi động lại thì lượt dở chạy lại.
+//! Hàng đợi riêng (collection `transcripts`, mỗi file một doc), chạy tuần tự từng lượt — không chặn hàng đợi Cắt
+//! file. Backend khởi động lại thì lượt dở chạy lại.
 
 pub mod bookmarks;
 pub mod chunking;
 pub mod docs;
+pub(crate) mod elevenlabs;
 mod export;
 pub(crate) mod openai;
+mod whole;
+pub(crate) mod words;
 
 use crate::audit;
 use crate::auth::UserId;
+use crate::config::Provider;
 use crate::error::AppError;
 use crate::files::{content_disposition_attachment, sanitize_filename};
 use crate::models::usage::{self, Blocked, Charge};
@@ -45,53 +50,94 @@ const MAX_FILES: usize = 200;
 /// Một file chép quá lâu thì dừng, khỏi chặn hàng đợi: 10 phút + thời lượng bản ghi.
 const FILE_TIMEOUT_BASE_S: u64 = 600;
 
-/// API key OpenAI của server. Không có `Debug`/`Display` để khỏi lỡ in ra log.
+/// API key của server. Không có `Debug`/`Display` để khỏi lỡ in ra log.
 struct ApiKey(String);
 
 /// Thông báo cho người dùng khi key server không dùng được (không lộ chi tiết key/tài khoản).
 pub(crate) const PAUSED: &str = "Chép lời đang tạm ngưng, quản trị đã được báo. Thử lại sau.";
 
-/// Key server + hàng đợi. Key hỏng (OpenAI báo 401 hoặc hết credit) thì ngắt: không nhận lượt mới
-/// cho tới khi khởi động lại với key mới.
+/// Key server + hàng đợi. Key chép lời hỏng (401/403 hoặc hết credit) thì ngắt: không nhận lượt mới cho tới khi
+/// khởi động lại với key mới.
 #[derive(Default)]
 pub struct Transcriber {
+    provider: Provider,
+    /// Key OpenAI: chép lời khi `provider = OpenAi`; tóm tắt, hỏi đáp, dịch, chép trực tiếp luôn dùng key này.
     key: Option<ApiKey>,
+    /// Key ElevenLabs: chép lời khi `provider = ElevenLabs`.
+    elevenlabs: Option<ApiKey>,
     broken: AtomicBool,
     wake: Notify,
 }
 
-impl Transcriber {
-    /// Đọc key từ tệp. Thiếu, rỗng hay sai dạng thì chép lời tắt (log một dòng, không có giá trị key).
-    pub fn load(path: Option<&str>) -> Transcriber {
-        let key = path.and_then(|p| match std::fs::read_to_string(p) {
-            Ok(raw) => {
-                let key = raw.trim().to_string();
-                if key.starts_with("sk-") && !key.chars().any(char::is_whitespace) {
-                    Some(ApiKey(key))
-                } else {
-                    tracing::error!(path = %p, "tệp key OpenAI không đúng dạng — chép lời tắt");
-                    None
-                }
-            }
-            Err(e) => {
-                tracing::error!(path = %p, "không đọc được tệp key OpenAI ({}) — chép lời tắt", e.kind());
+/// Đọc key từ tệp. Thiếu, rỗng hay sai dạng thì trả `None` (log một dòng, không có giá trị key).
+fn read_key(path: Option<&str>, label: &str, valid: fn(&str) -> bool) -> Option<ApiKey> {
+    let path = path?;
+    match std::fs::read_to_string(path) {
+        Ok(raw) => {
+            let key = raw.trim().to_string();
+            if valid(&key) {
+                Some(ApiKey(key))
+            } else {
+                tracing::error!(path = %path, "tệp key {label} không đúng dạng");
                 None
             }
-        });
-        if key.is_some() {
-            tracing::info!("chép lời bật (key server)");
         }
-        Transcriber { key, broken: AtomicBool::new(false), wake: Notify::new() }
+        Err(e) => {
+            tracing::error!(path = %path, "không đọc được tệp key {label} ({})", e.kind());
+            None
+        }
+    }
+}
+
+fn valid_openai_key(key: &str) -> bool {
+    key.starts_with("sk-") && !key.chars().any(char::is_whitespace)
+}
+
+/// Key ElevenLabs: một chuỗi ASCII liền (dạng `sk_…` hoặc 32 ký tự hex của key cũ).
+fn valid_elevenlabs_key(key: &str) -> bool {
+    key.len() >= 20 && key.chars().all(|c| c.is_ascii_graphic())
+}
+
+impl Transcriber {
+    /// Đọc các key từ tệp. Thiếu key của nhà cung cấp chép lời thì chép lời tắt; thiếu key OpenAI thì tóm tắt, hỏi
+    /// đáp, dịch, chép trực tiếp tắt.
+    pub fn load(provider: Provider, openai_path: Option<&str>, elevenlabs_path: Option<&str>) -> Transcriber {
+        let key = read_key(openai_path, "OpenAI", valid_openai_key);
+        let elevenlabs = match provider {
+            Provider::ElevenLabs => read_key(elevenlabs_path, "ElevenLabs", valid_elevenlabs_key),
+            Provider::OpenAi => None,
+        };
+        let transcriber = Transcriber { provider, key, elevenlabs, broken: AtomicBool::new(false), wake: Notify::new() };
+        if transcriber.ready() {
+            tracing::info!(provider = ?provider, "chép lời bật (key server)");
+        } else {
+            tracing::error!(provider = ?provider, "thiếu key chép lời của nhà cung cấp — chép lời tắt");
+        }
+        transcriber
+    }
+
+    pub fn provider(&self) -> Provider {
+        self.provider
+    }
+
+    /// Key chép lời của nhà cung cấp đang dùng, khi còn dùng được.
+    fn transcribe_key(&self) -> Option<&ApiKey> {
+        let key = match self.provider {
+            Provider::OpenAi => self.key.as_ref(),
+            Provider::ElevenLabs => self.elevenlabs.as_ref(),
+        };
+        key.filter(|_| !self.broken.load(Ordering::Relaxed))
     }
 
     pub fn ready(&self) -> bool {
-        self.key.is_some() && !self.broken.load(Ordering::Relaxed)
+        self.transcribe_key().is_some()
     }
 
-    /// Key server khi còn dùng được. Tóm tắt dùng chung key: chép lời bị ngắt thì tóm tắt cũng dừng; lỗi
-    /// key ở lượt tóm tắt chỉ ngắt tóm tắt (`summary::Summaries`), không ngắt chép lời.
+    /// Key OpenAI khi còn dùng được. Khi chép lời cũng chạy bằng OpenAI thì chép lời bị ngắt kéo theo tóm tắt; lỗi key
+    /// ở lượt tóm tắt chỉ ngắt tóm tắt (`summary::Summaries`). Key ElevenLabs hỏng không đụng tới key này.
     pub(crate) fn api_key(&self) -> Option<&str> {
-        self.key.as_ref().filter(|_| self.ready()).map(|k| k.0.as_str())
+        let tripped = self.provider == Provider::OpenAi && self.broken.load(Ordering::Relaxed);
+        self.key.as_ref().filter(|_| !tripped).map(|k| k.0.as_str())
     }
 
     /// Lần đầu key hỏng thì trả `true` (để ghi audit một lần).
@@ -122,6 +168,33 @@ async fn billable_seconds(state: &AppState, f: &file::FileDoc) -> Result<i64, Ap
             .ok_or_else(|| AppError::BadRequest(format!("không đọc được thời lượng của “{}”", f.name)))?,
     };
     Ok(duration.ceil() as i64)
+}
+
+/// Hết giờ ElevenLabs của tháng (trần `ELEVENLABS_MONTHLY_HOURS` hoặc ElevenLabs báo hết quota): mở lại đầu tháng sau.
+pub(crate) fn hours_exhausted_message(now: chrono::DateTime<chrono::Utc>) -> String {
+    let reset = usage::next_reset(now).with_timezone(&usage::vietnam());
+    format!("Đã dùng hết giờ chép lời của tháng này, mở lại ngày 1/{:02}.", chrono::Datelike::month(&reset))
+}
+
+/// Chép bằng ElevenLabs mà sổ giờ tháng không còn đủ `need` giây (hoặc ElevenLabs đã báo hết quota): lỗi 403 kèm ngày
+/// mở lại. Chỉ đọc sổ; worker giữ chỗ nguyên tử trước khi gửi.
+async fn check_provider_hours(state: &AppState, need: i64, now: chrono::DateTime<chrono::Utc>) -> Result<(), AppError> {
+    if state.transcriber.provider() != Provider::ElevenLabs {
+        return Ok(());
+    }
+    let month = usage::month_key(now);
+    let limit = state.config.elevenlabs_monthly_seconds;
+    let used = usage::provider_seconds(&state.db, &month).await?;
+    if usage::provider_exhausted(&state.db, &month).await? || used + need > limit {
+        return Err(AppError::Quota {
+            code: "PROVIDER_HOURS",
+            message: hours_exhausted_message(now),
+            used_minutes: usage::used_minutes(used),
+            limit_minutes: limit / 60,
+            retry_at: Some(usage::next_reset(now).to_rfc3339()),
+        });
+    }
+    Ok(())
 }
 
 /// Giờ mở lại cho người dùng đọc (giờ Việt Nam).
@@ -194,16 +267,19 @@ pub async fn create(
         return Err(AppError::BadRequest(format!("chọn từ 1 đến {MAX_FILES} bản ghi")));
     }
     // Kiểm hết trước khi xếp hàng: một id sai thì không xếp file nào.
-    let files = parse_ids(&req.file_ids.join(","))?;
-    let owned = file::list_owned_by_ids(&state.db, &user.0, &files).await?;
-    if owned.len() != files.len() {
+    let requested = parse_ids(&req.file_ids.join(","))?;
+    let owned = file::list_owned_by_ids(&state.db, &user.0, &requested).await?;
+    if owned.len() != requested.len() {
         return Err(AppError::NotFound("bản ghi không tồn tại".into()));
     }
     if owned.iter().any(|f| !f.in_history()) {
         return Err(AppError::BadRequest("chỉ chép lời được bản ghi hoặc tệp tải lên ở trang Ghi âm".into()));
     }
+    let whole_sessions = state.transcriber.provider() == Provider::ElevenLabs;
+    let units = queue_units(&state, &user.0, owned, whole_sessions).await?;
+    let files: Vec<ObjectId> = units.iter().flat_map(|u| u.files.iter().copied()).collect();
     let mut needs = HashMap::new();
-    for f in &owned {
+    for f in units.iter().flat_map(|u| u.docs.iter()) {
         if let Some(id) = f.id {
             needs.insert(id, billable_seconds(&state, f).await?);
         }
@@ -234,6 +310,10 @@ pub async fn create(
             retry_at: None,
         });
     }
+    if let Err(e) = check_provider_hours(&state, total, now).await {
+        audit::record(&state, Some(&user.0), "transcript.blocked", doc! { "reason": "ProviderHours" });
+        return Err(e);
+    }
     let charge = Charge::new(&user.0, plan, now);
     let user_limit = plan.limit_seconds(&limits);
     if let Err(blocked) = usage::reserve(&state.db, &charge, user_limit, total, &limits).await? {
@@ -245,22 +325,26 @@ pub async fn create(
     note_cap_levels(&state, &charge.month).await;
 
     // Từ đây không có `?`: file nào không vào được hàng thì trả lại phần đã giữ cho file đó.
+    let model = state.transcriber.provider().model();
     let mut queued = 0;
-    for &oid in &files {
-        let need = needs.get(&oid).copied().unwrap_or(0);
+    for unit in &units {
+        // Một lượt mỗi đơn vị: cả phiên iPhone chung một `runId` để worker gom lại thành một request.
         let run_id = uuid::Uuid::new_v4().to_string();
-        let ok = match transcript::enqueue(&state.db, oid, &user.0, &run_id, openai::MODEL, &charge, need).await {
-            Ok(ok) => ok,
-            // Mongo standalone có thể báo lỗi dù đã ghi: đọc lại theo `runId` trước khi hoàn.
-            Err(e) => {
-                tracing::warn!(file = %oid, "xếp hàng lỗi, kiểm lại trước khi hoàn: {e:?}");
-                transcript::has_run(&state.db, oid, &run_id).await.unwrap_or(false)
+        for &oid in &unit.files {
+            let need = needs.get(&oid).copied().unwrap_or(0);
+            let ok = match transcript::enqueue(&state.db, oid, &user.0, &run_id, model, &charge, need).await {
+                Ok(ok) => ok,
+                // Mongo standalone có thể báo lỗi dù đã ghi: đọc lại theo `runId` trước khi hoàn.
+                Err(e) => {
+                    tracing::warn!(file = %oid, "xếp hàng lỗi, kiểm lại trước khi hoàn: {e:?}");
+                    transcript::has_run(&state.db, oid, &run_id).await.unwrap_or(false)
+                }
+            };
+            if ok {
+                queued += 1;
+            } else if let Err(e) = usage::settle(&state.db, &charge, -need).await {
+                tracing::error!(file = %oid, need, "hoàn phút cho file không xếp được lỗi: {e:?}");
             }
-        };
-        if ok {
-            queued += 1;
-        } else if let Err(e) = usage::settle(&state.db, &charge, -need).await {
-            tracing::error!(file = %oid, need, "hoàn phút cho file không xếp được lỗi: {e:?}");
         }
     }
     if queued == 0 {
@@ -272,7 +356,48 @@ pub async fn create(
     if rerun > 0 {
         audit::record(&state, Some(&user.0), "transcript.rerun", doc! { "files": rerun as i64 });
     }
-    Ok(Json(json!({ "queued": queued, "skipped": files.len() - queued })))
+    Ok(Json(json!({ "queued": queued, "skipped": requested.len().saturating_sub(queued) })))
+}
+
+/// Một đơn vị xếp hàng: một file, hoặc mọi đoạn của một phiên iPhone khi chép cả phiên trong một request.
+struct QueueUnit {
+    /// Theo thứ tự đoạn.
+    files: Vec<ObjectId>,
+    docs: Vec<file::FileDoc>,
+}
+
+/// Gom file cần xếp thành đơn vị. Chép cả phiên (`whole_sessions`): một đoạn bất kỳ của phiên iPhone kéo theo mọi
+/// đoạn hiện có của phiên — đoạn tới muộn làm chép lại cả phiên, để nhãn người nói nhất quán. Phiên còn đoạn đang
+/// chờ/chạy thì bỏ cả phiên (lượt đang chạy chưa gồm đoạn mới).
+async fn queue_units(
+    state: &AppState,
+    user_id: &str,
+    owned: Vec<file::FileDoc>,
+    whole_sessions: bool,
+) -> Result<Vec<QueueUnit>, AppError> {
+    let mut units: Vec<QueueUnit> = Vec::new();
+    let mut seen_sessions = std::collections::HashSet::new();
+    for f in owned {
+        let Some(id) = f.id else { continue };
+        let key = f.session_key().unwrap_or_default();
+        if !whole_sessions || !key.starts_with("s:") {
+            units.push(QueueUnit { files: vec![id], docs: vec![f] });
+            continue;
+        }
+        if !seen_sessions.insert(key.clone()) {
+            continue;
+        }
+        let parts: Vec<file::FileDoc> = file::list_session(&state.db, user_id, &key).await?.into_iter().map(|(_, f)| f).collect();
+        let ids: Vec<ObjectId> = parts.iter().filter_map(|p| p.id).collect();
+        let busy = transcript::statuses_for_files(&state.db, user_id, &ids)
+            .await?
+            .iter()
+            .any(|r| r.status == "queued" || r.status == "running");
+        if !busy && !ids.is_empty() {
+            units.push(QueueUnit { files: ids, docs: parts });
+        }
+    }
+    Ok(units)
 }
 
 /// Quỹ free qua 50/80/100% và trần tổng qua 80/100%: ghi `audit_events` và báo qua bot chat, mỗi mốc một
@@ -401,8 +526,9 @@ pub async fn export(
         let done = by_id.get(&id).filter(|t| t.status == "done");
         let sentences = match done {
             Some(t) => {
-                let edit = edits.get(&file::session_key(&f.kind, &f.name, id)).and_then(|d| d.edits.get(&id.to_hex()));
-                let sentences = docs::effective_sentences(t, edit).0;
+                let session = edits.get(&file::session_key(&f.kind, &f.name, id));
+                let edit = session.and_then(|d| d.edits.get(&id.to_hex()));
+                let sentences = docs::name_speakers(docs::effective_sentences(t, edit).0, session.map(|d| &d.speakers));
                 match &translated {
                     Some(doc) => translate_sentences(sentences, doc, &id.to_hex()),
                     None => sentences,
@@ -559,20 +685,32 @@ async fn record(db: &mongodb::Database, file_id: ObjectId, run_id: &str, outcome
     }
 }
 
-/// Key server hỏng (401 hoặc hết credit) ở một lượt chép lời: mọi lượt sau cũng hỏng y vậy ⟹ ngắt chép
-/// lời (tóm tắt dùng chung key nên dừng theo), ghi audit và báo chủ sản phẩm một lần; người dùng chỉ thấy
-/// thông báo tạm ngưng chung.
+/// Lỗi "dừng hẳn" của key chép lời (OpenAI hay ElevenLabs).
+fn is_key_broken(e: &str) -> bool {
+    openai::is_key_broken(e) || elevenlabs::is_key_broken(e)
+}
+
+/// Key chép lời của server hỏng (401/403 hoặc hết credit) ở một lượt: mọi lượt sau cũng hỏng y vậy ⟹ ngắt chép lời
+/// (khi chép bằng OpenAI thì tóm tắt dùng chung key nên dừng theo), ghi audit và báo chủ sản phẩm một lần; người dùng
+/// chỉ thấy thông báo tạm ngưng chung.
 pub(crate) fn report_key_broken(state: &AppState, e: &str) {
     if state.transcriber.trip() {
-        tracing::error!("key OpenAI của server không dùng được ({e}) — ngắt chép lời tới khi khởi động lại");
+        tracing::error!("key chép lời của server không dùng được ({e}) — ngắt chép lời tới khi khởi động lại");
         audit::record(state, None, "transcript.key_invalid", doc! { "reason": e });
-        notify::send(state, format!("Key OpenAI của server không dùng được ({e}); chép lời tạm ngưng tới khi thay key và khởi động lại."));
+        notify::send(state, format!("Key chép lời của server không dùng được ({e}); chép lời tạm ngưng tới khi thay key và khởi động lại."));
     }
 }
 
 async fn run(state: &AppState, t: &transcript::TranscriptDoc) {
+    match state.transcriber.provider() {
+        Provider::ElevenLabs => whole::run(state, t).await,
+        Provider::OpenAi => run_openai(state, t).await,
+    }
+}
+
+async fn run_openai(state: &AppState, t: &transcript::TranscriptDoc) {
     let started = Instant::now();
-    let result = match state.transcriber.key.as_ref().filter(|_| state.transcriber.ready()) {
+    let result = match state.transcriber.transcribe_key() {
         Some(key) => transcribe_file(state, t, key).await,
         None => Err(PAUSED.to_string()),
     };
@@ -591,7 +729,7 @@ async fn run(state: &AppState, t: &transcript::TranscriptDoc) {
             };
             audit::record(state, Some(&t.user_id), "transcript.done", details);
         }
-        Err(e) if openai::is_key_broken(&e) => {
+        Err(e) if is_key_broken(&e) => {
             report_key_broken(state, &e);
             record(db, t.id, &t.run_id, Outcome::Failed(PAUSED)).await;
         }
@@ -755,7 +893,7 @@ mod tests {
     #[test]
     fn export_of_a_translation_replaces_text_by_sentence_index() {
         use crate::models::translation::Item;
-        let s = |start: f64, text: &str| Sentence { start, end: start + 1.0, text: text.into() };
+        let s = |start: f64, text: &str| Sentence { start, end: start + 1.0, text: text.into(), speaker: None };
         let mut items = HashMap::new();
         items.insert(
             "0".to_string(),
@@ -784,6 +922,14 @@ mod tests {
         );
         // Đoạn khác chưa dịch: giữ chữ gốc.
         assert_eq!(translate_sentences(vec![s(0.0, "Một.")], &doc, "other")[0].text, "Một.");
+    }
+
+    #[test]
+    fn hours_message_names_the_first_of_next_month_in_vietnam_time() {
+        let at = |s: &str| s.parse::<chrono::DateTime<chrono::Utc>>().expect("giờ");
+        assert_eq!(hours_exhausted_message(at("2026-10-17T05:00:00Z")), "Đã dùng hết giờ chép lời của tháng này, mở lại ngày 1/11.");
+        // 31/12 23:30 giờ Việt Nam vẫn là tháng 12 ⟹ mở lại 1/01.
+        assert_eq!(hours_exhausted_message(at("2026-12-31T16:30:00Z")), "Đã dùng hết giờ chép lời của tháng này, mở lại ngày 1/01.");
     }
 
     #[test]

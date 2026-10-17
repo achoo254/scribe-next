@@ -116,12 +116,15 @@ pub fn looks_looped(text: &str, seconds: f64) -> bool {
     repeated > 3 || too_fast
 }
 
-/// Một câu có mốc thời gian (ước lượng) trong bản ghi.
+/// Một câu có mốc thời gian trong bản ghi (giây tính trong file của câu). Bản OpenAI có mốc ước lượng và không có
+/// người nói; bản ElevenLabs có mốc thật và `speaker` (`s0`, `s1`… theo thứ tự xuất hiện trong lượt chép).
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Sentence {
     pub start: f64,
     pub end: f64,
     pub text: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub speaker: Option<String>,
 }
 
 /// Chia chữ của một mảnh thành câu, rải mốc theo độ dài chữ trên phần thời gian CÓ tiếng nói của mảnh.
@@ -151,7 +154,7 @@ pub fn sentences(text: &str, chunk: Span, speech: &[Span]) -> Vec<Sentence> {
             let start = to_clock(&spans, used as f64 * per_char, false);
             used += chars;
             let end = to_clock(&spans, used as f64 * per_char, true);
-            Sentence { start, end, text: part }
+            Sentence { start, end, text: part, speaker: None }
         })
         .collect()
 }

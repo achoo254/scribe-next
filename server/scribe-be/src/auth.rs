@@ -503,6 +503,8 @@ pub async fn me(
             "resetsAt": usage::next_reset(now).to_rfc3339(),
             "capReached": pool_full || used.total_seconds >= limits.monthly_cap_seconds,
             "paused": !state.transcriber.ready(),
+            // Chép cả phiên iPhone trong một request (ElevenLabs): web gửi mọi đoạn và hiện số phút cả phiên.
+            "wholeSession": state.transcriber.provider() == crate::config::Provider::ElevenLabs,
         })
     } else {
         Value::Null

@@ -2,6 +2,9 @@
 //! iPhone là nhiều file (mỗi đoạn một file): ghép theo thứ tự, mốc của file sau cộng dồn thời lượng các
 //! file trước. Xuất bản dịch: người gọi thay chữ câu bằng bản dịch; md/docx dùng nhãn mục theo ngôn ngữ
 //! ([`Labels`]), biên bản giữ nguyên ngôn ngữ gốc.
+//!
+//! Người nói: người gọi thay id người nói của câu (`Sentence::speaker`) bằng tên hiển thị. TXT/MD/DOCX thêm "Tên: "
+//! ở chỗ đổi người nói; SRT thêm "Tên: " mỗi cue; VTT dùng thẻ giọng `<v Tên>`.
 
 use super::chunking::Sentence;
 use crate::models::transcript_doc::{Bookmark, StoredSummary};
@@ -111,11 +114,31 @@ pub struct Meeting<'a> {
     pub labels: &'a Labels,
 }
 
-pub fn to_txt(parts: &[Part<'_>]) -> String {
-    let lines: Vec<&str> = parts
+/// Câu theo thứ tự kèm mốc bắt đầu của file chứa nó và tên người nói khi người nói đổi so với câu trước.
+fn with_speaker_changes<'a>(parts: &'a [Part<'a>]) -> Vec<(f64, &'a Sentence, Option<&'a str>)> {
+    let mut previous: Option<&str> = None;
+    parts
         .iter()
-        .flat_map(|p| p.sentences.iter().map(|s| s.text.as_str()))
-        .collect();
+        .flat_map(|p| p.sentences.iter().map(move |s| (p.offset_s, s)))
+        .map(|(offset, s)| {
+            let speaker = s.speaker.as_deref().map(str::trim).filter(|n| !n.is_empty());
+            let changed = speaker.filter(|_| speaker != previous);
+            previous = speaker;
+            (offset, s, changed)
+        })
+        .collect()
+}
+
+/// `Tên: câu` khi có tên.
+fn prefixed(name: Option<&str>, text: &str) -> String {
+    match name {
+        Some(name) => format!("{}: {text}", one_line(name)),
+        None => text.to_string(),
+    }
+}
+
+pub fn to_txt(parts: &[Part<'_>]) -> String {
+    let lines: Vec<String> = with_speaker_changes(parts).into_iter().map(|(_, s, change)| prefixed(change, &s.text)).collect();
     let mut out = lines.join("\n");
     out.push('\n');
     out
@@ -131,7 +154,7 @@ pub fn to_srt(parts: &[Part<'_>]) -> String {
                 "{index}\n{} --> {}\n{}\n\n",
                 cue_time(part.offset_s + s.start, ','),
                 cue_time(part.offset_s + s.end, ','),
-                s.text
+                prefixed(s.speaker.as_deref().map(str::trim).filter(|n| !n.is_empty()), &s.text)
             ));
         }
     }
@@ -148,6 +171,10 @@ pub fn to_vtt(parts: &[Part<'_>]) -> String {
             if text.is_empty() {
                 continue;
             }
+            let text = match s.speaker.as_deref().map(voice_name).filter(|n| !n.is_empty()) {
+                Some(name) => format!("<v {name}>{text}"),
+                None => text,
+            };
             out.push_str(&format!(
                 "{} --> {}\n{text}\n\n",
                 cue_time(part.offset_s + s.start, '.'),
@@ -161,6 +188,11 @@ pub fn to_vtt(parts: &[Part<'_>]) -> String {
 /// Chữ một cue VTT: một dòng, và `-->` không được xuất hiện trong nội dung cue.
 fn cue_text(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ").replace("-->", "→")
+}
+
+/// Tên trong thẻ giọng VTT: một dòng, không có `<`, `>` (kết thúc thẻ), `&` viết thành thực thể.
+fn voice_name(name: &str) -> String {
+    one_line(name).replace(['<', '>'], "").replace('&', "&amp;").trim().to_string()
 }
 
 /// `HH:MM:SS,mmm` (SubRip) hoặc `HH:MM:SS.mmm` (WebVTT).
@@ -195,8 +227,8 @@ enum Block {
     Paragraph(String),
     /// Mục danh sách (quyết định, việc cần làm, dấu mốc), mốc giây tính từ đầu phiên.
     Item { at: f64, text: String },
-    /// Một câu lời chép.
-    Line { at: f64, text: String },
+    /// Một câu lời chép; `speaker` chỉ có ở câu mà người nói đổi.
+    Line { at: f64, speaker: Option<String>, text: String },
 }
 
 fn one_line(text: &str) -> String {
@@ -271,11 +303,11 @@ fn outline(meeting: &Meeting<'_>, parts: &[Part<'_>]) -> Vec<Block> {
         }));
     }
 
-    let lines: Vec<Block> = parts
-        .iter()
-        .flat_map(|p| p.sentences.iter().map(move |s| (p.offset_s + s.start, one_line(&s.text))))
-        .filter(|(_, text)| !text.is_empty())
-        .map(|(at, text)| Block::Line { at, text })
+    let lines: Vec<Block> = with_speaker_changes(parts)
+        .into_iter()
+        .map(|(offset, s, change)| (offset + s.start, change.map(one_line), one_line(&s.text)))
+        .filter(|(_, _, text)| !text.is_empty())
+        .map(|(at, speaker, text)| Block::Line { at, speaker, text })
         .collect();
     if !lines.is_empty() {
         blocks.push(Block::Heading(labels.transcript));
@@ -293,7 +325,7 @@ pub fn to_md(meeting: &Meeting<'_>, parts: &[Part<'_>]) -> String {
             Block::Heading(text) => format!("## {text}"),
             Block::Paragraph(text) => text,
             Block::Item { at, text } => format!("- [{}] {text}", clock(at)),
-            Block::Line { at, text } => format!("[{}] {text}", clock(at)),
+            Block::Line { at, speaker, text } => format!("[{}] {}", clock(at), prefixed(speaker.as_deref(), &text)),
         })
         .collect();
     let mut out = rendered.join("\n\n");
@@ -325,7 +357,14 @@ pub fn to_docx(meeting: &Meeting<'_>, parts: &[Part<'_>]) -> Result<Vec<u8>, Str
                 .add_run(Run::new().add_text("• "))
                 .add_run(stamp(at))
                 .add_run(Run::new().add_text(text)),
-            Block::Line { at, text } => Paragraph::new().add_run(stamp(at)).add_run(Run::new().add_text(text)),
+            Block::Line { at, speaker, text } => {
+                let line = Paragraph::new().add_run(stamp(at));
+                let line = match speaker {
+                    Some(name) => line.add_run(Run::new().add_text(format!("{name}: ")).bold()),
+                    None => line,
+                };
+                line.add_run(Run::new().add_text(text))
+            }
         };
         docx = docx.add_paragraph(paragraph);
     }
@@ -342,7 +381,7 @@ mod tests {
     use std::io::Read;
 
     fn s(start: f64, end: f64, text: &str) -> Sentence {
-        Sentence { start, end, text: text.into() }
+        Sentence { start, end, text: text.into(), speaker: None }
     }
 
     fn summary() -> StoredSummary {
@@ -380,6 +419,46 @@ mod tests {
              2\n00:01:01,000 --> 00:01:03,000\nBắt đầu họp.\n\n"
         );
         assert_eq!(to_txt(&parts), "Xin chào.\nBắt đầu họp.\n");
+    }
+
+    fn said(start: f64, text: &str, speaker: &str) -> Sentence {
+        Sentence { speaker: Some(speaker.into()), ..s(start, start + 2.0, text) }
+    }
+
+    #[test]
+    fn speaker_names_mark_changes_in_text_and_every_subtitle_cue() {
+        let first = [said(0.0, "Chào anh.", "Lan"), said(2.0, "Bắt đầu nhé.", "Lan")];
+        let second = [said(1.0, "Vâng.", "Người 2"), said(3.0, "Em nói tiếp.", "Lan")];
+        let parts = [Part { offset_s: 0.0, sentences: &first }, Part { offset_s: 60.0, sentences: &second }];
+        assert_eq!(to_txt(&parts), "Lan: Chào anh.\nBắt đầu nhé.\nNgười 2: Vâng.\nLan: Em nói tiếp.\n");
+        let srt = to_srt(&parts);
+        assert!(srt.starts_with("1\n00:00:00,000 --> 00:00:02,000\nLan: Chào anh.\n\n2\n00:00:02,000 --> 00:00:04,000\nLan: Bắt đầu nhé."));
+        assert!(srt.contains("00:01:01,000 --> 00:01:03,000\nNgười 2: Vâng."));
+        let vtt = to_vtt(&parts);
+        assert!(vtt.contains("00:00:00.000 --> 00:00:02.000\n<v Lan>Chào anh.\n"));
+        assert!(vtt.contains("<v Người 2>Vâng."));
+        // Câu không có người nói (bản OpenAI) giữ nguyên.
+        let plain = [s(0.0, 1.0, "Xin chào.")];
+        let parts = [Part { offset_s: 0.0, sentences: &plain }];
+        assert_eq!(to_txt(&parts), "Xin chào.\n");
+        assert!(to_vtt(&parts).contains("\nXin chào.\n"));
+        assert_eq!(voice_name("A<b>&c\nd"), "Ab&amp;c d");
+    }
+
+    #[test]
+    fn meeting_documents_name_the_speaker_at_each_change() {
+        let sentences = [said(1.0, "Mở đầu.", "Lan"), said(3.0, "Tiếp.", "Lan"), said(70.0, "Đồng ý.", "Anh Minh")];
+        let parts = [Part { offset_s: 0.0, sentences: &sentences }];
+        let meeting = Meeting { title: "Họp", started: None, duration_s: 0.0, summary: None, bookmarks: &[], labels: &VI };
+        assert_eq!(
+            to_md(&meeting, &parts),
+            "# Họp\n\n## Lời chép\n\n[00:01] Lan: Mở đầu.\n\n[00:03] Tiếp.\n\n[01:10] Anh Minh: Đồng ý.\n"
+        );
+        let bytes = to_docx(&meeting, &parts).expect("tạo docx");
+        let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes)).expect("zip");
+        let mut xml = String::new();
+        archive.by_name("word/document.xml").expect("document.xml").read_to_string(&mut xml).expect("đọc");
+        assert!(xml.contains("Anh Minh: ") && xml.contains("Lan: ") && xml.contains("Tiếp."));
     }
 
     #[test]

@@ -110,7 +110,11 @@ async fn main() {
     }
 
     let port = config.port;
-    let config_key_path = config.openai_key_path.clone();
+    let transcriber = transcribe::Transcriber::load(
+        config.transcribe_provider,
+        config.openai_key_path.as_deref(),
+        config.elevenlabs_key_path.as_deref(),
+    );
     let oidc_issuer = config.oidc_issuer.clone();
     let oidc_web_secret = std::fs::read_to_string(&config.oidc_web_client_secret_path)
         .map(|s| s.trim().to_string())
@@ -138,7 +142,7 @@ async fn main() {
         session_cache: Arc::default(),
         session_key: Arc::new(session_key),
         rate: Arc::new(RateLimiter::new()),
-        transcriber: Arc::new(transcribe::Transcriber::load(config_key_path.as_deref())),
+        transcriber: Arc::new(transcriber),
         summaries: Arc::default(),
         chat_bot: Arc::default(),
     };

@@ -29,11 +29,16 @@ const OUTPUT_PRICE_E8: i64 = 160;
 /// Token của phần hướng dẫn và schema, cộng vào ước lượng đầu vào.
 const PROMPT_OVERHEAD_TOKENS: i64 = 800;
 
-/// Chi phí token quy ra giây chép lời tương đương (giá chép lời `USD_PER_MINUTE` mỗi phút), làm tròn lên.
+/// Chi phí token quy ra giây chép lời tương đương (giá chép lời của nhà cung cấp đang dùng mỗi phút), làm tròn lên.
 pub fn cost_seconds(input_tokens: i64, output_tokens: i64) -> i64 {
+    cost_seconds_at(input_tokens, output_tokens, crate::config::usd_per_minute())
+}
+
+/// Như [`cost_seconds`] với giá chép lời `usd_per_minute` cho trước.
+fn cost_seconds_at(input_tokens: i64, output_tokens: i64, usd_per_minute: f64) -> i64 {
     let cost_e8 = input_tokens.max(0) * INPUT_PRICE_E8 + output_tokens.max(0) * OUTPUT_PRICE_E8;
-    // Giá một giây chép lời theo cùng đơn vị: $0,003 / 60 = 5000 × 1e-8 USD.
-    let second_e8 = ((crate::config::USD_PER_MINUTE / 60.0) * 1e8).round() as i64;
+    // Giá một giây chép lời theo cùng đơn vị: OpenAI $0,003 / 60 = 5000 × 1e-8 USD; ElevenLabs $0,22 / 3600 ≈ 6111.
+    let second_e8 = ((usd_per_minute / 60.0) * 1e8).round() as i64;
     (cost_e8 + second_e8 - 1) / second_e8
 }
 
@@ -248,11 +253,13 @@ mod tests {
 
     #[test]
     fn token_cost_converts_to_transcription_seconds() {
-        // 1M token vào = $0,40 = 133,3 phút chép lời = 8000 giây; 1M token ra = $1,60 = 32000 giây.
-        assert_eq!(cost_seconds(1_000_000, 0), 8_000);
-        assert_eq!(cost_seconds(0, 1_000_000), 32_000);
-        // Lượt thường (20k vào, 1,5k ra) = $0,0104 ⟹ 208 giây.
-        assert_eq!(cost_seconds(20_000, 1_500), 208);
+        // Giá OpenAI ($0,003/phút): 1M token vào = $0,40 = 133,3 phút = 8000 giây; 1M token ra = $1,60 = 32000 giây.
+        let openai = crate::config::Provider::OpenAi.usd_per_minute();
+        assert_eq!(cost_seconds_at(1_000_000, 0, openai), 8_000);
+        assert_eq!(cost_seconds_at(0, 1_000_000, openai), 32_000);
+        // Lượt thường (20k vào, 1,5k ra) = $0,0104 ⟹ 208 giây OpenAI, 171 giây ElevenLabs ($0,22/giờ).
+        assert_eq!(cost_seconds_at(20_000, 1_500, openai), 208);
+        assert_eq!(cost_seconds_at(20_000, 1_500, crate::config::Provider::ElevenLabs.usd_per_minute()), 171);
         assert_eq!(cost_seconds(1, 0), 1, "làm tròn lên");
         assert_eq!(cost_seconds(-5, 0), 0);
         // Ước lượng giữ chỗ không thấp hơn chi phí thật của một bản tiếng Việt thông thường.
@@ -267,9 +274,9 @@ mod tests {
             maybe_billed: true,
         };
         // Bị cắt / từ chối / sai dạng: đã tính tiền theo token, không trả lượt.
-        assert_eq!(charge_of(&completion(Err("cắt".into())), 900), (208, false));
+        assert_eq!(charge_of(&completion(Err("cắt".into())), 900), (cost_seconds(20_000, 1_500), false));
         let ok = llm::Draft { summary: "x".into(), decisions: vec![], actions: vec![] };
-        assert_eq!(charge_of(&completion(Ok(ok)), 900), (208, false));
+        assert_eq!(charge_of(&completion(Ok(ok)), 900), (cost_seconds(20_000, 1_500), false));
         // Có thể đã xử lý (quá giờ sau khi gửi): giữ ước lượng, không trả lượt.
         let maybe: llm::Call<llm::Draft> = llm::Call { result: Err("quá giờ".into()), maybe_billed: true };
         assert_eq!(charge_of(&maybe, 900), (900, false));
