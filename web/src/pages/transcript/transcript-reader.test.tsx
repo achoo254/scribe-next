@@ -895,7 +895,7 @@ describe("TranscriptReader whole-session transcription", () => {
 		} as typeof auth.user.transcription;
 	});
 
-	it("sends every segment of the session, and a rerun redoes the whole session", async () => {
+	it("sends every segment of the session, asking first when edits would be lost", async () => {
 		auth.user.transcription = {
 			...auth.user.transcription,
 			wholeSession: true,
@@ -904,23 +904,60 @@ describe("TranscriptReader whole-session transcription", () => {
 			"POST /api/transcripts": jsonResponse({ queued: 3, skipped: 0 }),
 		});
 		const user = userEvent.setup();
-		// One segment is missing, but the whole session (3 files) goes.
+		// One segment is missing, but the whole session (3 files) goes; segment c
+		// has an edited sentence that the new transcription replaces.
 		await user.click(
 			await screen.findByRole("button", { name: "Chép 3 đoạn còn lại" }),
 		);
+		const dialog = await screen.findByRole("dialog");
+		expect(
+			within(dialog).getByText("Bỏ 1 câu đã sửa trong cả phiên?"),
+		).toBeInTheDocument();
+		expect(fake.calls.some((c) => c.method === "POST")).toBe(false);
+		await user.click(within(dialog).getByRole("button", { name: "Chép lại" }));
 		await waitFor(() =>
 			expect(fake.calls.find((c) => c.method === "POST")?.body).toEqual({
 				fileIds: ["a", "c", "d"],
 			}),
 		);
-		// "Chép lại cả phiên" over an edited sentence asks first, for the whole session.
-		await user.click(
-			screen.getAllByRole("button", {
-				name: "Chép lại cả phiên",
-			})[0] as HTMLElement,
+	});
+
+	it("asks before a whole-session rerun resets renamed speakers", async () => {
+		auth.user.transcription = {
+			...auth.user.transcription,
+			wholeSession: true,
+		} as typeof auth.user.transcription;
+		const renamed: TranscriptDetail = {
+			...DETAIL,
+			segments: [segment("a", 0, 0), segment("c", 2, 60)],
+			missingIndexes: [],
+			speakers: { names: { s0: "Lan", s1: "Người 2" } },
+		};
+		const fake = fakeFetch({
+			[`GET ${PATH}`]: jsonResponse(renamed),
+			"POST /api/transcripts": jsonResponse({ queued: 2, skipped: 0 }),
+		});
+		vi.stubGlobal("fetch", fake.fetcher);
+		renderWithProviders(
+			<TranscriptReader
+				transcriptKey={KEY}
+				canTranscribe
+				onBack={() => undefined}
+			/>,
 		);
+		const user = userEvent.setup();
+		await user.click(
+			(
+				await screen.findAllByRole("button", { name: "Chép lại cả phiên" })
+			)[0] as HTMLElement,
+		);
+		const dialog = await screen.findByRole("dialog");
 		expect(
-			await screen.findByText("Bỏ 1 câu đã sửa trong cả phiên?"),
+			within(dialog).getByText("Đặt lại tên 1 người nói đã đổi?"),
 		).toBeInTheDocument();
+		expect(
+			within(dialog).getByText(/tên đã đặt về Người 1, Người 2/),
+		).toBeInTheDocument();
+		expect(fake.calls.some((c) => c.method === "POST")).toBe(false);
 	});
 });

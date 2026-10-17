@@ -1,4 +1,4 @@
-import { type FormEvent, useEffect, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
@@ -37,12 +37,15 @@ export function SpeakerNamesDialog({
 	const [saving, setSaving] = useState(false);
 	const [error, setError] = useState("");
 
-	// Each opening starts from the names as they are now.
+	// Each opening starts from the names as they are then; a background
+	// refetch while the dialog is open must not wipe what is being typed.
+	const wasOpen = useRef(false);
 	useEffect(() => {
-		if (open) {
+		if (open && !wasOpen.current) {
 			setDrafts({ ...names });
 			setError("");
 		}
+		wasOpen.current = open;
 	}, [open, names]);
 
 	async function submit(event: FormEvent): Promise<void> {

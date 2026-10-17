@@ -1,4 +1,4 @@
-import { screen } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { fakeFetch, jsonResponse } from "../../test/fake-fetch";
@@ -88,8 +88,14 @@ describe("TranscriptPanel", () => {
 			wholeSession: true,
 		} as typeof before;
 		const fake = fakeFetch({
-			// Segment b came late: only a and c were transcribed.
+			// Segment b came late: only a and c were transcribed (no edits, default names).
 			"GET /api/transcripts": jsonResponse({ items: [done("a"), done("c")] }),
+			"GET /api/transcript-docs/s%3Aaaaaaaaa-1111": jsonResponse({
+				key: "s:aaaaaaaa-1111",
+				segments: [seg("a", false, 1), seg("c", false, 1)],
+				missingIndexes: [],
+				speakers: { names: { s0: "Người 1", s1: "Người 2" } },
+			}),
 			"POST /api/transcripts": jsonResponse({ queued: 3, skipped: 0 }),
 		});
 		vi.stubGlobal("fetch", fake.fetcher);
@@ -110,9 +116,52 @@ describe("TranscriptPanel", () => {
 		await userEvent.click(
 			await screen.findByRole("button", { name: "Chép phần còn thiếu" }),
 		);
-		expect(fake.calls.find((c) => c.method === "POST")?.body).toEqual({
-			fileIds: ["a", "b", "c"],
+		await waitFor(() =>
+			expect(fake.calls.find((c) => c.method === "POST")?.body).toEqual({
+				fileIds: ["a", "b", "c"],
+			}),
+		);
+		auth.user.transcription = before;
+	});
+
+	it("asks before a whole-session run resets renamed speakers or drops edits", async () => {
+		const before = auth.user.transcription;
+		auth.user.transcription = {
+			...before,
+			wholeSession: true,
+		} as typeof before;
+		const fake = fakeFetch({
+			"GET /api/transcripts": jsonResponse({ items: [done("a"), done("c")] }),
+			"GET /api/transcript-docs/s%3Aaaaaaaaa-1111": jsonResponse({
+				key: "s:aaaaaaaa-1111",
+				segments: [seg("a", false, 1), seg("c", false, 1)],
+				missingIndexes: [],
+				speakers: { names: { s0: "Lan", s1: "Minh" } },
+			}),
 		});
+		vi.stubGlobal("fetch", fake.fetcher);
+		renderWithProviders(
+			<TranscriptPanel
+				parts={[
+					{ fileId: "a", durationS: 60 },
+					{ fileId: "b", durationS: 60 },
+					{ fileId: "c", durationS: 30 },
+				]}
+				requested
+				name="Phiên"
+				session="aaaaaaaa-1111"
+				onSeek={() => undefined}
+				data-id="panel"
+			/>,
+		);
+		await userEvent.click(
+			await screen.findByRole("button", { name: "Chép phần còn thiếu" }),
+		);
+		expect(
+			await screen.findByText("Đặt lại tên 2 người nói đã đổi?"),
+		).toBeInTheDocument();
+		expect(screen.getByText(/tên đã đặt về Người 1/)).toBeInTheDocument();
+		expect(fake.calls.some((c) => c.method === "POST")).toBe(false);
 		auth.user.transcription = before;
 	});
 });

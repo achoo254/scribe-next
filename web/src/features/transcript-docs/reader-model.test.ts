@@ -8,6 +8,7 @@ import {
 	nextSegment,
 	overallProgress,
 	placeOf,
+	renamedSpeakers,
 	sentenceAt,
 	shouldPreload,
 	speakerIds,
@@ -238,6 +239,14 @@ function never(): never {
 }
 
 describe("speakers", () => {
+	it("counts speakers renamed away from the default label", () => {
+		expect(renamedSpeakers({ s0: "Người 1", s1: "Lan", s10: "Người 11" })).toBe(
+			1,
+		);
+		expect(renamedSpeakers({ s2: "Người 2" })).toBe(1);
+		expect(renamedSpeakers({})).toBe(0);
+	});
+
 	it("orders speaker ids by number", () => {
 		expect(speakerIds({ s10: "x", s2: "y", s0: "z" })).toEqual([
 			"s0",

@@ -23,6 +23,7 @@ import {
 	nextSegment,
 	overallProgress,
 	placeOf,
+	renamedSpeakers,
 	sentenceAt,
 	shouldPreload,
 	speakersBefore,
@@ -148,8 +149,11 @@ export function TranscriptReader({
 	const [titleError, setTitleError] = useState("");
 	const [confirmDelete, setConfirmDelete] = useState(false);
 	const [rerun, setRerun] = useState<TranscriptSegment | null>(null);
-	/** Edited sentences that "Chép lại cả phiên" would drop; null = not asking. */
-	const [rerunAll, setRerunAll] = useState<number | null>(null);
+	/** What "Chép lại cả phiên" would drop (edited sentences, renamed speakers); null = not asking. */
+	const [rerunAll, setRerunAll] = useState<{
+		edited: number;
+		renamed: number;
+	} | null>(null);
 	const [speakersOpen, setSpeakersOpen] = useState(false);
 	// Deleted: open editors no longer matter, so leaving is not guarded.
 	// Navigating from an effect lets `LeaveGuard` (a child, whose effects
@@ -260,23 +264,33 @@ export function TranscriptReader({
 	startTranscribe.current = transcribe.start;
 	const allSegments = useRef(segments);
 	allSegments.current = segments;
+	const renamedCount = useRef(0);
+	renamedCount.current = renamedSpeakers(speakerNames);
+	/**
+	 * The whole session goes again: asks first when that drops edited
+	 * sentences or speaker names.
+	 */
+	const transcribeWhole = useCallback(() => {
+		const all = allSegments.current;
+		const edited = all.reduce((sum, s) => sum + s.editedSentences, 0);
+		const renamed = renamedCount.current;
+		if (edited > 0 || renamed > 0) setRerunAll({ edited, renamed });
+		else
+			void startTranscribe.current(
+				all.map((s) => s.fileId),
+				all.reduce((sum, s) => sum + s.durationS, 0),
+			);
+	}, []);
 	const requestRerun = useCallback(
 		(segment: TranscriptSegment) => {
 			if (wholeSession) {
-				const all = allSegments.current;
-				const edited = all.reduce((sum, s) => sum + s.editedSentences, 0);
-				if (edited > 0) setRerunAll(edited);
-				else
-					void startTranscribe.current(
-						all.map((s) => s.fileId),
-						all.reduce((sum, s) => sum + s.durationS, 0),
-					);
+				transcribeWhole();
 				return;
 			}
 			if (segment.edited) setRerun(segment);
 			else void startTranscribe.current([segment.fileId], segment.durationS);
 		},
-		[wholeSession],
+		[wholeSession, transcribeWhole],
 	);
 
 	function onTime(seconds: number): void {
@@ -498,12 +512,15 @@ export function TranscriptReader({
 							className="ml-2"
 							data-id="reader-send-rest"
 							loading={transcribe.pending}
-							onClick={() =>
-								void transcribe.start(
-									toSend.map((s) => s.fileId),
-									toSend.reduce((sum, s) => sum + s.durationS, 0),
-								)
-							}
+							onClick={() => {
+								if (wholeSession && segments.some((s) => s.status === "done"))
+									transcribeWhole();
+								else
+									void transcribe.start(
+										toSend.map((s) => s.fileId),
+										toSend.reduce((sum, s) => sum + s.durationS, 0),
+									);
+							}}
 						>
 							{t("transcript.reader.sendRest", { count: toSend.length })}
 						</Button>
@@ -590,9 +607,15 @@ export function TranscriptReader({
 					if (!next) setRerunAll(null);
 				}}
 				title={t("transcript.reader.rerunAllTitle")}
-				question={t("transcript.reader.rerunAllQuestion", {
-					count: rerunAll ?? 0,
-				})}
+				question={
+					rerunAll && rerunAll.edited === 0
+						? t("transcript.panel.rerunNamesQuestion", {
+								count: rerunAll.renamed,
+							})
+						: t("transcript.reader.rerunAllQuestion", {
+								count: rerunAll?.edited ?? 0,
+							})
+				}
 				confirmLabel={t("transcript.panel.rerun")}
 				onConfirm={() =>
 					transcribe.start(
@@ -603,6 +626,9 @@ export function TranscriptReader({
 				data-id="reader-rerun-all"
 			>
 				{t("transcript.reader.rerunAllBody")}
+				{rerunAll && rerunAll.renamed > 0
+					? ` ${t("transcript.speakers.reset")}`
+					: ""}
 			</ConfirmModal>
 			<LeaveGuard when={unsaved} data-id="reader-leave" />
 			<ConfirmModal

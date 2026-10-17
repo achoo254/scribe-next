@@ -64,6 +64,7 @@ export const transcript = {
 		rerunQuestion: "Bỏ phần đã sửa ở {segments} đoạn ({sentences} câu)?",
 		rerunBody:
 			"Chép lại cả bản ghi thay mọi câu bằng bản chép mới. Muốn giữ phần đã sửa, hãy chép lại từng đoạn trong trang Lời đã chép.",
+		rerunNamesQuestion: "Đặt lại tên {count} người nói đã đổi?",
 	},
 	segment: {
 		none: "Đoạn này chưa chép lời.",
@@ -148,6 +149,8 @@ export const transcript = {
 		fallback: "Người {number}",
 		save: "Lưu tên",
 		saved: "Đã đổi tên người nói",
+		reset:
+			"Bản chép mới nhận diện lại người nói, nên tên đã đặt về Người 1, Người 2…",
 	},
 	reader: {
 		back: "Lời đã chép",

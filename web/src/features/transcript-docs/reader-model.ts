@@ -8,6 +8,23 @@ import type {
 	TranscriptSummary,
 } from "./transcript-docs-api";
 
+/**
+ * Speakers the user renamed (a name other than the default "Người N" of
+ * `sN-1`): a new transcription of the session resets them to the defaults.
+ */
+export function renamedSpeakers(
+	names: Readonly<Record<string, string>>,
+): number {
+	const { t } = activeTranslator();
+	return Object.entries(names).filter(
+		([id, name]) =>
+			name !==
+			t("transcript.speakers.fallback", {
+				number: (Number.parseInt(id.slice(1), 10) || 0) + 1,
+			}),
+	).length;
+}
+
 /** Speaker ids of the names map, in order: `s0`, `s1`, … `s10`. */
 export function speakerIds(names: Readonly<Record<string, string>>): string[] {
 	const number = (id: string) => Number.parseInt(id.slice(1), 10) || 0;

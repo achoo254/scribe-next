@@ -7,7 +7,10 @@ import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
 import { ConfirmModal } from "../../components/ui/confirm-modal";
 import { useToast } from "../../components/ui/toast";
-import { editedCounts } from "../../features/transcript-docs/reader-model";
+import {
+	editedCounts,
+	renamedSpeakers,
+} from "../../features/transcript-docs/reader-model";
 import {
 	fetchTranscriptDoc,
 	transcriptKey,
@@ -77,6 +80,8 @@ export function TranscriptPanel({
 	const [lostEdits, setLostEdits] = useState<{
 		segments: number;
 		sentences: number;
+		/** Speakers renamed by the user (reset by a new transcription). */
+		renamed: number;
 	} | null>(null);
 	const docKey = transcriptKey(
 		session ? { session } : { fileId: fileIds[0] ?? "" },
@@ -93,15 +98,18 @@ export function TranscriptPanel({
 	 * Files to send now: the missing ones; everything when all are done, or
 	 * when an iPhone session is transcribed as a whole (one request).
 	 */
-	const toSend =
-		allDone || (session && user?.transcription?.wholeSession)
-			? fileIds
-			: missing;
+	const wholeSession = Boolean(session && user?.transcription?.wholeSession);
+	const toSend = allDone || wholeSession ? fileIds : missing;
+	/** Segments already transcribed go again: edits and speaker names would be lost. */
+	const redoesDone = allDone || (wholeSession && merged.done > 0);
 	const scope: ExportScope = session ? { session } : { fileIds };
 
-	/** "Chép lại" over edited sentences asks first: those edits would be lost. */
+	/**
+	 * "Chép lại" (or a whole-session run over transcribed segments) asks
+	 * first when edited sentences or speaker names would be lost.
+	 */
 	async function start(): Promise<void> {
-		if (!allDone) {
+		if (!redoesDone) {
 			await transcribe.start(toSend, secondsOf(toSend));
 			return;
 		}
@@ -111,8 +119,9 @@ export function TranscriptPanel({
 				queryFn: () => fetchTranscriptDoc(docKey),
 			});
 			const edited = editedCounts(detail.segments);
-			if (edited.segments > 0) {
-				setLostEdits(edited);
+			const renamed = renamedSpeakers(detail.speakers?.names ?? {});
+			if (edited.segments > 0 || renamed > 0) {
+				setLostEdits({ ...edited, renamed });
 				return;
 			}
 		} catch (cause) {
@@ -240,15 +249,26 @@ export function TranscriptPanel({
 					if (!next) setLostEdits(null);
 				}}
 				title={t("transcript.panel.rerun")}
-				question={t("transcript.panel.rerunQuestion", {
-					segments: lostEdits?.segments ?? 0,
-					sentences: lostEdits?.sentences ?? 0,
-				})}
+				question={
+					lostEdits && lostEdits.segments === 0
+						? t("transcript.panel.rerunNamesQuestion", {
+								count: lostEdits.renamed,
+							})
+						: t("transcript.panel.rerunQuestion", {
+								segments: lostEdits?.segments ?? 0,
+								sentences: lostEdits?.sentences ?? 0,
+							})
+				}
 				confirmLabel={t("transcript.panel.rerun")}
 				onConfirm={() => transcribe.start(toSend, secondsOf(toSend))}
 				data-id={`${dataId}-rerun`}
 			>
-				{t("transcript.panel.rerunBody")}
+				{wholeSession
+					? t("transcript.reader.rerunAllBody")
+					: t("transcript.panel.rerunBody")}
+				{lostEdits && lostEdits.renamed > 0
+					? ` ${t("transcript.speakers.reset")}`
+					: ""}
 			</ConfirmModal>
 		</div>
 	);
