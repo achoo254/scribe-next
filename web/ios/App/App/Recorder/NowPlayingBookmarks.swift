@@ -187,10 +187,12 @@ final class NowPlayingBookmarks {
     private func publish() {
         MPNowPlayingInfoCenter.default().nowPlayingInfo = [
             MPMediaItemPropertyTitle: feedback ?? "Scribe đang ghi",
-            MPMediaItemPropertyArtist: "Bấm phát/tạm dừng hoặc tai nghe để đánh dấu",
+            MPMediaItemPropertyArtist: "Bấm nút hoặc tai nghe để đánh dấu",
             MPNowPlayingInfoPropertyElapsedPlaybackTime: elapsed,
             MPNowPlayingInfoPropertyPlaybackRate: 1.0,
             MPNowPlayingInfoPropertyMediaType: MPNowPlayingInfoMediaType.audio.rawValue,
+            // A recording has no length: shown as live instead of an empty "--:--" progress bar.
+            MPNowPlayingInfoPropertyIsLiveStream: true,
         ]
     }
 

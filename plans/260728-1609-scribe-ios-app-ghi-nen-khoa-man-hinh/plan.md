@@ -332,3 +332,7 @@ Ba trên bốn reviewer độc lập tìm ra cùng lỗ hổng transport/origin.
 - Decision deltas checked: 9 (origin/transport · ranh giới BE change · bỏ resumable · đoạn 1 phút · SegmentStore actor · 401 re-auth · logout native · gộp phase 2+3 · xoá phase 6)
 - Reconciled stale references: 14 (tái dùng UI 85%→70% · "zero BE change"→ranh giới D4 · 5 phút→1 phút · Cargo.lock path · bỏ nhãn "Sắp có" · bỏ `RecorderDelegate`/`ApiClient`/`ProvisioningInfo`/`UploadQueueStatus` · rollback claims · gate pin có ngưỡng · gate hồi quy web · đánh số phase 6→4)
 - Unresolved contradictions: **0**
+
+## Kết quả thử trên iPhone 17/10 11:43
+- Mục 10: **đạt** — màn hình khoá hiện "Scribe đang ghi" (nhờ phát im lặng), bấm ở đó thêm mốc, mở app thấy "Đã đánh 1 mốc", bản ghi vẫn chạy.
+- Sau đó sửa (chưa cài lên máy): khung hiện dạng trực tiếp thay cho thanh `--:--` trống, rút gọn dòng hướng dẫn bị cắt. Cài ở lần cắm sau.
