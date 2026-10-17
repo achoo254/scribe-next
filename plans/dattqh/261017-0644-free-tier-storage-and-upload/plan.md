@@ -43,3 +43,4 @@ Chủ dự án cho phép ("deploy luôn khi xong"). Build từ `218e33a` (code `
 (binary, dist, `files-expiry-before.json`). Binary sha256 `7ad3e9760931192c…`, `index-DCrYGjs5.js`. Health ok, `NRestarts=0`, không ERROR/WARN.
 `admin shorten-free-retention` (xem trước): 0 user free, 0 tệp — cả 57 tệp prod của user duy nhất đang ở gói plus, nên không chạy `--apply`.
 Test Mongo dev 13/13 đạt (test OpenAI thật cần key, bỏ qua).
+- 07:35: trang Cắt file không liệt kê tệp tải lên từ trang Ghi âm (`658af64`, chỉ backend). Sao lưu `/root/scribe-backup-20261017-073535`, sha256 `bcc0434c6cefb1d3…`, health ok.
