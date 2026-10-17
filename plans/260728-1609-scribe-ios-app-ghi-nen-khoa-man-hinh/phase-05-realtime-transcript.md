@@ -142,3 +142,8 @@ AudioRecorder (Phase 2) ── tap PCM ──▶ RealtimeTranscriber.swift
 | Chi phí vượt ngân sách | Trung bình | Phút chung hạn mức chép lời + `REALTIME_EMAILS` |
 | App bị tắt trước khi báo số giây | Thấp | Phần giữ chỗ (tối đa 10 phút mỗi token) tính trọn — lệch về phía an toàn cho chi phí |
 | Audio rời máy | Chấp nhận có điều kiện | Công tắc realtime (R5); chỉ chạy khi bật |
+
+## Deploy 17/10 11:11
+Backend + web lên prod từ `d409cc8` (chủ dự án cho phép). `REALTIME_EMAILS` = tài khoản chủ dự án. Sao lưu `/root/scribe-backup-20261017-111120`,
+binary sha256 `c8cc2c429fb21907…`, `index-C_t9Qk5G.js`, health ok, `NRestarts=0`, `POST /api/realtime/token` chưa đăng nhập trả 401.
+App iPhone có chép trực tiếp đã cài lên iPhone 15 Pro Max lúc 11:10 (cài hết hạn ~24/10). Còn đo trên máy thật: mục 14–17 của checklist.
