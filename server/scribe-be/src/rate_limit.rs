@@ -146,4 +146,25 @@ mod tests {
         assert!(!rate.allow_in("share:a", 3, Duration::from_secs(3600)));
         assert!(rate.allow_in("share:b", 3, Duration::from_secs(3600)));
     }
+
+    #[test]
+    fn limiter_resets_the_count_when_the_window_ends() {
+        let rate = RateLimiter::new();
+        let window = Duration::from_millis(20);
+        assert!(rate.allow_in("api:a", 1, window));
+        assert!(!rate.allow_in("api:a", 1, window));
+        std::thread::sleep(Duration::from_millis(30));
+        assert!(rate.allow_in("api:a", 1, window));
+        assert!(!rate.allow_in("api:a", 1, window));
+    }
+
+    #[test]
+    fn client_ip_prefers_real_ip_then_first_forwarded_hop() {
+        let mut headers = HeaderMap::new();
+        assert_eq!(client_ip(&headers), "unknown");
+        headers.insert("x-forwarded-for", " 203.0.113.7 , 10.0.0.1".parse().unwrap());
+        assert_eq!(client_ip(&headers), "203.0.113.7");
+        headers.insert("x-real-ip", " 198.51.100.2 ".parse().unwrap());
+        assert_eq!(client_ip(&headers), "198.51.100.2");
+    }
 }
