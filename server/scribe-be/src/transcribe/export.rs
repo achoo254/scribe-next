@@ -1,12 +1,69 @@
-//! Xuất transcript ra txt/srt. Một phiên ghi iPhone là nhiều file (mỗi đoạn một file): ghép theo thứ
-//! tự, mốc của file sau cộng dồn thời lượng các file trước.
+//! Xuất transcript ra txt/srt/vtt (lời chép, phụ đề) và md/docx (tài liệu cuộc họp). Một phiên ghi
+//! iPhone là nhiều file (mỗi đoạn một file): ghép theo thứ tự, mốc của file sau cộng dồn thời lượng các
+//! file trước.
 
 use super::chunking::Sentence;
+use crate::models::transcript_doc::{Bookmark, StoredSummary};
+use docx_rs::{Docx, Paragraph, Run, RunFonts, Style, StyleType};
+
+/// Định dạng tệp xuất (`format=` của `GET /api/transcripts/export`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Format {
+    Txt,
+    Srt,
+    Vtt,
+    Md,
+    Docx,
+}
+
+impl Format {
+    pub fn parse(raw: &str) -> Option<Format> {
+        match raw {
+            "txt" => Some(Format::Txt),
+            "srt" => Some(Format::Srt),
+            "vtt" => Some(Format::Vtt),
+            "md" => Some(Format::Md),
+            "docx" => Some(Format::Docx),
+            _ => None,
+        }
+    }
+
+    pub fn ext(self) -> &'static str {
+        match self {
+            Format::Txt => "txt",
+            Format::Srt => "srt",
+            Format::Vtt => "vtt",
+            Format::Md => "md",
+            Format::Docx => "docx",
+        }
+    }
+
+    pub fn mime(self) -> &'static str {
+        match self {
+            Format::Txt => "text/plain; charset=utf-8",
+            Format::Srt => "application/x-subrip; charset=utf-8",
+            Format::Vtt => "text/vtt; charset=utf-8",
+            Format::Md => "text/markdown; charset=utf-8",
+            Format::Docx => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        }
+    }
+}
 
 /// Transcript của một file kèm mốc bắt đầu của file đó trong bản ghép.
 pub struct Part<'a> {
     pub offset_s: f64,
     pub sentences: &'a [Sentence],
+}
+
+/// Phần đầu và phần người dùng tạo của tài liệu cuộc họp (md/docx).
+pub struct Meeting<'a> {
+    pub title: &'a str,
+    /// Lúc bắt đầu ghi, đã định dạng giờ Việt Nam.
+    pub started: Option<String>,
+    pub duration_s: f64,
+    pub summary: Option<&'a StoredSummary>,
+    /// Theo thứ tự thời gian.
+    pub bookmarks: &'a [Bookmark],
 }
 
 pub fn to_txt(parts: &[Part<'_>]) -> String {
@@ -27,8 +84,8 @@ pub fn to_srt(parts: &[Part<'_>]) -> String {
             index += 1;
             out.push_str(&format!(
                 "{index}\n{} --> {}\n{}\n\n",
-                srt_time(part.offset_s + s.start),
-                srt_time(part.offset_s + s.end),
+                cue_time(part.offset_s + s.start, ','),
+                cue_time(part.offset_s + s.end, ','),
                 s.text
             ));
         }
@@ -36,11 +93,36 @@ pub fn to_srt(parts: &[Part<'_>]) -> String {
     out
 }
 
-/// `HH:MM:SS,mmm` — định dạng mốc của SubRip.
-fn srt_time(seconds: f64) -> String {
+/// WebVTT: như SRT nhưng có dòng `WEBVTT` đầu tệp và mốc dùng dấu `.`. Câu rỗng bị bỏ (cue rỗng vô nghĩa,
+/// và dòng trống trong cue sẽ kết thúc cue sớm).
+pub fn to_vtt(parts: &[Part<'_>]) -> String {
+    let mut out = String::from("WEBVTT\n\n");
+    for part in parts {
+        for s in part.sentences {
+            let text = cue_text(&s.text);
+            if text.is_empty() {
+                continue;
+            }
+            out.push_str(&format!(
+                "{} --> {}\n{text}\n\n",
+                cue_time(part.offset_s + s.start, '.'),
+                cue_time(part.offset_s + s.end, '.'),
+            ));
+        }
+    }
+    out
+}
+
+/// Chữ một cue VTT: một dòng, và `-->` không được xuất hiện trong nội dung cue.
+fn cue_text(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ").replace("-->", "→")
+}
+
+/// `HH:MM:SS,mmm` (SubRip) hoặc `HH:MM:SS.mmm` (WebVTT).
+fn cue_time(seconds: f64, separator: char) -> String {
     let ms = (seconds.max(0.0) * 1000.0).round() as u64;
     format!(
-        "{:02}:{:02}:{:02},{:03}",
+        "{:02}:{:02}:{:02}{separator}{:03}",
         ms / 3_600_000,
         ms / 60_000 % 60,
         ms / 1000 % 60,
@@ -48,12 +130,194 @@ fn srt_time(seconds: f64) -> String {
     )
 }
 
+/// Mốc trong tài liệu: `mm:ss`, từ một giờ trở lên `h:mm:ss`.
+fn clock(seconds: f64) -> String {
+    let total = seconds.max(0.0).floor() as u64;
+    let (h, m, s) = (total / 3600, total / 60 % 60, total % 60);
+    if h > 0 {
+        format!("{h}:{m:02}:{s:02}")
+    } else {
+        format!("{m:02}:{s:02}")
+    }
+}
+
+/// Một khối của tài liệu cuộc họp; md và docx cùng dựng từ danh sách này nên luôn cùng nội dung.
+#[derive(Debug, PartialEq)]
+enum Block {
+    Title(String),
+    Meta(String),
+    Heading(&'static str),
+    Paragraph(String),
+    /// Mục danh sách (quyết định, việc cần làm, dấu mốc), mốc giây tính từ đầu phiên.
+    Item { at: f64, text: String },
+    /// Một câu lời chép.
+    Line { at: f64, text: String },
+}
+
+fn one_line(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// Thứ tự: tiêu đề, giờ và thời lượng, tóm tắt, quyết định, việc cần làm, dấu mốc, lời chép. Mục trống bị bỏ.
+fn outline(meeting: &Meeting<'_>, parts: &[Part<'_>]) -> Vec<Block> {
+    let mut blocks = vec![Block::Title(one_line(meeting.title))];
+    let mut meta = Vec::new();
+    if let Some(started) = &meeting.started {
+        meta.push(started.clone());
+    }
+    if meeting.duration_s > 0.0 {
+        meta.push(format!("Thời lượng {}", clock(meeting.duration_s)));
+    }
+    if !meta.is_empty() {
+        blocks.push(Block::Meta(meta.join(" · ")));
+    }
+
+    if let Some(summary) = meeting.summary {
+        let paragraphs: Vec<Block> = summary
+            .summary
+            .lines()
+            .map(str::trim)
+            .filter(|l| !l.is_empty())
+            .map(|l| Block::Paragraph(l.to_string()))
+            .collect();
+        if !paragraphs.is_empty() {
+            blocks.push(Block::Heading("Tóm tắt"));
+            blocks.extend(paragraphs);
+        }
+        let decisions: Vec<Block> = summary
+            .decisions
+            .iter()
+            .filter(|d| !d.text.trim().is_empty())
+            .map(|d| Block::Item { at: d.at, text: one_line(&d.text) })
+            .collect();
+        if !decisions.is_empty() {
+            blocks.push(Block::Heading("Quyết định"));
+            blocks.extend(decisions);
+        }
+        let actions: Vec<Block> = summary
+            .actions
+            .iter()
+            .filter(|a| !a.text.trim().is_empty())
+            .map(|a| {
+                let mut details = Vec::new();
+                if let Some(owner) = a.owner.as_deref().map(one_line).filter(|o| !o.is_empty()) {
+                    details.push(format!("Người làm: {owner}"));
+                }
+                if let Some(due) = a.due.as_deref().map(one_line).filter(|d| !d.is_empty()) {
+                    details.push(format!("Hạn: {due}"));
+                }
+                let text = one_line(&a.text);
+                let text = if details.is_empty() { text } else { format!("{text} ({})", details.join("; ")) };
+                Block::Item { at: a.at, text }
+            })
+            .collect();
+        if !actions.is_empty() {
+            blocks.push(Block::Heading("Việc cần làm"));
+            blocks.extend(actions);
+        }
+    }
+
+    if !meeting.bookmarks.is_empty() {
+        blocks.push(Block::Heading("Dấu mốc"));
+        blocks.extend(meeting.bookmarks.iter().enumerate().map(|(i, b)| {
+            let label = b.label.as_deref().map(one_line).filter(|l| !l.is_empty());
+            Block::Item { at: b.at, text: label.unwrap_or_else(|| format!("Dấu mốc {}", i + 1)) }
+        }));
+    }
+
+    let lines: Vec<Block> = parts
+        .iter()
+        .flat_map(|p| p.sentences.iter().map(move |s| (p.offset_s + s.start, one_line(&s.text))))
+        .filter(|(_, text)| !text.is_empty())
+        .map(|(at, text)| Block::Line { at, text })
+        .collect();
+    if !lines.is_empty() {
+        blocks.push(Block::Heading("Lời chép"));
+        blocks.extend(lines);
+    }
+    blocks
+}
+
+pub fn to_md(meeting: &Meeting<'_>, parts: &[Part<'_>]) -> String {
+    let rendered: Vec<String> = outline(meeting, parts)
+        .into_iter()
+        .map(|block| match block {
+            Block::Title(text) => format!("# {text}"),
+            Block::Meta(text) => format!("_{text}_"),
+            Block::Heading(text) => format!("## {text}"),
+            Block::Paragraph(text) => text,
+            Block::Item { at, text } => format!("- [{}] {text}", clock(at)),
+            Block::Line { at, text } => format!("[{}] {text}", clock(at)),
+        })
+        .collect();
+    let mut out = rendered.join("\n\n");
+    out.push('\n');
+    out
+}
+
+/// Phông hiển thị đủ dấu tiếng Việt trên Word, LibreOffice và Pages.
+const DOCX_FONT: &str = "Arial";
+/// Màu chữ mốc thời gian và dòng giờ/thời lượng (xám).
+const MUTED: &str = "6B7280";
+
+pub fn to_docx(meeting: &Meeting<'_>, parts: &[Part<'_>]) -> Result<Vec<u8>, String> {
+    let fonts = || RunFonts::new().ascii(DOCX_FONT).hi_ansi(DOCX_FONT).cs(DOCX_FONT).east_asia(DOCX_FONT);
+    // Cỡ chữ docx tính theo nửa point: 22 = 11pt.
+    let mut docx = Docx::new()
+        .default_fonts(fonts())
+        .default_size(22)
+        .add_style(Style::new("Title", StyleType::Paragraph).name("Title").size(36).bold())
+        .add_style(Style::new("Heading1", StyleType::Paragraph).name("heading 1").size(28).bold().outline_lvl(0));
+    let stamp = |at: f64| Run::new().add_text(format!("[{}] ", clock(at))).color(MUTED);
+    for block in outline(meeting, parts) {
+        let paragraph = match block {
+            Block::Title(text) => Paragraph::new().style("Title").add_run(Run::new().add_text(text)),
+            Block::Meta(text) => Paragraph::new().add_run(Run::new().add_text(text).color(MUTED)),
+            Block::Heading(text) => Paragraph::new().style("Heading1").add_run(Run::new().add_text(text)),
+            Block::Paragraph(text) => Paragraph::new().add_run(Run::new().add_text(text)),
+            Block::Item { at, text } => Paragraph::new()
+                .add_run(Run::new().add_text("• "))
+                .add_run(stamp(at))
+                .add_run(Run::new().add_text(text)),
+            Block::Line { at, text } => Paragraph::new().add_run(stamp(at)).add_run(Run::new().add_text(text)),
+        };
+        docx = docx.add_paragraph(paragraph);
+    }
+    let mut out = std::io::Cursor::new(Vec::new());
+    docx.pack(&mut out).map_err(|e| format!("tạo docx: {e}"))?;
+    Ok(out.into_inner())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::transcript_doc::{Action, Decision};
+    use mongodb::bson::DateTime;
+    use std::io::Read;
 
     fn s(start: f64, end: f64, text: &str) -> Sentence {
         Sentence { start, end, text: text.into() }
+    }
+
+    fn summary() -> StoredSummary {
+        StoredSummary {
+            model: "m".into(),
+            created_at: DateTime::now(),
+            source_hash: "h".into(),
+            summary: "Chốt giá và lịch giao hàng.\n\nCòn chờ báo giá vận chuyển.".into(),
+            decisions: vec![Decision { text: "Giá 5 triệu".into(), at: 70.0 }],
+            actions: vec![
+                Action { text: "Gửi hợp đồng".into(), owner: Some("Lan".into()), due: Some("thứ Sáu".into()), at: 3725.0 },
+                Action { text: "Gọi kho".into(), owner: None, due: None, at: 5.0 },
+            ],
+        }
+    }
+
+    fn bookmarks() -> Vec<Bookmark> {
+        vec![
+            Bookmark { id: "a".into(), at: 12.0, label: Some("Ý quan trọng".into()) },
+            Bookmark { id: "b".into(), at: 30.0, label: None },
+        ]
     }
 
     #[test]
@@ -73,7 +337,118 @@ mod tests {
     }
 
     #[test]
-    fn srt_time_handles_hours() {
-        assert_eq!(srt_time(3725.0456), "01:02:05,046");
+    fn formats_parse_with_their_extension_and_type() {
+        for raw in ["txt", "srt", "vtt", "md", "docx"] {
+            assert_eq!(Format::parse(raw).map(Format::ext), Some(raw));
+        }
+        assert_eq!(Format::parse("pdf"), None);
+        assert_eq!(Format::Vtt.mime(), "text/vtt; charset=utf-8");
+        assert_eq!(
+            Format::Docx.mime(),
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        );
+    }
+
+    #[test]
+    fn cue_time_handles_hours() {
+        assert_eq!(cue_time(3725.0456, ','), "01:02:05,046");
+        assert_eq!(cue_time(3725.0456, '.'), "01:02:05.046");
+    }
+
+    #[test]
+    fn vtt_has_header_dot_timestamps_and_skips_empty_cues() {
+        let first = [s(0.0, 2.5, "Xin chào."), s(2.5, 3.0, "  ")];
+        let second = [s(1.0, 3.0, "Một\n\ndòng --> hai")];
+        let parts = [
+            Part { offset_s: 0.0, sentences: &first },
+            Part { offset_s: 3600.0, sentences: &second },
+        ];
+        assert_eq!(
+            to_vtt(&parts),
+            "WEBVTT\n\n\
+             00:00:00.000 --> 00:00:02.500\nXin chào.\n\n\
+             01:00:01.000 --> 01:00:03.000\nMột dòng → hai\n\n"
+        );
+    }
+
+    #[test]
+    fn clock_switches_to_hours() {
+        assert_eq!(clock(5.9), "00:05");
+        assert_eq!(clock(754.0), "12:34");
+        assert_eq!(clock(3725.0), "1:02:05");
+    }
+
+    #[test]
+    fn md_lists_sections_in_order() {
+        let first = [s(1.0, 2.0, "Mở đầu."), s(2.0, 3.0, " ")];
+        let second = [s(10.0, 12.0, "Chốt giá 5 triệu.")];
+        let parts = [
+            Part { offset_s: 0.0, sentences: &first },
+            Part { offset_s: 60.0, sentences: &second },
+        ];
+        let stored = summary();
+        let marks = bookmarks();
+        let meeting = Meeting {
+            title: "Họp\nkhách hàng",
+            started: Some("09:30 17/10/2026".into()),
+            duration_s: 3730.0,
+            summary: Some(&stored),
+            bookmarks: &marks,
+        };
+        assert_eq!(
+            to_md(&meeting, &parts),
+            "# Họp khách hàng\n\n\
+             _09:30 17/10/2026 · Thời lượng 1:02:10_\n\n\
+             ## Tóm tắt\n\n\
+             Chốt giá và lịch giao hàng.\n\n\
+             Còn chờ báo giá vận chuyển.\n\n\
+             ## Quyết định\n\n\
+             - [01:10] Giá 5 triệu\n\n\
+             ## Việc cần làm\n\n\
+             - [1:02:05] Gửi hợp đồng (Người làm: Lan; Hạn: thứ Sáu)\n\n\
+             - [00:05] Gọi kho\n\n\
+             ## Dấu mốc\n\n\
+             - [00:12] Ý quan trọng\n\n\
+             - [00:30] Dấu mốc 2\n\n\
+             ## Lời chép\n\n\
+             [00:01] Mở đầu.\n\n\
+             [01:10] Chốt giá 5 triệu.\n"
+        );
+    }
+
+    #[test]
+    fn md_omits_empty_sections() {
+        let sentences = [s(0.0, 1.0, "Xin chào.")];
+        let parts = [Part { offset_s: 0.0, sentences: &sentences }];
+        let meeting = Meeting { title: "Ghi âm", started: None, duration_s: 0.0, summary: None, bookmarks: &[] };
+        assert_eq!(to_md(&meeting, &parts), "# Ghi âm\n\n## Lời chép\n\n[00:00] Xin chào.\n");
+    }
+
+    #[test]
+    fn docx_is_a_zip_with_the_vietnamese_text() {
+        let sentences = [s(65.0, 70.0, "Chúng ta thống nhất phương án ưu tiên.")];
+        let parts = [Part { offset_s: 0.0, sentences: &sentences }];
+        let stored = summary();
+        let marks = bookmarks();
+        let meeting = Meeting {
+            title: "Họp đầu tuần",
+            started: Some("09:30 17/10/2026".into()),
+            duration_s: 70.0,
+            summary: Some(&stored),
+            bookmarks: &marks,
+        };
+        let bytes = to_docx(&meeting, &parts).expect("tạo docx");
+        let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes)).expect("docx là zip hợp lệ");
+        let mut xml = String::new();
+        archive
+            .by_name("word/document.xml")
+            .expect("có word/document.xml")
+            .read_to_string(&mut xml)
+            .expect("đọc document.xml");
+        for text in ["Họp đầu tuần", "Chúng ta thống nhất phương án ưu tiên.", "[01:05] ", "Ý quan trọng", "Việc cần làm"] {
+            assert!(xml.contains(text), "thiếu {text:?}");
+        }
+        assert!(xml.contains(MUTED), "mốc thời gian phải có màu xám");
+        assert!(archive.by_name("[Content_Types].xml").is_ok());
     }
 }

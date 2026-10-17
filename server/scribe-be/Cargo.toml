@@ -37,6 +37,8 @@ infer = "0.16"
 unicode-normalization = "0.1"
 # zip deflate = flate2/miniz_oxide (pure Rust) → giữ musl static sạch (không C lib).
 zip = { version = "2", default-features = false, features = ["deflate"] }
+# Xuất Word (.docx): MIT, thuần Rust; tắt `image` (không chèn ảnh) cho binary gọn.
+docx-rs = { version = "0.4", default-features = false }
 tokio-util = { version = "0.7", features = ["io"] }
 futures-util = "0.3"
 

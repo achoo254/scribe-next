@@ -347,20 +347,18 @@ pub async fn get(
     Ok(Json(json!({ "items": items })))
 }
 
-/// `GET /api/transcripts/export?ids=a,b&format=txt|srt&name=…` — một tệp ghép các file theo thứ tự,
-/// mốc của file sau cộng dồn thời lượng các file trước. File chưa chép xong thì bỏ qua (mốc vẫn cộng).
+/// `GET /api/transcripts/export?ids=a,b&format=txt|srt|vtt|md|docx&name=…` — một tệp ghép các file theo
+/// thứ tự, mốc của file sau cộng dồn thời lượng các file trước. File chưa chép xong thì bỏ qua (mốc vẫn cộng).
+/// `md`/`docx` là tài liệu cuộc họp: kèm biên bản và dấu mốc khi mọi file thuộc cùng một phiên.
 pub async fn export(
     State(state): State<AppState>,
     Extension(user): Extension<UserId>,
     Query(q): Query<ExportQuery>,
 ) -> Result<Response, AppError> {
+    let format = export::Format::parse(q.format.as_deref().unwrap_or("txt"))
+        .ok_or_else(|| AppError::BadRequest("định dạng chỉ nhận txt, srt, vtt, md hoặc docx".into()))?;
     let files = export_files(&state, &user.0, &q).await?;
     let ids: Vec<ObjectId> = files.iter().filter_map(|f| f.id).collect();
-    let srt = match q.format.as_deref().unwrap_or("txt") {
-        "txt" => false,
-        "srt" => true,
-        _ => return Err(AppError::BadRequest("định dạng chỉ nhận txt hoặc srt".into())),
-    };
     let docs = transcript::list_owned(&state.db, &user.0, &ids).await?;
     let by_id: HashMap<ObjectId, &transcript::TranscriptDoc> = docs.iter().map(|t| (t.id, t)).collect();
     // Câu sửa theo phiên của từng file (một truy vấn), áp theo luật `runId` như màn hình đọc.
@@ -394,16 +392,46 @@ pub async fn export(
     if parts.is_empty() {
         return Err(AppError::NotFound("chưa có bản chép lời nào xong".into()));
     }
-    let (body, ext, mime) = if srt {
-        (export::to_srt(&parts), "srt", "application/x-subrip; charset=utf-8")
-    } else {
-        (export::to_txt(&parts), "txt", "text/plain; charset=utf-8")
+    // Biên bản, dấu mốc và tiêu đề thuộc một phiên: chỉ dùng khi mọi file cùng phiên.
+    let session_doc = match keys.first() {
+        Some(first) if keys.iter().all(|k| k == first) => edits.get(first),
+        _ => None,
     };
-    let base = sanitize_filename(q.name.as_deref().unwrap_or("chep-loi"));
+    // Tiêu đề người dùng đặt cho phiên, rồi tên client gửi (tên file ở dòng lịch sử ghi).
+    let title = session_doc
+        .and_then(|d| d.title.clone())
+        .or_else(|| q.name.clone())
+        .map(|t| t.trim().to_string())
+        .filter(|t| !t.is_empty());
+    let body: Vec<u8> = match format {
+        export::Format::Txt => export::to_txt(&parts).into_bytes(),
+        export::Format::Srt => export::to_srt(&parts).into_bytes(),
+        export::Format::Vtt => export::to_vtt(&parts).into_bytes(),
+        export::Format::Md | export::Format::Docx => {
+            let mut bookmarks = session_doc.map(|d| d.bookmarks.clone()).unwrap_or_default();
+            bookmarks.sort_by(|a, b| a.at.total_cmp(&b.at));
+            let meeting = export::Meeting {
+                title: title.as_deref().unwrap_or("Bản chép lời"),
+                started: files.iter().map(|f| f.created_at).min().and_then(|at| {
+                    chrono::DateTime::<chrono::Utc>::from_timestamp_millis(at.timestamp_millis())
+                        .map(|at| at.with_timezone(&usage::vietnam()).format("%H:%M %d/%m/%Y").to_string())
+                }),
+                duration_s: offset,
+                summary: session_doc.and_then(|d| d.summary.as_ref()),
+                bookmarks: &bookmarks,
+            };
+            if format == export::Format::Md {
+                export::to_md(&meeting, &parts).into_bytes()
+            } else {
+                export::to_docx(&meeting, &parts).map_err(AppError::Internal)?
+            }
+        }
+    };
+    let base = sanitize_filename(title.as_deref().unwrap_or("chep-loi"));
     Ok((
         [
-            (header::CONTENT_TYPE, header::HeaderValue::from_static(mime)),
-            (header::CONTENT_DISPOSITION, content_disposition_attachment(&format!("{base}.{ext}"))),
+            (header::CONTENT_TYPE, header::HeaderValue::from_static(format.mime())),
+            (header::CONTENT_DISPOSITION, content_disposition_attachment(&format!("{base}.{}", format.ext()))),
         ],
         body,
     )
