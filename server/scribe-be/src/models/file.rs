@@ -260,12 +260,16 @@ pub async fn list_history(db: &Database, user_id: &str) -> Result<Vec<FileDoc>, 
     Ok(out)
 }
 
-/// File KHÔNG phải bản ghi (mọi tệp tải lên + đoạn output), mới nhất trước — để UI quản lý
-/// dung lượng (những file này tính quota nhưng không hiện ở "Lịch sử ghi").
-pub async fn list_non_recordings(db: &Database, user_id: &str) -> Result<Vec<FileDoc>, AppError> {
+/// File của trang Cắt file (tệp tải lên ở Cắt file + đoạn output), mới nhất trước. Tệp tải lên bằng "Tải tệp
+/// lên" ở trang Ghi âm thuộc "Lịch sử ghi" nên không có ở đây.
+pub async fn list_split_files(db: &Database, user_id: &str) -> Result<Vec<FileDoc>, AppError> {
     let mut cur = db
         .collection::<FileDoc>(COLL)
-        .find(doc! { "userId": user_id, "kind": { "$in": ["upload", "output"] } })
+        .find(doc! {
+            "userId": user_id,
+            "kind": { "$in": ["upload", "output"] },
+            "purpose": { "$ne": PURPOSE_TRANSCRIBE },
+        })
         .sort(doc! { "createdAt": -1 })
         .await
         .map_err(|e| AppError::Internal(format!("find non-recordings: {e}")))?;
@@ -649,12 +653,14 @@ mod tests {
         assert!(list_session(&db, &user, &split_key).await.expect("f: cắt").is_empty());
         assert!(session_heads(&db, &user, &[split_key]).await.expect("heads").is_empty());
         assert_eq!(list_history(&db, &user).await.expect("lịch sử").len(), 2);
+        let split_files = list_split_files(&db, &user).await.expect("Cắt file");
+        assert_eq!(split_files.iter().map(|f| f.name.as_str()).collect::<Vec<_>>(), ["cat.mp3"]);
         assert_eq!(user_usage_bytes(&db, &user).await.expect("dung lượng"), 23);
         for f in list_history(&db, &user).await.expect("lịch sử") {
             delete_doc(&db, &f).await.expect("xoá");
         }
         assert!(list_history(&db, &user).await.expect("lịch sử").is_empty());
-        assert_eq!(list_non_recordings(&db, &user).await.expect("Cắt file").len(), 1);
+        assert_eq!(list_split_files(&db, &user).await.expect("Cắt file").len(), 1);
         db.collection::<FileDoc>(COLL).delete_many(doc! { "userId": &user }).await.expect("dọn");
     }
 }

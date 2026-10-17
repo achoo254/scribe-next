@@ -59,13 +59,13 @@ pub async fn list(
     Ok(Json(json!({ "items": items, "retentionDays": retention_days })))
 }
 
-/// `GET /api/files/manage` — file KHÔNG phải bản ghi (mọi tệp tải lên + đoạn output) để UI quản lý
-/// dung lượng. Xoá dùng chung `DELETE /api/files/:id`. Ownership qua list_non_recordings.
+/// `GET /api/files/manage` — file của trang Cắt file (tệp tải lên ở đó + đoạn output) để UI quản lý
+/// dung lượng. Xoá dùng chung `DELETE /api/files/:id`. Ownership qua list_split_files.
 pub async fn manage_list(
     State(state): State<AppState>,
     Extension(user): Extension<UserId>,
 ) -> Result<Json<Value>, AppError> {
-    let files = file::list_non_recordings(&state.db, &user.0).await?;
+    let files = file::list_split_files(&state.db, &user.0).await?;
     let retention_days = user::effective_plan(&state.db, &user.0).await?.storage().retention_days;
     let items: Vec<Value> = files
         .iter()
