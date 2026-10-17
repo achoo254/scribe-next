@@ -199,6 +199,11 @@ async fn recompute(db: &Database, month: &str, apply: bool) -> Result<Value, Str
         open_runs += 1;
         add(&t.user_id, t.free_pool, t.charged_s);
     }
+    // Token chép trực tiếp chưa quyết toán: sổ đang tính trọn phần giữ chỗ (đã quyết toán thì nằm trong
+    // `transcribe_runs` ở trên). Không chặn `--apply`: báo cáo đến muộn chỉ cộng chênh lệch bằng `$inc`.
+    for (user, free, charged) in crate::models::realtime_token::unsettled(db, month).await.map_err(err)? {
+        add(&user, free, charged);
+    }
     // Chi phí token của tóm tắt và hỏi đáp chỉ tính vào trần tổng (không vào sổ phút của user hay quỹ
     // free); lượt đang gọi model giữ chỗ theo ước lượng và quyết toán sau, nên cũng chặn `--apply` như
     // lượt chép.

@@ -152,6 +152,9 @@ pub struct Config {
     pub allowed_emails: Vec<String>,
     /// Email được dùng chép lời bằng OpenAI (rỗng = tắt tính năng với mọi người).
     pub transcribe_emails: Vec<String>,
+    /// Email được dùng chép trực tiếp trên iPhone (`REALTIME_EMAILS`; rỗng = không ai). Không theo
+    /// `TRANSCRIBE_OPEN`: chỉ mở cho người đã được thêm tên.
+    pub realtime_emails: Vec<String>,
     /// Tệp chứa key OpenAI của chủ sản phẩm (đọc lúc khởi động; không nhúng key vào binary).
     pub openai_key_path: Option<String>,
     /// `TRANSCRIBE_OPEN=1`: mọi user đăng nhập được chép lời (trong hạn mức gói), không chỉ `TRANSCRIBE_EMAILS`.
@@ -215,6 +218,7 @@ impl Config {
             allowed_domains: parse_csv(option_env!("ALLOWED_DOMAINS")),
             allowed_emails: parse_csv(option_env!("ALLOWED_EMAILS")),
             transcribe_emails: parse_csv(option_env!("TRANSCRIBE_EMAILS")),
+            realtime_emails: parse_csv(option_env!("REALTIME_EMAILS")),
             openai_key_path: option_env!("OPENAI_KEY_PATH").filter(|p| !p.is_empty()).map(str::to_string),
             transcribe_open: matches!(option_env!("TRANSCRIBE_OPEN"), Some("1" | "true")),
             transcribe_limits: TranscribeLimits::from_parts(
@@ -282,6 +286,18 @@ impl Config {
     }
 }
 
+impl Config {
+    /// Email có được chép trực tiếp không: chỉ email có tên trong `REALTIME_EMAILS`.
+    pub fn realtime_allowed(&self, email: &str) -> bool {
+        listed(&self.realtime_emails, email)
+    }
+}
+
+/// `email` có trong danh sách không (không phân biệt hoa thường; email rỗng không bao giờ có).
+fn listed(list: &[String], email: &str) -> bool {
+    !email.is_empty() && list.iter().any(|e| e.eq_ignore_ascii_case(email))
+}
+
 fn parse_csv(v: Option<&str>) -> Vec<String> {
     v.unwrap_or("")
         .split(',')
@@ -307,6 +323,15 @@ mod tests {
         let g = d.with_free_guards(Some("10"), Some("0"));
         assert_eq!((g.free_daily_seconds, g.free_delay_hours), (600, 0));
         assert_eq!(d.with_free_guards(Some("bad"), Some("-1")).free_daily_seconds, 1800);
+    }
+
+    #[test]
+    fn realtime_list_is_closed_when_empty() {
+        let list = parse_csv(Some(" Owner@Example.com , "));
+        assert!(listed(&list, "owner@example.com"));
+        assert!(!listed(&list, "other@example.com"));
+        assert!(!listed(&list, ""));
+        assert!(!listed(&parse_csv(Some("")), "owner@example.com"));
     }
 
     #[test]

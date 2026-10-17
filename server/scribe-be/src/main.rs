@@ -14,6 +14,7 @@ mod models;
 mod notify;
 mod oidc;
 mod rate_limit;
+mod realtime;
 mod recordings;
 mod retention;
 mod routes;
@@ -95,6 +96,9 @@ async fn main() {
             }
             if let Err(e) = models::chat_link::ensure_indexes(&db).await {
                 tracing::warn!("tạo index chat_link_tokens thất bại: {e}");
+            }
+            if let Err(e) = models::realtime_token::ensure_indexes(&db).await {
+                tracing::warn!("{e}");
             }
         });
     }

@@ -1,7 +1,7 @@
 //! Lắp router: public (health/auth) + protected (guard middleware + upload/jobs).
 
 use crate::state::AppState;
-use crate::{access_log, auth, chat_link, files, jobs, rate_limit, recordings, search, summary, transcribe, upload};
+use crate::{access_log, auth, chat_link, files, jobs, rate_limit, realtime, recordings, search, summary, transcribe, upload};
 use axum::extract::DefaultBodyLimit;
 use axum::middleware::{from_fn, from_fn_with_state};
 use axum::routing::{delete, get, post, put};
@@ -50,6 +50,9 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/jobs/{id}/download", get(jobs::download))
         .route("/api/transcripts", post(transcribe::create).get(transcribe::get))
         .route("/api/transcripts/export", get(transcribe::export))
+        // Chép trực tiếp trên iPhone: token tạm thời của OpenAI Realtime + báo số giây đã stream.
+        .route("/api/realtime/token", post(realtime::token))
+        .route("/api/realtime/usage", post(realtime::report_usage))
         // Chunk upload 5MB/lần → nâng body limit (mặc định axum 2MB). Không buffer cả file (append disk).
         .layer(DefaultBodyLimit::max(8 * 1024 * 1024))
         // Gộp SAU `.layer` ở trên: nhóm này giữ trần 1 MiB của riêng nó.

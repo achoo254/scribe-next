@@ -128,7 +128,7 @@ pub(crate) fn vn_time(at: chrono::DateTime<chrono::Utc>) -> String {
     at.with_timezone(&usage::vietnam()).format("%H:%M ngày %d/%m").to_string()
 }
 
-fn blocked_error(blocked: &Blocked, used_s: i64, limit_s: i64, now: chrono::DateTime<chrono::Utc>) -> AppError {
+pub(crate) fn blocked_error(blocked: &Blocked, used_s: i64, limit_s: i64, now: chrono::DateTime<chrono::Utc>) -> AppError {
     let (used_minutes, limit_minutes) = (usage::used_minutes(used_s), limit_s / 60);
     let (code, message, retry_at) = match blocked {
         Blocked::UserQuota => (
@@ -151,7 +151,7 @@ fn blocked_error(blocked: &Blocked, used_s: i64, limit_s: i64, now: chrono::Date
 }
 
 /// Gói free: tài khoản mới phải chờ `free_delay_hours` từ lúc tạo. User không có `createdAt` là user cũ.
-fn too_new(profile: &user::Profile, delay_hours: i64, now: chrono::DateTime<chrono::Utc>) -> Option<AppError> {
+pub(crate) fn too_new(profile: &user::Profile, delay_hours: i64, now: chrono::DateTime<chrono::Utc>) -> Option<AppError> {
     let created = chrono::DateTime::from_timestamp_millis(profile.created_at?.timestamp_millis())?;
     let opens = created + chrono::Duration::hours(delay_hours);
     (now < opens).then(|| AppError::Quota {
@@ -164,7 +164,7 @@ fn too_new(profile: &user::Profile, delay_hours: i64, now: chrono::DateTime<chro
 }
 
 /// Một tài khoản chạm giới hạn ngày lần thứ 3 trong ngày: báo chủ sản phẩm (một lần mỗi ngày).
-async fn note_repeated_block(state: &AppState, charge: &Charge, blocked: &Blocked, email: &str) {
+pub(crate) async fn note_repeated_block(state: &AppState, charge: &Charge, blocked: &Blocked, email: &str) {
     let (Blocked::DailyLimit, Some(day)) = (blocked, &charge.day) else { return };
     if usage::count_hit(&state.db, &format!("daily:{}:{day}", charge.user_id)).await == 3 {
         notify::send(state, format!("Tài khoản {email} chạm giới hạn chép lời miễn phí trong ngày lần thứ 3 ({day})."));
