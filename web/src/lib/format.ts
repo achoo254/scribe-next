@@ -27,9 +27,43 @@ export function formatSize(bytes: number): string {
 	return `${Math.max(1, Math.round(bytes / 1024))} KB`;
 }
 
-/** Gigabytes with two decimals, for the quota bar. */
-export function formatGigabytes(bytes: number): string {
-	return (bytes / 1024 / 1024 / 1024).toFixed(2);
+/**
+ * Storage amount for the usage card: "200 MB", "12.3 MB", "1.25 GB"
+ * (trailing zeros dropped), or KB below one megabyte.
+ */
+export function formatStorage(bytes: number): string {
+	const trim = (value: number, digits: number) =>
+		String(Number(value.toFixed(digits)));
+	if (bytes >= 1024 ** 3) return `${trim(bytes / 1024 ** 3, 2)} GB`;
+	if (bytes >= 1024 ** 2) return `${trim(bytes / 1024 ** 2, 1)} MB`;
+	return formatSize(bytes);
+}
+
+/** Day and month in Vietnam time, "1/11"; empty when invalid. */
+export function formatDayMonth(iso?: string | null): string {
+	if (!iso) return "";
+	const date = new Date(iso);
+	return Number.isNaN(date.getTime())
+		? ""
+		: date.toLocaleDateString("vi-VN", {
+				day: "numeric",
+				month: "numeric",
+				timeZone: "Asia/Saigon",
+			});
+}
+
+/** Full date in Vietnam time, "31/12/2026"; empty when invalid. */
+export function formatDate(iso?: string | null): string {
+	if (!iso) return "";
+	const date = new Date(iso);
+	return Number.isNaN(date.getTime())
+		? ""
+		: date.toLocaleDateString("vi-VN", {
+				day: "2-digit",
+				month: "2-digit",
+				year: "numeric",
+				timeZone: "Asia/Saigon",
+			});
 }
 
 /** Local date and time; empty for a missing or invalid timestamp. */

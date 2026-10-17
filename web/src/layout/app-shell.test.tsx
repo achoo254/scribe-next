@@ -17,7 +17,7 @@ vi.mock("../auth/auth-context", () => ({
 		logout: auth.logout,
 	}),
 }));
-vi.mock("../components/quota-bar", () => ({ QuotaBar: () => null }));
+vi.mock("../components/usage-card", () => ({ UsageCard: () => null }));
 // Stands in for `RecordStateProvider` with a browser recording running.
 vi.mock("../pages/record/record-state", () => ({
 	useOptionalBrowserRecordState: () =>

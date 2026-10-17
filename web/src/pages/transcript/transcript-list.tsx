@@ -23,7 +23,6 @@ import { cn } from "../../lib/cn";
 import { formatDateTime, formatDuration } from "../../lib/format";
 import { useDelayedFlag } from "../../lib/use-delayed-flag";
 import { SearchEntry } from "../search/search-entry";
-import { TranscriptionQuota } from "./transcription-quota";
 
 /**
  * Hover and focus share one highlighted look, as localman-next's project
@@ -54,7 +53,6 @@ export function TranscriptList({ onOpen }: TranscriptListProps) {
 				description={t("transcript.list.description")}
 			/>
 			<SearchEntry />
-			<TranscriptionQuota />
 			{skeleton ? (
 				<SkeletonRegion
 					data-id="transcripts-loading"

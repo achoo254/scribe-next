@@ -19,7 +19,7 @@ vi.mock("./auth/auth-context", () => ({
 		logout: async () => undefined,
 	}),
 }));
-vi.mock("./components/quota-bar", () => ({ QuotaBar: () => null }));
+vi.mock("./components/usage-card", () => ({ UsageCard: () => null }));
 vi.mock("./layout/signed-in-state", async () => {
 	const { useEffect } = await import("react");
 	return {

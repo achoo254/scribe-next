@@ -26,7 +26,7 @@ test.describe("record page (browser)", () => {
 			).toHaveAttribute("aria-current", "page");
 			const history = page.getByTestId("history");
 			await expect(history).toContainText("Họp nhóm sáng thứ Năm.webm");
-			await expect(page.getByTestId("quota")).toBeVisible();
+			await expect(page.getByTestId("usage")).toBeVisible();
 			await fontsReady(page);
 			await expect(page).toHaveScreenshot(`record-${scheme}.png`, {
 				fullPage: true,

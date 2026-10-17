@@ -83,6 +83,32 @@ describe("RecordingChunkQueue", () => {
 		expect(queue.error).toBe("Phiên ghi đã hết hạn");
 	});
 
+	it("stops at once when storage is full, keeping what was sent", async () => {
+		const full =
+			"Đã hết dung lượng lưu trữ (200 MB). Xoá bớt bản ghi hoặc tệp để ghi và tải lên tiếp.";
+		const { fetcher, calls } = fakeFetch({
+			"POST /api/recordings/chunk": [
+				echoWritten,
+				jsonResponse({ error: full }, 413),
+			],
+		});
+		const refused: string[] = [];
+		const queue = new RecordingChunkQueue("r1", fetcher, noWait, (message) =>
+			refused.push(message),
+		);
+		queue.enqueue(chunk(2));
+		queue.enqueue(chunk(2));
+		queue.enqueue(chunk(2));
+		await queue.drain();
+
+		// No retry of the refused chunk, nothing sent after it.
+		expect(calls).toHaveLength(2);
+		expect(queue.offset).toBe(2);
+		expect(queue.full).toBe(true);
+		expect(queue.error).toBe(full);
+		expect(refused).toEqual([full]);
+	});
+
 	it("skips empty chunks and anything queued after close()", async () => {
 		const { fetcher, calls } = fakeFetch({
 			"POST /api/recordings/chunk": echoWritten,

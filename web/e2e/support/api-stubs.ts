@@ -5,7 +5,9 @@ import type {
 	ChatLinkStatus,
 } from "../../src/features/chat-link/chat-link-api";
 import type {
+	DeleteAllResult,
 	ManagedFile,
+	RecordingItem,
 	RecordingList,
 	Usage,
 } from "../../src/features/files/files-api";
@@ -89,28 +91,59 @@ export const STUB_MINUTES: TranscriptMinutes = {
 /** Every date in the fixtures is this day (Asia/Saigon); specs freeze the clock to it. */
 export const FIXED_NOW = new Date("2026-10-16T10:00:00+07:00");
 
+const MB = 1024 * 1024;
+
 export const SIGNED_IN_USER: CurrentUser = {
 	email: "minh.anh@example.com",
 	canTranscribe: true,
+	plan: {
+		name: "free",
+		until: null,
+		quotaBytes: 200 * MB,
+		maxFileBytes: 200 * MB,
+		retentionDays: 7,
+	},
 	transcription: {
 		plan: "free",
 		planUntil: null,
 		usedMinutes: 42,
-		limitMinutes: 300,
+		limitMinutes: 120,
 		resetsAt: "2026-11-01T00:00:00+07:00",
 		capReached: false,
 		paused: false,
+		daily: { usedMinutes: 12, limitMinutes: 30 },
 	},
 };
+
+/** What a file uploaded on the record page becomes in "Lịch sử ghi". */
+export const STUB_UPLOADED: RecordingItem = {
+	id: "f-e2e-upload",
+	kind: "upload",
+	name: "phong-van.m4a",
+	durationS: 300,
+	hasVideo: false,
+	size: 4_718_592,
+	createdAt: "2026-10-16T09:58:00+07:00",
+	transcript: null,
+};
+
+/** The sentence the stubbed transcription gives every newly queued file. */
+export const STUB_SENTENCE = "Câu chép lời từ tệp tải lên.";
 
 const IPHONE_SESSION = "a1b2c3d4-e5f6";
 
 export function apiFixtures(overrides: Partial<ApiFixtures> = {}): ApiFixtures {
 	return {
 		user: SIGNED_IN_USER,
-		usage: { usageBytes: 1_288_490_189, quotaBytes: 10_737_418_240 },
+		usage: {
+			usageBytes: 48_234_496,
+			quotaBytes: 200 * MB,
+			maxFileBytes: 200 * MB,
+			retentionDays: 7,
+			plan: "free",
+		},
 		recordings: {
-			retentionDays: 30,
+			retentionDays: 7,
 			items: [
 				{
 					id: "f-browser-1",
@@ -203,6 +236,10 @@ export interface ApiStub {
 	readonly searches: string[];
 	/** Body of every `POST /api/ask`, in order. */
 	readonly questions: Array<{ question: string | null; key: string | null }>;
+	/** `fileIds` of every `POST /api/transcripts`, in order. */
+	readonly transcribed: string[][];
+	/** Path of every `DELETE /api/files…`, in order. */
+	readonly deletes: string[];
 	/** Stands in for the user sending `/start` to the bot on chat.hoandat.com. */
 	linkChat: () => void;
 }
@@ -254,6 +291,8 @@ export async function stubApi(
 		bookmarks: [],
 		searches: [],
 		questions: [],
+		transcribed: [],
+		deletes: [],
 		linkChat: () => {
 			chatLinked = true;
 		},
@@ -262,6 +301,10 @@ export async function stubApi(
 	// the size announced at init.
 	const uploaded = new Map<string, number>();
 	let uploadSize = 0;
+	// "Lịch sử ghi" and transcripts change as the spec uploads, transcribes
+	// and deletes.
+	let historyItems: RecordingItem[] = [...fixtures.recordings.items];
+	const transcripts = [...fixtures.transcripts];
 
 	await page.route(
 		(url) => url.origin !== E2E_ORIGIN,
@@ -340,7 +383,48 @@ export async function stubApi(
 					return json(route, 200, fixtures.answer);
 				}
 				case "GET /api/files":
-					return json(route, 200, fixtures.recordings);
+					return json(route, 200, {
+						...fixtures.recordings,
+						items: historyItems,
+					});
+				case "DELETE /api/files": {
+					stub.deletes.push(url.pathname);
+					const result: DeleteAllResult = {
+						deleted: historyItems.length,
+						skipped: 0,
+						failed: 0,
+						bytes: historyItems.reduce((sum, item) => sum + item.size, 0),
+					};
+					historyItems = [];
+					return json(route, 200, result);
+				}
+				case "POST /api/transcripts": {
+					const body: unknown = request.postDataJSON();
+					const ids: unknown =
+						typeof body === "object" && body !== null
+							? Reflect.get(body, "fileIds")
+							: null;
+					const fileIds = Array.isArray(ids)
+						? ids.filter((id): id is string => typeof id === "string")
+						: [];
+					stub.transcribed.push(fileIds);
+					for (const fileId of fileIds) {
+						if (transcripts.some((t) => t.fileId === fileId)) continue;
+						transcripts.push({
+							fileId,
+							status: "done",
+							progress: 100,
+							error: null,
+							sentences: [{ start: 0, end: 3, text: STUB_SENTENCE }],
+						});
+					}
+					historyItems = historyItems.map((item) =>
+						fileIds.includes(item.id)
+							? { ...item, transcript: { status: "done" } }
+							: item,
+					);
+					return json(route, 200, { queued: fileIds.length, skipped: 0 });
+				}
 				case "GET /api/files/manage":
 					return json(route, 200, { items: fixtures.managedFiles });
 				case "GET /api/transcript-docs":
@@ -350,7 +434,7 @@ export async function stubApi(
 						(url.searchParams.get("ids") ?? "").split(",").filter(Boolean),
 					);
 					return json(route, 200, {
-						items: fixtures.transcripts.filter((t) => ids.has(t.fileId)),
+						items: transcripts.filter((t) => ids.has(t.fileId)),
 					});
 				}
 				case "GET /api/auth/login":
@@ -413,9 +497,14 @@ export async function stubApi(
 					return json(route, 200, { written: offset + size });
 				}
 				case "POST /api/upload/finalize":
+					// Uploads join the history (the record page's "Tải tệp lên").
+					historyItems = [
+						STUB_UPLOADED,
+						...historyItems.filter((item) => item.id !== STUB_UPLOADED.id),
+					];
 					return json(route, 200, {
-						fileId: "f-e2e-upload",
-						name: "phong-van.m4a",
+						fileId: STUB_UPLOADED.id,
+						name: STUB_UPLOADED.name,
 						durationS: 754,
 					});
 				case "POST /api/jobs":
@@ -427,6 +516,20 @@ export async function stubApi(
 						result: { segments: fixtures.splitSegments },
 					});
 				default:
+					if (
+						request.method() === "DELETE" &&
+						url.pathname.startsWith("/api/files/")
+					) {
+						stub.deletes.push(url.pathname);
+						const id = decodeURIComponent(
+							url.pathname.slice("/api/files/".length),
+						);
+						const known = historyItems.some((item) => item.id === id);
+						historyItems = historyItems.filter((item) => item.id !== id);
+						return known
+							? json(route, 200, { ok: true })
+							: json(route, 404, { error: "file không tồn tại" });
+					}
 					if (
 						request.method() === "GET" &&
 						url.pathname.startsWith("/api/files/")

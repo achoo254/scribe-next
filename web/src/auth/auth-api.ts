@@ -12,12 +12,27 @@ export interface Transcription {
 	capReached: boolean;
 	/** Transcription is paused for everyone (server key unusable). */
 	paused?: boolean;
+	/** Free plan: minutes of today (Vietnam time); null on plus. */
+	daily?: { usedMinutes: number; limitMinutes: number } | null;
+}
+
+/** The plan in effect and what it allows. */
+export interface PlanInfo {
+	name: "free" | "plus";
+	/** End of a plus plan (ISO); null when it does not end. */
+	until?: string | null;
+	quotaBytes: number;
+	maxFileBytes: number;
+	/** Days a new file is kept before it is deleted. */
+	retentionDays: number;
 }
 
 export interface CurrentUser {
 	email: string;
 	/** May transcribe recordings (backend allowlist). */
 	canTranscribe?: boolean;
+	/** Missing from older backends. */
+	plan?: PlanInfo | null;
 	transcription?: Transcription | null;
 }
 

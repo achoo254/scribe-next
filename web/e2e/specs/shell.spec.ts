@@ -24,7 +24,7 @@ async function openApp(page: Page, native: boolean): Promise<void> {
 	await expect(page.getByTestId("history")).toContainText(
 		"Họp nhóm sáng thứ Năm.webm",
 	);
-	await expect(page.getByTestId("quota")).toBeVisible();
+	await expect(page.getByTestId("usage")).toBeVisible();
 	await fontsReady(page);
 }
 

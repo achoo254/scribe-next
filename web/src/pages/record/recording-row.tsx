@@ -7,10 +7,8 @@ import {
 import { MediaPlayer, type MediaSeek } from "../../components/media-player";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
-import {
-	DropdownMenuItem,
-	DropdownMenuSeparator,
-} from "../../components/ui/dropdown-menu";
+import { DropdownMenuItem } from "../../components/ui/dropdown-menu";
+import { IconButton } from "../../components/ui/icon-button";
 import { RowActionsMenu } from "../../components/ui/row-actions-menu";
 import type { RecordingItem } from "../../features/files/files-api";
 import {
@@ -25,6 +23,18 @@ import { downloadPaths, useDownload } from "../../lib/download";
 import { formatDateTime, formatDuration, formatSize } from "../../lib/format";
 import { TranscriptPanel } from "./transcript-panel";
 
+function badgeTone(item: RecordingItem): "info" | "accent" | "neutral" {
+	if (item.kind === "upload") return "info";
+	return item.hasVideo ? "accent" : "neutral";
+}
+
+function badgeLabel(
+	item: RecordingItem,
+): "record.row.upload" | "record.row.screen" | "record.row.mic" {
+	if (item.kind === "upload") return "record.row.upload";
+	return item.hasVideo ? "record.row.screen" : "record.row.mic";
+}
+
 export interface RecordingRowProps {
 	item: RecordingItem;
 	/** Shown instead of the stored name (iOS segments: "Phần 01"). */
@@ -37,10 +47,14 @@ export interface RecordingRowProps {
 	transcribe?: boolean;
 	onSeek?: (fileId: string, seconds: number) => void;
 	onTogglePlay: () => void;
+	/** One tap, no confirmation: the history offers "Hoàn tác" instead. */
 	onDelete: () => void;
 }
 
-/** One recording: kind, name, details, actions; the player opens below. */
+/**
+ * One recording or uploaded file: kind, name, details, actions; the player
+ * opens below.
+ */
 export function RecordingRow({
 	item,
 	displayName,
@@ -69,9 +83,7 @@ export function RecordingRow({
 				    (and the grids around it) past the screen; it truncates. */}
 				<div className="min-w-0 flex-1 contain-inline-size">
 					<div className="flex min-w-0 items-center gap-2">
-						<Badge tone={item.hasVideo ? "accent" : "neutral"}>
-							{item.hasVideo ? t("record.row.screen") : t("record.row.mic")}
-						</Badge>
+						<Badge tone={badgeTone(item)}>{t(badgeLabel(item))}</Badge>
 						<span className="truncate font-semibold" title={name}>
 							{name}
 						</span>
@@ -123,16 +135,14 @@ export function RecordingRow({
 								? t("record.row.saveToFiles")
 								: t("record.row.download")}
 						</DropdownMenuItem>
-						<DropdownMenuSeparator />
-						<DropdownMenuItem
-							danger
-							data-id={`${id}-delete`}
-							icon={<IconTrash size={16} aria-hidden="true" />}
-							onSelect={onDelete}
-						>
-							{t("common.actions.delete")}
-						</DropdownMenuItem>
 					</RowActionsMenu>
+					<IconButton
+						label={t("record.row.delete", { name })}
+						data-id={`${id}-delete`}
+						className="text-error!"
+						icon={<IconTrash size={18} aria-hidden="true" />}
+						onClick={onDelete}
+					/>
 				</div>
 			</div>
 			{playing ? (

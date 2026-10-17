@@ -2,10 +2,15 @@ import { activeTranslator } from "../../i18n/active-translator";
 import { apiFetch, apiJson } from "../../lib/api";
 import type { TranscriptStatus } from "../transcript/transcript-api";
 
-/** A browser recording (Mode A), listed in "Lịch sử ghi". */
+/**
+ * An item of "Lịch sử ghi": a recording (browser or iPhone segment) or an
+ * audio/video file the user uploaded; both can be transcribed.
+ */
 export interface RecordingItem {
 	id: string;
 	name: string;
+	/** Missing in older replies: a recording. */
+	kind?: "recording" | "upload";
 	durationS?: number;
 	hasVideo: boolean;
 	size: number;
@@ -32,7 +37,21 @@ export interface ManagedFile {
 
 export interface Usage {
 	usageBytes: number;
+	/** Storage of the user's plan (free 200 MB, plus 5 GB). */
 	quotaBytes: number;
+	/** Largest single file of the plan. */
+	maxFileBytes?: number;
+	/** Days a new file is kept. */
+	retentionDays?: number;
+	plan?: "free" | "plus";
+}
+
+/** What "Xoá tất cả" did; `skipped` files belong to a recording still in progress. */
+export interface DeleteAllResult {
+	deleted: number;
+	skipped: number;
+	failed: number;
+	bytes: number;
 }
 
 export async function listRecordings(
@@ -64,16 +83,35 @@ export async function listManagedFiles(
 	return body.items ?? [];
 }
 
-/** Deletes a recording, upload or segment (one route for every kind). */
+/**
+ * Deletes a recording, upload or segment (one route for every kind).
+ * `keepalive` lets the browser finish the request while the page unloads.
+ */
 export async function deleteFile(
 	id: string,
 	fetcher: typeof fetch = fetch,
+	{ keepalive = false }: { keepalive?: boolean } = {},
 ): Promise<void> {
 	await apiFetch(
 		`/api/files/${encodeURIComponent(id)}`,
 		{
 			method: "DELETE",
+			keepalive,
 			fallbackError: activeTranslator().t("errors.files.delete"),
+		},
+		fetcher,
+	);
+}
+
+/** Deletes every recording and upload of the user (not split segments). */
+export function deleteAllFiles(
+	fetcher: typeof fetch = fetch,
+): Promise<DeleteAllResult> {
+	return apiJson<DeleteAllResult>(
+		"/api/files",
+		{
+			method: "DELETE",
+			fallbackError: activeTranslator().t("errors.files.deleteAll"),
 		},
 		fetcher,
 	);

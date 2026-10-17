@@ -1,4 +1,8 @@
-import { IconDownload, IconMicrophoneOff } from "@tabler/icons-react";
+import {
+	IconDownload,
+	IconMicrophoneOff,
+	IconTrash,
+} from "@tabler/icons-react";
 import { useMemo, useState } from "react";
 import { useAuth } from "../../auth/auth-context";
 import type { MediaSeek } from "../../components/media-player";
@@ -12,41 +16,50 @@ import { PanelProgress } from "../../components/ui/panel-progress";
 import { Skeleton, SkeletonRegion } from "../../components/ui/skeleton";
 import { useToast } from "../../components/ui/toast";
 import {
-	useDeleteFiles,
+	useDeleteAllFiles,
 	useRecordingsQuery,
 } from "../../features/files/file-queries";
-import type { RecordingItem } from "../../features/files/files-api";
 import {
 	groupByDay,
 	groupSessions,
 } from "../../features/files/recording-groups";
+import { useUndoableDelete } from "../../features/files/use-undoable-delete";
 import { useT } from "../../i18n/i18n-context";
 import { renderRich } from "../../i18n/rich-text";
 import { downloadPaths, useDownload } from "../../lib/download";
+import { formatSize } from "../../lib/format";
 import { useDelayedFlag } from "../../lib/use-delayed-flag";
 import { RecordingRow } from "./recording-row";
 import { SessionRow } from "./session-row";
 
-/** "Lịch sử ghi": recordings by day, playback, downloads, delete. */
+/**
+ * "Lịch sử ghi": recordings and uploaded files by day, playback, downloads,
+ * delete with undo, and "Xoá tất cả".
+ */
 export function RecordingHistory() {
 	const t = useT();
 	const toast = useToast();
 	const query = useRecordingsQuery();
 	const skeleton = useDelayedFlag(query.isPending);
 	const download = useDownload();
-	const remove = useDeleteFiles();
+	const { hidden, remove } = useUndoableDelete();
+	const deleteAll = useDeleteAllFiles();
+	const [confirmAll, setConfirmAll] = useState(false);
 	const { user } = useAuth();
 	const transcribe = Boolean(user?.canTranscribe);
-	const [playingId, setPlayingId] = useState<string | null>(null);
+	const [selectedId, setPlayingId] = useState<string | null>(null);
 	const [seek, setSeek] = useState<{
 		fileId: string;
 		media: MediaSeek;
 	} | null>(null);
-	const [pending, setPending] = useState<{
-		item: RecordingItem;
-		label: string;
-	} | null>(null);
-	const items = query.data?.items ?? [];
+	const allItems = query.data?.items ?? [];
+	const items = useMemo(
+		() => allItems.filter((item) => !hidden.has(item.id)),
+		[allItems, hidden],
+	);
+	// A deleted item stops playing; undo shows it closed.
+	const playingId = selectedId && !hidden.has(selectedId) ? selectedId : null;
+	const totalBytes = items.reduce((sum, item) => sum + item.size, 0);
 	const retentionDays = query.data?.retentionDays ?? 0;
 	const groups = useMemo(() => groupByDay(items), [items]);
 	const togglePlay = (id: string) => {
@@ -58,11 +71,16 @@ export function RecordingHistory() {
 		setSeek({ fileId, media: { time } });
 	};
 
-	async function confirmDelete(): Promise<void> {
-		if (!pending) return;
-		await remove.mutateAsync([pending.item.id]);
-		if (playingId === pending.item.id) setPlayingId(null);
-		toast.show({ title: t("record.history.deleted", { name: pending.label }) });
+	async function confirmDeleteAll(): Promise<void> {
+		const result = await deleteAll.mutateAsync();
+		setPlayingId(null);
+		toast.show({
+			title: t("record.history.deletedAll", { count: result.deleted }),
+			description:
+				result.skipped > 0
+					? t("record.history.deletedAllSkipped", { count: result.skipped })
+					: undefined,
+		});
 	}
 
 	return (
@@ -72,14 +90,26 @@ export function RecordingHistory() {
 					{t("record.history.title")}
 				</h2>
 				{items.length > 0 ? (
-					<Button
-						size="sm"
-						data-id="history-download-all"
-						leadingIcon={<IconDownload size={16} aria-hidden="true" />}
-						onClick={() => download(downloadPaths.allRecordings())}
-					>
-						{t("record.history.downloadAll")}
-					</Button>
+					<div className="flex flex-wrap items-center gap-2">
+						<Button
+							size="sm"
+							data-id="history-download-all"
+							leadingIcon={<IconDownload size={16} aria-hidden="true" />}
+							onClick={() => download(downloadPaths.allRecordings())}
+						>
+							{t("record.history.downloadAll")}
+						</Button>
+						<Button
+							size="sm"
+							variant="ghost"
+							className="text-error!"
+							data-id="history-delete-all"
+							leadingIcon={<IconTrash size={16} aria-hidden="true" />}
+							onClick={() => setConfirmAll(true)}
+						>
+							{t("record.history.deleteAll")}
+						</Button>
+					</div>
 				) : null}
 			</div>
 
@@ -149,7 +179,7 @@ export function RecordingHistory() {
 												transcribe={transcribe}
 												onSeek={seekTo}
 												onTogglePlay={togglePlay}
-												onDelete={(item, label) => setPending({ item, label })}
+												onDelete={(ids, label) => remove(ids, label)}
 											/>
 										) : (
 											<RecordingRow
@@ -161,9 +191,7 @@ export function RecordingHistory() {
 												transcribe={transcribe}
 												onSeek={seekTo}
 												onTogglePlay={() => togglePlay(row.item.id)}
-												onDelete={() =>
-													setPending({ item: row.item, label: row.item.name })
-												}
+												onDelete={() => remove([row.item.id], row.item.name)}
 											/>
 										),
 									)}
@@ -175,19 +203,18 @@ export function RecordingHistory() {
 			)}
 
 			<ConfirmModal
-				open={pending !== null}
-				onOpenChange={(open) => {
-					if (!open) setPending(null);
-				}}
-				title={t("record.history.deleteTitle")}
-				question={t("record.history.deleteQuestion", {
-					name: pending?.label ?? "",
+				open={confirmAll}
+				onOpenChange={setConfirmAll}
+				title={t("record.history.deleteAllTitle")}
+				question={t("record.history.deleteAllQuestion", {
+					count: items.length,
+					size: formatSize(totalBytes),
 				})}
-				confirmLabel={t("common.actions.delete")}
-				onConfirm={confirmDelete}
-				data-id="history-delete"
+				confirmLabel={t("record.history.deleteAll")}
+				onConfirm={confirmDeleteAll}
+				data-id="history-delete-all-confirm"
 			>
-				{t("record.history.deleteBody")}
+				{t("record.history.deleteAllBody")}
 			</ConfirmModal>
 		</Card>
 	);

@@ -2,6 +2,7 @@ import {
 	useOptionalBrowserRecordState,
 	useOptionalNativeRecordState,
 } from "../pages/record/record-state";
+import { useOptionalRecordUpload } from "../pages/record/record-upload-state";
 import { useOptionalSplitPageState } from "../pages/split/split-state";
 
 /**
@@ -13,7 +14,7 @@ export interface SessionActivity {
 	recording: boolean;
 	/** iOS app: recorded segments kept on the phone, not uploaded yet. */
 	segmentsWaiting: number;
-	/** "Cắt file": a chosen file is still uploading. */
+	/** "Cắt file" or "Tải tệp lên": a chosen file is still uploading. */
 	fileUploading: boolean;
 }
 
@@ -46,6 +47,7 @@ export function useSessionActivity(): SessionActivityState {
 	const browser = useOptionalBrowserRecordState();
 	const native = useOptionalNativeRecordState();
 	const split = useOptionalSplitPageState();
+	const recordUpload = useOptionalRecordUpload();
 	const browserBusy = browser
 		? browser.rec.recording || browser.rec.starting || browser.rec.finalizing
 		: false;
@@ -57,7 +59,9 @@ export function useSessionActivity(): SessionActivityState {
 		activity: {
 			recording: browserBusy || nativeBusy,
 			segmentsWaiting: native?.rec.uploadsWaiting ?? 0,
-			fileUploading: split?.upload.uploading ?? false,
+			fileUploading:
+				(split?.upload.uploading ?? false) ||
+				(recordUpload?.upload.uploading ?? false),
 		},
 		stopRecordings:
 			browserBusy && stopAndSave

@@ -130,7 +130,13 @@ export class Recorder {
 				this.fetcher,
 			);
 			this.sessionId = sessionId;
-			const chunks = new RecordingChunkQueue(sessionId, this.fetcher);
+			// Storage full mid-recording: stop and save what the backend kept.
+			const chunks = new RecordingChunkQueue(
+				sessionId,
+				this.fetcher,
+				undefined,
+				() => void this.stop(),
+			);
 			this.chunks = chunks;
 
 			const hasVideo = stream.getVideoTracks().length > 0;
@@ -208,11 +214,7 @@ export class Recorder {
 				},
 				this.fetcher,
 			);
-			const note =
-				this.interruptNote ??
-				(this.chunks?.error
-					? activeTranslator().t("recorder.chunksLost")
-					: null);
+			const note = this.interruptNote ?? this.chunksNote();
 			if (note) this.set({ ...this.state, error: note });
 			return result;
 		} catch (cause) {
@@ -232,6 +234,16 @@ export class Recorder {
 			this.set({ ...this.state, finalizing: false });
 		}
 	};
+
+	/** Why the saved recording is shorter than recorded, if it is. */
+	private chunksNote(): string | null {
+		const chunks = this.chunks;
+		if (!chunks?.error) return null;
+		const { t } = activeTranslator();
+		return chunks.full
+			? t("recorder.storageFull", { message: chunks.error })
+			: t("recorder.chunksLost");
+	}
 
 	/** Releases mic/screen and timers (page left mid-recording). */
 	dispose = (): void => {

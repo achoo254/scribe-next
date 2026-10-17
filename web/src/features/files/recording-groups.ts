@@ -140,7 +140,8 @@ export function parseSegmentName(
 
 /**
  * Collapses the segments of one iOS session into one row (a two-hour
- * meeting is 120 one-minute segments). Other recordings stay single rows.
+ * meeting is 120 one-minute segments). Other recordings and uploaded files
+ * stay single rows.
  * The row takes the position of the session's newest part, so the
  * newest-first order of the list is kept.
  */
@@ -148,7 +149,8 @@ export function groupSessions(items: readonly RecordingItem[]): HistoryRow[] {
 	const rows: HistoryRow[] = [];
 	const sessions = new Map<string, SessionRow>();
 	for (const item of items) {
-		const segment = parseSegmentName(item.name);
+		// An uploaded file keeps its own row whatever its name.
+		const segment = item.kind === "upload" ? null : parseSegmentName(item.name);
 		if (!segment) {
 			rows.push({ kind: "single", item });
 			continue;

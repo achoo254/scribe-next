@@ -19,9 +19,10 @@ import {
 	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "../components/ui/dropdown-menu";
+import { PLAN_LABEL } from "../components/usage-card";
 import { useT } from "../i18n/i18n-context";
 import { cn } from "../lib/cn";
-import { formatTimeAndDay } from "../lib/format";
+import { formatDate, formatTimeAndDay } from "../lib/format";
 import { IdpAccountItems } from "./idp-account-items";
 import { UserAvatar } from "./user-avatar";
 
@@ -87,6 +88,17 @@ export function AccountMenu({
 				<DropdownMenuLabel className="truncate font-semibold text-fg">
 					{user.email}
 				</DropdownMenuLabel>
+				{user.plan ? (
+					<DropdownMenuLabel
+						data-id="account-menu-plan"
+						className="text-muted text-xs"
+					>
+						{t(PLAN_LABEL[user.plan.name])}
+						{user.plan.until
+							? ` · ${t("ui.usage.planUntil", { date: formatDate(user.plan.until) })}`
+							: null}
+					</DropdownMenuLabel>
+				) : null}
 				<DropdownMenuSeparator />
 				<IdpAccountItems />
 				<DropdownMenuSeparator />

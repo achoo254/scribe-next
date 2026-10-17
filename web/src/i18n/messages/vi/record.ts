@@ -16,6 +16,14 @@ export const record = {
 		systemAudio: "Tiếng hệ thống",
 		screen: "Ghi kèm màn hình (video)",
 	},
+	upload: {
+		choose: "Tải tệp lên",
+		hint: "Tệp âm thanh hoặc video có sẵn trên máy, để nghe lại và chép lời.",
+		progress: "Tiến độ tải lên",
+		uploading: "Đang tải “{name}” lên… {percent}%",
+		resume: "Tải tiếp",
+		done: "Đã tải lên “{name}” — xem và chép lời trong <b>Lịch sử ghi</b> bên dưới.",
+	},
 	splitAfter: {
 		toggle: "Cắt thành đoạn theo phút",
 		minutes: "Số phút mỗi đoạn",
@@ -71,14 +79,23 @@ export const record = {
 				"Bản ghi được <b>tự động xoá sau {count} ngày</b> kể từ khi tạo. Hãy tải về nếu muốn lưu giữ lâu dài.",
 		},
 		downloadDay: { other: "Tải ngày ({count})" },
-		deleteTitle: "Xoá bản ghi",
-		deleteQuestion: "Xoá “{name}”?",
-		deleteBody: "Hành động này không thể hoàn tác.",
 		deleted: "Đã xoá “{name}”",
+		undo: "Hoàn tác",
+		deleteAll: "Xoá tất cả",
+		deleteAllTitle: "Xoá toàn bộ lịch sử ghi",
+		deleteAllQuestion: { other: "Xoá {count} tệp, tổng {size}?" },
+		deleteAllBody:
+			"Mọi bản ghi và tệp tải lên cùng bản chép lời, biên bản, dấu mốc đi kèm sẽ bị xoá vĩnh viễn. Không thể hoàn tác.",
+		deletedAll: { other: "Đã xoá {count} tệp" },
+		deletedAllSkipped: {
+			other: "Giữ lại {count} tệp của bản ghi đang ghi hoặc đang cắt.",
+		},
 	},
 	row: {
 		screen: "Màn hình",
 		mic: "Mic",
+		upload: "Tệp tải lên",
+		delete: "Xoá {name}",
 		play: "Nghe lại",
 		hide: "Ẩn",
 		menu: "Thao tác với {name}",
@@ -91,5 +108,6 @@ export const record = {
 		expand: "Xem các đoạn",
 		collapse: "Thu gọn",
 		part: "Phần {number}",
+		delete: "Xoá cả phiên {name}",
 	},
 } as const;

@@ -32,6 +32,7 @@ export const recorder = {
 		hidden:
 			"Bản ghi đã dừng khi màn hình bị khóa / chuyển ứng dụng — đã lưu phần ghi được.",
 	},
+	storageFull: "{message} Bản ghi đã dừng và được lưu tới lúc đầy.",
 	chunksLost:
 		"Một số đoạn bị lỗi mạng — đã lưu phần tải được (bản ghi có thể bị cắt ngắn).",
 	noSource:

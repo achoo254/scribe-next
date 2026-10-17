@@ -1,4 +1,4 @@
-/** Shared UI primitives: toasts, loading status, theme switch, storage bar, audio player. */
+/** Shared UI primitives: toasts, loading status, theme switch, usage card, audio player. */
 export const ui = {
 	loading: "Đang tải…",
 	theme: {
@@ -7,9 +7,21 @@ export const ui = {
 		dark: "Giao diện tối",
 		system: "Theo hệ điều hành",
 	},
-	storage: {
-		label: "Dung lượng",
-		meter: "Dung lượng đã dùng",
+	usage: {
+		region: "Gói và mức dùng",
+		plan: { free: "Gói Free", plus: "Gói Plus" },
+		planUntil: "đến {date}",
+		retention: { other: "Tệp tự xoá sau {count} ngày" },
+		resets: "phút đặt lại ngày {date}",
+		storage: "Lưu trữ",
+		storageMeter: "Dung lượng đã dùng",
+		month: "Chép lời tháng này",
+		monthMeter: "Phút chép lời đã dùng tháng này",
+		today: "Hôm nay",
+		todayMeter: "Phút chép lời đã dùng hôm nay",
+		minutes: "{used}/{limit} phút",
+		storageFull:
+			"Đã đầy dung lượng: xoá bớt bản ghi hoặc tệp để ghi và tải lên tiếp.",
 	},
 	player: {
 		playFailed: "Không phát được: {error}",

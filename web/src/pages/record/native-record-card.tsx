@@ -8,6 +8,7 @@ import { BookmarkControl } from "./bookmark-control";
 import { LevelMeter } from "./live-monitor";
 import { useNativeRecordState } from "./record-state";
 import { RecordTimer } from "./record-timer";
+import { RecordUpload } from "./record-upload";
 
 const SEGMENT_MINUTES = ["1", "5", "10"] as const;
 
@@ -47,6 +48,7 @@ export function NativeRecordCard() {
 					}}
 				/>
 			</div>
+			<RecordUpload />
 
 			<div className="grid gap-4 border-border-subtle border-t pt-5">
 				<div className="flex flex-wrap items-center gap-x-5 gap-y-3">

@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ToastProvider } from "../../components/ui/toast";
 import type { RecorderNativePlugin } from "../../features/recorder/native-recorder";
 import { fakeFetch, jsonResponse } from "../../test/fake-fetch";
+import { RecordUploadProvider } from "./record-upload-state";
 
 type Handler = (data: Record<string, unknown>) => void;
 
@@ -137,7 +138,9 @@ function renderRoutes(
 				path: "/",
 				element: (
 					<Provider>
-						<Outlet />
+						<RecordUploadProvider>
+							<Outlet />
+						</RecordUploadProvider>
 					</Provider>
 				),
 				children: [

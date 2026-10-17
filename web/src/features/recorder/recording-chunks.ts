@@ -4,9 +4,11 @@ import { activeTranslator } from "../../i18n/active-translator";
  * strictly one after another, each at the offset the backend last
  * reported. A chunk is retried (with backoff) at the same offset, so a
  * retry never appends twice. After the last retry fails the queue stops
- * sending; the recording is still finalized with what arrived.
+ * sending; the recording is still finalized with what arrived. A 413
+ * (storage or file size limit of the plan) is final at once: the backend
+ * kept everything before that chunk, and `onFull` lets the recorder stop.
  */
-import { apiJson, errorMessage } from "../../lib/api";
+import { ApiError, apiJson, errorMessage } from "../../lib/api";
 
 export const CHUNK_RETRIES = 3;
 
@@ -18,12 +20,19 @@ export class RecordingChunkQueue {
 	private failure: string | null = null;
 	private chain: Promise<void> = Promise.resolve();
 	private closed = false;
+	private limitReached = false;
 
 	constructor(
 		private readonly sessionId: string,
 		private readonly fetcher: typeof fetch = fetch,
 		private readonly sleep: (ms: number) => Promise<void> = wait,
+		private readonly onFull: (message: string) => void = () => undefined,
 	) {}
+
+	/** The backend refused a chunk because the plan's storage is full. */
+	get full(): boolean {
+		return this.limitReached;
+	}
 
 	/** Bytes the backend confirmed so far. */
 	get offset(): number {
@@ -68,6 +77,12 @@ export class RecordingChunkQueue {
 				this.written = reply.written;
 				return;
 			} catch (cause) {
+				if (cause instanceof ApiError && cause.status === 413) {
+					this.limitReached = true;
+					this.failure = cause.message;
+					this.onFull(cause.message);
+					return;
+				}
 				if (attempt === CHUNK_RETRIES - 1) {
 					this.failure = errorMessage(
 						cause,

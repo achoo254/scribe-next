@@ -16,6 +16,7 @@ import { NativeRecordCard } from "./native-record-card";
 import { RecordSourcesField } from "./record-sources";
 import { useBrowserRecordState } from "./record-state";
 import { RecordTimer } from "./record-timer";
+import { RecordUpload } from "./record-upload";
 import { RecordingHistory } from "./recording-history";
 import { SplitAfterRecording } from "./split-after-recording";
 
@@ -78,6 +79,7 @@ function BrowserRecordCard() {
 					onChange={setSources}
 					disabled={locked}
 				/>
+				<RecordUpload />
 				{noSource ? <Alert tone="warning">{t("record.noSource")}</Alert> : null}
 				<Alert tone="info" data-id="record-sources-help">
 					{renderRich(t("record.sourcesHelp"))}

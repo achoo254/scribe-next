@@ -5,6 +5,7 @@ import {
 	useCallback,
 	useContext,
 	useEffect,
+	useRef,
 	useState,
 } from "react";
 import { useAuth } from "../../auth/auth-context";
@@ -136,6 +137,19 @@ export function BrowserRecordProvider({ children }: { children: ReactNode }) {
 		}
 	}, [split.status, queryClient]);
 
+	// A recording that stopped by itself (share ended, storage full) was
+	// saved without `toggle`: show it in the history too. `toggle` refreshes
+	// on its own, after the optional cut.
+	const toggling = useRef(false);
+	const wasFinalizing = useRef(false);
+	useEffect(() => {
+		if (wasFinalizing.current && !rec.finalizing) {
+			if (toggling.current) toggling.current = false;
+			else void refreshStorage(queryClient, ["recordings"]);
+		}
+		wasFinalizing.current = rec.finalizing;
+	}, [rec.finalizing, queryClient]);
+
 	const stopAndSave = useCallback(async () => {
 		await recorder.stop();
 		await saved(recorder);
@@ -149,6 +163,8 @@ export function BrowserRecordProvider({ children }: { children: ReactNode }) {
 			return;
 		}
 		const minutes = parsePositiveNumber(splitMinutes);
+		// Cleared by the effect above once this stop has finished saving.
+		toggling.current = true;
 		const result = await recorder.stop();
 		if (!result) return;
 		if (splitEnabled && minutes !== null) {

@@ -60,9 +60,6 @@ export const transcript = {
 		segments: { other: "{count} đoạn" },
 	},
 	quota: {
-		left: "Còn <b>{left}</b>/{limit} phút chép lời tháng này",
-		resets: "đặt lại ngày {date}",
-		meter: "Phút chép lời đã dùng",
 		paused: "Chép lời đang tạm ngưng, quản trị đã được báo. Thử lại sau.",
 		capReached:
 			"Chép lời đã dùng hết hạn mức chung của tháng này, sẽ mở lại đầu tháng sau.",

@@ -108,7 +108,7 @@ for (const scheme of COLOR_SCHEMES) {
 			await expect(
 				page.getByTestId(`transcripts-item-${DOC_KEY}`),
 			).toBeVisible();
-			await expect(page.getByTestId("transcription-quota")).toBeVisible();
+			await expect(page.getByTestId("usage")).toBeVisible();
 			await snapshot(page, `transcripts-${scheme}.png`);
 			expect(await seriousA11yViolations(page)).toEqual([]);
 			expect(api.unexpected).toEqual([]);

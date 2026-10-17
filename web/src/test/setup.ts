@@ -16,6 +16,20 @@ if (
 }
 
 /*
+ * jsdom has no pointer capture; Radix Toast (swipe to dismiss) calls it on
+ * pointer down, e.g. when a test presses "Hoàn tác". No element holds a
+ * capture in tests.
+ */
+if (
+	typeof Element !== "undefined" &&
+	typeof Element.prototype.hasPointerCapture !== "function"
+) {
+	Element.prototype.hasPointerCapture = () => false;
+	Element.prototype.setPointerCapture = () => undefined;
+	Element.prototype.releasePointerCapture = () => undefined;
+}
+
+/*
  * Copied from localman-next apps/web/src/test/setup.ts: React Router's
  * data router builds a `Request` (Node/undici) with an AbortSignal from
  * jsdom, which undici rejects. Tests never abort navigations, so the

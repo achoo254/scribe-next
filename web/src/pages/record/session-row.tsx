@@ -1,9 +1,13 @@
-import { IconChevronDown, IconChevronRight } from "@tabler/icons-react";
+import {
+	IconChevronDown,
+	IconChevronRight,
+	IconTrash,
+} from "@tabler/icons-react";
 import { useEffect, useMemo, useState } from "react";
 import type { MediaSeek } from "../../components/media-player";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
-import type { RecordingItem } from "../../features/files/files-api";
+import { IconButton } from "../../components/ui/icon-button";
 import {
 	type SessionRow as SessionRowData,
 	sessionTitle,
@@ -21,7 +25,8 @@ export interface SessionRowProps {
 	transcribe: boolean;
 	onSeek: (fileId: string, seconds: number) => void;
 	onTogglePlay: (id: string) => void;
-	onDelete: (item: RecordingItem, label: string) => void;
+	/** Removes these files (one part, or the whole session); undo is offered. */
+	onDelete: (ids: readonly string[], label: string) => void;
 }
 
 /**
@@ -99,6 +104,18 @@ export function SessionRow({
 						{open ? t("record.session.collapse") : t("record.session.expand")}
 					</span>
 				</Button>
+				<IconButton
+					label={t("record.session.delete", { name: title })}
+					data-id={`${id}-delete`}
+					className="text-error!"
+					icon={<IconTrash size={18} aria-hidden="true" />}
+					onClick={() =>
+						onDelete(
+							row.parts.map(({ item }) => item.id),
+							title,
+						)
+					}
+				/>
 			</div>
 			{transcribe ? (
 				<TranscriptPanel
@@ -126,7 +143,7 @@ export function SessionRow({
 								playing={playingId === item.id}
 								seek={seek?.fileId === item.id ? seek.media : null}
 								onTogglePlay={() => onTogglePlay(item.id)}
-								onDelete={() => onDelete(item, label)}
+								onDelete={() => onDelete([item.id], label)}
 							/>
 						);
 					})}

@@ -5,6 +5,7 @@ import {
 	useQueryClient,
 } from "@tanstack/react-query";
 import {
+	deleteAllFiles,
 	deleteFile,
 	fetchUsage,
 	listManagedFiles,
@@ -72,6 +73,15 @@ export function useDeleteFiles() {
 			if (deleted === 0 && lastError) throw lastError;
 			return deleted;
 		},
+		onSettled: () => refreshStorage(queryClient, ["recordings", "managed"]),
+	});
+}
+
+/** "Xoá tất cả" in the history: every recording and upload; lists and quota refresh after. */
+export function useDeleteAllFiles() {
+	const queryClient = useQueryClient();
+	return useMutation({
+		mutationFn: () => deleteAllFiles(),
 		onSettled: () => refreshStorage(queryClient, ["recordings", "managed"]),
 	});
 }

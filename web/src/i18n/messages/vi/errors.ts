@@ -7,6 +7,7 @@ export const errors = {
 		history: "Không tải được lịch sử ghi",
 		list: "Không tải được danh sách tệp",
 		delete: "Không xoá được tệp",
+		deleteAll: "Không xoá được lịch sử ghi",
 		usage: "Không tải được dung lượng",
 		download: "Không tải được tệp",
 	},
