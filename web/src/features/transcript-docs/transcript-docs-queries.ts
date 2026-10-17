@@ -23,6 +23,7 @@ import {
 	fetchTranslation,
 	fetchTranslationStatus,
 	listTranscriptDocs,
+	renameSpeakers,
 	renameTranscript,
 	saveSegmentTexts,
 	shareSummary,
@@ -110,6 +111,20 @@ export function useRenameTranscript() {
 	return useMutation({
 		mutationFn: ({ key, title }: { key: string; title: string }) =>
 			renameTranscript(key, title),
+		onSettled: invalidate,
+	});
+}
+
+export function useRenameSpeakers() {
+	const invalidate = useInvalidateDocs();
+	return useMutation({
+		mutationFn: ({
+			key,
+			names,
+		}: {
+			key: string;
+			names: Readonly<Record<string, string>>;
+		}) => renameSpeakers(key, names),
 		onSettled: invalidate,
 	});
 }

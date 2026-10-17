@@ -72,3 +72,43 @@ export const DOC_TRANSLATION: TranscriptTranslation = {
 		},
 	],
 };
+
+/** A one-file meeting transcribed with speakers: two people take turns. */
+export const SPEAKERS_KEY = "f:65f0a1b2c3d4e5f60718293b";
+
+export const SPEAKERS_DETAIL: TranscriptDetail = {
+	key: SPEAKERS_KEY,
+	title: "Họp giao việc",
+	name: "Ghi âm 09:00",
+	createdAt: "2026-10-16T09:00:00+07:00",
+	segments: [
+		{
+			...docSegment(0),
+			fileId: "65f0a1b2c3d4e5f60718293b",
+			durationS: 45,
+			sentences: [
+				{
+					start: 0.4,
+					end: 3.1,
+					text: "Chào cả nhà, mình bắt đầu nhé.",
+					speaker: "s0",
+				},
+				{
+					start: 3.6,
+					end: 7.9,
+					text: "Tuần này em lo phần báo giá cho khách.",
+					speaker: "s0",
+				},
+				{
+					start: 8.5,
+					end: 11.2,
+					text: "Dạ, thứ Sáu em gửi bản đầu.",
+					speaker: "s1",
+				},
+				{ start: 11.8, end: 14.0, text: "Ổn, chốt vậy nhé.", speaker: "s0" },
+			],
+		},
+	],
+	missingIndexes: [],
+	speakers: { names: { s0: "Người 1", s1: "Người 2" } },
+};

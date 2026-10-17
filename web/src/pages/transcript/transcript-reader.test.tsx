@@ -768,3 +768,159 @@ describe("TranscriptReader translation", () => {
 		).toBeInTheDocument();
 	});
 });
+
+describe("TranscriptReader speakers", () => {
+	const SPOKEN: TranscriptDetail = {
+		...DETAIL,
+		segments: [
+			segment("a", 0, 0, {
+				sentences: [
+					{ start: 0, end: 10, text: "Chào anh.", speaker: "s0" },
+					{ start: 10, end: 20, text: "Chào em.", speaker: "s1" },
+					{ start: 20, end: 30, text: "Mình bắt đầu.", speaker: "s1" },
+				],
+			}),
+			segment("c", 2, 60, {
+				sentences: [
+					{ start: 0, end: 10, text: "Vẫn là em.", speaker: "s1" },
+					{ start: 10, end: 20, text: "Anh nói.", speaker: "s0" },
+				],
+			}),
+		],
+		missingIndexes: [],
+		speakers: { names: { s0: "Lan", s1: "Người 2" } },
+	};
+
+	function renderSpoken(routes: Parameters<typeof fakeFetch>[0] = {}) {
+		const fake = fakeFetch({
+			[`GET ${PATH}`]: jsonResponse(SPOKEN),
+			...routes,
+		});
+		vi.stubGlobal("fetch", fake.fetcher);
+		renderWithProviders(
+			<TranscriptReader
+				transcriptKey={KEY}
+				canTranscribe
+				onBack={() => undefined}
+			/>,
+		);
+		return fake;
+	}
+
+	const label = (segmentIndex: number, line: number) =>
+		document.querySelector(
+			`[data-id="reader-segment-${segmentIndex}-speaker-${line}"]`,
+		);
+
+	it("labels the speaker only where the speaker changes, across segments too", async () => {
+		renderSpoken();
+		await screen.findByRole("button", { name: /Chào anh\./ });
+		expect(label(0, 0)).toHaveTextContent("Lan");
+		expect(label(0, 1)).toHaveTextContent("Người 2");
+		expect(label(0, 2)).toBeNull();
+		// Segment 3 starts with the speaker who ended segment 1: no new label.
+		expect(label(2, 0)).toBeNull();
+		expect(label(2, 1)).toHaveTextContent("Lan");
+	});
+
+	it("renames a speaker everywhere from the Người nói dialog", async () => {
+		const renamed = {
+			...SPOKEN,
+			speakers: { names: { s0: "Lan", s1: "Minh" } },
+		};
+		const fake = fakeFetch({
+			// The reader reads the doc again after the rename.
+			[`GET ${PATH}`]: [jsonResponse(SPOKEN), jsonResponse(renamed)],
+			[`PATCH ${PATH}/speakers`]: jsonResponse({
+				names: renamed.speakers.names,
+			}),
+		});
+		vi.stubGlobal("fetch", fake.fetcher);
+		renderWithProviders(
+			<TranscriptReader
+				transcriptKey={KEY}
+				canTranscribe
+				onBack={() => undefined}
+			/>,
+		);
+		const user = userEvent.setup();
+		await user.click(await screen.findByRole("button", { name: "Người nói" }));
+		const dialog = await screen.findByRole("dialog", { name: "Tên người nói" });
+		const second = within(dialog).getByRole("textbox", {
+			name: "Tên của Người 2",
+		});
+		expect(second).toHaveValue("Người 2");
+		await user.clear(second);
+		await user.type(second, "Minh");
+		await user.click(within(dialog).getByRole("button", { name: "Lưu tên" }));
+		await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+		await waitFor(() => expect(label(0, 1)).toHaveTextContent("Minh"));
+		expect(fake.calls.find((c) => c.method === "PATCH")?.body).toEqual({
+			names: { s0: "Lan", s1: "Minh" },
+		});
+	});
+
+	it("sends the edited names, an emptied one going back to the default", async () => {
+		const fake = renderSpoken({
+			[`PATCH ${PATH}/speakers`]: jsonResponse({
+				names: { s0: "Người 1", s1: "Người 2" },
+			}),
+		});
+		const user = userEvent.setup();
+		await user.click(await screen.findByRole("button", { name: "Người nói" }));
+		const dialog = await screen.findByRole("dialog", { name: "Tên người nói" });
+		await user.clear(
+			within(dialog).getByRole("textbox", { name: "Tên của Người 1" }),
+		);
+		await user.click(within(dialog).getByRole("button", { name: "Lưu tên" }));
+		await waitFor(() =>
+			expect(fake.calls.find((c) => c.method === "PATCH")?.body).toEqual({
+				names: { s0: null, s1: "Người 2" },
+			}),
+		);
+	});
+
+	it("without speakers there is no Người nói button", async () => {
+		renderReader();
+		await screen.findByRole("button", { name: /a một\./ });
+		expect(screen.queryByRole("button", { name: "Người nói" })).toBeNull();
+	});
+});
+
+describe("TranscriptReader whole-session transcription", () => {
+	afterEach(() => {
+		auth.user.transcription = {
+			...auth.user.transcription,
+			wholeSession: undefined,
+		} as typeof auth.user.transcription;
+	});
+
+	it("sends every segment of the session, and a rerun redoes the whole session", async () => {
+		auth.user.transcription = {
+			...auth.user.transcription,
+			wholeSession: true,
+		} as typeof auth.user.transcription;
+		const fake = renderReader({
+			"POST /api/transcripts": jsonResponse({ queued: 3, skipped: 0 }),
+		});
+		const user = userEvent.setup();
+		// One segment is missing, but the whole session (3 files) goes.
+		await user.click(
+			await screen.findByRole("button", { name: "Chép 3 đoạn còn lại" }),
+		);
+		await waitFor(() =>
+			expect(fake.calls.find((c) => c.method === "POST")?.body).toEqual({
+				fileIds: ["a", "c", "d"],
+			}),
+		);
+		// "Chép lại cả phiên" over an edited sentence asks first, for the whole session.
+		await user.click(
+			screen.getAllByRole("button", {
+				name: "Chép lại cả phiên",
+			})[0] as HTMLElement,
+		);
+		expect(
+			await screen.findByText("Bỏ 1 câu đã sửa trong cả phiên?"),
+		).toBeInTheDocument();
+	});
+});

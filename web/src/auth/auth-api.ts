@@ -12,6 +12,11 @@ export interface Transcription {
 	capReached: boolean;
 	/** Transcription is paused for everyone (server key unusable). */
 	paused?: boolean;
+	/**
+	 * An iPhone session is transcribed as a whole (one request, consistent
+	 * speakers): send every segment and show the minutes of the session.
+	 */
+	wholeSession?: boolean;
 	/** Free plan: minutes of today (Vietnam time); null on plus. */
 	daily?: { usedMinutes: number; limitMinutes: number } | null;
 }

@@ -18,6 +18,7 @@ export const errors = {
 		doc: "Không tải được bản chép lời",
 		progress: "Không tải được tiến độ chép lời",
 		rename: "Không đổi được tên",
+		speakers: "Không đổi được tên người nói",
 		saveSegment: "Không lưu được câu đã sửa",
 		delete: "Không xoá được bản chép lời",
 		summary: "Không tóm tắt được",

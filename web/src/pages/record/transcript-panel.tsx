@@ -1,6 +1,7 @@
 import { IconArrowRight, IconFileText } from "@tabler/icons-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
+import { useAuth } from "../../auth/auth-context";
 import { TranscriptDownloadMenu } from "../../components/transcript-download-menu";
 import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
@@ -51,6 +52,7 @@ export function TranscriptPanel({
 	"data-id": dataId,
 }: TranscriptPanelProps) {
 	const t = useT();
+	const { user } = useAuth();
 	const toast = useToast();
 	const queryClient = useQueryClient();
 	const openTranscript = useOpenTranscript();
@@ -82,13 +84,19 @@ export function TranscriptPanel({
 
 	const busy = merged.pending > 0 || transcribe.pending;
 	const allDone = merged.total > 0 && merged.done === merged.total;
-	/** Files to send now: never sent or failed; everything when all are done. */
-	const toSend = allDone
-		? fileIds
-		: fileIds.filter((id) => {
-				const t = query.data?.find((item) => item.fileId === id);
-				return !t || t.status === "failed";
-			});
+	/** Files never sent or failed. */
+	const missing = fileIds.filter((id) => {
+		const t = query.data?.find((item) => item.fileId === id);
+		return !t || t.status === "failed";
+	});
+	/**
+	 * Files to send now: the missing ones; everything when all are done, or
+	 * when an iPhone session is transcribed as a whole (one request).
+	 */
+	const toSend =
+		allDone || (session && user?.transcription?.wholeSession)
+			? fileIds
+			: missing;
 	const scope: ExportScope = session ? { session } : { fileIds };
 
 	/** "Chép lại" over edited sentences asks first: those edits would be lost. */

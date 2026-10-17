@@ -252,6 +252,8 @@ export interface ApiStub {
 	readonly translations: string[];
 	/** Query of every `GET /api/transcripts/export`, in order. */
 	readonly exports: URLSearchParams[];
+	/** `names` of every `PATCH /api/transcript-docs/:key/speakers`, in order. */
+	readonly speakerRenames: Array<Record<string, string | null>>;
 	/** Stands in for the user sending `/start` to the bot on chat.hoandat.com. */
 	linkChat: () => void;
 }
@@ -261,9 +263,23 @@ export function countOf(stub: ApiStub, call: string): number {
 	return stub.requests.filter((request) => request === call).length;
 }
 
-/** `/api/transcript-docs/<key>/<summary|share|bookmarks|translation>[/<id>]`. */
+/** `/api/transcript-docs/<key>/<summary|share|bookmarks|translation|speakers>[/<id>]`. */
 const DOC_ACTION =
-	/^\/api\/transcript-docs\/([^/]+)\/(summary|share|bookmarks|translation)(?:\/([^/]+))?$/;
+	/^\/api\/transcript-docs\/([^/]+)\/(summary|share|bookmarks|translation|speakers)(?:\/([^/]+))?$/;
+
+/** `names` of a speaker rename body: id → name, or null (back to "Người N"). */
+function speakerNames(body: unknown): Record<string, string | null> {
+	const names: unknown =
+		typeof body === "object" && body !== null
+			? Reflect.get(body, "names")
+			: null;
+	const out: Record<string, string | null> = {};
+	if (typeof names !== "object" || names === null) return out;
+	for (const [id, name] of Object.entries(names)) {
+		out[id] = typeof name === "string" ? name : null;
+	}
+	return out;
+}
 
 /** A number field of a JSON body, or NaN. */
 function stringField(body: unknown, name: string): string | null {
@@ -307,6 +323,7 @@ export async function stubApi(
 		deletes: [],
 		translations: [],
 		exports: [],
+		speakerRenames: [],
 		linkChat: () => {
 			chatLinked = true;
 		},
@@ -321,6 +338,10 @@ export async function stubApi(
 	// and deletes.
 	let historyItems: RecordingItem[] = [...fixtures.recordings.items];
 	const transcripts = [...fixtures.transcripts];
+	// Transcripts whose speakers the spec renames.
+	const details: Record<string, TranscriptDetail> = {
+		...fixtures.transcriptDetails,
+	};
 	// A translation run: started by the POST, reported running by the first
 	// status poll, done from the second on.
 	let translationRun: { lang: "en" | "vi"; polls: number } | null = null;
@@ -443,6 +464,17 @@ export async function stubApi(
 				if (action === "translation") {
 					return translationReply(route, request.method(), url, id);
 				}
+				const doc = details[key];
+				if (request.method() === "PATCH" && action === "speakers" && doc) {
+					const renames = speakerNames(request.postDataJSON());
+					stub.speakerRenames.push(renames);
+					const names = { ...(doc.speakers?.names ?? {}) };
+					for (const [speaker, name] of Object.entries(renames)) {
+						names[speaker] = name ?? `Người ${Number(speaker.slice(1)) + 1}`;
+					}
+					details[key] = { ...doc, speakers: { names } };
+					return json(route, 200, { names });
+				}
 			}
 			if (
 				request.method() === "GET" &&
@@ -451,7 +483,7 @@ export async function stubApi(
 				const key = decodeURIComponent(
 					url.pathname.slice("/api/transcript-docs/".length),
 				);
-				const detail = fixtures.transcriptDetails[key];
+				const detail = details[key];
 				const progress = translationProgress();
 				if (detail && progress) {
 					return json(route, 200, {

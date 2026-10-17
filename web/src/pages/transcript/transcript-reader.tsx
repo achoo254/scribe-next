@@ -1,6 +1,7 @@
-import { IconPencil, IconTrash } from "@tabler/icons-react";
+import { IconPencil, IconTrash, IconUsers } from "@tabler/icons-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useAuth } from "../../auth/auth-context";
 import { AudioPlayer, type MediaSeek } from "../../components/media-player";
 import { TranscriptDownloadMenu } from "../../components/transcript-download-menu";
 import { Alert } from "../../components/ui/alert";
@@ -24,6 +25,7 @@ import {
 	placeOf,
 	sentenceAt,
 	shouldPreload,
+	speakersBefore,
 	transcriptTitle,
 	untranscribed,
 } from "../../features/transcript-docs/reader-model";
@@ -38,6 +40,7 @@ import {
 	transcriptDocKeys,
 	useDeleteBookmark,
 	useDeleteTranscript,
+	useRenameSpeakers,
 	useRenameTranscript,
 	useSaveSegment,
 	useTranscriptDoc,
@@ -56,6 +59,7 @@ import { AskCard } from "../search/ask-card";
 import { BookmarkList } from "./bookmark-list";
 import { MinutesCard } from "./minutes-card";
 import { ReaderSegment } from "./reader-segment";
+import { SpeakerNamesDialog } from "./speaker-names-dialog";
 import {
 	TranslationControls,
 	type TranslationView,
@@ -78,6 +82,7 @@ interface Playback {
 
 const NO_BOOKMARKS: Bookmark[] = [];
 const NO_TRANSLATIONS: TranslationState[] = [];
+const NO_SPEAKERS: Readonly<Record<string, string>> = {};
 
 /**
  * Brings the sentence at `seconds` of `segment` into view and focuses it
@@ -125,7 +130,9 @@ export function TranscriptReader({
 	const queryClient = useQueryClient();
 	const { detail, statuses } = useTranscriptDoc(transcriptKey);
 	const skeleton = useDelayedFlag(detail.isPending);
+	const { user } = useAuth();
 	const rename = useRenameTranscript();
+	const renameSpeakers = useRenameSpeakers();
 	const save = useSaveSegment();
 	const remove = useDeleteTranscript();
 	const removeBookmark = useDeleteBookmark(transcriptKey);
@@ -141,6 +148,9 @@ export function TranscriptReader({
 	const [titleError, setTitleError] = useState("");
 	const [confirmDelete, setConfirmDelete] = useState(false);
 	const [rerun, setRerun] = useState<TranscriptSegment | null>(null);
+	/** Edited sentences that "Chép lại cả phiên" would drop; null = not asking. */
+	const [rerunAll, setRerunAll] = useState<number | null>(null);
+	const [speakersOpen, setSpeakersOpen] = useState(false);
 	// Deleted: open editors no longer matter, so leaving is not guarded.
 	// Navigating from an effect lets `LeaveGuard` (a child, whose effects
 	// run first) drop its blocker before the navigation starts.
@@ -181,7 +191,15 @@ export function TranscriptReader({
 	);
 	const shownView: TranslationView =
 		translation && translation.status !== "none" ? view : "original";
-	const toSend = untranscribed(segments);
+	const speakerNames = doc?.speakers?.names ?? NO_SPEAKERS;
+	const speakerBefore = useMemo(() => speakersBefore(segments), [segments]);
+	// An iPhone session is transcribed as a whole: every segment goes, and its
+	// minutes are the whole session's.
+	const wholeSession =
+		Boolean(user?.transcription?.wholeSession) &&
+		transcriptKey.startsWith("s:");
+	const missing = untranscribed(segments);
+	const toSend = wholeSession && missing.length > 0 ? segments : missing;
 	const pending = segments.filter((s) => isPending(s.status)).length;
 
 	const play = useCallback((fileId: string, seconds: number) => {
@@ -240,10 +258,26 @@ export function TranscriptReader({
 	// Segments are memoized; the callbacks they get must not change per render.
 	const startTranscribe = useRef(transcribe.start);
 	startTranscribe.current = transcribe.start;
-	const requestRerun = useCallback((segment: TranscriptSegment) => {
-		if (segment.edited) setRerun(segment);
-		else void startTranscribe.current([segment.fileId], segment.durationS);
-	}, []);
+	const allSegments = useRef(segments);
+	allSegments.current = segments;
+	const requestRerun = useCallback(
+		(segment: TranscriptSegment) => {
+			if (wholeSession) {
+				const all = allSegments.current;
+				const edited = all.reduce((sum, s) => sum + s.editedSentences, 0);
+				if (edited > 0) setRerunAll(edited);
+				else
+					void startTranscribe.current(
+						all.map((s) => s.fileId),
+						all.reduce((sum, s) => sum + s.durationS, 0),
+					);
+				return;
+			}
+			if (segment.edited) setRerun(segment);
+			else void startTranscribe.current([segment.fileId], segment.durationS);
+		},
+		[wholeSession],
+	);
 
 	function onTime(seconds: number): void {
 		setTime(seconds);
@@ -320,6 +354,14 @@ export function TranscriptReader({
 				}
 				actions={
 					<>
+						{Object.keys(speakerNames).length > 0 ? (
+							<IconButton
+								label={t("transcript.speakers.open")}
+								data-id="reader-speakers"
+								icon={<IconUsers size={20} aria-hidden="true" />}
+								onClick={() => setSpeakersOpen(true)}
+							/>
+						) : null}
 						{titleDraft === null ? (
 							<IconButton
 								label={t("transcript.reader.rename")}
@@ -501,6 +543,9 @@ export function TranscriptReader({
 								onEditingChange={onEditingChange}
 								onSave={saveSegment}
 								onRerun={requestRerun}
+								speakerNames={speakerNames}
+								speakerBefore={speakerBefore.get(segment.fileId) ?? null}
+								rerunsSession={wholeSession}
 							/>
 						</div>
 					))}
@@ -530,6 +575,35 @@ export function TranscriptReader({
 			</Card>
 
 			{transcribe.dialog}
+			<SpeakerNamesDialog
+				open={speakersOpen}
+				onOpenChange={setSpeakersOpen}
+				names={speakerNames}
+				onSave={async (names) => {
+					await renameSpeakers.mutateAsync({ key: transcriptKey, names });
+					toast.show({ title: t("transcript.speakers.saved") });
+				}}
+			/>
+			<ConfirmModal
+				open={rerunAll !== null}
+				onOpenChange={(next) => {
+					if (!next) setRerunAll(null);
+				}}
+				title={t("transcript.reader.rerunAllTitle")}
+				question={t("transcript.reader.rerunAllQuestion", {
+					count: rerunAll ?? 0,
+				})}
+				confirmLabel={t("transcript.panel.rerun")}
+				onConfirm={() =>
+					transcribe.start(
+						segments.map((s) => s.fileId),
+						totalS,
+					)
+				}
+				data-id="reader-rerun-all"
+			>
+				{t("transcript.reader.rerunAllBody")}
+			</ConfirmModal>
 			<LeaveGuard when={unsaved} data-id="reader-leave" />
 			<ConfirmModal
 				open={rerun !== null}

@@ -141,6 +141,8 @@ export interface TranscriptDetail {
 	bookmarks?: Bookmark[];
 	/** Stored translations (absent from older backends). */
 	translations?: TranslationState[];
+	/** Display name of each speaker id found in the sentences (absent from older backends). */
+	speakers?: { names: Record<string, string> } | null;
 }
 
 export interface SegmentRunStatus {
@@ -212,6 +214,30 @@ export async function renameTranscript(
 		fetcher,
 	);
 	return body.title ?? null;
+}
+
+/**
+ * Renames speakers everywhere in the transcript (reader, downloads,
+ * minutes); an empty name goes back to "Người N". Returns every name.
+ */
+export async function renameSpeakers(
+	key: string,
+	names: Readonly<Record<string, string>>,
+	fetcher: typeof fetch = fetch,
+): Promise<Record<string, string>> {
+	const json: Record<string, string | null> = {};
+	for (const [id, name] of Object.entries(names))
+		json[id] = name.trim() || null;
+	const body = await apiJson<{ names?: Record<string, string> }>(
+		docPath(key, "/speakers"),
+		{
+			method: "PATCH",
+			json: { names: json },
+			fallbackError: activeTranslator().t("errors.transcripts.speakers"),
+		},
+		fetcher,
+	);
+	return body.names ?? {};
 }
 
 /**

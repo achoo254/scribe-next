@@ -76,6 +76,7 @@ export const transcript = {
 		editedSuffix: " · đã sửa",
 		edited: "Đã sửa",
 		rerun: "Chép lại đoạn này",
+		rerunAll: "Chép lại cả phiên",
 		sentence: "Câu {number}",
 		stale:
 			"Đoạn này vừa được chép lại nên bản đang sửa không còn khớp. Huỷ rồi sửa lại trên bản mới.",
@@ -138,6 +139,16 @@ export const transcript = {
 		deleted: "Đã xoá dấu mốc",
 		deleteFailed: "Không xoá được dấu mốc",
 	},
+	speakers: {
+		open: "Người nói",
+		title: "Tên người nói",
+		description:
+			"Đổi tên áp cho cả bản chép lời, tệp tải xuống và biên bản. Để trống để dùng tên mặc định.",
+		field: "Tên của {name}",
+		fallback: "Người {number}",
+		save: "Lưu tên",
+		saved: "Đã đổi tên người nói",
+	},
 	reader: {
 		back: "Lời đã chép",
 		loading: "Đang tải bản chép lời…",
@@ -162,5 +173,9 @@ export const transcript = {
 		rerunTitle: "Chép lại đoạn",
 		rerunQuestion: "Bỏ {count} câu đã sửa ở đoạn {number}?",
 		rerunBody: "Đoạn này sẽ về câu máy mới; các đoạn khác giữ phần đã sửa.",
+		rerunAllTitle: "Chép lại cả phiên",
+		rerunAllQuestion: "Bỏ {count} câu đã sửa trong cả phiên?",
+		rerunAllBody:
+			"Phiên ghi iPhone được chép lại cả phiên trong một lần để nhãn người nói thống nhất, nên mọi đoạn về câu máy mới.",
 	},
 } as const;

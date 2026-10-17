@@ -80,4 +80,39 @@ describe("TranscriptPanel", () => {
 		).toBeInTheDocument();
 		expect(fake.calls.some((c) => c.method === "POST")).toBe(false);
 	});
+
+	it("sends every segment of an iPhone session when it is transcribed as a whole", async () => {
+		const before = auth.user.transcription;
+		auth.user.transcription = {
+			...before,
+			wholeSession: true,
+		} as typeof before;
+		const fake = fakeFetch({
+			// Segment b came late: only a and c were transcribed.
+			"GET /api/transcripts": jsonResponse({ items: [done("a"), done("c")] }),
+			"POST /api/transcripts": jsonResponse({ queued: 3, skipped: 0 }),
+		});
+		vi.stubGlobal("fetch", fake.fetcher);
+		renderWithProviders(
+			<TranscriptPanel
+				parts={[
+					{ fileId: "a", durationS: 60 },
+					{ fileId: "b", durationS: 60 },
+					{ fileId: "c", durationS: 30 },
+				]}
+				requested
+				name="Phiên"
+				session="aaaaaaaa-1111"
+				onSeek={() => undefined}
+				data-id="panel"
+			/>,
+		);
+		await userEvent.click(
+			await screen.findByRole("button", { name: "Chép phần còn thiếu" }),
+		);
+		expect(fake.calls.find((c) => c.method === "POST")?.body).toEqual({
+			fileIds: ["a", "b", "c"],
+		});
+		auth.user.transcription = before;
+	});
 });

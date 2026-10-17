@@ -8,6 +8,31 @@ import type {
 	TranscriptSummary,
 } from "./transcript-docs-api";
 
+/** Speaker ids of the names map, in order: `s0`, `s1`, … `s10`. */
+export function speakerIds(names: Readonly<Record<string, string>>): string[] {
+	const number = (id: string) => Number.parseInt(id.slice(1), 10) || 0;
+	return Object.keys(names).sort((a, b) => number(a) - number(b));
+}
+
+/**
+ * Speaker heard just before each segment: the speaker of the last sentence
+ * of the closest earlier segment that has sentences (null at the start).
+ * A segment shows a speaker label on its first sentence only when it differs.
+ */
+export function speakersBefore(
+	segments: readonly TranscriptSegment[],
+): Map<string, string | null> {
+	const out = new Map<string, string | null>();
+	let last: string | null = null;
+	for (const segment of segments) {
+		out.set(segment.fileId, last);
+		const done = segment.status === "done" ? segment.sentences : [];
+		const tail = done[done.length - 1];
+		if (tail) last = tail.speaker ?? null;
+	}
+	return out;
+}
+
 /** Seconds before the end of a segment when the next one starts loading. */
 export const PRELOAD_BEFORE_END_S = 10;
 

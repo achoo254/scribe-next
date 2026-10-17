@@ -8,6 +8,11 @@ export interface Sentence {
 	start: number;
 	end: number;
 	text: string;
+	/**
+	 * Speaker id (`s0`, `s1`…, in order of first appearance) when the
+	 * transcript tells speakers apart; absent from older transcripts.
+	 */
+	speaker?: string | null;
 }
 
 export interface Transcript {

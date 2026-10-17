@@ -10,6 +10,8 @@ import {
 	placeOf,
 	sentenceAt,
 	shouldPreload,
+	speakerIds,
+	speakersBefore,
 	summaryStatus,
 	transcriptTitle,
 	untranscribed,
@@ -234,3 +236,57 @@ describe("list labels", () => {
 function never(): never {
 	throw new Error("missing fixture");
 }
+
+describe("speakers", () => {
+	it("orders speaker ids by number", () => {
+		expect(speakerIds({ s10: "x", s2: "y", s0: "z" })).toEqual([
+			"s0",
+			"s2",
+			"s10",
+		]);
+		expect(speakerIds({})).toEqual([]);
+	});
+
+	it("knows the speaker heard just before each segment", () => {
+		const seg = (
+			fileId: string,
+			speakers: (string | undefined)[],
+			status: TranscriptSegment["status"] = "done",
+		) =>
+			({
+				fileId,
+				index: 0,
+				offsetS: 0,
+				durationS: 60,
+				hasVideo: false,
+				status,
+				progress: 100,
+				error: null,
+				runId: "r",
+				edited: false,
+				editedSentences: 0,
+				sentences: speakers.map((speaker, i) => ({
+					start: i,
+					end: i + 1,
+					text: "x",
+					speaker,
+				})),
+			}) satisfies TranscriptSegment;
+		const before = speakersBefore([
+			seg("a", ["s0", "s1"]),
+			seg("b", []),
+			seg("c", ["s1"], "running"),
+			seg("d", ["s0"]),
+			seg("e", [undefined]),
+			seg("f", ["s0"]),
+		]);
+		expect([...before.entries()]).toEqual([
+			["a", null],
+			["b", "s1"],
+			["c", "s1"],
+			["d", "s1"],
+			["e", "s0"],
+			["f", null],
+		]);
+	});
+});

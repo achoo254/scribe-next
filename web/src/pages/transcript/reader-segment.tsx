@@ -45,6 +45,12 @@ export interface ReaderSegmentProps {
 	/** Saves against `runId`, the run the draft was started on. */
 	onSave: (fileId: string, runId: string, texts: string[]) => Promise<void>;
 	onRerun: (segment: TranscriptSegment) => void;
+	/** Display name by speaker id; a label shows where the speaker changes. */
+	speakerNames?: Readonly<Record<string, string>>;
+	/** Speaker of the sentence just before this segment (null at the start). */
+	speakerBefore?: string | null;
+	/** "Chép lại" redoes the whole iPhone session, not this segment alone. */
+	rerunsSession?: boolean;
 }
 
 const NO_BOOKMARKS: readonly Bookmark[] = [];
@@ -114,6 +120,20 @@ function BookmarkMark({ bookmark }: { bookmark: Bookmark }) {
 	);
 }
 
+/** Name of a speaker id: the stored name, else "Người N" from `sN`. */
+export function speakerName(
+	t: Translate,
+	names: Readonly<Record<string, string>> | undefined,
+	id: string,
+): string {
+	return (
+		names?.[id] ??
+		t("transcript.speakers.fallback", {
+			number: (Number.parseInt(id.slice(1), 10) || 0) + 1,
+		})
+	);
+}
+
 /** Rows of a textarea for a sentence, so short ones stay one line. */
 function rowsFor(text: string): number {
 	return Math.min(6, Math.max(1, Math.ceil(text.length / 42)));
@@ -162,6 +182,9 @@ export const ReaderSegment = memo(function ReaderSegment({
 	onEditingChange,
 	onSave,
 	onRerun,
+	speakerNames,
+	speakerBefore = null,
+	rerunsSession = false,
 }: ReaderSegmentProps) {
 	const t = useT();
 	const [drafts, setDrafts] = useState<string[] | null>(null);
@@ -243,7 +266,9 @@ export const ReaderSegment = memo(function ReaderSegment({
 								leadingIcon={<IconRefresh size={16} aria-hidden="true" />}
 								onClick={() => onRerun(segment)}
 							>
-								{t("transcript.segment.rerun")}
+								{rerunsSession
+									? t("transcript.segment.rerunAll")
+									: t("transcript.segment.rerun")}
 							</Button>
 						) : null}
 					</>
@@ -313,40 +338,57 @@ export const ReaderSegment = memo(function ReaderSegment({
 				</div>
 			) : done && segment.sentences.length > 0 ? (
 				<ol className="m-0 grid list-none gap-0.5 p-0">
-					{segment.sentences.map((sentence, index) => (
-						<li
-							// biome-ignore lint/suspicious/noArrayIndexKey: fixed-order list
-							key={index}
-						>
-							{bookmarks
-								.filter(
-									(b) => sentenceAt(segment, b.at - segment.offsetS) === index,
-								)
-								.map((b) => (
-									<BookmarkMark key={b.id} bookmark={b} />
-								))}
-							<button
-								type="button"
-								data-id={`${id}-line-${index}`}
-								aria-current={index === activeIndex ? "true" : undefined}
-								onClick={() => onPlay(segment.fileId, sentence.start)}
-								className={cn(
-									"flex min-h-11 w-full cursor-pointer gap-3 rounded-sm px-2 py-2 text-left hover:bg-surface-subtle focus-visible:shadow-focus-primary focus-visible:outline-none",
-									index === activeIndex && "bg-primary/10",
-								)}
+					{segment.sentences.map((sentence, index) => {
+						const previous =
+							index === 0
+								? speakerBefore
+								: (segment.sentences[index - 1]?.speaker ?? null);
+						const speaker = sentence.speaker ?? null;
+						const changed = speaker !== null && speaker !== previous;
+						return (
+							<li
+								// biome-ignore lint/suspicious/noArrayIndexKey: fixed-order list
+								key={index}
 							>
-								<span className="flex-none pt-0.5 font-mono text-muted text-sm tabular-nums">
-									{formatClock(segment.offsetS + sentence.start)}
-								</span>
-								<SentenceText
-									text={sentence.text}
-									view={view}
-									lang={translationLang}
-									translated={translation?.[index] ?? null}
-								/>
-							</button>
-						</li>
-					))}
+								{changed ? (
+									<p
+										data-id={`${id}-speaker-${index}`}
+										className="m-0 px-2 pt-2 font-semibold text-primary text-sm"
+									>
+										{speakerName(t, speakerNames, speaker)}
+									</p>
+								) : null}
+								{bookmarks
+									.filter(
+										(b) =>
+											sentenceAt(segment, b.at - segment.offsetS) === index,
+									)
+									.map((b) => (
+										<BookmarkMark key={b.id} bookmark={b} />
+									))}
+								<button
+									type="button"
+									data-id={`${id}-line-${index}`}
+									aria-current={index === activeIndex ? "true" : undefined}
+									onClick={() => onPlay(segment.fileId, sentence.start)}
+									className={cn(
+										"flex min-h-11 w-full cursor-pointer gap-3 rounded-sm px-2 py-2 text-left hover:bg-surface-subtle focus-visible:shadow-focus-primary focus-visible:outline-none",
+										index === activeIndex && "bg-primary/10",
+									)}
+								>
+									<span className="flex-none pt-0.5 font-mono text-muted text-sm tabular-nums">
+										{formatClock(segment.offsetS + sentence.start)}
+									</span>
+									<SentenceText
+										text={sentence.text}
+										view={view}
+										lang={translationLang}
+										translated={translation?.[index] ?? null}
+									/>
+								</button>
+							</li>
+						);
+					})}
 				</ol>
 			) : (
 				<>
