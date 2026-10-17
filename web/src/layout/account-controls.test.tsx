@@ -188,9 +188,7 @@ describe("account menu", () => {
 				"Đường dẫn chỉ dùng một lần, hết hạn lúc 10:10 16/10.",
 			),
 		).toBeInTheDocument();
-		await userEvent.click(
-			screen.getByRole("button", { name: /^Mở chat/ }),
-		);
+		await userEvent.click(screen.getByRole("button", { name: /^Mở chat/ }));
 		expect(open).toHaveBeenCalledWith(
 			"https://chat.hoandat.com/b/bot_scribe_bot?start=tok1",
 			"_blank",
