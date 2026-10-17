@@ -80,3 +80,7 @@ phiên không còn file.
   build đạt, không cảnh báo; e2e 89 đạt, 7 bỏ qua theo trình duyệt. Ảnh chụp mới: `translation-controls-*`,
   `translation-both-*`, `translation-download-*`; ảnh màn hình đọc ở `pages.spec` cập nhật vì có thêm nút "Dịch".
 - Chưa deploy.
+
+## Deploy 17/10 13:08
+Chủ dự án cho phép trước ("deploy luôn khi xong"). Build từ `1e2613c` (code `59432d0`). Sao lưu `/root/scribe-backup-20261017-130838`,
+binary sha256 `ff3a7029afb91b9f…`, `index-BRC0kpPu.js`, health ok, `NRestarts=0`, không ERROR/WARN.
