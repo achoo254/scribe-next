@@ -231,7 +231,7 @@ Bấm thử trên máy, theo thứ tự:
 8. Ghi 2–3 phút, khoá màn hình giữa chừng, bấm "Đánh dấu" trước và sau khi khoá → mở bản chép lời, mốc nằm đúng giây.
 9. Tìm kiếm một từ trong bản đã chép → bấm kết quả tua đúng chỗ; hỏi một câu → có trích mốc giây.
 10. Đánh dấu từ màn hình khoá: bắt đầu ghi, khoá máy → màn hình khoá (và Control Center) có mục **"Scribe đang ghi"** với thời gian chạy. Bấm nút tạm dừng ở đó → tiêu đề đổi thành "Đã đánh dấu mm:ss" vài giây, bản ghi **vẫn chạy** (thời gian không dừng). Bấm hai lần thật nhanh → chỉ thêm một mốc. Không thấy mục này → thử đặt `playsSilenceWhileRecording` ngược lại để so; ghi lâu 10 phút xem pin và âm thu không có tạp.
-11. Đeo AirPods (micro vẫn là micro iPhone) khi đang ghi và khoá máy: bấm 1 lần, rồi bấm 2 lần → mỗi lần thêm một mốc, không dừng ghi. Thử thêm khi AirPods là micro nếu chọn được.
+11. ~~Bỏ qua theo chủ dự án 17/10~~ Đeo AirPods (micro vẫn là micro iPhone) khi đang ghi và khoá máy: bấm 1 lần, rồi bấm 2 lần → mỗi lần thêm một mốc, không dừng ghi. Thử thêm khi AirPods là micro nếu chọn được.
 12. Mở khoá, mở app → nút "Đánh dấu" vẫn chạy như cũ; dừng ghi → mở bản chép lời: các mốc bấm từ màn hình khoá/AirPods nằm đúng giây. Thử thêm: bấm mốc khi khoá → vuốt tắt app → mở lại → mốc vẫn có.
 13. Còn nợ từ trước: cuộc gọi đến khi đang ghi, AirPods, chế độ máy bay khi đang tải (cần máy thứ hai + AirPods).
 14. **Chép trực tiếp** (cần bản backend có `REALTIME_EMAILS` chứa email chủ sản phẩm): bật công tắc "Chép trực tiếp" → ghi → panel "Đang chép" hiện câu sau mỗi lần ngừng nói, mốc đúng đồng hồ ghi. Tài khoản khác (ngoài danh sách) → panel báo chưa được dùng, ghi vẫn chạy. Tắt công tắc → ghi bình thường, log backend không có `realtime.token`.
@@ -336,3 +336,4 @@ Ba trên bốn reviewer độc lập tìm ra cùng lỗ hổng transport/origin.
 ## Kết quả thử trên iPhone 17/10 11:43
 - Mục 10: **đạt** — màn hình khoá hiện "Scribe đang ghi" (nhờ phát im lặng), bấm ở đó thêm mốc, mở app thấy "Đã đánh 1 mốc", bản ghi vẫn chạy.
 - Sau đó sửa (chưa cài lên máy): khung hiện dạng trực tiếp thay cho thanh `--:--` trống, rút gọn dòng hướng dẫn bị cắt. Cài ở lần cắm sau.
+- Mục 11 (AirPods): chủ dự án bỏ qua 17/10. Lệnh AirPods dùng cùng đường với nút trên màn hình khoá (đã đạt) nên không kiểm riêng.
