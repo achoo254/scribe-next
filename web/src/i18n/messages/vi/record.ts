@@ -61,6 +61,16 @@ export const record = {
 		uploadsFailed: {
 			other: "{count} đoạn bị máy chủ từ chối — vẫn giữ trên máy.",
 		},
+		realtime: "Chép trực tiếp",
+		realtimeHint:
+			"Gửi âm thanh tới OpenAI để chữ hiện ngay sau mỗi câu nói, tính vào phút chép lời. Bản chép lời đầy đủ vẫn chạy sau khi tải lên.",
+		liveTitle: "Đang chép",
+		liveTitleDone: "Chép trực tiếp",
+		liveNote: "Bản xem trước. Bản chép lời đầy đủ chạy sau khi tải lên.",
+		liveConnecting: "Đang kết nối…",
+		liveEmpty: "Chữ sẽ hiện ở đây sau mỗi câu nói.",
+		liveDisconnected: "Mất kết nối từ {clock}, đang thử nối lại…",
+		liveGap: "{from}–{to} · mất đoạn này, chờ bản hoàn chỉnh",
 	},
 	groups: {
 		expiresSoon: "sắp tự xoá",

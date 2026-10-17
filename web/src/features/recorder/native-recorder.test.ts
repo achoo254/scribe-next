@@ -32,6 +32,11 @@ function fakePlugin(
 		signOut: vi.fn(async () => undefined),
 		takePendingBookmarks: vi.fn(async () => ({ bookmarks: [] })),
 		ackBookmarks: vi.fn(async () => undefined),
+		getTranscript: vi.fn(async () => ({
+			sessionId: null,
+			entries: [],
+			status: {},
+		})),
 		addListener: vi.fn(async (event: string, handler: Handler) => {
 			const set = handlers.get(event) ?? new Set<Handler>();
 			set.add(handler);

@@ -18,6 +18,10 @@ import {
 import type { Recorder } from "../../features/recorder/recorder";
 import type { RecordSources } from "../../features/recorder/recorder-messages";
 import {
+	type LiveTranscriptApi,
+	useLiveTranscript,
+} from "../../features/recorder/use-live-transcript";
+import {
 	type NativeRecorderApi,
 	useNativeRecorder,
 } from "../../features/recorder/use-native-recorder";
@@ -110,6 +114,11 @@ export interface NativeRecordState {
 	/** Segment length chosen for the next recording. */
 	minutes: SegmentMinutes;
 	setMinutes: (minutes: SegmentMinutes) => void;
+	/** "Chép trực tiếp" for the next recording; off by default, kept per device. */
+	realtime: boolean;
+	setRealtime: (enabled: boolean) => void;
+	/** Live transcript of the current or last recording that asked for it. */
+	live: LiveTranscriptApi;
 	toggle: () => Promise<void>;
 	bookmarks: BookmarkQueueState;
 	/** Null while no session is known yet. */
@@ -216,13 +225,39 @@ export function BrowserRecordProvider({ children }: { children: ReactNode }) {
 	);
 }
 
+/** Device-local choice of "Chép trực tiếp" (off unless turned on here before). */
+export const REALTIME_STORAGE_KEY = "scribe.native.realtime";
+
+function readRealtime(): boolean {
+	try {
+		return window.localStorage.getItem(REALTIME_STORAGE_KEY) === "1";
+	} catch {
+		return false;
+	}
+}
+
+function storeRealtime(enabled: boolean): void {
+	try {
+		window.localStorage.setItem(REALTIME_STORAGE_KEY, enabled ? "1" : "0");
+	} catch {
+		// Storage unavailable: the choice lasts for this launch only.
+	}
+}
+
 export function NativeRecordProvider({ children }: { children: ReactNode }) {
 	// Uploads of this account resume once, when the provider mounts for
 	// the signed-in session (see `useNativeRecorder`), not per page visit.
 	const rec = useNativeRecorder();
 	const { user } = useAuth();
 	const [minutes, setMinutes] = useState<SegmentMinutes>("1");
+	const [realtime, setRealtimeState] = useState(readRealtime);
+	const live = useLiveTranscript();
 	const { queue, ...bookmarks } = useBookmarkQueue();
+
+	const setRealtime = useCallback((enabled: boolean) => {
+		setRealtimeState(enabled);
+		storeRealtime(enabled);
+	}, []);
 
 	// Bookmarks pressed on the lock screen or with AirPods, saved by Swift.
 	const email = user?.email ?? null;
@@ -252,7 +287,8 @@ export function NativeRecordProvider({ children }: { children: ReactNode }) {
 		if (!user) return;
 		const key = rec.userKey ?? (await userKeyOf(user.email));
 		queue.reset();
-		await rec.recorder.start(key, Number(minutes));
+		live.transcript.reset();
+		await rec.recorder.start(key, Number(minutes), realtime);
 	}
 
 	const { sessionId } = rec;
@@ -263,7 +299,17 @@ export function NativeRecordProvider({ children }: { children: ReactNode }) {
 
 	return (
 		<NativeRecordContext.Provider
-			value={{ rec, minutes, setMinutes, toggle, bookmarks, mark }}
+			value={{
+				rec,
+				minutes,
+				setMinutes,
+				realtime,
+				setRealtime,
+				live,
+				toggle,
+				bookmarks,
+				mark,
+			}}
 		>
 			{children}
 		</NativeRecordContext.Provider>

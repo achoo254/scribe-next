@@ -44,7 +44,12 @@ export interface NativeBookmark {
 }
 
 export interface RecorderNativePlugin {
-	start(options: { userKey: string; segmentMinutes?: number }): Promise<{
+	start(options: {
+		userKey: string;
+		segmentMinutes?: number;
+		/** Also stream the audio for a live transcript ("Chép trực tiếp"). */
+		realtime?: boolean;
+	}): Promise<{
 		sessionId: string;
 	}>;
 	stop(): Promise<NativeStatus>;
@@ -60,6 +65,15 @@ export interface RecorderNativePlugin {
 	}>;
 	/** Swift forgets these bookmarks: the web queue took care of them. */
 	ackBookmarks(options: { userKey: string; ids: string[] }): Promise<void>;
+	/**
+	 * Live transcript of the current or last recording that asked for it
+	 * (absent from older app builds): `{ sessionId, entries, status }`.
+	 */
+	getTranscript(): Promise<{
+		sessionId: string | null;
+		entries: unknown[];
+		status: unknown;
+	}>;
 	addListener(
 		event:
 			| "state"
@@ -72,7 +86,8 @@ export interface RecorderNativePlugin {
 			| "uploaded"
 			| "needsSignIn"
 			| "quotaFull"
-			| "bookmarkAdded",
+			| "bookmarkAdded"
+			| "transcript",
 		handler: (data: Record<string, unknown>) => void,
 	): Promise<{ remove: () => Promise<void> }>;
 }
@@ -235,7 +250,11 @@ export class NativeRecorder {
 		});
 	};
 
-	start = async (userKey: string, segmentMinutes: number): Promise<void> => {
+	start = async (
+		userKey: string,
+		segmentMinutes: number,
+		realtime = false,
+	): Promise<void> => {
 		if (this.state.recording || this.state.starting) return;
 		this.set({
 			...this.state,
@@ -249,6 +268,7 @@ export class NativeRecorder {
 			const { sessionId } = await this.plugin.start({
 				userKey,
 				segmentMinutes,
+				...(realtime ? { realtime } : {}),
 			});
 			this.set({ ...this.state, sessionId: sessionOf(sessionId) });
 		} catch (cause) {

@@ -46,6 +46,13 @@ const native = vi.hoisted(() => {
 			async (): Promise<{ bookmarks: unknown[] }> => ({ bookmarks: [] }),
 		),
 		ackBookmarks: vi.fn(async () => undefined),
+		getTranscript: vi.fn(
+			async (): Promise<{
+				sessionId: string | null;
+				entries: unknown[];
+				status: unknown;
+			}> => ({ sessionId: null, entries: [], status: {} }),
+		),
 		addListener: vi.fn(async (event: string, handler: Handler) => {
 			const set = handlers.get(event) ?? new Set<Handler>();
 			set.add(handler);
@@ -174,6 +181,7 @@ async function leaveAndComeBack(
 }
 
 afterEach(() => {
+	window.localStorage.clear();
 	browser.created = 0;
 	browser.disposed = 0;
 	native.handlers.clear();
@@ -213,10 +221,10 @@ describe("RecordStateProvider (iOS app)", () => {
 	it("keeps Swift's state and the segment length across visits, syncing uploads once", async () => {
 		const router = renderRoutes(NativeRecordProvider, <NativeRecordCard />);
 		await waitFor(() => expect(native.plugin.syncUploads).toHaveBeenCalled());
-		// Every plugin event the page uses is listened to (state … quotaFull, plus
-		// the native bookmark pull's bookmarkAdded and state), once.
+		// Every plugin event the page uses is listened to (state … quotaFull, the
+		// native bookmark pull's bookmarkAdded and state, and transcript), once.
 		await waitFor(() =>
-			expect(native.plugin.addListener).toHaveBeenCalledTimes(11),
+			expect(native.plugin.addListener).toHaveBeenCalledTimes(12),
 		);
 		await userEvent.click(screen.getByRole("button", { name: "5 phút" }));
 
@@ -240,7 +248,7 @@ describe("RecordStateProvider (iOS app)", () => {
 		expect(screen.getByText("Đang ghi — 2:05")).toBeInTheDocument();
 		expect(native.plugin.syncUploads).toHaveBeenCalledTimes(1);
 		// Listeners were attached once, not again per visit.
-		expect(native.plugin.addListener).toHaveBeenCalledTimes(11);
+		expect(native.plugin.addListener).toHaveBeenCalledTimes(12);
 	});
 
 	it("bookmarks at the session position Swift reports, without stopping", async () => {
@@ -253,7 +261,7 @@ describe("RecordStateProvider (iOS app)", () => {
 		vi.stubGlobal("fetch", fake.fetcher);
 		renderRoutes(NativeRecordProvider, <NativeRecordCard />);
 		await waitFor(() =>
-			expect(native.plugin.addListener).toHaveBeenCalledTimes(11),
+			expect(native.plugin.addListener).toHaveBeenCalledTimes(12),
 		);
 		await userEvent.click(screen.getByRole("button", { name: "Bắt đầu ghi" }));
 		act(() => {
@@ -317,5 +325,107 @@ describe("RecordStateProvider (iOS app)", () => {
 		expect(fake.calls.map((call) => call.body)).toEqual([
 			{ at: 42, id: "0123456789abcdef01234567" },
 		]);
+	});
+
+	it("streams a live transcript only when switched on, and shows it without stopping", async () => {
+		renderRoutes(NativeRecordProvider, <NativeRecordCard />);
+		await waitFor(() =>
+			expect(native.plugin.addListener).toHaveBeenCalledTimes(12),
+		);
+		const toggle = screen.getByRole("switch", { name: "Chép trực tiếp" });
+		expect(toggle).not.toBeChecked();
+		await userEvent.click(toggle);
+		expect(window.localStorage.getItem("scribe.native.realtime")).toBe("1");
+		await userEvent.click(screen.getByRole("button", { name: "Bắt đầu ghi" }));
+		expect(native.plugin.start).toHaveBeenCalledWith({
+			userKey: expect.any(String),
+			segmentMinutes: 1,
+			realtime: true,
+		});
+		act(() => {
+			native.emit("state", { state: "recording" });
+			native.emit("transcript", {
+				sessionId: "s1",
+				type: "status",
+				connected: true,
+				stopped: false,
+			});
+			native.emit("transcript", {
+				sessionId: "s1",
+				type: "sentence",
+				id: "item_2",
+				atS: 65,
+				text: "Câu thứ hai.",
+			});
+			native.emit("transcript", {
+				sessionId: "s1",
+				type: "sentence",
+				id: "item_1",
+				atS: 3,
+				text: "Câu thứ nhất.",
+			});
+		});
+		expect(await screen.findByText("Đang chép")).toBeInTheDocument();
+		const items = screen.getAllByRole("listitem");
+		expect(items.map((item) => item.textContent)).toEqual([
+			"0:03Câu thứ nhất.",
+			"1:05Câu thứ hai.",
+		]);
+
+		act(() => {
+			native.emit("transcript", {
+				sessionId: "s1",
+				type: "status",
+				connected: false,
+				disconnectedAtS: 125,
+				error: "Không đủ phút chép lời: tháng này đã dùng 120/120 phút.",
+				stopped: false,
+			});
+		});
+		expect(
+			screen.getByText("Mất kết nối từ 2:05, đang thử nối lại…"),
+		).toBeInTheDocument();
+		expect(
+			screen.getByText(
+				"Không đủ phút chép lời: tháng này đã dùng 120/120 phút.",
+			),
+		).toBeInTheDocument();
+		expect(native.plugin.stop).not.toHaveBeenCalled();
+
+		// Back from the lock screen: Swift's copy replaces the page's.
+		native.plugin.getTranscript.mockResolvedValueOnce({
+			sessionId: "s1",
+			entries: [
+				{ id: "item_1", atS: 3, text: "Câu thứ nhất." },
+				{ id: "gap-1300", atS: 130, text: "", gapUntilS: 190 },
+				{ id: "item_9", atS: 200, text: "Câu lúc khoá máy." },
+			],
+			status: { connected: true, stopped: false },
+		});
+		act(() => {
+			document.dispatchEvent(new Event("visibilitychange"));
+		});
+		expect(await screen.findByText("Câu lúc khoá máy.")).toBeInTheDocument();
+		expect(screen.queryByText("Câu thứ hai.")).not.toBeInTheDocument();
+		expect(
+			screen.getByText("2:10–3:10 · mất đoạn này, chờ bản hoàn chỉnh"),
+		).toBeInTheDocument();
+	});
+
+	it("keeps the live transcript off by default and remembers the last choice", async () => {
+		window.localStorage.setItem("scribe.native.realtime", "1");
+		renderRoutes(NativeRecordProvider, <NativeRecordCard />);
+		const toggle = await screen.findByRole("switch", {
+			name: "Chép trực tiếp",
+		});
+		expect(toggle).toBeChecked();
+		await userEvent.click(toggle);
+		expect(window.localStorage.getItem("scribe.native.realtime")).toBe("0");
+		await userEvent.click(screen.getByRole("button", { name: "Bắt đầu ghi" }));
+		expect(native.plugin.start).toHaveBeenCalledWith({
+			userKey: expect.any(String),
+			segmentMinutes: 1,
+		});
+		expect(screen.queryByText("Đang chép")).not.toBeInTheDocument();
 	});
 });
