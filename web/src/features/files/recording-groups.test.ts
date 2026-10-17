@@ -40,13 +40,30 @@ describe("expiry", () => {
 	const now = new Date("2026-10-15T00:00:00Z").getTime();
 
 	it("counts whole days left, rounded up", () => {
-		expect(daysUntilExpiry("2026-10-10T00:00:00Z", 14, now)).toBe(9);
-		expect(daysUntilExpiry("2026-10-01T12:00:00Z", 14, now)).toBe(1);
+		expect(
+			daysUntilExpiry({ createdAt: "2026-10-10T00:00:00Z" }, 14, now),
+		).toBe(9);
+		expect(
+			daysUntilExpiry({ createdAt: "2026-10-01T12:00:00Z" }, 14, now),
+		).toBe(1);
+	});
+
+	it("follows the file's own expiry, not the current plan", () => {
+		// Made on free (7 days), the user is on plus (14) now: still 2 days.
+		const file = {
+			createdAt: "2026-10-10T00:00:00Z",
+			expiresAt: "2026-10-17T00:00:00Z",
+		};
+		expect(daysUntilExpiry(file, 14, now)).toBe(2);
+		expect(daysUntilExpiry(file, 0, now)).toBe(2);
 	});
 
 	it("is unknown without retention or date", () => {
-		expect(daysUntilExpiry("2026-10-10T00:00:00Z", 0, now)).toBeNull();
-		expect(daysUntilExpiry(undefined, 14, now)).toBeNull();
+		expect(
+			daysUntilExpiry({ createdAt: "2026-10-10T00:00:00Z" }, 0, now),
+		).toBeNull();
+		expect(daysUntilExpiry({}, 14, now)).toBeNull();
+		expect(daysUntilExpiry({ expiresAt: "not a date" }, 14, now)).toBeNull();
 		expect(expiryLabel(null)).toBe("");
 	});
 

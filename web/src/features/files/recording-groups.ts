@@ -49,16 +49,24 @@ export function groupByDay(items: readonly RecordingItem[]): DayGroup[] {
 	return [...groups.values()];
 }
 
-/** Whole days left before the backend sweeps the file; null when unknown. */
+/**
+ * Whole days left before the backend sweeps the file; null when unknown.
+ * The file's own `expiresAt` (fixed by the plan it was made under) wins;
+ * older replies without it fall back to `createdAt` + the current plan's
+ * `retentionDays`.
+ */
 export function daysUntilExpiry(
-	createdAt: string | undefined,
+	file: { createdAt?: string; expiresAt?: string },
 	retentionDays: number,
 	now: number = Date.now(),
 ): number | null {
-	if (!createdAt || retentionDays <= 0) return null;
-	const created = new Date(createdAt).getTime();
-	if (Number.isNaN(created)) return null;
-	return Math.ceil((created + retentionDays * DAY_MS - now) / DAY_MS);
+	const expires = file.expiresAt
+		? new Date(file.expiresAt).getTime()
+		: file.createdAt && retentionDays > 0
+			? new Date(file.createdAt).getTime() + retentionDays * DAY_MS
+			: Number.NaN;
+	if (Number.isNaN(expires)) return null;
+	return Math.ceil((expires - now) / DAY_MS);
 }
 
 /** "tự xoá sau 3 ngày"; empty when the retention is unknown. */

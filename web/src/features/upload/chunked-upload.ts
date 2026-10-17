@@ -6,10 +6,15 @@ import { activeTranslator } from "../../i18n/active-translator";
  *
  * The session survives a failure: calling `upload()` again with the same
  * File resumes from the offset the backend reports instead of starting over.
+ *
+ * `purpose: "transcribe"` ("Tải tệp lên" on the record page) puts the file
+ * in "Lịch sử ghi"; without it ("Cắt file") the file stays out of it.
  */
 import { apiJson } from "../../lib/api";
 
 export const UPLOAD_CHUNK_SIZE = 5 * 1024 * 1024;
+
+export type UploadPurpose = "transcribe";
 
 export interface UploadResult {
 	fileId: string;
@@ -29,6 +34,7 @@ export class ChunkedUpload {
 	constructor(
 		private readonly fetcher: typeof fetch = fetch,
 		private readonly chunkSize: number = UPLOAD_CHUNK_SIZE,
+		private readonly purpose?: UploadPurpose,
 	) {}
 
 	/**
@@ -100,7 +106,11 @@ export class ChunkedUpload {
 			"/api/upload/init",
 			{
 				method: "POST",
-				json: { name: file.name, size: file.size },
+				json: {
+					name: file.name,
+					size: file.size,
+					...(this.purpose ? { purpose: this.purpose } : {}),
+				},
 				fallbackError: activeTranslator().t("errors.upload.init"),
 			},
 			this.fetcher,

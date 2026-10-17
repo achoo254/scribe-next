@@ -68,14 +68,12 @@ export function useUndoableDelete(): UndoableDelete {
 			if (entry.settled) return;
 			entry.settled = true;
 			pending.current.delete(entry);
-			const failed: string[] = [];
-			for (const id of entry.ids) {
-				try {
-					await deleteQuietly(id, false);
-				} catch {
-					failed.push(id);
-				}
-			}
+			// All at once with `keepalive`: closing the tab right after the undo
+			// window still deletes every part of a session, not only the first.
+			const results = await Promise.allSettled(
+				entry.ids.map((id) => deleteQuietly(id, true)),
+			);
+			const failed = results.filter((r) => r.status === "rejected");
 			const { t: tr, toast: toasts, queryClient: client } = latest.current;
 			if (failed.length > 0) {
 				toasts.show({ tone: "error", title: tr("errors.files.delete") });

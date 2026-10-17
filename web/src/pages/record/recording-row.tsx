@@ -69,7 +69,7 @@ export function RecordingRow({
 	const t = useT();
 	const download = useDownload();
 	const name = displayName ?? item.name;
-	const days = daysUntilExpiry(item.createdAt, retentionDays);
+	const days = daysUntilExpiry(item, retentionDays);
 	const expiry = expiryLabel(days);
 	const id = `history-item-${item.id}`;
 

@@ -190,6 +190,19 @@ describe("RecordStateProvider (browser)", () => {
 		expect(browser.created).toBe(1);
 		expect(browser.disposed).toBe(0);
 	});
+
+	it("shows a recording that saved itself when the user's stop finds nothing to save", async () => {
+		const refresh = vi.spyOn(QueryClient.prototype, "invalidateQueries");
+		renderRoutes(BrowserRecordProvider, <BrowserProbe />);
+		await userEvent.click(screen.getByRole("button", { name: "Bắt đầu" }));
+		expect(await screen.findByText("đang ghi")).toBeInTheDocument();
+		refresh.mockClear();
+
+		// The mock's stop() returns null, like a stop racing the storage-full stop.
+		await userEvent.click(screen.getByRole("button", { name: "Bắt đầu" }));
+		expect(refresh).toHaveBeenCalledWith({ queryKey: ["recordings"] });
+		refresh.mockRestore();
+	});
 });
 
 describe("RecordStateProvider (iOS app)", () => {

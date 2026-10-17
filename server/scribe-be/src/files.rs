@@ -13,7 +13,7 @@ use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
 use axum::response::Response;
 use axum::{Extension, Json};
 use serde::Deserialize;
-use mongodb::bson::doc;
+use mongodb::bson::{doc, DateTime};
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
 use std::io::SeekFrom;
@@ -24,7 +24,11 @@ use uuid::Uuid;
 /// Mỗi phút một user được bấm "Xoá tất cả" tối đa chừng này lần.
 const DELETE_ALL_PER_MINUTE: u32 = 3;
 
-/// `GET /api/files` — lịch sử ghi của user (bản ghi + tệp tải lên), mới nhất trước.
+/// Phiên iPhone có đoạn mới lên trong khoảng này coi như còn đang ghi: giữa hai lượt tải đoạn (mỗi đoạn
+/// khoảng 1 phút) máy chủ không có phiên tải nào mở, nên "Xoá tất cả" dựa vào đoạn mới nhất.
+const LIVE_IPHONE_SESSION_MS: i64 = 10 * 60 * 1000;
+
+/// `GET /api/files` — lịch sử ghi của user (bản ghi + tệp tải lên ở trang Ghi âm), mới nhất trước.
 pub async fn list(
     State(state): State<AppState>,
     Extension(user): Extension<UserId>,
@@ -46,14 +50,16 @@ pub async fn list(
                 "transcript": transcript.map(|status| json!({ "status": status })),
                 "hasVideo": f.has_video.unwrap_or(false),
                 "createdAt": f.created_at.try_to_rfc3339_string().ok(),
+                "expiresAt": f.expires_at.try_to_rfc3339_string().ok(),
             })
         })
         .collect();
-    // retentionDays theo gói hiện tại: FE hiện hạn tự xoá ước tính = createdAt + retentionDays.
+    // `expiresAt` của từng file là mốc sweep xoá thật (theo gói lúc tạo); `retentionDays` theo gói hiện tại
+    // chỉ cho câu giới thiệu.
     Ok(Json(json!({ "items": items, "retentionDays": retention_days })))
 }
 
-/// `GET /api/files/manage` — file KHÔNG phải bản ghi (upload Cắt file + đoạn output) để UI quản lý
+/// `GET /api/files/manage` — file KHÔNG phải bản ghi (mọi tệp tải lên + đoạn output) để UI quản lý
 /// dung lượng. Xoá dùng chung `DELETE /api/files/:id`. Ownership qua list_non_recordings.
 pub async fn manage_list(
     State(state): State<AppState>,
@@ -71,6 +77,7 @@ pub async fn manage_list(
                 "size": f.size,
                 "jobId": f.job_id,
                 "createdAt": f.created_at.try_to_rfc3339_string().ok(),
+                "expiresAt": f.expires_at.try_to_rfc3339_string().ok(),
             })
         })
         .collect();
@@ -108,6 +115,17 @@ fn split_for_delete_all<'a>(
     })
 }
 
+/// Khoá `s:` của các phiên iPhone có đoạn tạo trong [`LIVE_IPHONE_SESSION_MS`] trước `now`.
+fn live_iphone_sessions(files: &[FileDoc], now: DateTime) -> HashSet<String> {
+    let since = now.timestamp_millis() - LIVE_IPHONE_SESSION_MS;
+    files
+        .iter()
+        .filter(|f| f.kind == "recording" && f.created_at.timestamp_millis() > since)
+        .filter_map(FileDoc::session_key)
+        .filter(|key| key.starts_with("s:"))
+        .collect()
+}
+
 /// Xoá đĩa rồi doc (như xoá tay). Lỗi đĩa khác NotFound → giữ doc (không mồ côi file), trả lỗi.
 async fn remove_file_and_doc(db: &mongodb::Database, f: &FileDoc) -> Result<(), AppError> {
     match tokio::fs::remove_file(&f.path).await {
@@ -118,9 +136,11 @@ async fn remove_file_and_doc(db: &mongodb::Database, f: &FileDoc) -> Result<(), 
     file::delete_doc(db, f).await
 }
 
-/// `DELETE /api/files` — "Xoá tất cả" trong Lịch sử ghi: mọi bản ghi và tệp tải lên của user, kèm bản chép
-/// lời, biên bản, dấu mốc và câu trong index (qua `file::delete_doc`). Chừa file của phiên ghi đang mở và đầu
-/// vào job cắt đang chạy. Đoạn cắt (`output`) quản lý ở trang Cắt file, không xoá ở đây.
+/// `DELETE /api/files` — "Xoá tất cả" trong Lịch sử ghi: đúng những file `GET /api/files` liệt kê (bản ghi và
+/// tệp tải lên ở trang Ghi âm), kèm bản chép lời, biên bản, dấu mốc và câu trong index (qua `file::delete_doc`).
+/// Chừa file của phiên ghi đang mở, của phiên iPhone có đoạn mới trong 10 phút qua (còn đang ghi dù lúc này
+/// không có đoạn nào đang tải) và đầu vào job cắt đang chạy. Tệp tải lên và đoạn cắt của trang Cắt file
+/// quản lý ở trang đó, không xoá ở đây.
 pub async fn delete_all(
     State(state): State<AppState>,
     Extension(user): Extension<UserId>,
@@ -129,7 +149,8 @@ pub async fn delete_all(
         return Err(AppError::TooManyRequests("thao tác quá nhanh, thử lại sau một phút".into()));
     }
     let files = file::list_history(&state.db, &user.0).await?;
-    let active_keys = recordings::active_session_keys(&state, &user.0).await?;
+    let mut active_keys = recordings::active_session_keys(&state, &user.0).await?;
+    active_keys.extend(live_iphone_sessions(&files, DateTime::now()));
     let busy_inputs: HashSet<String> = job::busy_inputs(&state.db, &user.0).await?.into_iter().collect();
     let (targets, kept) = split_for_delete_all(&files, &active_keys, &busy_inputs);
     let (mut deleted, mut failed, mut bytes) = (0_i64, 0_i64, 0_i64);
@@ -437,10 +458,10 @@ fn content_type_for(path: &str) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_range, split_for_delete_all};
+    use super::{live_iphone_sessions, parse_range, split_for_delete_all, LIVE_IPHONE_SESSION_MS};
     use crate::models::file::{FileDoc, Owner};
     use crate::models::plan::Plan;
-    use mongodb::bson::oid::ObjectId;
+    use mongodb::bson::{oid::ObjectId, DateTime};
     use std::collections::HashSet;
 
     #[test]
@@ -452,7 +473,7 @@ mod tests {
             rec("aaaaaaaa-1111#0"),
             rec("aaaaaaaa-1111#1"),
             rec("bbbbbbbb-2222#0"),
-            FileDoc::new_upload(owner, "aaaaaaaa-1111#2", "/u.mp3", 10, 1.0, false, ObjectId::new()),
+            FileDoc::new_upload(owner, "aaaaaaaa-1111#2", "/u.mp3", 10, 1.0, false, ObjectId::new()).for_transcription(),
             rec("Đang cắt"),
         ];
         let id = |i: usize| files[i].id.expect("id").to_hex();
@@ -465,6 +486,32 @@ mod tests {
         assert_eq!(names(kept), ["aaaaaaaa-1111#0", "aaaaaaaa-1111#1", "Đang cắt"]);
         let (all, none) = split_for_delete_all(&files, &HashSet::new(), &HashSet::new());
         assert_eq!((all.len(), none.len()), (6, 0));
+    }
+
+    #[test]
+    fn delete_all_spares_iphone_sessions_with_a_recent_segment() {
+        let owner = Owner { user_id: "u", plan: Plan::Free };
+        let now = DateTime::now();
+        let at = |name: &str, ago_ms: i64| FileDoc {
+            created_at: DateTime::from_millis(now.timestamp_millis() - ago_ms),
+            ..FileDoc::new_recording(owner, name, "/r", 10, 60.0, false, ObjectId::new())
+        };
+        let files = vec![
+            // Đang ghi: đoạn #0 cũ, đoạn #1 vừa lên.
+            at("aaaaaaaa-1111#0", 20 * 60_000),
+            at("aaaaaaaa-1111#1", 60_000),
+            // Đã xong từ lâu.
+            at("bbbbbbbb-2222#0", LIVE_IPHONE_SESSION_MS + 1),
+            // Bản ghi trình duyệt và tệp tải lên mới: không phải phiên iPhone.
+            at("Họp sáng", 0),
+            FileDoc::new_upload(owner, "cccccccc-3333#0", "/u.mp3", 10, 1.0, false, ObjectId::new()).for_transcription(),
+        ];
+        let live = live_iphone_sessions(&files, now);
+        assert_eq!(live, ["s:aaaaaaaa-1111".to_string()].into());
+        let (targets, kept) = split_for_delete_all(&files, &live, &HashSet::new());
+        let names = |v: Vec<&FileDoc>| v.into_iter().map(|f| f.name.clone()).collect::<Vec<_>>();
+        assert_eq!(names(kept), ["aaaaaaaa-1111#0", "aaaaaaaa-1111#1"]);
+        assert_eq!(names(targets), ["bbbbbbbb-2222#0", "Họp sáng", "cccccccc-3333#0"]);
     }
 
     #[test]

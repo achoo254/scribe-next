@@ -166,11 +166,10 @@ pub async fn finalize(
         .await
         .map_err(|_| AppError::BadRequest("chưa có dữ liệu ghi".into()))?
         .len();
-    let plan = user::effective_plan(&state.db, &user.0).await?;
-    if size == 0 || size > plan.storage().max_file_bytes {
-        let _ = tokio::fs::remove_file(&part).await;
+    if !finalizable_size(size) {
         return Err(AppError::BadRequest("kích thước bản ghi không hợp lệ".into()));
     }
+    let plan = user::effective_plan(&state.db, &user.0).await?;
     // Magic-byte: MediaRecorder xuất webm (matroska) → infer nhận diện Video. Chỉ nhận audio/video.
     let detected = infer::get_from_path(&part)
         .map_err(|e| AppError::Internal(format!("đọc header: {e}")))?
@@ -258,6 +257,13 @@ pub async fn finalize(
     Ok(Json(FinalizeResp { file_id, name, duration_s }))
 }
 
+/// `.part` finalize được khi có dữ liệu. Cỡ tệp tối đa theo gói KHÔNG xét lại ở đây: chunk đã chặn từng byte
+/// lúc nhận theo gói khi đó, còn gói có thể đã hạ giữa chừng (hết hạn plus khi đang ghi). Xét lại sẽ từ chối
+/// cả phần đã nhận và người dùng mất bản ghi. Dùng chung cho tệp tải lên.
+pub(crate) fn finalizable_size(size: u64) -> bool {
+    size > 0
+}
+
 fn tmp_dir(state: &AppState, user_id: &str) -> String {
     format!("{}/{}/tmp", state.config.data_dir, user_id)
 }
@@ -337,4 +343,20 @@ pub(crate) async fn active_session_keys(state: &AppState, user_id: &str) -> Resu
 fn part_path(state: &AppState, user_id: &str, session_id: &str) -> Result<String, AppError> {
     Uuid::parse_str(session_id).map_err(|_| AppError::BadRequest("session id không hợp lệ".into()))?;
     Ok(format!("{}/{}.part", tmp_dir(state, user_id), session_id))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::finalizable_size;
+    use crate::models::plan::Plan;
+
+    #[test]
+    fn finalize_keeps_what_was_received_after_a_plan_downgrade() {
+        // Ghi 600 MB khi còn plus, gói hạ về free (200 MB/tệp) giữa chừng: phần đã nhận vẫn finalize được.
+        let received = 600 * 1024 * 1024;
+        assert!(received > Plan::Free.storage().max_file_bytes);
+        assert!(finalizable_size(received));
+        assert!(finalizable_size(Plan::Plus.storage().max_file_bytes + 1));
+        assert!(!finalizable_size(0));
+    }
 }

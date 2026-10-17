@@ -29,7 +29,7 @@ const RecordUploadContext = createContext<RecordUploadState | null>(null);
 
 export function RecordUploadProvider({ children }: { children: ReactNode }) {
 	const queryClient = useQueryClient();
-	const upload = useChunkedUpload();
+	const upload = useChunkedUpload("transcribe");
 	const [file, setFile] = useState<File | null>(null);
 
 	// The uploaded file joins "Lịch sử ghi" and counts against the quota.

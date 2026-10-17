@@ -166,7 +166,14 @@ export function BrowserRecordProvider({ children }: { children: ReactNode }) {
 		// Cleared by the effect above once this stop has finished saving.
 		toggling.current = true;
 		const result = await recorder.stop();
-		if (!result) return;
+		if (!result) {
+			// Nothing saved by this stop: the recording had already stopped by
+			// itself (storage full) and saved on its own, possibly while this
+			// flag kept the effect above from refreshing. Show it now.
+			toggling.current = false;
+			void refreshStorage(queryClient, ["recordings"]);
+			return;
+		}
 		if (splitEnabled && minutes !== null) {
 			// The history refreshes when the job ends, so the original does
 			// not flash in before being replaced by its segments.

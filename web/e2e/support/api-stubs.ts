@@ -301,6 +301,8 @@ export async function stubApi(
 	// the size announced at init.
 	const uploaded = new Map<string, number>();
 	let uploadSize = 0;
+	// Only the record page's "Tải tệp lên" asks for a history file.
+	let uploadForHistory = false;
 	// "Lịch sử ghi" and transcripts change as the spec uploads, transcribes
 	// and deletes.
 	let historyItems: RecordingItem[] = [...fixtures.recordings.items];
@@ -483,6 +485,7 @@ export async function stubApi(
 						typeof init.size === "number"
 							? init.size
 							: 0;
+					uploadForHistory = stringField(init, "purpose") === "transcribe";
 					uploaded.set(STUB_IDS.uploadSession, 0);
 					return json(route, 200, { sessionId: STUB_IDS.uploadSession });
 				}
@@ -497,11 +500,14 @@ export async function stubApi(
 					return json(route, 200, { written: offset + size });
 				}
 				case "POST /api/upload/finalize":
-					// Uploads join the history (the record page's "Tải tệp lên").
-					historyItems = [
-						STUB_UPLOADED,
-						...historyItems.filter((item) => item.id !== STUB_UPLOADED.id),
-					];
+					// Like the backend: the record page's "Tải tệp lên" joins the
+					// history, a "Cắt file" upload does not.
+					if (uploadForHistory) {
+						historyItems = [
+							STUB_UPLOADED,
+							...historyItems.filter((item) => item.id !== STUB_UPLOADED.id),
+						];
+					}
 					return json(route, 200, {
 						fileId: STUB_UPLOADED.id,
 						name: STUB_UPLOADED.name,

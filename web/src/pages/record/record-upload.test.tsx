@@ -56,7 +56,11 @@ describe("RecordUpload", () => {
 			"POST /api/upload/chunk?session=s1&offset=0",
 			"POST /api/upload/finalize",
 		]);
-		expect(fake.calls[0]?.body).toEqual({ name: "phong-van.mp3", size: 1024 });
+		expect(fake.calls[0]?.body).toEqual({
+			name: "phong-van.mp3",
+			size: 1024,
+			purpose: "transcribe",
+		});
 		expect(refresh).toHaveBeenCalledWith({ queryKey: ["recordings"] });
 	});
 

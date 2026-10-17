@@ -7,6 +7,7 @@ export interface RecordedCall {
 	body: unknown;
 	credentials: RequestCredentials | undefined;
 	contentType: string | null;
+	keepalive: boolean;
 }
 
 type Reply = Response | Error | ((call: RecordedCall) => Response | Error);
@@ -42,6 +43,7 @@ export function fakeFetch(routes: Record<string, Reply | Reply[]>) {
 				body: typeof init.body === "string" ? JSON.parse(init.body) : init.body,
 				credentials: init.credentials,
 				contentType: headers.get("Content-Type"),
+				keepalive: init.keepalive ?? false,
 			};
 			calls.push(call);
 			const key = `${method} ${url.split("?")[0]}`;

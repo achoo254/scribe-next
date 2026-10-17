@@ -198,8 +198,8 @@ pub async fn create(
     if owned.len() != files.len() {
         return Err(AppError::NotFound("bản ghi không tồn tại".into()));
     }
-    if owned.iter().any(|f| !file::is_history_kind(&f.kind)) {
-        return Err(AppError::BadRequest("chỉ chép lời được bản ghi hoặc tệp tải lên".into()));
+    if owned.iter().any(|f| !f.in_history()) {
+        return Err(AppError::BadRequest("chỉ chép lời được bản ghi hoặc tệp tải lên ở trang Ghi âm".into()));
     }
     let mut needs = HashMap::new();
     for f in &owned {

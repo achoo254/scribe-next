@@ -104,7 +104,7 @@ pub fn schedule_file(db: &Database, user_id: &str, file_id: ObjectId) {
     tokio::spawn(async move {
         match file::list_owned_by_ids(&db, &user_id, &[file_id]).await {
             Ok(files) => {
-                if let Some(key) = files.into_iter().find(|f| file::is_history_kind(&f.kind)).and_then(|f| f.session_key()) {
+                if let Some(key) = files.into_iter().find(file::FileDoc::in_history).and_then(|f| f.session_key()) {
                     schedule(&db, &user_id, &key);
                 }
             }
@@ -134,7 +134,7 @@ async fn transcribed_sessions(db: &Database) -> Result<BTreeSet<(String, String)
     for (user_id, ids) in done {
         let wanted: Vec<ObjectId> = ids.into_iter().collect();
         for f in file::list_owned_by_ids(db, &user_id, &wanted).await? {
-            if let Some(key) = f.session_key().filter(|_| file::is_history_kind(&f.kind)) {
+            if let Some(key) = f.session_key().filter(|_| f.in_history()) {
                 out.insert((user_id.clone(), key));
             }
         }

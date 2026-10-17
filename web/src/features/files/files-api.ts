@@ -4,7 +4,8 @@ import type { TranscriptStatus } from "../transcript/transcript-api";
 
 /**
  * An item of "Lịch sử ghi": a recording (browser or iPhone segment) or an
- * audio/video file the user uploaded; both can be transcribed.
+ * audio/video file uploaded with "Tải tệp lên" on the record page; both can
+ * be transcribed. "Cắt file" uploads are not listed.
  */
 export interface RecordingItem {
 	id: string;
@@ -15,6 +16,8 @@ export interface RecordingItem {
 	hasVideo: boolean;
 	size: number;
 	createdAt?: string;
+	/** When the backend sweeps this file (set by the plan at creation). */
+	expiresAt?: string;
 	/** Set once the recording was sent for transcription. */
 	transcript?: { status: TranscriptStatus } | null;
 }
@@ -33,6 +36,7 @@ export interface ManagedFile {
 	size: number;
 	jobId?: string;
 	createdAt?: string;
+	expiresAt?: string;
 }
 
 export interface Usage {
@@ -103,7 +107,11 @@ export async function deleteFile(
 	);
 }
 
-/** Deletes every recording and upload of the user (not split segments). */
+/**
+ * Deletes what "Lịch sử ghi" lists: recordings and files uploaded on the
+ * record page ("Cắt file" files stay). Spares recordings still in progress
+ * (`skipped`).
+ */
 export function deleteAllFiles(
 	fetcher: typeof fetch = fetch,
 ): Promise<DeleteAllResult> {

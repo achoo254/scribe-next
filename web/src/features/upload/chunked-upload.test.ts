@@ -119,6 +119,24 @@ describe("ChunkedUpload", () => {
 		expect(calls.at(-1)?.body).toEqual({ session: "s2" });
 	});
 
+	it("asks for a history file only when made for transcription", async () => {
+		const { fetcher, calls } = fakeFetch({
+			"POST /api/upload/init": jsonResponse({ sessionId: "s1" }),
+			"GET /api/upload/status": jsonResponse({ written: 3 }),
+			"POST /api/upload/finalize": jsonResponse({
+				fileId: "f1",
+				name: "meeting.mp3",
+				durationS: 1,
+			}),
+		});
+		await new ChunkedUpload(fetcher, CHUNK, "transcribe").upload(fileOf(3));
+		expect(calls[0]?.body).toEqual({
+			name: "meeting.mp3",
+			size: 3,
+			purpose: "transcribe",
+		});
+	});
+
 	it("reports the backend's message when init is refused", async () => {
 		const { fetcher } = fakeFetch({
 			"POST /api/upload/init": jsonResponse(

@@ -76,6 +76,27 @@ describe("RecordingHistory", () => {
 		vi.useRealTimers();
 	});
 
+	it("shows each file's own expiry, not one from the current plan", async () => {
+		const DAY = 86_400_000;
+		const [file] = LIST.items;
+		if (!file) throw new Error("no fixture");
+		renderHistory({
+			"GET /api/files": jsonResponse({
+				retentionDays: 14,
+				items: [
+					{
+						...file,
+						// Made on free (7 days) five days ago; the plan is plus now.
+						createdAt: new Date(Date.now() - 5 * DAY).toISOString(),
+						expiresAt: new Date(Date.now() + 2 * DAY).toISOString(),
+					},
+				],
+			}),
+		});
+		expect(await screen.findByText(/tự xoá sau 2 ngày/)).toBeVisible();
+		expect(screen.queryByText(/tự xoá sau 9 ngày/)).toBeNull();
+	});
+
 	it("deletes with one tap, offers undo, and sends the DELETE when the toast expires", async () => {
 		vi.useFakeTimers({ shouldAdvanceTime: true });
 		const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
@@ -136,6 +157,10 @@ describe("RecordingHistory", () => {
 		await waitFor(() =>
 			expect(deletes(fake.calls)).toEqual(["/api/files/s0", "/api/files/s1"]),
 		);
+		// Sent together and kept alive: closing the tab now cannot cut the session in half.
+		expect(
+			fake.calls.filter((c) => c.method === "DELETE").map((c) => c.keepalive),
+		).toEqual([true, true]);
 	});
 
 	it("sends pending deletes at once when the history leaves the page", async () => {

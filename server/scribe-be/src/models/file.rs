@@ -12,11 +12,13 @@ const COLL: &str = "files";
 
 const DAY_MS: i64 = 86_400_000;
 
-/// Loại file hiện ở "Lịch sử ghi" và chép lời được: bản ghi và tệp tải lên (đoạn cắt `output` thì không).
-pub const HISTORY_KINDS: [&str; 2] = ["recording", "upload"];
+/// `purpose` của tệp tải lên bằng "Tải tệp lên" ở trang Ghi âm. Tệp tải lên ở Cắt file không có `purpose`.
+pub const PURPOSE_TRANSCRIBE: &str = "transcribe";
 
-pub fn is_history_kind(kind: &str) -> bool {
-    HISTORY_KINDS.contains(&kind)
+/// Điều kiện Mongo của file thuộc "Lịch sử ghi" (cùng luật với [`FileDoc::in_history`]): bản ghi, và tệp
+/// tải lên có `purpose` [`PURPOSE_TRANSCRIBE`]. Tệp tải lên ở Cắt file và đoạn cắt `output` thì không.
+pub fn history_filter() -> Document {
+    doc! { "$or": [{ "kind": "recording" }, { "kind": "upload", "purpose": PURPOSE_TRANSCRIBE }] }
 }
 
 /// `expiresAt` = now + `days`. Sweep retention (retention.rs) là tiến trình DUY NHẤT xoá.
@@ -82,6 +84,10 @@ pub struct FileDoc {
     pub has_video: Option<bool>,
     #[serde(rename = "jobId", skip_serializing_if = "Option::is_none")]
     pub job_id: Option<String>,
+    /// Nguồn của tệp tải lên: [`PURPOSE_TRANSCRIBE`] khi tải ở trang Ghi âm; không có với tệp Cắt file và
+    /// các loại khác.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub purpose: Option<String>,
     #[serde(rename = "createdAt")]
     pub created_at: DateTime,
     /// Mốc hết hạn — sweep retention xoá file (disk trước, doc sau) khi `expiresAt < now`.
@@ -91,8 +97,8 @@ pub struct FileDoc {
 }
 
 impl FileDoc {
-    /// Tệp audio/video người dùng tải lên (Cắt file hoặc "Tải tệp lên" ở trang Ghi âm): hiện ở "Lịch sử ghi"
-    /// và chép lời được như bản ghi một file (khoá `f:<id>`).
+    /// Tệp audio/video người dùng tải lên. Mặc định là tệp của Cắt file (không hiện ở "Lịch sử ghi");
+    /// tệp của "Tải tệp lên" ở trang Ghi âm thêm [`FileDoc::for_transcription`].
     pub fn new_upload(
         owner: Owner<'_>,
         name: &str,
@@ -127,9 +133,15 @@ impl FileDoc {
             duration_s: Some(duration_s),
             has_video: Some(has_video),
             job_id: None,
+            purpose: None,
             created_at: DateTime::now(),
             expires_at: owner.expiry(),
         }
+    }
+    /// Đánh dấu tệp tải lên ở trang Ghi âm: hiện ở "Lịch sử ghi" và chép lời được như bản ghi một file
+    /// (khoá `f:<id>`).
+    pub fn for_transcription(self) -> Self {
+        FileDoc { purpose: Some(PURPOSE_TRANSCRIBE.into()), ..self }
     }
     pub fn new_output(owner: Owner<'_>, job_id: &str, name: &str, path: &str, size: i64) -> Self {
         FileDoc {
@@ -142,8 +154,19 @@ impl FileDoc {
             duration_s: None,
             has_video: None,
             job_id: Some(job_id.into()),
+            purpose: None,
             created_at: DateTime::now(),
             expires_at: owner.expiry(),
+        }
+    }
+
+    /// File thuộc "Lịch sử ghi" (cùng luật với [`history_filter`]): chỉ những file này có phiên chép lời,
+    /// vào index tìm kiếm và bị "Xoá tất cả" xoá.
+    pub fn in_history(&self) -> bool {
+        match self.kind.as_str() {
+            "recording" => true,
+            "upload" => self.purpose.as_deref() == Some(PURPOSE_TRANSCRIBE),
+            _ => false,
         }
     }
 
@@ -220,11 +243,13 @@ pub async fn list_outputs_for_job(
     Ok(out)
 }
 
-/// Lịch sử ghi của user (bản ghi + tệp tải lên), mới nhất trước.
+/// Lịch sử ghi của user (bản ghi + tệp tải lên ở trang Ghi âm, [`history_filter`]), mới nhất trước.
 pub async fn list_history(db: &Database, user_id: &str) -> Result<Vec<FileDoc>, AppError> {
+    let mut filter = history_filter();
+    filter.insert("userId", user_id);
     let mut cur = db
         .collection::<FileDoc>(COLL)
-        .find(doc! { "userId": user_id, "kind": { "$in": HISTORY_KINDS.to_vec() } })
+        .find(filter)
         .sort(doc! { "createdAt": -1 })
         .await
         .map_err(|e| AppError::Internal(format!("find recordings: {e}")))?;
@@ -235,7 +260,7 @@ pub async fn list_history(db: &Database, user_id: &str) -> Result<Vec<FileDoc>, 
     Ok(out)
 }
 
-/// File KHÔNG phải bản ghi (upload nguồn Cắt file + đoạn output), mới nhất trước — để UI quản lý
+/// File KHÔNG phải bản ghi (mọi tệp tải lên + đoạn output), mới nhất trước — để UI quản lý
 /// dung lượng (những file này tính quota nhưng không hiện ở "Lịch sử ghi").
 pub async fn list_non_recordings(db: &Database, user_id: &str) -> Result<Vec<FileDoc>, AppError> {
     let mut cur = db
@@ -280,7 +305,7 @@ pub async fn delete_doc(db: &Database, f: &FileDoc) -> Result<(), AppError> {
         .await
         .map_err(|e| AppError::Internal(format!("xoá file doc: {e}")))?;
     super::transcript::delete(db, id).await?;
-    if is_history_kind(&f.kind) {
+    if f.in_history() {
         let key = session_key(&f.kind, &f.name, id);
         if let Err(e) = super::transcript_doc::forget_segment(db, &f.user_id, &key, id).await {
             tracing::warn!(file = %id, "dọn câu sửa và biên bản của phiên lỗi (sweep mồ côi sẽ dọn): {e:?}");
@@ -336,7 +361,10 @@ pub async fn list_session(db: &Database, user_id: &str, key: &str) -> Result<Vec
         // `session` chỉ gồm [0-9a-z-] (đã kiểm) nên đặt thẳng vào regex được.
         doc! { "userId": user_id, "kind": "recording", "name": { "$regex": format!("^{session}#[0-9]+$") } }
     } else if let Some(oid) = key.strip_prefix("f:").and_then(|hex| ObjectId::parse_str(hex).ok()) {
-        doc! { "_id": oid, "userId": user_id, "kind": { "$in": HISTORY_KINDS.to_vec() } }
+        let mut filter = history_filter();
+        filter.insert("_id", oid);
+        filter.insert("userId", user_id);
+        filter
     } else {
         return Ok(Vec::new());
     };
@@ -373,7 +401,9 @@ pub async fn session_heads(db: &Database, user_id: &str, keys: &[String]) -> Res
     }
     let mut any = Vec::new();
     if !ids.is_empty() {
-        any.push(doc! { "_id": { "$in": ids }, "kind": { "$in": HISTORY_KINDS.to_vec() } });
+        let mut by_id = history_filter();
+        by_id.insert("_id", doc! { "$in": ids });
+        any.push(by_id);
     }
     if !sessions.is_empty() {
         // Id phiên chỉ gồm [0-9a-z-] (đã kiểm) nên ghép thẳng vào regex được.
@@ -503,7 +533,31 @@ mod tests {
         let segment = FileDoc::new_recording(owner, "6ad09d56-a5e5#12", "/x.m4a", 1, 60.0, false, id);
         assert_eq!(segment.session_key().as_deref(), Some("s:6ad09d56-a5e5"));
         assert_eq!(segment.segment_index(), 12);
-        assert!(is_history_kind("upload") && is_history_kind("recording") && !is_history_kind("output"));
+    }
+
+    #[test]
+    fn history_holds_recordings_and_record_page_uploads_only() {
+        let owner = Owner { user_id: "u", plan: Plan::Free };
+        let upload = || FileDoc::new_upload(owner, "a.mp3", "/a.mp3", 1, 1.0, false, ObjectId::new());
+        assert!(FileDoc::new_recording(owner, "a", "/a", 1, 1.0, false, ObjectId::new()).in_history());
+        assert!(upload().for_transcription().in_history());
+        // Tệp Cắt file (và doc cũ không có `purpose`), `purpose` lạ, đoạn cắt: không thuộc lịch sử.
+        assert!(!upload().in_history());
+        assert!(!FileDoc { purpose: Some("other".into()), ..upload() }.in_history());
+        assert!(!FileDoc::new_output(owner, "j", "p1", "/p1", 1).in_history());
+        // Truy vấn Mongo cùng luật với `in_history`.
+        assert_eq!(
+            history_filter(),
+            doc! { "$or": [{ "kind": "recording" }, { "kind": "upload", "purpose": "transcribe" }] }
+        );
+        // `purpose` chỉ lưu khi có: tệp Cắt file giữ đúng dạng doc cũ.
+        let stored = mongodb::bson::to_document(&upload()).expect("bson");
+        assert!(!stored.contains_key("purpose"));
+        let stored = mongodb::bson::to_document(&upload().for_transcription()).expect("bson");
+        assert_eq!(stored.get_str("purpose"), Ok("transcribe"));
+        let mut legacy = stored;
+        legacy.remove("purpose");
+        assert_eq!(mongodb::bson::from_document::<FileDoc>(legacy).expect("doc cũ").purpose, None);
     }
 
     #[test]
@@ -576,10 +630,13 @@ mod tests {
         let user = format!("selftest-{}", uuid::Uuid::new_v4());
         let session = format!("selftest-{}", &uuid::Uuid::new_v4().simple().to_string()[..12]);
         let owner = Owner { user_id: &user, plan: Plan::Free };
-        let upload = FileDoc::new_upload(owner, &format!("{session}#0"), "/nonexistent", 5, 9.0, false, ObjectId::new());
+        let upload = FileDoc::new_upload(owner, &format!("{session}#0"), "/nonexistent", 5, 9.0, false, ObjectId::new())
+            .for_transcription();
         let segment = FileDoc::new_recording(owner, &format!("{session}#1"), "/nonexistent", 7, 60.0, false, ObjectId::new());
+        let split_upload = FileDoc::new_upload(owner, "cat.mp3", "/nonexistent", 11, 9.0, false, ObjectId::new());
         let upload_key = upload.session_key().expect("khoá");
-        for f in [upload, segment] {
+        let split_key = split_upload.session_key().expect("khoá");
+        for f in [upload, segment, split_upload] {
             create(&db, f).await.expect("tạo file");
         }
         let names = |v: Vec<(u32, FileDoc)>| v.into_iter().map(|(i, f)| (i, f.kind)).collect::<Vec<_>>();
@@ -588,11 +645,16 @@ mod tests {
         let heads = session_heads(&db, &user, std::slice::from_ref(&upload_key)).await.expect("heads");
         assert_eq!(heads.len(), 1);
         assert_eq!(heads[0].0, upload_key);
+        // Tệp Cắt file: không ở lịch sử, không phải phiên chép lời, nhưng vẫn tính dung lượng.
+        assert!(list_session(&db, &user, &split_key).await.expect("f: cắt").is_empty());
+        assert!(session_heads(&db, &user, &[split_key]).await.expect("heads").is_empty());
         assert_eq!(list_history(&db, &user).await.expect("lịch sử").len(), 2);
-        assert_eq!(user_usage_bytes(&db, &user).await.expect("dung lượng"), 12);
+        assert_eq!(user_usage_bytes(&db, &user).await.expect("dung lượng"), 23);
         for f in list_history(&db, &user).await.expect("lịch sử") {
             delete_doc(&db, &f).await.expect("xoá");
         }
         assert!(list_history(&db, &user).await.expect("lịch sử").is_empty());
+        assert_eq!(list_non_recordings(&db, &user).await.expect("Cắt file").len(), 1);
+        db.collection::<FileDoc>(COLL).delete_many(doc! { "userId": &user }).await.expect("dọn");
     }
 }

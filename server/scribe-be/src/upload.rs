@@ -22,10 +22,20 @@ use uuid::Uuid;
 const SESSIONS: &str = "upload_sessions";
 const MAX_NAME_CHARS: usize = 200;
 
+/// Nguồn của lượt tải lên. Không gửi = Cắt file (tệp không vào "Lịch sử ghi"); giá trị lạ bị từ chối.
+#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+enum Purpose {
+    /// "Tải tệp lên" ở trang Ghi âm: tệp vào "Lịch sử ghi" và chép lời được.
+    Transcribe,
+}
+
 #[derive(Deserialize)]
 pub struct InitReq {
     name: String,
     size: i64,
+    #[serde(default)]
+    purpose: Option<Purpose>,
 }
 #[derive(Serialize)]
 pub struct InitResp {
@@ -57,19 +67,24 @@ pub async fn init(
     tokio::fs::create_dir_all(tmp_dir(&state, &user.0))
         .await
         .map_err(|e| AppError::Internal(format!("tạo tmp dir: {e}")))?;
+    let mut session = doc! {
+        "_id": &session_id,
+        "userId": &user.0,
+        "name": &name,
+        "expectedSize": req.size,
+        "createdAt": DateTime::now(),
+    };
+    let mut details = doc! { "session": &session_id, "name": &name, "size": req.size };
+    if req.purpose == Some(Purpose::Transcribe) {
+        session.insert("purpose", file::PURPOSE_TRANSCRIBE);
+        details.insert("purpose", file::PURPOSE_TRANSCRIBE);
+    }
     state
         .db
         .collection::<Document>(SESSIONS)
-        .insert_one(doc! {
-            "_id": &session_id,
-            "userId": &user.0,
-            "name": &name,
-            "expectedSize": req.size,
-            "createdAt": DateTime::now(),
-        })
+        .insert_one(session)
         .await
         .map_err(|e| AppError::Internal(format!("tạo session: {e}")))?;
-    let details = doc! { "session": &session_id, "name": &name, "size": req.size };
     audit::record(&state, Some(&user.0), "upload.start", details);
     Ok(Json(InitResp { session_id }))
 }
@@ -174,11 +189,10 @@ pub async fn finalize(
         .await
         .map_err(|_| AppError::BadRequest("chưa có dữ liệu upload".into()))?
         .len();
-    let plan = user::effective_plan(&state.db, &user.0).await?;
-    if size == 0 || size > plan.storage().max_file_bytes {
-        let _ = tokio::fs::remove_file(&part).await;
+    if !crate::recordings::finalizable_size(size) {
         return Err(AppError::BadRequest("kích thước file không hợp lệ".into()));
     }
+    let plan = user::effective_plan(&state.db, &user.0).await?;
     // Magic-byte: chỉ nhận audio/video (soát header — không chặn CVE demuxer, xem red-team #15).
     let detected = infer::get_from_path(&part)
         .map_err(|e| AppError::Internal(format!("đọc header: {e}")))?
@@ -205,11 +219,11 @@ pub async fn finalize(
 
     let name = session.get_str("name").unwrap_or("upload").to_string();
     let owner = Owner { user_id: &user.0, plan };
-    let file_id = file::create(
-        &state.db,
-        FileDoc::new_upload(owner, &name, &final_path, size as i64, duration_s, has_video, id),
-    )
-    .await?;
+    let mut upload = FileDoc::new_upload(owner, &name, &final_path, size as i64, duration_s, has_video, id);
+    if session.get_str("purpose") == Ok(file::PURPOSE_TRANSCRIBE) {
+        upload = upload.for_transcription();
+    }
+    let file_id = file::create(&state.db, upload).await?;
 
     let _ = state
         .db
@@ -282,6 +296,14 @@ fn part_path(state: &AppState, user_id: &str, session_id: &str) -> Result<String
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn init_accepts_only_known_purposes() {
+        let parse = |body: &str| serde_json::from_str::<InitReq>(body).map(|r| r.purpose);
+        assert_eq!(parse(r#"{"name":"a","size":1}"#).expect("Cắt file"), None);
+        assert_eq!(parse(r#"{"name":"a","size":1,"purpose":"transcribe"}"#).expect("Ghi âm"), Some(Purpose::Transcribe));
+        assert!(parse(r#"{"name":"a","size":1,"purpose":"history"}"#).is_err());
+    }
 
     #[test]
     fn display_names_are_trimmed_and_capped() {

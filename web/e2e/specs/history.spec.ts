@@ -9,7 +9,8 @@ import { preparePage } from "../support/page-helpers";
 
 /*
  * "Lịch sử ghi" flows on the record page: a file uploaded from the device
- * joins the history and is transcribed like a recording; one-tap delete
+ * joins the history and is transcribed like a recording (a "Cắt file"
+ * upload does not); one-tap delete
  * with "Hoàn tác"; "Xoá tất cả" behind a confirmation.
  */
 
@@ -50,6 +51,31 @@ test("an uploaded audio file shows in the history and can be transcribed", async
 		await expect(row).toContainText(STUB_SENTENCE, { timeout: 1_000 });
 	}).toPass();
 	expect(countOf(api, "POST /api/upload/finalize")).toBe(1);
+	expect(api.unexpected).toEqual([]);
+});
+
+test("a file uploaded on “Cắt file” stays out of the history", async ({
+	page,
+}) => {
+	await preparePage(page, "light");
+	const api = await stubApi(page);
+	await page.goto("/split");
+	await page.getByTestId("split-file-input").setInputFiles({
+		name: "phong-van.mp3",
+		mimeType: "audio/mpeg",
+		buffer: Buffer.alloc(64 * 1024, 1),
+	});
+	await expect(page.getByTestId("split-uploaded")).toBeVisible();
+	expect(countOf(api, "POST /api/upload/finalize")).toBe(1);
+
+	// A fresh load reads "Lịch sử ghi" from the backend again.
+	await page.goto("/record");
+	const history = page.getByTestId("history");
+	await expect(history).toContainText("Họp nhóm sáng thứ Năm.webm");
+	await expect(
+		page.getByTestId(`history-item-${STUB_UPLOADED.id}`),
+	).toHaveCount(0);
+	await expect(history).not.toContainText(STUB_UPLOADED.name);
 	expect(api.unexpected).toEqual([]);
 });
 

@@ -85,7 +85,7 @@ export const record = {
 		deleteAllTitle: "Xoá toàn bộ lịch sử ghi",
 		deleteAllQuestion: { other: "Xoá {count} tệp, tổng {size}?" },
 		deleteAllBody:
-			"Mọi bản ghi và tệp tải lên cùng bản chép lời, biên bản, dấu mốc đi kèm sẽ bị xoá vĩnh viễn. Không thể hoàn tác.",
+			"Mọi bản ghi và tệp tải lên trong danh sách này cùng bản chép lời, biên bản, dấu mốc đi kèm sẽ bị xoá vĩnh viễn. Không thể hoàn tác. Được giữ lại: bản ghi đang ghi (bản ghi iPhone có đoạn mới trong 10 phút qua cũng tính là đang ghi) và bản ghi đang cắt.",
 		deletedAll: { other: "Đã xoá {count} tệp" },
 		deletedAllSkipped: {
 			other: "Giữ lại {count} tệp của bản ghi đang ghi hoặc đang cắt.",
