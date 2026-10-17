@@ -1,6 +1,6 @@
 ---
 title: Gói free — xoá nhanh, xoá tất cả, tải tệp lên, 7 ngày, 200 MB
-status: in-progress
+status: completed
 created: 2026-10-17
 tier: L
 ---
@@ -22,7 +22,7 @@ Yêu cầu chủ dự án 17/10/2026 06:44. Áp cho **gói free**; gói plus gi�
 | Phase | Tier | Trạng thái |
 |---|---|---|
 | 1. Backend + web + test | L | done |
-| 2. Review, deploy (cần chủ dự án cho phép), migration hạn tệp free | M | pending |
+| 2. Review, deploy (cần chủ dự án cho phép), migration hạn tệp free | M | done |
 
 ## Tiêu chí nhận
 - Free: tệp mới hết hạn sau 7 ngày, quota 200 MB (tệp đơn tối đa 200 MB); plus: 14 ngày, 5 GB. `/api/me/usage` và `retentionDays` trả theo gói.
@@ -37,3 +37,9 @@ Yêu cầu chủ dự án 17/10/2026 06:44. Áp cho **gói free**; gói plus gi�
 Không Critical/High. Sửa: M1 hạ gói giữa lúc ghi làm mất cả bản ghi lúc finalize; M2 ngày tự xoá hiện theo gói hiện tại thay vì `expiresAt`;
 M3 xoá tất cả chưa tha phiên iPhone đang ghi; Low: `keepalive` cho xoá thật, làm mới lịch sử khi dừng vì đầy. Chi tiết: `reports/code-reviewer-261017-0714-free-tier-review.md`.
 Chủ dự án 07:16: tệp trang Cắt file không hiện trong "Lịch sử ghi" (và không bị "Xoá tất cả").
+
+## Deploy 17/10 07:30
+Chủ dự án cho phép ("deploy luôn khi xong"). Build từ `218e33a` (code `8b51576`). Sao lưu `/root/scribe-backup-20261017-072952`
+(binary, dist, `files-expiry-before.json`). Binary sha256 `7ad3e9760931192c…`, `index-DCrYGjs5.js`. Health ok, `NRestarts=0`, không ERROR/WARN.
+`admin shorten-free-retention` (xem trước): 0 user free, 0 tệp — cả 57 tệp prod của user duy nhất đang ở gói plus, nên không chạy `--apply`.
+Test Mongo dev 13/13 đạt (test OpenAI thật cần key, bỏ qua).
