@@ -9,7 +9,12 @@ import UIKit
 /// merging its own state.
 ///
 /// Events: `state`, `elapsed`, `level`, `segment`, `notice`, `failure`,
-/// `uploads`, `needsSignIn`, `quotaFull`, `bookmarkAdded`.
+/// `uploads`, `needsSignIn`, `quotaFull`, `bookmarkAdded`, `transcript`.
+///
+/// Live transcript (`start({ realtime: true })`, `RealtimeTranscriber`):
+/// `transcript` events (`type` sentence | partial | status) reach the page
+/// only while it is on screen; when it comes back it replaces its state
+/// with `getTranscript()`.
 ///
 /// Bookmarks pressed on the lock screen or AirPods (`NowPlayingBookmarks`)
 /// are saved here first; the web layer pulls them (`takePendingBookmarks`),
@@ -26,6 +31,7 @@ public class RecorderPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "signOut", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "takePendingBookmarks", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "ackBookmarks", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "getTranscript", returnType: CAPPluginReturnPromise),
     ]
 
     private let recorder = AudioRecorder()
@@ -43,6 +49,10 @@ public class RecorderPlugin: CAPPlugin, CAPBridgedPlugin {
     private var waiting = 0
     private var failed = 0
     private var lastNotice = ""
+    /// Live transcript of the current (or last) recording, if it was asked for.
+    private var realtime: RealtimeTranscriber?
+    private var transcriptSession: (id: String, dir: URL)?
+    private var transcriptStatus = RealtimeTranscriber.Status()
 
     override public func load() {
         recorder.onEvent = { [weak self] event in self?.handle(event) }
@@ -140,14 +150,16 @@ public class RecorderPlugin: CAPPlugin, CAPBridgedPlugin {
 
     // MARK: Methods
 
-    /// `{ userKey, segmentMinutes? }` → starts a session (1-minute segments
-    /// by default: a segment still open when iOS kills the app is lost).
+    /// `{ userKey, segmentMinutes?, realtime? }` → starts a session (1-minute
+    /// segments by default: a segment still open when iOS kills the app is
+    /// lost). `realtime: true` also streams the audio for a live transcript.
     @objc func start(_ call: CAPPluginCall) {
         guard let userKey = call.getString("userKey"), !userKey.isEmpty else {
             call.reject("Thiếu thông tin tài khoản.", "NO_USER")
             return
         }
         let minutes = call.getDouble("segmentMinutes") ?? 1
+        let wantsRealtime = call.getBool("realtime") ?? false
         let sessionId = UUID().uuidString.lowercased()
         Task { @MainActor in
             guard recorder.state == .idle else {
@@ -161,6 +173,10 @@ public class RecorderPlugin: CAPPlugin, CAPBridgedPlugin {
                                                         segmentSeconds: minutes * 60)
                 elapsed = 0
                 lastNotice = ""
+                stopRealtime()
+                transcriptSession = nil
+                transcriptStatus = RealtimeTranscriber.Status()
+                if wantsRealtime { startRealtime(sessionId: sessionId, dir: dir) }
                 recorder.start(sessionId: sessionId, dir: dir, segmentSeconds: minutes * 60)
                 call.resolve(["sessionId": sessionId])
             } catch {
@@ -240,6 +256,61 @@ public class RecorderPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
+    /// `{}` → `{ sessionId, entries: [{ id, atS, text, gapUntilS? }], status }`
+    /// of the current or last recording with a live transcript (sorted by
+    /// position); `sessionId` null and no entries when there is none.
+    @objc func getTranscript(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            let status = self.transcriptStatus.json
+            guard let session = self.transcriptSession else {
+                call.resolve(["sessionId": NSNull(), "entries": [], "status": status])
+                return
+            }
+            Task {
+                let entries = await TranscriptStore.shared.entries(dir: session.dir)
+                call.resolve(["sessionId": session.id, "entries": entries.map(\.json), "status": status])
+            }
+        }
+    }
+
+    // MARK: Live transcript
+
+    /// Its failures stay inside it: the recording never depends on it.
+    private func startRealtime(sessionId: String, dir: URL) {
+        let transcriber = RealtimeTranscriber(sessionId: sessionId, dir: dir) { [weak self] event in
+            self?.handle(event, sessionId: sessionId)
+        }
+        realtime = transcriber
+        transcriptSession = (sessionId, dir)
+        recorder.setPCMSink { buffer, position in transcriber.feed(buffer, at: position) }
+        transcriber.start()
+    }
+
+    private func stopRealtime() {
+        recorder.setPCMSink(nil)
+        realtime?.finish()
+        realtime = nil
+    }
+
+    private func handle(_ event: RealtimeTranscriber.Event, sessionId: String) {
+        guard transcriptSession?.id == sessionId else { return }
+        var data: [String: Any]
+        switch event {
+        case .sentence(let entry):
+            data = entry.json
+            data["type"] = "sentence"
+        case .partial(let id, let atS, let text):
+            data = ["type": "partial", "id": id, "atS": atS, "text": text]
+        case .status(let status):
+            transcriptStatus = status
+            data = status.json
+        }
+        // Off screen the WebView is suspended: it reads getTranscript() when back.
+        guard UIApplication.shared.applicationState == .active else { return }
+        data["sessionId"] = sessionId
+        notifyListeners("transcript", data: data)
+    }
+
     /// A lock-screen or AirPods press: saved to disk at once at the recorder
     /// clock. Returns the position for the Now Playing feedback, nil if not saved.
     private func addNativeBookmark() -> Double? {
@@ -283,6 +354,7 @@ public class RecorderPlugin: CAPPlugin, CAPBridgedPlugin {
                 nowPlaying.start { [weak self] in self?.addNativeBookmark() }
             } else if state == .idle {
                 nowPlaying.stop()
+                stopRealtime()
             }
             notifyListeners("state", data: ["state": state.rawValue])
         case .elapsed(let seconds):

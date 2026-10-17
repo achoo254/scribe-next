@@ -58,6 +58,9 @@ final class AudioRecorder {
     /// segment's frames, the session position the transcript counts.
     private var closedSeconds: Double = 0
     private var recordingFlag = false
+    /// Receives every buffer written to the file with its session position
+    /// (live transcript). Called on the audio thread; must not block.
+    private var pcmSink: ((AVAudioPCMBuffer, Double) -> Void)?
 
     private var segmentLimitSeconds: Double = 60
     private var tapInstalled = false
@@ -276,6 +279,15 @@ final class AudioRecorder {
         }
     }
 
+    /// Sets (or clears) the receiver of the recorded audio. The sink only
+    /// ever sees buffers that were written, at the position they start, so
+    /// its timeline matches the transcript's.
+    func setPCMSink(_ sink: ((AVAudioPCMBuffer, Double) -> Void)?) {
+        fileLock.lock()
+        pcmSink = sink
+        fileLock.unlock()
+    }
+
     // MARK: - Segments
 
     /// Shorter tails (a stop right after a rotation) are dropped, not kept.
@@ -407,12 +419,19 @@ final class AudioRecorder {
 
     private func process(_ buffer: AVAudioPCMBuffer) {
         updateLevel(buffer)
+        fileLock.lock()
+        let sink = pcmSink
+        let position = closedSeconds + (currentRate > 0 ? Double(currentFrames) / currentRate : 0)
+        fileLock.unlock()
         // The file reference lives only inside `write`, so it is released
         // before a rotation reads the closed file back.
         switch write(buffer) {
-        case .ok, .noFile:
+        case .ok:
+            sink?(buffer, position)
+        case .noFile:
             break
         case .rotate:
+            sink?(buffer, position)
             rotate(format: buffer.format, reason: "rotation")
         case .formatChanged:
             rotate(format: buffer.format, reason: "format-change")

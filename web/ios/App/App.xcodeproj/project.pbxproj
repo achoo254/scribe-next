@@ -14,6 +14,8 @@
 		A1B2C3D40000000000000016 /* AudioRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D40000000000000006 /* AudioRecorder.swift */; };
 		A1B2C3D40000000000000015 /* SegmentStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D40000000000000005 /* SegmentStore.swift */; };
 		A1B2C3D4000000000000001B /* NowPlayingBookmarks.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4000000000000000B /* NowPlayingBookmarks.swift */; };
+		A1B2C3D4000000000000001C /* RealtimeTranscriber.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4000000000000000C /* RealtimeTranscriber.swift */; };
+		A1B2C3D4000000000000001D /* TranscriptStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4000000000000000D /* TranscriptStore.swift */; };
 		A1B2C3D40000000000000014 /* NativeFilesPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D40000000000000004 /* NativeFilesPlugin.swift */; };
 		A1B2C3D40000000000000012 /* HoandatAuthPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D40000000000000002 /* HoandatAuthPlugin.swift */; };
 		A1B2C3D40000000000000011 /* MainViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D40000000000000001 /* MainViewController.swift */; };
@@ -36,6 +38,8 @@
 		A1B2C3D40000000000000006 /* AudioRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Recorder/AudioRecorder.swift; sourceTree = "<group>"; };
 		A1B2C3D40000000000000005 /* SegmentStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Recorder/SegmentStore.swift; sourceTree = "<group>"; };
 		A1B2C3D4000000000000000B /* NowPlayingBookmarks.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Recorder/NowPlayingBookmarks.swift; sourceTree = "<group>"; };
+		A1B2C3D4000000000000000C /* RealtimeTranscriber.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Recorder/RealtimeTranscriber.swift; sourceTree = "<group>"; };
+		A1B2C3D4000000000000000D /* TranscriptStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Recorder/TranscriptStore.swift; sourceTree = "<group>"; };
 		A1B2C3D40000000000000004 /* NativeFilesPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeFilesPlugin.swift; sourceTree = "<group>"; };
 		A1B2C3D40000000000000002 /* HoandatAuthPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HoandatAuthPlugin.swift; sourceTree = "<group>"; };
 		A1B2C3D40000000000000001 /* MainViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainViewController.swift; sourceTree = "<group>"; };
@@ -94,6 +98,8 @@
 				A1B2C3D40000000000000006 /* AudioRecorder.swift */,
 				A1B2C3D40000000000000005 /* SegmentStore.swift */,
 				A1B2C3D4000000000000000B /* NowPlayingBookmarks.swift */,
+				A1B2C3D4000000000000000C /* RealtimeTranscriber.swift */,
+				A1B2C3D4000000000000000D /* TranscriptStore.swift */,
 				A1B2C3D40000000000000004 /* NativeFilesPlugin.swift */,
 				A1B2C3D40000000000000002 /* HoandatAuthPlugin.swift */,
 				A1B2C3D40000000000000001 /* MainViewController.swift */,
@@ -196,6 +202,8 @@
 				A1B2C3D40000000000000016 /* AudioRecorder.swift in Sources */,
 				A1B2C3D40000000000000015 /* SegmentStore.swift in Sources */,
 				A1B2C3D4000000000000001B /* NowPlayingBookmarks.swift in Sources */,
+				A1B2C3D4000000000000001C /* RealtimeTranscriber.swift in Sources */,
+				A1B2C3D4000000000000001D /* TranscriptStore.swift in Sources */,
 				A1B2C3D40000000000000014 /* NativeFilesPlugin.swift in Sources */,
 				A1B2C3D40000000000000012 /* HoandatAuthPlugin.swift in Sources */,
 				A1B2C3D40000000000000011 /* MainViewController.swift in Sources */,
