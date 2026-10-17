@@ -36,6 +36,7 @@ Cần trên máy build:
 | Tải lên | `Recorder/UploadQueue.swift` | Mỗi đoạn một bản ghi tên `<sessionId>#<index>`; Lịch sử ghi gom thành một dòng "Bản ghi trên iPhone". Mất phản hồi finalize thì tra theo tên trước khi tạo lại (không sinh bản trùng) |
 | Làm mới phiên | `SessionAuth.swift` | Token thiết bị của Scribe giữ trong Keychain của app (`AfterFirstUnlockThisDeviceOnly`). Phiên mobile 12 giờ; gặp 401 khi đang tải, hàng đợi đổi token thiết bị lấy cookie mới ở `POST /api/auth/native/refresh` (chỉ được khi hoandat-auth còn công nhận máy; thu hồi máy ở `/account` của IdP thì lần làm mới sau thất bại), rồi mới báo "cần đăng nhập lại". Đăng xuất thì xoá token và thiết bị trên server |
 | Chép lời | (không có phần native) | Dùng key OpenAI của server, tính vào phút của tài khoản. `SecretsPlugin.swift` chỉ còn để xoá key người dùng tự nhập ở bản cũ khi đăng xuất |
+| Chép trực tiếp | `Recorder/RealtimeTranscriber.swift`, `Recorder/TranscriptStore.swift` | Xem mục "Chép trực tiếp" bên dưới |
 
 > **Đổi bundle id và đăng nhập (2026-10-16):** app id là `com.hoandat.scribe`, đăng nhập qua hoandat-auth; Firebase đã bỏ hẳn. Bản cài mới là một app khác trên máy: dữ liệu cục bộ của app cũ (đoạn chưa tải, Keychain) không chuyển sang. Refresh token Firebase của bản cũ (nếu có) bị xoá ở lần đăng nhập hoặc đăng xuất kế tiếp.
 
@@ -50,6 +51,18 @@ Khi khoá màn hình, JS của WKWebView bị treo nên nút "Đánh dấu" trê
 - Dừng ghi thì gỡ lệnh, dừng phát im lặng và xoá mục Now Playing. Cấu hình phiên âm thanh (`.playAndRecord`, ưu tiên micro trong máy, cho phép HFP/A2DP) giữ nguyên.
 
 **Chưa kiểm trên máy thật** (Simulator không có micro, không có AirPods): mục Now Playing có hiện khi app thu âm kèm phát im lặng hay không (không hiện thì đường lùi là Live Activity, cần tài khoản Apple trả phí); phát im lặng có làm đổi đường âm AirPods hay tốn pin đáng kể không; AirPods bấm 1/2 lần có tới app không, nhất là khi AirPods đang là micro (HFP); lệnh có tới khi đang có cuộc gọi. Danh sách bấm thử ở mục "Lần cắm iPhone tới" của plan.
+
+## Chép trực tiếp
+
+Công tắc **"Chép trực tiếp"** trên thẻ ghi (mặc định tắt, nhớ lựa chọn trên từng máy ở `localStorage` `scribe.native.realtime`). Bật thì trong lúc ghi, chữ của từng câu hiện ở panel "Đang chép" khoảng 1 giây sau khi người nói ngừng, kèm mốc theo đồng hồ phiên ghi. Đây chỉ là bản xem trước: sau buổi ghi, chép lời cả file chạy như cũ; chữ trực tiếp không lưu thành bản chép lời.
+
+- **Đường đi.** `AudioRecorder` đưa mỗi buffer đã ghi vào file kèm vị trí phiên (`setPCMSink`) cho `RealtimeTranscriber`: đổi sang PCM16 24 kHz mono, cắt khung 100 ms, gửi `input_audio_buffer.append` qua `URLSessionWebSocketTask` tới `wss://api.openai.com/v1/realtime`. Cấu hình phiên (`gpt-4o-mini-transcribe`, `vi`, `server_vad` 500 ms) gắn vào token lúc backend cấp, app không gửi `session.update`. Mốc của câu = vị trí phiên của khung đầu tiên trên socket + `audio_start_ms`.
+- **Token.** Swift xin `POST /api/realtime/token` bằng cookie phiên native (401 thì làm mới bằng token thiết bị như hàng đợi tải lên), vì JS bị treo khi khoá máy. Mỗi token được stream tối đa `reservedSeconds` (backend giữ chỗ trên phút chép lời); còn 20 giây thì xin token mới, mở socket mới, chuyển audio sang, socket cũ gửi `commit` rồi đóng sau 4 giây để câu cuối vẫn về. Token cũ báo số giây đã stream qua `POST /api/realtime/usage` (thử 3 lần; không báo được thì backend tính trọn phần giữ chỗ).
+- **Mất mạng.** Socket đứt thì nối lại với backoff 1–60 giây (token còn hạn thì dùng lại). Trong lúc nối, giữ tối đa 30 giây audio gần nhất để gửi bù; hụt hơn 1 giây thì ghi một dòng "mất đoạn này, chờ bản hoàn chỉnh". Trang hiện "Mất kết nối từ mm:ss".
+- **Lỗi không dừng ghi.** Tài khoản ngoài `REALTIME_EMAILS` (403), hết phút (403 cùng câu như chép lời), chép lời tạm ngưng (503): panel hiện nguyên câu của máy chủ, bản ghi m4a chạy tiếp. Hết phút giữa chừng thì token đang dùng chạy hết phần đã giữ rồi dừng.
+- **Lưu và đọc lại.** Mỗi câu ghi một dòng vào `transcript.jsonl` cạnh `session.json` của phiên (actor `TranscriptStore`, dòng bị cắt dở khi app bị tắt thì bỏ qua). Plugin phát sự kiện `transcript` (`type` sentence | partial | status) khi trang đang hiện; mở lại app, trang thay toàn bộ state bằng `getTranscript()` (`web/src/features/recorder/live-transcript.ts`).
+
+**Chưa đo trên máy thật:** WebSocket có sống khi khoá máy lâu không (Gate 0 bước 2 của Phase 5), số câu nhận được so với số câu `server_vad` chốt, pin khi ghi kèm stream. Danh sách ở mục "Lần cắm iPhone tới" của plan.
 
 ## Đã kiểm / còn phải kiểm trên máy thật
 

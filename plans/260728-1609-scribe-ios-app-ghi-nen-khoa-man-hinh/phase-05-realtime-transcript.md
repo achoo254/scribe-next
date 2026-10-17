@@ -1,7 +1,7 @@
 ---
 phase: 5
 title: "Realtime transcript"
-status: pending
+status: in-progress
 priority: P1
 effort: "L"
 dependencies: [2, 3]
@@ -23,9 +23,10 @@ Chất lượng bản realtime kém bản chép cả file khoảng 5 điểm kh�
 |---|---|---|
 | R1 | Model `gpt-4o-mini-transcribe`, `language: "vi"`, `turn_detection: server_vad` (`silence_duration_ms: 500`) | Chủ sở hữu chọn (2026-10-15): khoảng $0,003/phút, ngân sách $10/tháng. `gpt-live-transcribe` hiện chữ từng từ nhưng tốn $0,017/phút và phải tự làm VAD |
 | R2 | Streaming viết bằng Swift (`URLSessionWebSocketTask`), không viết bằng JS | WKWebView bị đình chỉ khi khoá màn hình (D2). Chữ do Swift giữ; Vue **ghi đè** state từ Swift khi foreground, không merge |
-| R3 | ~~API key chỉ nằm trên backend~~ → **thay bởi T1/T3 của Phase 6** (2026-10-15): key do người dùng tự nhập, nằm trong Keychain của iPhone; app dùng key đó xin token tạm thời cho phiên | Chủ sở hữu chốt key tự nhập; không còn key chung để bảo vệ |
-| R4 | Mất mạng thì realtime hụt đoạn đó, **không** chặn ghi | File AAC vẫn nguyên; Phase 6 chép lại cả file để bù |
-| R5 | Bật/tắt realtime bằng một công tắc trên màn ghi, mặc định bật | Có buổi ghi không được phép gửi audio ra ngoài; tắt thì ghi như Phase 2 |
+| R3 | Key OpenAI **của server** cấp token tạm thời (`POST /api/realtime/token`); key không rời server. Phút realtime tính **chung** hạn mức với chép lời cả file (hạn mức tháng của gói, sổ ngày + quỹ free, trần tổng), giữ chỗ khi cấp token, quyết toán theo số giây app báo. Chỉ email trong biến build `REALTIME_EMAILS` (rỗng = không ai) cho tới khi đo xong trên máy thật | Jev chốt 2026-10-17. Thay quyết định cũ (key người dùng tự nhập, T1/T3 của Phase 6), vì chép lời đã chuyển sang key server có tính phút |
+| R4 | Mất mạng thì realtime hụt đoạn đó, **không** chặn ghi | File AAC vẫn nguyên; chép lời cả file sau buổi ghi vẫn chạy như cũ |
+| R5 | Công tắc "Chép trực tiếp" trên thẻ ghi, **mặc định tắt**, nhớ lựa chọn trên từng máy | Jev chốt 2026-10-17. Có buổi ghi không được phép gửi audio ra ngoài; tắt thì ghi như Phase 2 |
+| R6 | Chữ realtime chỉ là bản xem trước: lưu cạnh phiên trên máy, hiện ở màn ghi, **không** lưu thành bản chép lời | Jev chốt 2026-10-17. Bản chép lời vẫn là kết quả chép cả file sau khi tải lên |
 
 ## Gate 0 — đo trước khi viết code (bắt buộc)
 
@@ -51,7 +52,20 @@ Tạo token qua `POST /v1/realtime/client_secrets` với `session.type = "transc
 | Một token còn hạn mở nhiều phiên | Được (2 phiên liên tiếp) |
 | Phiên dài nhất | Một lần đo: 39,3 phút, 320 câu, rồi đóng mã 1006 (đứt không có khung đóng, không có sự kiện lỗi). Chưa phân biệt được trần phía OpenAI hay mạng phía máy đo |
 
-Hệ quả thiết kế: phiên 80 phút trở lên phải **tự nối lại liên tục** (mở phiên mới, nối câu theo mốc đồng hồ phiên ghi). Theo T1/T3 của Phase 6, app giữ key của người dùng trong Keychain nên tự xin token mới khi cần, không phụ thuộc backend; xin token TTL ngắn (600 giây) mỗi lần nối lại. Bước 2 (WebSocket khi khoá màn hình) vẫn cần iPhone.
+Hệ quả thiết kế: phiên 80 phút trở lên phải **tự nối lại liên tục** (mở phiên mới, nối câu theo mốc đồng hồ phiên ghi). App xin token TTL 600 giây từ backend mỗi khi đổi token (theo R3). Bước 2 (WebSocket khi khoá màn hình) vẫn cần iPhone.
+
+Kiểm lại 2026-10-17 từ Mac bằng đúng đường mã của backend (test `live_realtime_mint_returns_a_ten_minute_token`, key dev): `client_secrets` vẫn nhận cấu hình như trên, trả token `ek_…`, còn 600 giây.
+
+## Đã làm (2026-10-17)
+
+- **Backend** `server/scribe-be/src/realtime.rs` + `models/realtime_token.rs`: `POST /api/realtime/token` → `{token, tokenId, expiresAt, model, reservedSeconds}`; `POST /api/realtime/usage {tokenId, seconds}`. Mỗi token giữ chỗ 600 giây (còn ít thì 300/120/60) qua `usage::reserve`; báo số giây thì quyết toán đúng một lần (`settled`), ghi `transcribe_runs` (`kind: "realtime"`); không báo trong 2 giờ sau khi token hết hạn thì tính trọn phần giữ. Giây báo bị chặn trên bởi thời gian thật từ lúc cấp. Tôn trọng cờ tạm ngưng khi key hỏng (503, OpenAI báo key hỏng lúc cấp token cũng ngắt như chép lời), tài khoản free mới phải chờ, mã lỗi hạn mức dùng chung (`QUOTA_EXCEEDED`, `DAILY_LIMIT`, `CAP_REACHED`, `ACCOUNT_TOO_NEW`); ngoài danh sách → 403 `REALTIME_NOT_ALLOWED`. Audit `realtime.token`, `realtime.blocked`. `admin usage --recompute` cộng token chưa quyết toán.
+- **Swift** `RealtimeTranscriber.swift` (đổi PCM, WebSocket, đổi token trước khi hết phần giữ, nối lại có backoff, giữ 30 giây audio khi đang nối, đánh dấu đoạn hụt), `TranscriptStore.swift` (`transcript.jsonl` cạnh phiên), `AudioRecorder.setPCMSink`, `RecorderPlugin`: `start({realtime})`, sự kiện `transcript`, `getTranscript()`.
+- **Web** (chỉ nhánh native): công tắc "Chép trực tiếp", panel "Đang chép" (`live-transcript-panel.tsx`, state ở `features/recorder/live-transcript.ts`).
+- Chi tiết vận hành: [docs/ios-app.md](../../docs/ios-app.md) mục "Chép trực tiếp".
+
+## Cần iPhone thật
+
+Gate 0 bước 2 và toàn bộ Success Criteria dưới đây (trừ dòng build) — danh sách bấm thử ở mục "Lần cắm iPhone tới" của [plan](./plan.md). Trước khi build prod: thêm email chủ sản phẩm vào `REALTIME_EMAILS` trong `.env.production`.
 
 ## Requirements
 
@@ -84,12 +98,9 @@ AudioRecorder (Phase 2) ── tap PCM ──▶ RealtimeTranscriber.swift
 
 ## Backend
 
-- `POST /api/realtime/token` (cần đăng nhập): trả token tạm thời; key đọc từ env của systemd, không bao giờ trả về client.
-- **Chặn chi phí là bắt buộc**, vì allowlist hiện đang mở cho mọi tài khoản Google (V4):
-  - danh sách email được dùng transcript;
-  - trần phút mỗi người mỗi tháng và trần chung khoảng 1.600 phút/tháng ($10 ÷ $0,006 cho cả realtime và Phase 6);
-  - ghi số phút vào Mongo.
-- Ước lượng phút theo thời lượng phiên do app báo khi đóng phiên, đối chiếu với thời lượng file AAC upload ở Phase 2.
+- `POST /api/realtime/token` (cần đăng nhập): trả token tạm thời; key đọc từ tệp `OPENAI_KEY_PATH` lúc khởi động, không bao giờ trả về client.
+- Chặn chi phí: danh sách `REALTIME_EMAILS`; phút tính chung sổ `transcribe_usage` với chép lời cả file (R3).
+- Số phút theo số giây app báo khi đổi token hoặc dừng ghi (`POST /api/realtime/usage`); không báo thì tính trọn phần đã giữ.
 
 ## Related code files
 
@@ -97,9 +108,9 @@ AudioRecorder (Phase 2) ── tap PCM ──▶ RealtimeTranscriber.swift
 - Create: `web/ios/App/App/Recorder/TranscriptStore.swift`
 - Modify: `web/ios/App/App/Recorder/AudioRecorder.swift` — thêm tap PCM cho nhánh stream
 - Modify: `web/ios/App/App/Recorder/RecorderPlugin.swift` + `.m` — event `transcript`, `getTranscript`, cờ bật/tắt realtime
-- Modify: `web/src/composables/use-recorder-native.ts`, `web/src/views/RecordView.vue` (chỉ nhánh `isNative`)
-- Create: `server/scribe-be/src/realtime.rs` — endpoint token + chặn chi phí
-- Modify: `server/scribe-be/src/routes.rs`, `src/config.rs` (key, allowlist transcript, trần phút)
+- Modify: `web/src/features/recorder/native-recorder.ts`, `web/src/pages/record/record-state.tsx`, `web/src/pages/record/native-record-card.tsx`; create `web/src/features/recorder/live-transcript.ts`, `use-live-transcript.ts`, `web/src/pages/record/live-transcript-panel.tsx` (chỉ nhánh native)
+- Create: `server/scribe-be/src/realtime.rs`, `src/models/realtime_token.rs` — endpoint token + tính phút
+- Modify: `server/scribe-be/src/routes.rs`, `src/config.rs` + `build.rs` (`REALTIME_EMAILS`), `src/admin.rs` (đối soát), `src/transcribe/mod.rs` (dùng chung lỗi hạn mức)
 
 ## Implementation steps
 
@@ -119,7 +130,7 @@ AudioRecorder (Phase 2) ── tap PCM ──▶ RealtimeTranscriber.swift
 - [ ] Tắt công tắc realtime: không có request nào tới OpenAI (kiểm bằng log backend: không cấp token).
 - [ ] Tài khoản ngoài allowlist xin token → 403; chạm trần phút → lỗi rõ ràng, việc ghi vẫn chạy.
 - [ ] Pin ≤ 15% cho 60 phút, đo theo *Cài đặt → Pin*.
-- [ ] `xcodebuild build` EXIT 0, 0 warning; `cargo clippy` sạch; `vue-tsc` EXIT 0.
+- [x] `xcodebuild build` EXIT 0, 0 warning Swift; `cargo clippy` sạch; `tsc` EXIT 0 (2026-10-17).
 
 ## Rủi ro
 
@@ -128,5 +139,6 @@ AudioRecorder (Phase 2) ── tap PCM ──▶ RealtimeTranscriber.swift
 | Không tạo được token tạm thời cho phiên transcription | Cao | Gate 0 bước 1; lối lui là relay qua backend (đo RAM `.65`) |
 | iOS cắt WebSocket khi khoá máy lâu | Cao | Gate 0 bước 2; audio session đang chạy giữ app sống, nối lại có backoff, Phase 6 bù phần hụt |
 | Phiên realtime có trần thời lượng nhỏ hơn buổi họp | Trung bình | Nối lại liên tục với token mới (Gate 0 bước 1) |
-| Chi phí vượt ngân sách | Trung bình | Trần phút ở backend + allowlist email |
+| Chi phí vượt ngân sách | Trung bình | Phút chung hạn mức chép lời + `REALTIME_EMAILS` |
+| App bị tắt trước khi báo số giây | Thấp | Phần giữ chỗ (tối đa 10 phút mỗi token) tính trọn — lệch về phía an toàn cho chi phí |
 | Audio rời máy | Chấp nhận có điều kiện | Công tắc realtime (R5); chỉ chạy khi bật |
