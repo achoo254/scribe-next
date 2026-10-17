@@ -1,10 +1,13 @@
-//! Đo lường chung cho các lượt gọi model chữ (tóm tắt, hỏi đáp), theo đúng một trình tự:
+//! Đo lường chung cho các lượt gọi model chữ (tóm tắt, hỏi đáp, dịch), theo đúng một trình tự:
 //!
 //! 1. lấy một lượt ngày của tính năng (sổ ngày riêng mỗi tính năng);
 //! 2. giữ chỗ chi phí ước lượng trên sổ tháng của tài khoản (dùng chung giữa các tính năng);
 //! 3. giữ chỗ trên trần tổng tháng của chép lời;
-//! 4. mở lượt trong nhật ký (`summary_runs` / `ask_runs`) trước khi gọi;
+//! 4. mở lượt trong nhật ký (`summary_runs` / `ask_runs` / `translate_runs`) trước khi gọi;
 //! 5. sau khi gọi: quyết toán theo token thật, đóng lượt, báo mốc trần.
+//!
+//! Một lượt dịch gọi model nhiều lần (mỗi lô một lần) dưới cùng một phần giữ chỗ: người gọi cộng dồn kết quả
+//! các lần gọi rồi quyết toán một lần bằng [`settle_outcome`].
 //!
 //! Lượt ngày chỉ được trả lại khi OpenAI chắc chắn chưa xử lý gì ([`charge_of`]). Người gọi phải chạy cả
 //! [`reserve`] lẫn [`settle`] bên trong task riêng (`tokio::spawn`): client ngắt kết nối không được để
@@ -56,6 +59,7 @@ fn label(feature: Feature) -> &'static str {
     match feature {
         Feature::Summary => "tóm tắt",
         Feature::Ask => "hỏi đáp",
+        Feature::Translate => "dịch",
     }
 }
 
@@ -63,6 +67,7 @@ pub(crate) fn daily_limit_error(feature: Feature, used: i64, limit: i64, now: ch
     let (code, unit) = match feature {
         Feature::Summary => ("SUMMARY_DAILY_LIMIT", "lượt tóm tắt"),
         Feature::Ask => ("ASK_DAILY_LIMIT", "lượt hỏi"),
+        Feature::Translate => ("TRANSLATE_DAILY_LIMIT", "lượt dịch"),
     };
     AppError::Quota {
         code,
@@ -77,10 +82,11 @@ pub(crate) fn monthly_limit_error(feature: Feature, used_s: i64, limit_s: i64, n
     let code = match feature {
         Feature::Summary => "SUMMARY_MONTHLY_LIMIT",
         Feature::Ask => "ASK_MONTHLY_LIMIT",
+        Feature::Translate => "TRANSLATE_MONTHLY_LIMIT",
     };
     AppError::Quota {
         code,
-        message: "Tháng này tài khoản đã dùng hết hạn mức tóm tắt và hỏi đáp, sẽ mở lại đầu tháng sau.".into(),
+        message: "Tháng này tài khoản đã dùng hết hạn mức tóm tắt, hỏi đáp và dịch, sẽ mở lại đầu tháng sau.".into(),
         used_minutes: usage::used_minutes(used_s),
         limit_minutes: limit_s / 60,
         retry_at: Some(usage::next_reset(now).to_rfc3339()),
@@ -91,6 +97,7 @@ fn cap_error(feature: Feature, now: chrono::DateTime<chrono::Utc>) -> AppError {
     let what = match feature {
         Feature::Summary => "Tóm tắt",
         Feature::Ask => "Hỏi đáp",
+        Feature::Translate => "Dịch",
     };
     AppError::Quota {
         code: "CAP_REACHED",
@@ -104,13 +111,15 @@ fn cap_error(feature: Feature, now: chrono::DateTime<chrono::Utc>) -> AppError {
 /// Lượt ngày và trần chi phí tháng (giây tương đương) của một tài khoản cho một tính năng.
 fn limits_of(state: &AppState, feature: Feature, plan: plan::Plan) -> (i64, i64) {
     let summary = state.config.summary_limits;
-    let ask = state.config.ask_limits;
+    let (ask, translate) = (state.config.ask_limits, state.config.translate_limits);
     let free = plan == plan::Plan::Free;
     let daily = match (feature, free) {
         (Feature::Summary, true) => summary.free_daily,
         (Feature::Summary, false) => summary.paid_daily,
         (Feature::Ask, true) => ask.free_daily,
         (Feature::Ask, false) => ask.paid_daily,
+        (Feature::Translate, true) => translate.free_daily,
+        (Feature::Translate, false) => translate.paid_daily,
     };
     let monthly = if free { summary.free_monthly_seconds } else { summary.paid_monthly_seconds };
     (daily, monthly)
@@ -195,10 +204,29 @@ pub(crate) async fn reserve(
     }
 }
 
+/// Kết quả ghi sổ của một lượt (một hay nhiều lần gọi model).
+pub(crate) struct Outcome {
+    /// Chi phí ghi sổ (giây tương đương).
+    pub cost_s: i64,
+    /// Trả lại lượt ngày: OpenAI chắc chắn chưa xử lý lần gọi nào.
+    pub refund: bool,
+    pub input_tokens: i64,
+    pub output_tokens: i64,
+    pub ok: bool,
+}
+
 /// Bước 5: quyết toán phần đã giữ theo kết quả gọi model. Trả chi phí đã ghi sổ (giây tương đương).
 pub(crate) async fn settle<T>(state: &AppState, r: &Reservation, call: &llm::Call<T>) -> i64 {
-    let db = &state.db;
     let (cost_s, refund) = charge_of(call, r.estimate);
+    let (input_tokens, output_tokens) = call.tokens();
+    let ok = call.result.as_ref().is_ok_and(|c| c.draft.is_ok());
+    settle_outcome(state, r, &Outcome { cost_s, refund, input_tokens, output_tokens, ok }).await
+}
+
+/// Bước 5 với kết quả đã cộng dồn (lượt gọi model nhiều lần). Trả chi phí đã ghi sổ.
+pub(crate) async fn settle_outcome(state: &AppState, r: &Reservation, outcome: &Outcome) -> i64 {
+    let db = &state.db;
+    let Outcome { cost_s, refund, input_tokens, output_tokens, ok } = *outcome;
     if let Err(e) = usage::settle_total(db, &r.month, cost_s - r.estimate).await {
         tracing::error!(cost_s, estimate = r.estimate, "quyết toán trần cho {} lỗi: {e:?}", label(r.feature));
     }
@@ -208,8 +236,6 @@ pub(crate) async fn settle<T>(state: &AppState, r: &Reservation, call: &llm::Cal
     if refund {
         ledger::refund_daily(db, r.feature, &r.user_id, &r.day).await;
     }
-    let (input_tokens, output_tokens) = call.tokens();
-    let ok = call.result.as_ref().is_ok_and(|c| c.draft.is_ok());
     let closing = ledger::Closing { input_tokens, output_tokens, cost_s, ok };
     ledger::close_run(db, r.feature, r.run_id, &closing).await;
     transcribe::note_cap_levels(state, &r.month).await;
@@ -274,5 +300,14 @@ mod tests {
         assert!(message.contains("30/30 lượt hỏi"));
         let AppError::Quota { code, .. } = monthly_limit_error(Feature::Ask, 1, 2, now) else { panic!("phải là Quota") };
         assert_eq!(code, "ASK_MONTHLY_LIMIT");
+        let AppError::Quota { code, message, .. } = daily_limit_error(Feature::Translate, 3, 3, now) else {
+            panic!("phải là Quota");
+        };
+        assert_eq!(code, "TRANSLATE_DAILY_LIMIT");
+        assert!(message.contains("3/3 lượt dịch"));
+        let AppError::Quota { code, .. } = monthly_limit_error(Feature::Translate, 1, 2, now) else { panic!("phải là Quota") };
+        assert_eq!(code, "TRANSLATE_MONTHLY_LIMIT");
+        let AppError::Quota { code, .. } = cap_error(Feature::Translate, now) else { panic!("phải là Quota") };
+        assert_eq!(code, "CAP_REACHED");
     }
 }

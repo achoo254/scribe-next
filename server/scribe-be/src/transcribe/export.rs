@@ -1,6 +1,7 @@
 //! Xuất transcript ra txt/srt/vtt (lời chép, phụ đề) và md/docx (tài liệu cuộc họp). Một phiên ghi
 //! iPhone là nhiều file (mỗi đoạn một file): ghép theo thứ tự, mốc của file sau cộng dồn thời lượng các
-//! file trước.
+//! file trước. Xuất bản dịch: người gọi thay chữ câu bằng bản dịch; md/docx dùng nhãn mục theo ngôn ngữ
+//! ([`Labels`]), biên bản giữ nguyên ngôn ngữ gốc.
 
 use super::chunking::Sentence;
 use crate::models::transcript_doc::{Bookmark, StoredSummary};
@@ -49,6 +50,49 @@ impl Format {
     }
 }
 
+/// Chữ cố định của tài liệu cuộc họp theo ngôn ngữ.
+#[derive(Debug, PartialEq)]
+pub struct Labels {
+    /// Tiêu đề khi phiên không có tên.
+    pub untitled: &'static str,
+    pub duration: &'static str,
+    pub summary: &'static str,
+    pub decisions: &'static str,
+    pub actions: &'static str,
+    pub owner: &'static str,
+    pub due: &'static str,
+    pub bookmarks: &'static str,
+    /// Tên dấu mốc không có nhãn, kèm số thứ tự.
+    pub bookmark: &'static str,
+    pub transcript: &'static str,
+}
+
+pub const VI: Labels = Labels {
+    untitled: "Bản chép lời",
+    duration: "Thời lượng",
+    summary: "Tóm tắt",
+    decisions: "Quyết định",
+    actions: "Việc cần làm",
+    owner: "Người làm",
+    due: "Hạn",
+    bookmarks: "Dấu mốc",
+    bookmark: "Dấu mốc",
+    transcript: "Lời chép",
+};
+
+pub const EN: Labels = Labels {
+    untitled: "Transcript",
+    duration: "Duration",
+    summary: "Summary",
+    decisions: "Decisions",
+    actions: "Action items",
+    owner: "Owner",
+    due: "Due",
+    bookmarks: "Bookmarks",
+    bookmark: "Bookmark",
+    transcript: "Transcript",
+};
+
 /// Transcript của một file kèm mốc bắt đầu của file đó trong bản ghép.
 pub struct Part<'a> {
     pub offset_s: f64,
@@ -64,6 +108,7 @@ pub struct Meeting<'a> {
     pub summary: Option<&'a StoredSummary>,
     /// Theo thứ tự thời gian.
     pub bookmarks: &'a [Bookmark],
+    pub labels: &'a Labels,
 }
 
 pub fn to_txt(parts: &[Part<'_>]) -> String {
@@ -160,13 +205,14 @@ fn one_line(text: &str) -> String {
 
 /// Thứ tự: tiêu đề, giờ và thời lượng, tóm tắt, quyết định, việc cần làm, dấu mốc, lời chép. Mục trống bị bỏ.
 fn outline(meeting: &Meeting<'_>, parts: &[Part<'_>]) -> Vec<Block> {
+    let labels = meeting.labels;
     let mut blocks = vec![Block::Title(one_line(meeting.title))];
     let mut meta = Vec::new();
     if let Some(started) = &meeting.started {
         meta.push(started.clone());
     }
     if meeting.duration_s > 0.0 {
-        meta.push(format!("Thời lượng {}", clock(meeting.duration_s)));
+        meta.push(format!("{} {}", labels.duration, clock(meeting.duration_s)));
     }
     if !meta.is_empty() {
         blocks.push(Block::Meta(meta.join(" · ")));
@@ -181,7 +227,7 @@ fn outline(meeting: &Meeting<'_>, parts: &[Part<'_>]) -> Vec<Block> {
             .map(|l| Block::Paragraph(l.to_string()))
             .collect();
         if !paragraphs.is_empty() {
-            blocks.push(Block::Heading("Tóm tắt"));
+            blocks.push(Block::Heading(labels.summary));
             blocks.extend(paragraphs);
         }
         let decisions: Vec<Block> = summary
@@ -191,7 +237,7 @@ fn outline(meeting: &Meeting<'_>, parts: &[Part<'_>]) -> Vec<Block> {
             .map(|d| Block::Item { at: d.at, text: one_line(&d.text) })
             .collect();
         if !decisions.is_empty() {
-            blocks.push(Block::Heading("Quyết định"));
+            blocks.push(Block::Heading(labels.decisions));
             blocks.extend(decisions);
         }
         let actions: Vec<Block> = summary
@@ -201,10 +247,10 @@ fn outline(meeting: &Meeting<'_>, parts: &[Part<'_>]) -> Vec<Block> {
             .map(|a| {
                 let mut details = Vec::new();
                 if let Some(owner) = a.owner.as_deref().map(one_line).filter(|o| !o.is_empty()) {
-                    details.push(format!("Người làm: {owner}"));
+                    details.push(format!("{}: {owner}", labels.owner));
                 }
                 if let Some(due) = a.due.as_deref().map(one_line).filter(|d| !d.is_empty()) {
-                    details.push(format!("Hạn: {due}"));
+                    details.push(format!("{}: {due}", labels.due));
                 }
                 let text = one_line(&a.text);
                 let text = if details.is_empty() { text } else { format!("{text} ({})", details.join("; ")) };
@@ -212,16 +258,16 @@ fn outline(meeting: &Meeting<'_>, parts: &[Part<'_>]) -> Vec<Block> {
             })
             .collect();
         if !actions.is_empty() {
-            blocks.push(Block::Heading("Việc cần làm"));
+            blocks.push(Block::Heading(labels.actions));
             blocks.extend(actions);
         }
     }
 
     if !meeting.bookmarks.is_empty() {
-        blocks.push(Block::Heading("Dấu mốc"));
+        blocks.push(Block::Heading(labels.bookmarks));
         blocks.extend(meeting.bookmarks.iter().enumerate().map(|(i, b)| {
             let label = b.label.as_deref().map(one_line).filter(|l| !l.is_empty());
-            Block::Item { at: b.at, text: label.unwrap_or_else(|| format!("Dấu mốc {}", i + 1)) }
+            Block::Item { at: b.at, text: label.unwrap_or_else(|| format!("{} {}", labels.bookmark, i + 1)) }
         }));
     }
 
@@ -232,7 +278,7 @@ fn outline(meeting: &Meeting<'_>, parts: &[Part<'_>]) -> Vec<Block> {
         .map(|(at, text)| Block::Line { at, text })
         .collect();
     if !lines.is_empty() {
-        blocks.push(Block::Heading("Lời chép"));
+        blocks.push(Block::Heading(labels.transcript));
         blocks.extend(lines);
     }
     blocks
@@ -394,6 +440,7 @@ mod tests {
             duration_s: 3730.0,
             summary: Some(&stored),
             bookmarks: &marks,
+            labels: &VI,
         };
         assert_eq!(
             to_md(&meeting, &parts),
@@ -420,8 +467,33 @@ mod tests {
     fn md_omits_empty_sections() {
         let sentences = [s(0.0, 1.0, "Xin chào.")];
         let parts = [Part { offset_s: 0.0, sentences: &sentences }];
-        let meeting = Meeting { title: "Ghi âm", started: None, duration_s: 0.0, summary: None, bookmarks: &[] };
+        let meeting = Meeting { title: "Ghi âm", started: None, duration_s: 0.0, summary: None, bookmarks: &[], labels: &VI };
         assert_eq!(to_md(&meeting, &parts), "# Ghi âm\n\n## Lời chép\n\n[00:00] Xin chào.\n");
+    }
+
+    #[test]
+    fn md_of_a_translation_uses_english_headings_and_keeps_the_minutes() {
+        let sentences = [s(1.0, 2.0, "Opening."), s(70.0, 72.0, "Price agreed at 5 million.")];
+        let parts = [Part { offset_s: 0.0, sentences: &sentences }];
+        let stored = summary();
+        let marks = bookmarks();
+        let meeting = Meeting {
+            title: "Họp khách hàng",
+            started: Some("09:30 17/10/2026".into()),
+            duration_s: 75.0,
+            summary: Some(&stored),
+            bookmarks: &marks,
+            labels: &EN,
+        };
+        let md = to_md(&meeting, &parts);
+        for heading in ["## Summary", "## Decisions", "## Action items", "## Bookmarks", "## Transcript", "Duration 01:15"] {
+            assert!(md.contains(heading), "thiếu {heading:?}");
+        }
+        // Biên bản giữ nguyên ngôn ngữ gốc; chỉ nhãn quanh nó theo ngôn ngữ xuất.
+        assert!(md.contains("- [1:02:05] Gửi hợp đồng (Owner: Lan; Due: thứ Sáu)"));
+        assert!(md.contains("- [00:30] Bookmark 2"));
+        assert!(md.contains("[01:10] Price agreed at 5 million."));
+        assert!(!md.contains("Lời chép") && !md.contains("Tóm tắt"));
     }
 
     #[test]
@@ -436,6 +508,7 @@ mod tests {
             duration_s: 70.0,
             summary: Some(&stored),
             bookmarks: &marks,
+            labels: &VI,
         };
         let bytes = to_docx(&meeting, &parts).expect("tạo docx");
         let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes)).expect("docx là zip hợp lệ");

@@ -48,13 +48,13 @@ const PER_MINUTE: u32 = 6;
 pub(crate) const PAUSED: &str = "Tóm tắt và hỏi đáp đang tạm ngưng, quản trị đã được báo. Thử lại sau.";
 const FAILED: &str = "Không tạo được biên bản lúc này, thử lại sau.";
 
-/// Trạng thái chung của các tính năng gọi model chữ (tóm tắt, hỏi đáp) trong tiến trình.
+/// Trạng thái chung của các tính năng gọi model chữ (tóm tắt, hỏi đáp, dịch) trong tiến trình.
 #[derive(Default)]
 pub struct Summaries {
     /// Các lượt đang chạy (`<userId>|<slot>`): slot là khoá phiên khi tóm tắt (tối đa một lượt mỗi
-    /// phiên) hoặc [`ASK_SLOT`] khi hỏi đáp (tối đa một câu hỏi đang chạy mỗi người).
+    /// phiên), [`ASK_SLOT`] khi hỏi đáp (tối đa một câu hỏi đang chạy mỗi người), `tr:<khoá phiên>` khi dịch.
     keys: Mutex<HashSet<String>>,
-    /// Lượt tóm tắt hay hỏi đáp gặp lỗi key/credit: hai tính năng này (cùng một API Chat Completions)
+    /// Lượt tóm tắt, hỏi đáp hay dịch gặp lỗi key/credit: các tính năng này (cùng một API Chat Completions)
     /// tạm ngưng tới khi khởi động lại, chép lời không bị ngắt theo (chép lời tự ngắt khi chính nó gặp lỗi đó).
     paused: AtomicBool,
 }
@@ -73,6 +73,11 @@ impl Summaries {
         let id = format!("{user_id}|{slot}");
         let mut keys = self.keys.lock().unwrap_or_else(|p| p.into_inner());
         keys.insert(id.clone()).then(|| RunningGuard { summaries: Arc::clone(self), id })
+    }
+
+    /// Lượt `slot` của user đang chạy trong tiến trình này.
+    pub(crate) fn is_running(&self, user_id: &str, slot: &str) -> bool {
+        self.keys.lock().unwrap_or_else(|p| p.into_inner()).contains(&format!("{user_id}|{slot}"))
     }
 
     pub(crate) fn paused(&self) -> bool {

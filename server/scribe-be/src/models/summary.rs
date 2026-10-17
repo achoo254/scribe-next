@@ -1,8 +1,8 @@
-//! Sổ của các tính năng gọi model chữ (`summary_usage`): tóm tắt và hỏi đáp ([`Feature`]). Lượt mỗi ngày
-//! giờ Việt Nam của từng tài khoản tính riêng theo tính năng (doc `<userId>:<YYYY-MM-DD>` cho tóm tắt,
-//! `ask:<userId>:<YYYY-MM-DD>` cho hỏi đáp, trường `count`); chi phí tháng của từng tài khoản dùng chung
-//! một doc `cost:<userId>:<YYYY-MM>` (trường `costS` — giây chép lời tương đương). Nhật ký mỗi lượt gọi
-//! model ở `summary_runs` / `ask_runs`: mở (`open: true`, kèm phần đã giữ `reservedS`) trước khi gọi, đóng
+//! Sổ của các tính năng gọi model chữ (`summary_usage`): tóm tắt, hỏi đáp và dịch ([`Feature`]). Lượt mỗi
+//! ngày giờ Việt Nam của từng tài khoản tính riêng theo tính năng (doc `<userId>:<YYYY-MM-DD>` cho tóm tắt,
+//! `ask:<userId>:<YYYY-MM-DD>` cho hỏi đáp, `tr:<userId>:<YYYY-MM-DD>` cho dịch, trường `count`); chi phí
+//! tháng của từng tài khoản dùng chung một doc `cost:<userId>:<YYYY-MM>` (trường `costS` — giây chép lời
+//! tương đương). Nhật ký mỗi lượt gọi model ở `summary_runs` / `ask_runs` / `translate_runs`: mở (`open: true`, kèm phần đã giữ `reservedS`) trước khi gọi, đóng
 //! khi quyết toán (token, `costS`). Lượt còn mở cho lệnh đối soát biết có lượt đang chạy.
 //!
 //! Như sổ phút chép lời: Mongo prod là standalone, mỗi bước là một lệnh nguyên tử trên một doc.
@@ -13,24 +13,29 @@ use mongodb::bson::{doc, oid::ObjectId, DateTime, Document};
 use mongodb::Database;
 
 const USAGE_COLL: &str = "summary_usage";
-/// Lượt mở lâu hơn chừng này là lượt bỏ dở (máy chủ tắt giữa chừng): một lượt thật xong trong ~90 giây.
+/// Lượt mở lâu hơn chừng này là lượt bỏ dở (máy chủ tắt giữa chừng): một lượt tóm tắt hay hỏi đáp thật xong
+/// trong ~90 giây. Lượt dịch gọi model theo từng lô nên dài hơn ([`Feature::stale_minutes`]).
 pub const OPEN_RUN_STALE_MINUTES: i64 = 10;
+/// Lượt dịch một bản ghi ~3 giờ (vài chục lô, mỗi lô tới ~80 giây) vẫn xong dưới mức này.
+const TRANSLATE_RUN_STALE_MINUTES: i64 = 60;
 
 /// Tính năng có sổ lượt ngày riêng; chi phí tháng của tài khoản và trần tổng dùng chung.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Feature {
     Summary,
     Ask,
+    Translate,
 }
 
 impl Feature {
     /// Tất cả tính năng (lệnh đối soát cộng chi phí của từng cái).
-    pub const ALL: [Feature; 2] = [Feature::Summary, Feature::Ask];
+    pub const ALL: [Feature; 3] = [Feature::Summary, Feature::Ask, Feature::Translate];
 
     fn day_doc(self, user_id: &str, day: &str) -> String {
         match self {
             Feature::Summary => format!("{user_id}:{day}"),
             Feature::Ask => format!("ask:{user_id}:{day}"),
+            Feature::Translate => format!("tr:{user_id}:{day}"),
         }
     }
 
@@ -39,6 +44,15 @@ impl Feature {
         match self {
             Feature::Summary => "summary_runs",
             Feature::Ask => "ask_runs",
+            Feature::Translate => "translate_runs",
+        }
+    }
+
+    /// Lượt mở lâu hơn chừng này phút là lượt bỏ dở.
+    pub fn stale_minutes(self) -> i64 {
+        match self {
+            Feature::Translate => TRANSLATE_RUN_STALE_MINUTES,
+            Feature::Summary | Feature::Ask => OPEN_RUN_STALE_MINUTES,
         }
     }
 
@@ -47,6 +61,7 @@ impl Feature {
         match self {
             Feature::Summary => "summary",
             Feature::Ask => "ask",
+            Feature::Translate => "translate",
         }
     }
 }
@@ -217,9 +232,9 @@ pub async fn close_run(db: &Database, feature: Feature, id: ObjectId, closing: &
     }
 }
 
-/// Số lượt của tính năng trong tháng đang chạy (mở chưa quá [`OPEN_RUN_STALE_MINUTES`] phút).
+/// Số lượt của tính năng trong tháng đang chạy (mở chưa quá [`Feature::stale_minutes`] phút).
 pub async fn running_count(db: &Database, feature: Feature, month: &str) -> Result<u64, AppError> {
-    let since = DateTime::from_millis(DateTime::now().timestamp_millis() - OPEN_RUN_STALE_MINUTES * 60_000);
+    let since = DateTime::from_millis(DateTime::now().timestamp_millis() - feature.stale_minutes() * 60_000);
     db.collection::<Document>(feature.runs_coll())
         .count_documents(doc! { "month": month, "open": true, "startedAt": { "$gte": since } })
         .await
@@ -273,6 +288,10 @@ mod tests {
         assert_eq!(used_daily(&db, Feature::Ask, &user, day).await.expect("đọc"), 0);
         assert!(take_daily(&db, Feature::Ask, &user, day, 1).await.expect("hỏi"));
         assert!(!take_daily(&db, Feature::Ask, &user, day, 1).await.expect("hết lượt hỏi"));
+        // Dịch cũng có sổ ngày riêng.
+        assert!(take_daily(&db, Feature::Translate, &user, day, 1).await.expect("dịch"));
+        assert!(!take_daily(&db, Feature::Translate, &user, day, 1).await.expect("hết lượt dịch"));
+        assert_eq!(used_daily(&db, Feature::Summary, &user, day).await.expect("đọc"), 10);
 
         // Sổ chi phí tháng: giữ đồng thời không vượt trần; quyết toán trả phần dư.
         let month = "test-month";

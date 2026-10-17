@@ -202,6 +202,18 @@ impl Loaded {
             .collect()
     }
 
+    /// Chữ từng câu (đã áp câu sửa) của mỗi đoạn theo thứ tự, chỉ số câu đúng như màn hình đọc; đoạn chưa chép
+    /// xong có danh sách rỗng. Bản dịch gắn câu theo `(fileId, chỉ số)`.
+    pub fn segment_texts(&self) -> Vec<(&str, Vec<&str>)> {
+        self.segments
+            .iter()
+            .map(|seg| {
+                let texts = if seg.status == "done" { seg.sentences.iter().map(|s| s.text.as_str()).collect() } else { Vec::new() };
+                (seg.file_id.as_str(), texts)
+            })
+            .collect()
+    }
+
     /// Câu đã chép xong (đã áp câu sửa) kèm giây bắt đầu tính theo cả phiên — cùng mốc với màn hình đọc.
     pub fn timed_sentences(&self) -> Vec<(f64, &str)> {
         self.segments
@@ -329,7 +341,7 @@ pub async fn list(State(state): State<AppState>, Extension(user): Extension<User
 }
 
 /// `GET /api/transcript-docs/{key}` — toàn bộ transcript của phiên, đoạn theo thứ tự ghi, kèm biên bản
-/// (`stale` khi chữ đã đổi từ lúc tóm tắt) và dấu mốc theo thứ tự thời gian.
+/// (`stale` khi chữ đã đổi từ lúc tóm tắt), dấu mốc theo thứ tự thời gian và trạng thái các bản dịch.
 pub async fn get(
     State(state): State<AppState>,
     Extension(user): Extension<UserId>,
@@ -342,6 +354,7 @@ pub async fn get(
     });
     let mut bookmarks = loaded.doc.as_ref().map(|d| d.bookmarks.clone()).unwrap_or_default();
     bookmarks.sort_by(|a, b| a.at.total_cmp(&b.at));
+    let translations = crate::translate::summaries_of(&state, &user.0, &key).await?;
     Ok(Json(json!({
         "key": key,
         "title": loaded.doc.as_ref().and_then(|d| d.title.clone()),
@@ -351,6 +364,7 @@ pub async fn get(
         "missingIndexes": missing_indexes(&key, &loaded.files),
         "summary": summary,
         "bookmarks": bookmarks,
+        "translations": translations,
     })))
 }
 
@@ -464,7 +478,7 @@ pub async fn save_segment(
     Ok(Json(json!({ "ok": true })))
 }
 
-/// `DELETE /api/transcript-docs/{key}` — xoá kết quả chép lời của mọi đoạn và phần người dùng sửa;
+/// `DELETE /api/transcript-docs/{key}` — xoá kết quả chép lời của mọi đoạn, phần người dùng sửa và bản dịch;
 /// audio giữ nguyên.
 pub async fn delete(
     State(state): State<AppState>,
@@ -474,6 +488,7 @@ pub async fn delete(
     let files = session_files(&state.db, &user.0, &key).await?;
     let removed = transcript::delete_owned(&state.db, &user.0, &file_ids(&files)).await?;
     transcript_doc::delete(&state.db, &user.0, &key).await?;
+    crate::models::translation::delete(&state.db, &user.0, &key).await?;
     // Đồng bộ: câu đã xoá không được còn tìm thấy hay bị gửi cho hỏi đáp (lỗi thì quét mồ côi dọn sau).
     search::index::clear(&state.db, &user.0, &key).await?;
     let details = doc! { "key": &key, "segments": files.len() as i64, "transcripts": removed as i64 };

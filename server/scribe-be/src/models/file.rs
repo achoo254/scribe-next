@@ -314,6 +314,9 @@ pub async fn delete_doc(db: &Database, f: &FileDoc) -> Result<(), AppError> {
         if let Err(e) = super::transcript_doc::forget_segment(db, &f.user_id, &key, id).await {
             tracing::warn!(file = %id, "dọn câu sửa và biên bản của phiên lỗi (sweep mồ côi sẽ dọn): {e:?}");
         }
+        if let Err(e) = super::translation::forget_file(db, &f.user_id, &key, id).await {
+            tracing::warn!(file = %id, "gỡ câu dịch của đoạn lỗi (sweep mồ côi chỉ dọn khi phiên hết file): {e:?}");
+        }
         if let Err(e) = crate::search::index::forget_file(db, &f.user_id, &key, id).await {
             tracing::warn!(file = %id, "xoá câu của file khỏi index lỗi (sweep mồ côi sẽ dọn): {e:?}");
         }

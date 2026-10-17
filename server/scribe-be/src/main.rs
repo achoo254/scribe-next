@@ -23,6 +23,7 @@ mod session;
 mod state;
 mod summary;
 mod transcribe;
+mod translate;
 mod upload;
 mod worker;
 
@@ -65,6 +66,11 @@ async fn main() {
     // Index unique `transcript_docs` phải có trước request đầu tiên: upsert đua nhau dựa vào nó để
     // không tạo hai doc cho một phiên. Không tạo được thì dừng thay vì chạy thiếu bảo đảm.
     if let Err(e) = models::transcript_doc::ensure_indexes(&db).await {
+        tracing::error!("{e}");
+        std::process::exit(1);
+    }
+    // Index unique bản dịch: hai lượt dịch bắt đầu cùng lúc chỉ tạo một doc mỗi ngôn ngữ.
+    if let Err(e) = models::translation::ensure_indexes(&db).await {
         tracing::error!("{e}");
         std::process::exit(1);
     }

@@ -39,21 +39,23 @@ const DEFAULT_SUMMARY_PAID_MONTHLY_MINUTES: i64 = 600;
 const DEFAULT_SUMMARY_MODEL: &str = "gpt-4.1-mini";
 /// Hỏi đáp trên bản chép lời: lượt mỗi ngày giờ Việt Nam (Jev chốt 16/10/2026). Trần chi phí tháng của
 /// tài khoản dùng chung với tóm tắt.
-const DEFAULT_ASK_FREE_DAILY: i64 = 30;
-const DEFAULT_ASK_PAID_DAILY: i64 = 200;
+const DEFAULT_ASK_DAILY: (i64, i64) = (30, 200);
+/// Dịch lời chép: lượt mỗi ngày giờ Việt Nam (Jev chốt 17/10/2026). Trần chi phí tháng của tài khoản dùng
+/// chung với tóm tắt và hỏi đáp.
+const DEFAULT_TRANSLATE_DAILY: (i64, i64) = (3, 20);
 
-/// Lượt hỏi đáp mỗi ngày (giờ Việt Nam) theo gói.
+/// Lượt mỗi ngày (giờ Việt Nam) theo gói của một tính năng gọi model chữ có sổ ngày riêng (hỏi đáp, dịch).
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct AskLimits {
+pub struct DailyLimits {
     pub free_daily: i64,
     pub paid_daily: i64,
 }
 
-impl AskLimits {
-    /// Sai dạng hoặc âm thì dùng mặc định.
-    fn from_parts(free: Option<&str>, paid: Option<&str>) -> Self {
+impl DailyLimits {
+    /// `defaults` = (free, trả phí). Sai dạng hoặc âm thì dùng mặc định.
+    fn from_parts(free: Option<&str>, paid: Option<&str>, defaults: (i64, i64)) -> Self {
         let num = |v: Option<&str>, default: i64| v.and_then(|s| s.trim().parse().ok()).filter(|n: &i64| *n >= 0).unwrap_or(default);
-        AskLimits { free_daily: num(free, DEFAULT_ASK_FREE_DAILY), paid_daily: num(paid, DEFAULT_ASK_PAID_DAILY) }
+        DailyLimits { free_daily: num(free, defaults.0), paid_daily: num(paid, defaults.1) }
     }
 }
 
@@ -166,8 +168,9 @@ pub struct Config {
     pub notify_bot_token_path: Option<String>,
     pub notify_chat_id: Option<String>,
     pub summary_limits: SummaryLimits,
-    pub ask_limits: AskLimits,
-    /// Model OpenAI viết biên bản và trả lời hỏi đáp (`SUMMARY_MODEL`). Giá token để quy ra trần chi phí
+    pub ask_limits: DailyLimits,
+    pub translate_limits: DailyLimits,
+    /// Model OpenAI viết biên bản, trả lời hỏi đáp và dịch (`SUMMARY_MODEL`). Giá token để quy ra trần chi phí
     /// là giá của `gpt-4.1-mini` (`summary::meter`): đổi model thì cập nhật giá ở đó.
     pub summary_model: String,
     /// `CHAT_LINK_POLL=1`: chạy task long-poll của bot để liên kết chat. Mặc định tắt: dev và prod dùng
@@ -240,7 +243,12 @@ impl Config {
                 option_env!("SUMMARY_FREE_MONTHLY_MINUTES"),
                 option_env!("SUMMARY_PAID_MONTHLY_MINUTES"),
             ]),
-            ask_limits: AskLimits::from_parts(option_env!("ASK_FREE_DAILY"), option_env!("ASK_PAID_DAILY")),
+            ask_limits: DailyLimits::from_parts(option_env!("ASK_FREE_DAILY"), option_env!("ASK_PAID_DAILY"), DEFAULT_ASK_DAILY),
+            translate_limits: DailyLimits::from_parts(
+                option_env!("TRANSLATE_FREE_DAILY"),
+                option_env!("TRANSLATE_PAID_DAILY"),
+                DEFAULT_TRANSLATE_DAILY,
+            ),
             summary_model: option_env!("SUMMARY_MODEL")
                 .map(str::trim)
                 .filter(|m| !m.is_empty())
@@ -335,9 +343,12 @@ mod tests {
     }
 
     #[test]
-    fn ask_limits_default_to_thirty_and_two_hundred() {
-        assert_eq!(AskLimits::from_parts(None, None), AskLimits { free_daily: 30, paid_daily: 200 });
-        assert_eq!(AskLimits::from_parts(Some(" 5 "), Some("-1")), AskLimits { free_daily: 5, paid_daily: 200 });
+    fn daily_limits_default_per_feature() {
+        let ask = |free, paid| DailyLimits::from_parts(free, paid, DEFAULT_ASK_DAILY);
+        assert_eq!(ask(None, None), DailyLimits { free_daily: 30, paid_daily: 200 });
+        assert_eq!(ask(Some(" 5 "), Some("-1")), DailyLimits { free_daily: 5, paid_daily: 200 });
+        let translate = DailyLimits::from_parts(None, Some("x"), DEFAULT_TRANSLATE_DAILY);
+        assert_eq!(translate, DailyLimits { free_daily: 3, paid_daily: 20 });
     }
 
     #[test]

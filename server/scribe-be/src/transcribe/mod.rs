@@ -20,6 +20,7 @@ use crate::error::AppError;
 use crate::files::{content_disposition_attachment, sanitize_filename};
 use crate::models::usage::{self, Blocked, Charge};
 use crate::notify;
+use crate::models::translation::{self, Lang, TranslationDoc};
 use crate::models::{file, plan, transcript, transcript_doc, user};
 use crate::state::AppState;
 use axum::extract::{Query, State};
@@ -309,6 +310,8 @@ pub struct ExportQuery {
     session: Option<String>,
     format: Option<String>,
     name: Option<String>,
+    /// Xuất bản dịch (`en` | `vi`) thay cho chữ gốc; chỉ khi mọi file cùng một phiên.
+    lang: Option<String>,
 }
 
 fn parse_ids(raw: &str) -> Result<Vec<ObjectId>, AppError> {
@@ -350,6 +353,8 @@ pub async fn get(
 /// `GET /api/transcripts/export?ids=a,b&format=txt|srt|vtt|md|docx&name=…` — một tệp ghép các file theo
 /// thứ tự, mốc của file sau cộng dồn thời lượng các file trước. File chưa chép xong thì bỏ qua (mốc vẫn cộng).
 /// `md`/`docx` là tài liệu cuộc họp: kèm biên bản và dấu mốc khi mọi file thuộc cùng một phiên.
+/// `lang=en|vi`: câu thay bằng bản dịch đã lưu của phiên (câu chưa dịch giữ chữ gốc, câu có bản dịch cũ vẫn
+/// dùng bản dịch đó như màn hình đọc), nhãn mục md/docx theo ngôn ngữ, biên bản giữ nguyên ngôn ngữ gốc.
 pub async fn export(
     State(state): State<AppState>,
     Extension(user): Extension<UserId>,
@@ -357,6 +362,10 @@ pub async fn export(
 ) -> Result<Response, AppError> {
     let format = export::Format::parse(q.format.as_deref().unwrap_or("txt"))
         .ok_or_else(|| AppError::BadRequest("định dạng chỉ nhận txt, srt, vtt, md hoặc docx".into()))?;
+    let lang = match q.lang.as_deref().filter(|l| !l.is_empty()) {
+        Some(raw) => Some(Lang::parse(raw).ok_or_else(|| AppError::BadRequest("ngôn ngữ chỉ nhận en hoặc vi".into()))?),
+        None => None,
+    };
     let files = export_files(&state, &user.0, &q).await?;
     let ids: Vec<ObjectId> = files.iter().filter_map(|f| f.id).collect();
     let docs = transcript::list_owned(&state.db, &user.0, &ids).await?;
@@ -369,6 +378,22 @@ pub async fn export(
         .map(|d| (d.key.clone(), d))
         .collect();
 
+    // Biên bản, dấu mốc, tiêu đề và bản dịch thuộc một phiên: chỉ dùng khi mọi file cùng phiên.
+    let session_key = match keys.first() {
+        Some(first) if keys.iter().all(|k| k == first) => Some(first.as_str()),
+        _ => None,
+    };
+    let translated = match lang {
+        Some(lang) => {
+            let key = session_key.ok_or_else(|| AppError::BadRequest("chỉ xuất bản dịch cho một bản ghi".into()))?;
+            let doc = translation::get(&state.db, &user.0, key, lang)
+                .await?
+                .ok_or_else(|| AppError::NotFound("bản ghi này chưa có bản dịch sang ngôn ngữ đó".into()))?;
+            Some(doc)
+        }
+        None => None,
+    };
+
     let mut segments: Vec<(f64, Vec<Sentence>)> = Vec::new();
     let mut offset = 0.0;
     for f in &files {
@@ -377,7 +402,11 @@ pub async fn export(
         let sentences = match done {
             Some(t) => {
                 let edit = edits.get(&file::session_key(&f.kind, &f.name, id)).and_then(|d| d.edits.get(&id.to_hex()));
-                docs::effective_sentences(t, edit).0
+                let sentences = docs::effective_sentences(t, edit).0;
+                match &translated {
+                    Some(doc) => translate_sentences(sentences, doc, &id.to_hex()),
+                    None => sentences,
+                }
             }
             None => Vec::new(),
         };
@@ -392,11 +421,8 @@ pub async fn export(
     if parts.is_empty() {
         return Err(AppError::NotFound("chưa có bản chép lời nào xong".into()));
     }
-    // Biên bản, dấu mốc và tiêu đề thuộc một phiên: chỉ dùng khi mọi file cùng phiên.
-    let session_doc = match keys.first() {
-        Some(first) if keys.iter().all(|k| k == first) => edits.get(first),
-        _ => None,
-    };
+    let session_doc = session_key.and_then(|key| edits.get(key));
+    let labels = if lang == Some(Lang::En) { &export::EN } else { &export::VI };
     // Tiêu đề người dùng đặt cho phiên, rồi tên client gửi (tên file ở dòng lịch sử ghi).
     let title = session_doc
         .and_then(|d| d.title.clone())
@@ -411,7 +437,7 @@ pub async fn export(
             let mut bookmarks = session_doc.map(|d| d.bookmarks.clone()).unwrap_or_default();
             bookmarks.sort_by(|a, b| a.at.total_cmp(&b.at));
             let meeting = export::Meeting {
-                title: title.as_deref().unwrap_or("Bản chép lời"),
+                title: title.as_deref().unwrap_or(labels.untitled),
                 started: files.iter().map(|f| f.created_at).min().and_then(|at| {
                     chrono::DateTime::<chrono::Utc>::from_timestamp_millis(at.timestamp_millis())
                         .map(|at| at.with_timezone(&usage::vietnam()).format("%H:%M %d/%m/%Y").to_string())
@@ -419,6 +445,7 @@ pub async fn export(
                 duration_s: offset,
                 summary: session_doc.and_then(|d| d.summary.as_ref()),
                 bookmarks: &bookmarks,
+                labels,
             };
             if format == export::Format::Md {
                 export::to_md(&meeting, &parts).into_bytes()
@@ -428,6 +455,10 @@ pub async fn export(
         }
     };
     let base = sanitize_filename(title.as_deref().unwrap_or("chep-loi"));
+    let base = match lang {
+        Some(lang) => format!("{base}-{}", lang.code()),
+        None => base,
+    };
     Ok((
         [
             (header::CONTENT_TYPE, header::HeaderValue::from_static(format.mime())),
@@ -436,6 +467,18 @@ pub async fn export(
         body,
     )
         .into_response())
+}
+
+/// Câu của một đoạn với chữ thay bằng bản dịch đã lưu (cùng chỉ số câu); câu chưa dịch giữ chữ gốc.
+fn translate_sentences(sentences: Vec<Sentence>, doc: &TranslationDoc, file_id: &str) -> Vec<Sentence> {
+    sentences
+        .into_iter()
+        .enumerate()
+        .map(|(idx, s)| match doc.item(file_id, idx).filter(|_| !s.text.trim().is_empty()) {
+            Some(item) => Sentence { text: item.t.clone(), ..s },
+            None => s,
+        })
+        .collect()
 }
 
 /// File cần xuất, theo thứ tự ghép.
@@ -708,6 +751,40 @@ async fn transcribe_path(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn export_of_a_translation_replaces_text_by_sentence_index() {
+        use crate::models::translation::Item;
+        let s = |start: f64, text: &str| Sentence { start, end: start + 1.0, text: text.into() };
+        let mut items = HashMap::new();
+        items.insert(
+            "0".to_string(),
+            Item { h: crate::translate::source_hash("Một."), t: "One.".into() },
+        );
+        // Bản dịch cũ (câu nguồn đã sửa) vẫn được xuất, như màn hình đọc.
+        items.insert("2".to_string(), Item { h: "khác".into(), t: "Three (old).".into() });
+        let doc = TranslationDoc {
+            id: ObjectId::new(),
+            lang: "en".into(),
+            model: "m".into(),
+            status: "done".into(),
+            done: 2,
+            total: 2,
+            error: None,
+            updated_at: mongodb::bson::DateTime::from_millis(0),
+            items: HashMap::from([("abc".to_string(), items)]),
+        };
+        let out = translate_sentences(vec![s(0.0, "Một."), s(2.0, "Hai."), s(4.0, "Ba đã sửa.")], &doc, "abc");
+        assert_eq!(out.iter().map(|x| x.text.as_str()).collect::<Vec<_>>(), vec!["One.", "Hai.", "Three (old)."]);
+        assert_eq!(out[2].start, 4.0, "giữ mốc câu");
+        let parts = [export::Part { offset_s: 60.0, sentences: &out }];
+        assert_eq!(
+            export::to_srt(&parts).lines().take(3).collect::<Vec<_>>(),
+            vec!["1", "00:01:00,000 --> 00:01:01,000", "One."]
+        );
+        // Đoạn khác chưa dịch: giữ chữ gốc.
+        assert_eq!(translate_sentences(vec![s(0.0, "Một.")], &doc, "other")[0].text, "Một.");
+    }
 
     #[test]
     fn new_free_accounts_wait_for_the_delay() {

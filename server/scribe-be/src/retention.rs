@@ -4,7 +4,7 @@
 
 use crate::config::RETENTION_DAYS;
 use crate::error::AppError;
-use crate::models::{file, sentence, transcript_doc};
+use crate::models::{file, sentence, transcript_doc, translation};
 use crate::state::AppState;
 use mongodb::bson::{doc, DateTime, Document};
 use std::path::Path;
@@ -73,7 +73,7 @@ async fn sweep_once(state: &AppState) -> Result<(), AppError> {
     let orphan_parts = sweep_orphan_parts(data_dir).await;
     let stale_sessions = sweep_stale_sessions(&state.db).await;
     let stale_jobs = sweep_stale_jobs(&state.db).await;
-    let orphan_docs = sweep_orphan_transcript_docs(&state.db).await;
+    let orphan_docs = sweep_orphan_transcript_docs(&state.db).await + sweep_orphan_translations(&state.db).await;
     let orphan_sentences = sweep_orphan_sentences(&state.db).await;
     let reindexed = reconcile_search_index(&state.db).await;
 
@@ -86,7 +86,7 @@ async fn sweep_once(state: &AppState) -> Result<(), AppError> {
         || reindexed > 0
     {
         tracing::info!(
-            "retention: xoá {removed} file (~{} MB), {orphan_parts} .part mồ côi, {stale_sessions} session cũ, {stale_jobs} job cũ, {orphan_docs} transcript mồ côi, {orphan_sentences} câu mồ côi trong index tìm kiếm; dựng lại index {reindexed} phiên lệch",
+            "retention: xoá {removed} file (~{} MB), {orphan_parts} .part mồ côi, {stale_sessions} session cũ, {stale_jobs} job cũ, {orphan_docs} transcript và bản dịch mồ côi, {orphan_sentences} câu mồ côi trong index tìm kiếm; dựng lại index {reindexed} phiên lệch",
             bytes / 1_048_576
         );
     }
@@ -108,6 +108,14 @@ async fn sweep_stale_jobs(db: &mongodb::Database) -> u64 {
 async fn sweep_orphan_transcript_docs(db: &mongodb::Database) -> u64 {
     transcript_doc::delete_orphans(db).await.unwrap_or_else(|e| {
         tracing::warn!("sweep transcript_docs mồ côi lỗi: {e:?}");
+        0
+    })
+}
+
+/// Xoá bản dịch của phiên không còn audio (bước dọn lúc xoá có thể lỗi).
+async fn sweep_orphan_translations(db: &mongodb::Database) -> u64 {
+    translation::delete_orphans(db).await.unwrap_or_else(|e| {
+        tracing::warn!("sweep bản dịch mồ côi lỗi: {e:?}");
         0
     })
 }

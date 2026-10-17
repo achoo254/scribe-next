@@ -204,24 +204,25 @@ async fn recompute(db: &Database, month: &str, apply: bool) -> Result<Value, Str
     for (user, free, charged) in crate::models::realtime_token::unsettled(db, month).await.map_err(err)? {
         add(&user, free, charged);
     }
-    // Chi phí token của tóm tắt và hỏi đáp chỉ tính vào trần tổng (không vào sổ phút của user hay quỹ
+    // Chi phí token của tóm tắt, hỏi đáp và dịch chỉ tính vào trần tổng (không vào sổ phút của user hay quỹ
     // free); lượt đang gọi model giữ chỗ theo ước lượng và quyết toán sau, nên cũng chặn `--apply` như
     // lượt chép.
-    let (mut running_summaries, mut running_asks) = (0, 0);
+    let (mut running_summaries, mut running_asks, mut running_translations) = (0, 0, 0);
     for feature in crate::models::summary::Feature::ALL {
         total += crate::models::summary::month_cost_seconds(db, feature, month).await.map_err(err)?;
         let running = crate::models::summary::running_count(db, feature, month).await.map_err(err)?;
         match feature {
             crate::models::summary::Feature::Summary => running_summaries = running,
             crate::models::summary::Feature::Ask => running_asks = running,
+            crate::models::summary::Feature::Translate => running_translations = running,
         }
     }
     if apply && open_runs > 0 {
         return Err(format!("còn {open_runs} lượt đang chạy trong tháng {month}: chờ hàng đợi rỗng rồi chạy lại --apply"));
     }
-    if apply && running_summaries + running_asks > 0 {
+    if apply && running_summaries + running_asks + running_translations > 0 {
         return Err(format!(
-            "còn {running_summaries} lượt tóm tắt và {running_asks} lượt hỏi đáp đang chạy trong tháng {month}: chờ ít phút rồi chạy lại --apply"
+            "còn {running_summaries} lượt tóm tắt, {running_asks} lượt hỏi đáp và {running_translations} lượt dịch đang chạy trong tháng {month}: chờ ít phút rồi chạy lại --apply"
         ));
     }
     for user_id in usage::user_ids_with_ledger(db, month).await.map_err(err)? {
