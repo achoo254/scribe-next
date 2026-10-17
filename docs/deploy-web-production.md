@@ -33,7 +33,7 @@ Không dựng thêm môi trường xem trước (tunnel, preview) trên `.65`.
 ### Chạy dev local
 
 - **Mongo dev:** database dev trên mongod lab **176** (`192.168.122.176:27017`, cần VPN lab), user dev chỉ có `readWrite` trên đúng database đó. 176 là máy khác với prod nên không đụng dữ liệu thật. Tạo ngày 2026-10-15; đã kiểm cách ly: user này không thấy database nào khác.
-- **Biến BE dev** nằm trong `.env.development` ở gốc repo (không có trong git): `MONGO_URI`, `PORT`, `DB_NAME`, `SESSION_KEY_PATH`, `DATA_DIR`, `PUBLIC_URL`, `OIDC_ISSUER`, `OIDC_WEB_CLIENT_ID`, `OIDC_WEB_CLIENT_SECRET_PATH`, `OPENAI_KEY_PATH`, `TRANSCRIBE_EMAILS` (các đường dẫn tệp trỏ vào thư mục dev trong home, vì thư mục prod không ghi được trên macOS). BE đọc biến **lúc build** (`option_env!`), nên nạp env rồi mới build/chạy:
+- **Biến BE dev** nằm trong `.env.development` ở gốc repo (không có trong git): `MONGO_URI`, `PORT`, `DB_NAME`, `SESSION_KEY_PATH`, `DATA_DIR`, `PUBLIC_URL`, `OIDC_ISSUER`, `OIDC_WEB_CLIENT_ID`, `OIDC_WEB_CLIENT_SECRET_PATH`, `OPENAI_KEY_PATH`, `ELEVENLABS_KEY_PATH` (máy dev không có key ElevenLabs thì đặt `TRANSCRIBE_PROVIDER=openai` để vẫn chép lời được), `TRANSCRIBE_EMAILS` (các đường dẫn tệp trỏ vào thư mục dev trong home, vì thư mục prod không ghi được trên macOS). BE đọc biến **lúc build** (`option_env!`), nên nạp env rồi mới build/chạy:
 
   ```bash
   set -a; . ./.env.development; set +a
@@ -87,7 +87,8 @@ Tất cả trong `/opt/scribe-be`, chủ `scribe`, quyền 600, ghi bằng stdin
 |---|---|---|
 | `.session-key` | `SESSION_KEY_PATH` | BE tự sinh nếu chưa có; khoá mã hoá refresh token IdP của thiết bị |
 | `.oidc-web-secret` | `OIDC_WEB_CLIENT_SECRET_PATH` | Secret của client `scribe-web`; phía IdP là `SCRIBE_WEB_CLIENT_SECRET` trong `/var/www/hoandat-auth/.env` — đổi thì đổi cả hai |
-| `.openai-key` | `OPENAI_KEY_PATH` | Key OpenAI của server (§Deploy) |
+| `.openai-key` | `OPENAI_KEY_PATH` | Key OpenAI của server: tóm tắt, hỏi đáp, dịch, chép trực tiếp; chép lời khi `TRANSCRIBE_PROVIDER=openai` (§Deploy) |
+| `.elevenlabs-key` | `ELEVENLABS_KEY_PATH` | Key ElevenLabs của server: chép lời tệp và phiên iPhone (§Deploy) |
 | `.notify-bot-token` | `NOTIFY_BOT_TOKEN_PATH` | Token bot `@bot_scribe_bot`: báo động, liên kết chat và gửi biên bản (§Deploy) |
 
 ## ⚠️ Ràng buộc then chốt — cấu hình bake **compile-time**
@@ -97,7 +98,7 @@ Tất cả trong `/opt/scribe-be`, chủ `scribe`, quyền 600, ghi bằng stdin
 - **Binary KHÔNG đọc env lúc chạy** → KHÔNG dùng systemd `EnvironmentFile`.
 - **Danh sách biến là `server/scribe-be/build.rs`** (biến nào không có ở đó thì không vào binary); mặc định và ý nghĩa ở `server/scribe-be/src/config.rs`.
 - **Bắt buộc lúc build:** `DB_NAME`, `PUBLIC_URL`, `SESSION_KEY_PATH`, `DATA_DIR`, `OIDC_WEB_CLIENT_SECRET_PATH`. Thiếu biến nào thì binary **dừng ngay khi khởi động** và log tên biến thiếu (để không bao giờ chạy với database hay thư mục sai).
-- **Tuỳ chọn:** `MONGO_URI` (mặc định `mongodb://127.0.0.1:27017`), `PORT` (`8787`), `ALLOWED_DOMAINS`, `ALLOWED_EMAILS`, `TRANSCRIBE_EMAILS`, `TRANSCRIBE_OPEN`, các biến OIDC, `OPENAI_KEY_PATH`, các biến hạn mức chép lời, báo động, tóm tắt, hỏi đáp và liên kết chat (bảng dưới).
+- **Tuỳ chọn:** `MONGO_URI` (mặc định `mongodb://127.0.0.1:27017`), `PORT` (`8787`), `ALLOWED_DOMAINS`, `ALLOWED_EMAILS`, `TRANSCRIBE_EMAILS`, `TRANSCRIBE_OPEN`, các biến OIDC, `OPENAI_KEY_PATH`, `TRANSCRIBE_PROVIDER`, `ELEVENLABS_KEY_PATH`, `ELEVENLABS_MONTHLY_HOURS`, các biến hạn mức chép lời, báo động, tóm tắt, hỏi đáp và liên kết chat (bảng dưới).
 
 > Đổi bất kỳ biến nào = **build lại binary** rồi redeploy; sửa env trên server vô tác dụng.
 
@@ -113,6 +114,9 @@ Tất cả trong `/opt/scribe-be`, chủ `scribe`, quyền 600, ghi bằng stdin
 | `OIDC_WEB_CLIENT_SECRET_PATH` | `/opt/scribe-be/.oidc-web-secret` |
 | `OIDC_ISSUER`, `OIDC_WEB_CLIENT_ID`, `OIDC_MOBILE_CLIENT_ID`, `OIDC_MOBILE_REDIRECT_URI` | Prod dùng mặc định: `https://auth.hoandat.com`, `scribe-web`, `scribe-mobile`, `com.hoandat.scribe:/auth/callback` |
 | `OPENAI_KEY_PATH` | `/opt/scribe-be/.openai-key` |
+| `TRANSCRIBE_PROVIDER` | `elevenlabs` (mặc định, không cần đặt) hoặc `openai` (luồng cũ, giữ làm dự phòng một bản phát hành). Chỉ áp cho chép lời tệp/phiên; chép trực tiếp luôn dùng OpenAI Realtime |
+| `ELEVENLABS_KEY_PATH` | `/opt/scribe-be/.elevenlabs-key`. Thiếu tệp khi `TRANSCRIBE_PROVIDER=elevenlabs` thì chép lời tắt (journal: "thiếu key chép lời của nhà cung cấp") |
+| `ELEVENLABS_MONTHLY_HOURS` | Trần giờ audio ElevenLabs mỗi tháng (giờ VN), mặc định `25` (gói Starter có khoảng 27 giờ Scribe v2). Độc lập với trần USD |
 | `TRANSCRIBE_EMAILS` | Email được dùng "Chép lời" (cách nhau dấu phẩy) khi chưa bật `TRANSCRIBE_OPEN` |
 | `REALTIME_EMAILS` | Email được dùng "Chép trực tiếp" trên iPhone (cách nhau dấu phẩy). Rỗng = **không ai**, không theo `TRANSCRIBE_OPEN`. Phút tính chung hạn mức chép lời. **Trước lần build prod có tính năng này, chủ sản phẩm thêm email của mình vào `.env.production`** (chưa thêm thì app nhận 403, ghi âm vẫn chạy) |
 | `TRANSCRIBE_OPEN` | `1`/`true` = mọi user đăng nhập được chép lời trong hạn mức gói. **Bật trên prod từ 2026-10-16 14:19** |
@@ -193,12 +197,16 @@ nginx -t && systemctl reload nginx
 
 > **Restart BE khi đang chép lời:** không mất lượt (key nằm ở server): lượt đang chạy được xếp lại và chạy từ đầu, nhưng audio gửi lại bị OpenAI tính tiền lần nữa; lượt đã bị cắt ngang một lần thì dừng hẳn. Vẫn nên chờ hàng đợi rỗng trước khi restart: đếm `db.transcripts.countDocuments({status:{$in:["queued","running"]}})` qua `scripts/prod-mongosh.sh` của skill `scribe-ops-prod`.
 >
-> **Key OpenAI của server** (model `gpt-4o-mini-transcribe`): tệp `OPENAI_KEY_PATH` (`/opt/scribe-be/.openai-key`), chủ `$DEPLOY_USER`, quyền 600, ghi bằng stdin, không bao giờ in. Đọc lúc khởi động; thiếu hoặc sai dạng thì chép lời tắt (journal: "không đọc được tệp key OpenAI"). OpenAI báo key hỏng/hết credit thì BE ngắt chép lời tới lần khởi động sau (audit `transcript.key_invalid`). Đổi key: ghi đè tệp rồi restart.
+> **Key OpenAI của server**: tệp `OPENAI_KEY_PATH` (`/opt/scribe-be/.openai-key`), chủ `$DEPLOY_USER`, quyền 600, ghi bằng stdin, không bao giờ in. Đọc lúc khởi động; dùng cho tóm tắt, hỏi đáp, dịch, chép trực tiếp (`gpt-4o-mini-transcribe` Realtime), và chép lời khi `TRANSCRIBE_PROVIDER=openai`. Thiếu hoặc sai dạng thì các tính năng đó tắt (journal: "không đọc được tệp key OpenAI"). Key hỏng ở lượt chép lời bằng OpenAI thì BE ngắt chép lời tới lần khởi động sau (audit `transcript.key_invalid`). Đổi key: ghi đè tệp rồi restart.
+>
+> **Key ElevenLabs của server** (chép lời mặc định, Scribe v2, từ 17/10/2026): tệp `ELEVENLABS_KEY_PATH` (`/opt/scribe-be/.elevenlabs-key`), chủ `$DEPLOY_USER`, quyền 600. Cài bằng stdin, không qua argv, không in, ví dụ dán key vào lệnh `read -rs` rồi:
+> `printf '%s' "$KEY" | ssh <server> "sudo install -m 600 -o $DEPLOY_USER -g $DEPLOY_USER /dev/stdin /opt/scribe-be/.elevenlabs-key"`, sau đó `unset KEY` và restart BE. Key cần quyền Speech to Text; dùng thương mại phải là gói trả phí (gói Free không cho dùng thương mại).
+> Một tệp (bản ghi trình duyệt, tệp tải lên) = một request; **phiên iPhone = một request cho cả phiên**: ffmpeg ghép các đoạn theo thứ tự rồi chia câu về lại từng đoạn, nhãn người nói nhất quán cả phiên. Audio gửi đi là Opus mono 16 kHz 32 kbps (khoảng 14 MB mỗi giờ); tệp hay phiên hoàn toàn im lặng (đỉnh < −30 dB) không gửi, không tính phút. Đoạn tải lên muộn (sau khi phiên đã chép) làm lần bấm chép tiếp theo **chép lại cả phiên** và tính phút cả phiên lần nữa. ElevenLabs báo key hỏng (401/403) ⟹ ngắt chép lời tới lần khởi động sau, audit `transcript.key_invalid`, báo bot; tóm tắt không bị ảnh hưởng. ElevenLabs báo hết credit tháng (402 `insufficient_credits`, hoặc 401 `quota_exceeded`) ⟹ **không** coi là key hỏng: đánh dấu tháng, dừng gửi tới đầu tháng sau, audit `transcript.provider_quota`, báo bot một lần; nạp thêm credit rồi `… admin elevenlabs-quota --clear` để mở lại ngay. Trần giờ riêng `ELEVENLABS_MONTHLY_HOURS` (sổ `el:<tháng>` trong `transcribe_usage`) giữ chỗ trước khi gửi và quyết toán theo `audio_duration_secs` ElevenLabs trả; hết trần thì người dùng thấy "Đã dùng hết giờ chép lời của tháng này, mở lại ngày 1/MM" (403 `PROVIDER_HOURS`). Xem sổ: `… admin usage` (mục `elevenlabs`) hoặc `… admin elevenlabs-quota [--month YYYY-MM]`.
 >
 > **Gói và sổ phút** (chạy trên `.65` bằng user của service, cấu hình nhúng trong binary):
 > `sudo -u $DEPLOY_USER $DEPLOY_APP_DIR/$DEPLOY_SERVICE admin set-plan <email> <free|plus> [--until YYYY-MM-DD]`;
 > `… admin shorten-free-retention [--apply]`: tệp của user không có gói plus hiệu lực về `expiresAt = min(expiresAt, createdAt + 7 ngày)`. Không `--apply` thì chỉ in số tệp, số user và số tệp sẽ bị sweep xoá ở vòng kế tiếp (tối đa một giờ); sao lưu trước khi `--apply` (audit `admin.shorten_free_retention`).
-> `… admin usage [--email <email>] [--month YYYY-MM] [--recompute [--apply]]` (đối soát sổ từ `transcribe_runs`). Hạn mức: biến build `TRANSCRIBE_FREE_MINUTES` (120), `TRANSCRIBE_PLUS_MINUTES` (3000), `TRANSCRIBE_FREE_POOL_USD` (10), `TRANSCRIBE_MONTHLY_CAP_USD` (30); `TRANSCRIBE_OPEN=1` mở chép lời cho mọi user đăng nhập (bật từ 16/10). Phút được giữ chỗ khi xếp hàng rồi quyết toán theo số giây thật sự gửi OpenAI. Mảnh hoàn toàn im lặng (đỉnh < −30 dB, đo bằng `volumedetect` trong lần nén) không gửi và không tính phút (`server/scribe-be/src/transcribe/mod.rs`).
+> `… admin usage [--email <email>] [--month YYYY-MM] [--recompute [--apply]]` (đối soát sổ từ `transcribe_runs`). Hạn mức: biến build `TRANSCRIBE_FREE_MINUTES` (120), `TRANSCRIBE_PLUS_MINUTES` (3000), `TRANSCRIBE_FREE_POOL_USD` (10), `TRANSCRIBE_MONTHLY_CAP_USD` (30); `TRANSCRIBE_OPEN=1` mở chép lời cho mọi user đăng nhập (bật từ 16/10). Phút được giữ chỗ khi xếp hàng rồi quyết toán theo số giây thật sự gửi nhà cung cấp (ElevenLabs: theo `audio_duration_secs`). Trần USD đổi ra giây theo giá của nhà cung cấp (ElevenLabs 0,22 USD/giờ, OpenAI 0,003 USD/phút), nên với ElevenLabs trần $30 ≈ 8.182 phút, quỹ free $10 ≈ 2.727 phút. Mảnh hoàn toàn im lặng (đỉnh < −30 dB, đo bằng `volumedetect` trong lần nén) không gửi và không tính phút (`server/scribe-be/src/transcribe/mod.rs`).
 >
 > **Dung lượng theo gói** (hằng trong `server/scribe-be/src/config.rs`, không phải biến build): free 200 MB tổng, mỗi tệp tối đa 200 MB, tệp mới tự xoá sau 7 ngày; plus 5 GB, 2 GB, 14 ngày. Hạn tệp tính lúc tạo theo gói của chủ file. User đang vượt 200 MB giữ tệp, chỉ bị chặn ghi và tải mới (413). `DELETE /api/files` ("Xoá tất cả") xoá mọi bản ghi và tệp tải lên của user cùng bản chép lời, biên bản, dấu mốc và câu trong index.
 
