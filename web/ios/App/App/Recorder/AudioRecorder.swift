@@ -61,6 +61,11 @@ final class AudioRecorder {
 
     private var segmentLimitSeconds: Double = 60
     private var tapInstalled = false
+    /// iOS gives the lock-screen Now Playing entry and AirPods presses only to an app that plays audio. A
+    /// recorder plays nothing, so a looped silent buffer keeps Scribe eligible while it records (lock-screen
+    /// and AirPods bookmarks). Set to false to switch it off if it misbehaves on a device.
+    private static let playsSilenceWhileRecording = true
+    private var silencePlayer: AVAudioPlayerNode?
     private var timer: Timer?
     private var startedAt: Date?
     private var pausedTotal: TimeInterval = 0
@@ -204,8 +209,10 @@ final class AudioRecorder {
             self?.process(buffer)
         }
         tapInstalled = true
+        attachSilence()
         engine.prepare()
         try engine.start()
+        silencePlayer?.play()
         fileLock.lock()
         recordingFlag = true
         fileLock.unlock()
@@ -220,6 +227,31 @@ final class AudioRecorder {
             tapInstalled = false
         }
         if engine.isRunning { engine.stop() }
+        if let player = silencePlayer {
+            player.stop()
+            engine.detach(player)
+            silencePlayer = nil
+        }
+    }
+
+    /// One second of zeros looped into the main mixer: inaudible, never reaches the input tap.
+    private func attachSilence() {
+        guard Self.playsSilenceWhileRecording else { return }
+        let format = engine.mainMixerNode.outputFormat(forBus: 0)
+        guard format.sampleRate > 0,
+              let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(format.sampleRate))
+        else { return }
+        buffer.frameLength = buffer.frameCapacity
+        if let channels = buffer.floatChannelData {
+            for channel in 0..<Int(format.channelCount) {
+                channels[channel].update(repeating: 0, count: Int(buffer.frameLength))
+            }
+        }
+        let player = AVAudioPlayerNode()
+        engine.attach(player)
+        engine.connect(player, to: engine.mainMixerNode, format: format)
+        player.scheduleBuffer(buffer, at: nil, options: .loops)
+        silencePlayer = player
     }
 
     /// Rebuilds the chain after an interruption, route or configuration

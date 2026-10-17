@@ -46,9 +46,10 @@ Khi khoá màn hình, JS của WKWebView bị treo nên nút "Đánh dấu" trê
 - Tiêu đề "Scribe đang ghi", thời gian trôi theo đồng hồ ghi. Mọi lệnh phát/tạm dừng/bài kế/bài trước — nút trên màn hình khoá, AirPods bấm 1, 2 hay 3 lần — đều **thêm một dấu mốc**; từ đó không dừng hay tạm dừng được bản ghi. Tua, nhảy 15 giây, dừng bị tắt. Hai lần bấm cách nhau dưới 1 giây chỉ tính một.
 - Bấm xong, tiêu đề đổi thành "Đã đánh dấu 12:34" khoảng 3 giây. Không phát âm báo (âm sẽ lọt vào bản ghi).
 - Mốc lưu ngay xuống `Documents/bookmarks/<userKey>.json` (id 24 hex, `sessionId`, `positionS` lấy từ `recordedSeconds` như nút trên trang). Trang kéo về qua `takePendingBookmarks()` khi mở lại app (`visibilitychange`), khi Swift báo `bookmarkAdded` lúc đang mở, khi dừng ghi và khi khởi động, rồi gửi qua cùng hàng đợi `BookmarkQueue` tới `s:<sessionId>` (`web/src/features/recorder/native-bookmarks.ts`). Swift chỉ xoá mốc khi trang báo `ackBookmarks` — sau khi server đã lưu, từ chối hẳn, hoặc bản ghi không còn — nên tắt app giữa chừng không mất mốc; gửi lại cùng id thì server chỉ lưu một lần.
-- Dừng ghi thì gỡ lệnh và xoá mục Now Playing. Cấu hình phiên âm thanh (`.playAndRecord`, ưu tiên micro trong máy, cho phép HFP/A2DP) giữ nguyên.
+- iOS chỉ giao mục Now Playing và lệnh AirPods cho app đang phát âm thanh, nên trong lúc ghi `AudioRecorder` phát lặp một giây im lặng vào bộ trộn của engine (`playsSilenceWhileRecording`, đặt `false` để tắt nếu gây lỗi trên máy). Âm này không vào nhánh thu.
+- Dừng ghi thì gỡ lệnh, dừng phát im lặng và xoá mục Now Playing. Cấu hình phiên âm thanh (`.playAndRecord`, ưu tiên micro trong máy, cho phép HFP/A2DP) giữ nguyên.
 
-**Chưa kiểm trên máy thật** (Simulator không có micro, không có AirPods): mục Now Playing có hiện khi app chỉ thu âm (không phát gì) hay không; AirPods bấm 1/2 lần có tới app không, nhất là khi AirPods đang là micro (HFP); lệnh có tới khi đang có cuộc gọi. Danh sách bấm thử ở mục "Lần cắm iPhone tới" của plan.
+**Chưa kiểm trên máy thật** (Simulator không có micro, không có AirPods): mục Now Playing có hiện khi app thu âm kèm phát im lặng hay không (không hiện thì đường lùi là Live Activity, cần tài khoản Apple trả phí); phát im lặng có làm đổi đường âm AirPods hay tốn pin đáng kể không; AirPods bấm 1/2 lần có tới app không, nhất là khi AirPods đang là micro (HFP); lệnh có tới khi đang có cuộc gọi. Danh sách bấm thử ở mục "Lần cắm iPhone tới" của plan.
 
 ## Đã kiểm / còn phải kiểm trên máy thật
 
