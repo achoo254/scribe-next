@@ -178,3 +178,10 @@ AudioRecorder (Phase 2) ── tap PCM ──▶ RealtimeTranscriber.swift
 Backend + web lên prod từ `d409cc8` (chủ dự án cho phép). `REALTIME_EMAILS` = tài khoản chủ dự án. Sao lưu `/root/scribe-backup-20261017-111120`,
 binary sha256 `c8cc2c429fb21907…`, `index-C_t9Qk5G.js`, health ok, `NRestarts=0`, `POST /api/realtime/token` chưa đăng nhập trả 401.
 App iPhone có chép trực tiếp đã cài lên iPhone 15 Pro Max lúc 11:10 (cài hết hạn ~24/10). Còn đo trên máy thật: mục 14–17 của checklist.
+
+## Deploy 19/10 08:54 (ElevenLabs Realtime)
+Chủ dự án cho phép ("bạn tự làm cho tôi luôn các việc"). Backend + web từ `9305861` (lần build đầu dùng lại binary cũ do cache CARGO_TARGET_DIR,
+phát hiện qua sha trùng → `cargo clean -p` rồi build lại). Sao lưu `/root/scribe-backup-20261019-085243`, binary sha256 `2e216e74c060160f…`,
+`index-ClbfkLLj.js`, health ok, `NRestarts=0`. Từ server xin single-use token realtime: HTTP 200. App mới cài lên iPhone 15 Pro Max lúc 08:56
+(hết hạn ~26/10). Chủ dự án chấp nhận hai quyết định của agent: giờ realtime tính 1,77× trên sổ giờ ElevenLabs (theo giá 0,39/0,22 USD), và app báo
+`quotaExceeded` được dừng ElevenLabs tới tháng sau. Còn đo trên máy: mục 14–18 của checklist.
