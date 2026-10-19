@@ -333,26 +333,62 @@ enum BatchEnd {
     Failed(String),
 }
 
-/// Dịch một lô, thử lại một lần khi lỗi (trừ key/credit hỏng).
-async fn translate_batch(state: &AppState, job: &Job, lines: &[&str], tally: &mut Tally) -> BatchEnd {
-    let chars: usize = lines.iter().map(|l| l.chars().count()).sum();
-    let estimate = batch::estimate_seconds(chars, lines.len());
-    let model = state.config.summary_model.as_str();
-    let mut last = String::new();
-    for attempt in 1..=ATTEMPTS {
-        let call = batch::translate(&state.http, &job.api_key, model, job.lang, lines).await;
-        tally.add(&call, estimate);
-        let mapped = call.result.and_then(|c| c.draft).and_then(|draft| batch::map_output(lines, draft));
-        match mapped {
-            Ok(texts) => return BatchEnd::Done(texts),
-            Err(e) if is_key_broken(&e) => return BatchEnd::KeyBroken(e),
-            Err(e) => {
-                tracing::warn!(key = %job.key, attempt, lines = lines.len(), "lô dịch lỗi: {e}");
-                last = e;
+/// Dịch một lô, thử lại một lần khi lỗi gọi model (trừ key/credit hỏng). Model trả lệch số dòng (hay gộp
+/// các câu ngắn liền nhau như "À." "Vâng.") thì không gửi lại nguyên lô mà chia đôi và dịch từng nửa: lô
+/// nhỏ hiếm khi bị gộp, mỗi câu vẫn có đúng một bản dịch của riêng nó.
+fn translate_batch<'a>(
+    state: &'a AppState,
+    job: &'a Job,
+    lines: &'a [&'a str],
+    tally: &'a mut Tally,
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = BatchEnd> + Send + 'a>> {
+    Box::pin(async move {
+        let chars: usize = lines.iter().map(|l| l.chars().count()).sum();
+        let estimate = batch::estimate_seconds(chars, lines.len());
+        let model = state.config.summary_model.as_str();
+        let mut last = String::new();
+        for attempt in 1..=ATTEMPTS {
+            let call = batch::translate(&state.http, &job.api_key, model, job.lang, lines).await;
+            tally.add(&call, estimate);
+            let draft = match call.result.and_then(|c| c.draft) {
+                Ok(draft) => draft,
+                Err(e) if is_key_broken(&e) => return BatchEnd::KeyBroken(e),
+                Err(e) => {
+                    tracing::warn!(key = %job.key, attempt, lines = lines.len(), "lô dịch lỗi: {e}");
+                    last = e;
+                    continue;
+                }
+            };
+            match batch::map_output(lines, draft) {
+                Ok(texts) => return BatchEnd::Done(texts),
+                Err(e) if lines.len() > 1 => {
+                    tracing::warn!(key = %job.key, lines = lines.len(), "lô dịch lệch dòng, chia đôi: {e}");
+                    return translate_halves(state, job, lines, tally).await;
+                }
+                Err(e) => {
+                    tracing::warn!(key = %job.key, attempt, "câu dịch lỗi: {e}");
+                    last = e;
+                }
             }
         }
+        BatchEnd::Failed(last)
+    })
+}
+
+/// Dịch hai nửa của một lô lần lượt rồi ghép lại theo thứ tự.
+async fn translate_halves(state: &AppState, job: &Job, lines: &[&str], tally: &mut Tally) -> BatchEnd {
+    let (left, right) = lines.split_at(lines.len() / 2);
+    let mut texts = match translate_batch(state, job, left, tally).await {
+        BatchEnd::Done(texts) => texts,
+        other => return other,
+    };
+    match translate_batch(state, job, right, tally).await {
+        BatchEnd::Done(rest) => {
+            texts.extend(rest);
+            BatchEnd::Done(texts)
+        }
+        other => other,
     }
-    BatchEnd::Failed(last)
 }
 
 /// Phần có tiền của một lượt: giữ chỗ (báo cho handler), dịch từng lô, quyết toán ở mọi đường ra.
