@@ -81,7 +81,7 @@ Chi tiết và lập luận: phase 4 của plan iOS. Tóm tắt:
 | ✅ P1 | **Key riêng — người dùng tự nhập key API** (plan `dattqh/261019-0905-user-api-keys`): ElevenLabs, OpenAI, Google Gemini, Anthropic Claude; lưu mã hoá trên server, chỉ ghi; chọn nhà cung cấp cho chép lời tệp, chép trực tiếp, biên bản/hỏi đáp/dịch (kèm model); việc chạy bằng key riêng không tính hạn mức của Scribe. Server chọn được model chữ (`LLM_PROVIDER`/`LLM_MODEL`) | **Mã xong 19/10, chưa deploy.** Trước khi deploy: tạo tệp `USER_KEYS_SECRET_PATH` trên server (deploy doc §Key riêng). Gemini và Claude chưa thử với key thật |
 | P1 | **QA app iPhone còn lại** — cuộc gọi đến, AirPods, máy bay | Cần máy thứ hai + AirPods |
 | ✅ P1 | **Realtime transcript trên iPhone** (Phase 5 plan iOS) | Đã làm và deploy 17/10 (token tạm thời từ server, `REALTIME_EMAILS`, tính phút chung sổ). Còn đo trên máy thật: WebSocket khi khoá màn hình lâu, độ trễ, mất mạng giữa buổi |
-| P2 | **QA thủ công web** — ghi mic + màn hình/system thật (Chrome), cắt file thật | getUserMedia/getDisplayMedia không automate được |
+| ✅ P2 | **QA thủ công web** — ghi mic, tiếng hệ thống, màn hình (video) thật, cắt file thật | Xong 19/10 trên Chrome của chủ dự án (tài khoản Plus): mic 40 s + dấu mốc giây 38, tiếng hệ thống 21,8 s, màn hình 17,9 s 3824×1616, cắt 2:00 theo phút + zip. Lỗi tìm thấy: cắt theo phút sinh đoạn cuối 0,02 s — sửa `45c53d1`, prod 10:48 |
 | ✅ P3 | **Unit test** `RateLimiter` (window reset) | Xong (commit `3917615`): reset cửa sổ và thứ tự ưu tiên IP client |
 | P3 | **Hạ tầng CF Full (strict) + firewall origin** | Đang SSL Full với chứng chỉ tự ký; .65 shared → hiện chấp nhận origin-bypass; phòng thủ dồn vào hạn mức + rate-limit + audit |
 

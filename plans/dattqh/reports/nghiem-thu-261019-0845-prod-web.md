@@ -17,3 +17,12 @@ Thử trên Chrome (máy Mac) tại scribe.hoandat.com bằng tài khoản free 
 | Thẻ dùng lượng | Đạt sau tải lại; lúc đổi gói bằng lệnh admin khi trang đang mở thì thẻ giữ số cũ tới lần tải lại |
 
 Chưa thử: Xoá tất cả, liên kết và gửi chat, iPhone (màn hình khoá, quay video, phát nối đoạn) — cần chủ dự án.
+
+## QA thủ công web 19/10 10:42–10:48 (tài khoản Plus của chủ dự án)
+| Hạng mục | Kết quả |
+|---|---|
+| Ghi micro | Đạt: 40 s, 644 KB, phát lại được; "Đánh dấu" lưu mốc giây 38 |
+| Ghi kèm tiếng hệ thống | Đạt: 21,8 s (hộp chọn màn hình do chủ dự án trả lời trên máy); chưa nghe để xác nhận có tiếng hệ thống vì phòng im lặng |
+| Ghi kèm màn hình (video) | Đạt: 17,9 s, 3824×1616, `hasVideo` |
+| Cắt file theo phút + tải zip | Cắt được, zip 970 KB đúng định dạng. **Lỗi**: tệp 120,02 s cắt mỗi 1 phút ra đoạn thứ ba 0,02 s. Sửa `45c53d1` (bỏ đoạn cuối ngắn hơn 1 s), prod 10:48 (sao lưu `/root/scribe-backup-20261019-104819`, sha `de2aa3eed0da72ee…`) |
+Tệp thử (3 bản ghi, 1 tệp cắt + 3 đoạn) để trong tài khoản Plus, tự xoá sau 14 ngày.
