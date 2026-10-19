@@ -72,3 +72,8 @@ Khi Apple duyệt: Team ID, tạo app, key API, chạy `pnpm run ios:release`, T
 - Thời gian giữ nhật ký truy cập (journald) trên `.65` chưa kiểm; chính sách không nêu số ngày.
 - Chính sách hứa xoá bản sao lưu khi bản cập nhật ổn định: trên `.65` đang còn nhiều thư mục `/root/scribe-backup-*`
   từ 16–19/10 cần dọn.
+
+## Deploy 19/10 12:11
+Chủ dự án cho phép ("sửa xong hết thì deploy luôn"). Build sạch từ `47e74fe`, có `VITE_SUPPORT_EMAIL` (web/.env, không commit). Hàng đợi rỗng.
+Sao lưu `/root/scribe-backup-20261019-121148`, binary sha256 `ec57158b8cfb168d…`, `index-BYJSOVBQ.js`, health ok, `NRestarts=0`.
+`/privacy` 200, `/terms` 200, `POST /api/me/delete` chưa đăng nhập 401. Chưa thử xoá tài khoản thật trên prod và chưa thử từ iPhone thật.
