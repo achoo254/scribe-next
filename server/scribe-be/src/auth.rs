@@ -481,6 +481,14 @@ pub async fn me(
         "maxFileBytes": storage.max_file_bytes,
         "retentionDays": storage.retention_days,
     });
+    // Key riêng chỉ để hiện lên thẻ mức dùng: đọc lỗi thì báo `null` (thẻ hiện như không có key) thay vì làm hỏng `/api/me`.
+    let own_keys = match crate::user_keys::me_summary(&state, &user.0).await {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::warn!("đọc key riêng cho /api/me lỗi: {e:?}");
+            Value::Null
+        }
+    };
     let transcription = if can_transcribe {
         let now = chrono::Utc::now();
         let month = usage::month_key(now);
@@ -515,7 +523,7 @@ pub async fn me(
         "plan": plan_info,
         "transcription": transcription,
         // Việc nào chạy bằng key riêng của người dùng (thẻ "Gói và mức dùng" hiện "Dùng key của bạn").
-        "ownKeys": crate::user_keys::me_summary(&state, &user.0).await?,
+        "ownKeys": own_keys,
     })))
 }
 

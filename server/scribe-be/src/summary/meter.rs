@@ -37,6 +37,15 @@ pub fn cost_seconds(input_tokens: i64, output_tokens: i64) -> i64 {
     cost_seconds_at(llm::price_of(vendor, &model), input_tokens, output_tokens, crate::config::usd_per_minute())
 }
 
+/// Phần giữ chỗ (giây tương đương) cho một lượt của model chữ của server: `input_tokens` ước lượng và trần token ra
+/// `max_output_tokens`, cộng phần suy nghĩ nhà cung cấp có thể tính thêm (`llm::output_cap`, Gemini): luôn là cận trên của
+/// chi phí thật.
+pub fn estimate_seconds(input_tokens: i64, max_output_tokens: i64) -> i64 {
+    let (vendor, model) = crate::config::llm_from_build();
+    let cap = llm::output_cap(vendor, max_output_tokens);
+    cost_seconds_at(llm::price_of(vendor, &model), input_tokens, cap, crate::config::usd_per_minute())
+}
+
 /// Như [`cost_seconds`] với giá model `price` và giá chép lời `usd_per_minute` cho trước.
 fn cost_seconds_at(price: llm::Price, input_tokens: i64, output_tokens: i64, usd_per_minute: f64) -> i64 {
     let cost_e8 = price.cost_e8(input_tokens, output_tokens);
@@ -289,6 +298,11 @@ mod tests {
         // Lượt thường (20k vào, 1,5k ra) = $0,0104 ⟹ 208 giây OpenAI, 171 giây ElevenLabs ($0,22/giờ).
         assert_eq!(cost_seconds_at(mini, 20_000, 1_500, openai), 208);
         assert_eq!(cost_seconds_at(mini, 20_000, 1_500, crate::config::Provider::ElevenLabs.usd_per_minute()), 171);
+        // Gemini: phần giữ chỗ cộng cả phần suy nghĩ tối đa, nên luôn ≥ chi phí của lượt dùng hết trần token ra.
+        let flash = llm::price_of(Vendor::Gemini, "gemini-3.8-flash");
+        let reserved = cost_seconds_at(flash, 20_000, llm::output_cap(Vendor::Gemini, 1_500), openai);
+        let worst = cost_seconds_at(flash, 20_000, 1_500 + llm::GEMINI_THINKING_HEADROOM, openai);
+        assert!(reserved >= worst && reserved > cost_seconds_at(flash, 20_000, 1_500, openai));
         // Model khác của server theo bảng giá: Claude Haiku 5.5 ($0,10 / $0,50) rẻ bằng một phần tư.
         let haiku = llm::price_of(Vendor::Anthropic, "claude-haiku-5-5");
         assert_eq!(cost_seconds_at(haiku, 20_000, 1_500, openai), 55);

@@ -145,13 +145,26 @@ fn llm_provider(raw: Option<&str>) -> Vendor {
     }
 }
 
-/// Model chữ của server: `LLM_MODEL`, rồi `SUMMARY_MODEL` (tên cũ, chỉ khi nhà cung cấp là OpenAI), rồi model mặc định
-/// của nhà cung cấp (`summary::llm::default_model`).
-fn llm_model(provider: Vendor, llm_model: Option<&str>, summary_model: Option<&str>) -> String {
+/// Model chữ được đặt cho server: `LLM_MODEL`, rồi `SUMMARY_MODEL` (tên cũ, chỉ khi nhà cung cấp là OpenAI).
+fn configured_llm_model(provider: Vendor, llm_model: Option<&str>, summary_model: Option<&str>) -> Option<String> {
     let pick = |v: Option<&str>| v.map(str::trim).filter(|m| !m.is_empty()).map(str::to_string);
-    pick(llm_model)
-        .or_else(|| pick(summary_model).filter(|_| provider == Vendor::OpenAi))
+    pick(llm_model).or_else(|| pick(summary_model).filter(|_| provider == Vendor::OpenAi))
+}
+
+/// Model chữ của server: model được đặt nếu có trong bảng giá (`summary::llm::MODELS`), không thì model mặc định của nhà
+/// cung cấp — chi phí quy ra trần luôn theo đúng giá của model đang chạy. `main` ghi lỗi lúc khởi động khi model được đặt
+/// bị bỏ ([`unlisted_llm_model`]).
+fn llm_model(provider: Vendor, llm_model: Option<&str>, summary_model: Option<&str>) -> String {
+    configured_llm_model(provider, llm_model, summary_model)
+        .filter(|m| crate::summary::llm::is_listed(provider, m))
         .unwrap_or_else(|| crate::summary::llm::default_model(provider).to_string())
+}
+
+/// Model chữ đặt qua biến build nhưng không có trong bảng giá (đã đổi về model mặc định), để ghi lỗi lúc khởi động.
+pub fn unlisted_llm_model() -> Option<String> {
+    let provider = llm_provider(option_env!("LLM_PROVIDER"));
+    configured_llm_model(provider, option_env!("LLM_MODEL"), option_env!("SUMMARY_MODEL"))
+        .filter(|m| !crate::summary::llm::is_listed(provider, m))
 }
 
 /// Nhà cung cấp và model chữ của bản build này.
@@ -337,8 +350,8 @@ pub struct Config {
     pub translate_limits: DailyLimits,
     /// Nhà cung cấp model chữ của server cho biên bản, hỏi đáp và dịch (`LLM_PROVIDER`, mặc định OpenAI).
     pub llm_provider: Vendor,
-    /// Model chữ của server (`LLM_MODEL`; `SUMMARY_MODEL` cũ vẫn nhận khi nhà cung cấp là OpenAI). Giá token để quy ra
-    /// trần chi phí lấy từ bảng giá ở `summary::llm` (model lạ dùng giá của model mặc định, có log).
+    /// Model chữ của server (`LLM_MODEL`; `SUMMARY_MODEL` cũ vẫn nhận khi nhà cung cấp là OpenAI). Chỉ nhận model có
+    /// trong bảng giá ở `summary::llm` (giá quy ra trần chi phí); model khác thì dùng model mặc định và ghi lỗi lúc khởi động.
     pub summary_model: String,
     /// Tệp key Gemini / Anthropic của server, chỉ đọc khi `LLM_PROVIDER` là nhà cung cấp đó.
     pub gemini_key_path: Option<String>,
@@ -557,6 +570,10 @@ mod tests {
         // `SUMMARY_MODEL` là model OpenAI: không áp cho nhà cung cấp khác.
         assert_eq!(llm_model(Vendor::Anthropic, None, Some("gpt-4.1-nano")), "claude-haiku-5-5");
         assert_eq!(llm_model(Vendor::Gemini, Some(" gemini-3.5-flash-lite "), None), "gemini-3.5-flash-lite");
+        // Model ngoài bảng giá (vd Claude Opus đắt gấp ~40 lần Haiku) không chạy với giá sai: về model mặc định.
+        assert_eq!(llm_model(Vendor::Anthropic, Some("claude-opus-5-5"), None), "claude-haiku-5-5");
+        assert_eq!(llm_model(Vendor::OpenAi, None, Some("gpt-9")), "gpt-4.1-mini");
+        assert_eq!(configured_llm_model(Vendor::Anthropic, Some("claude-opus-5-5"), None).as_deref(), Some("claude-opus-5-5"));
         assert_eq!(Vendor::parse("gemini"), Some(Vendor::Gemini));
         assert_eq!(Vendor::parse("Gemini"), None);
         assert!(Vendor::ALL.iter().all(|v| Vendor::parse(v.code()) == Some(*v)));

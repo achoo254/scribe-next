@@ -59,6 +59,15 @@ const OPENAI_SILENCE_MS: i64 = 500;
 /// Im lặng bao lâu (giây) thì ElevenLabs chốt một câu (VAD phía ElevenLabs, nhận 0,3–3).
 const ELEVENLABS_SILENCE_S: &str = "1.0";
 
+/// Số token tối đa mỗi phút mỗi tài khoản cấp bằng key riêng (không có sổ nào giữ chỗ để hãm): một phiên ghi xin token mới
+/// khoảng 10 phút một lần, nối lại khi mất mạng cũng xin token, nên 10 lần/phút là dư cho người dùng thật.
+const OWN_TOKENS_PER_MINUTE: u32 = 10;
+
+/// Còn được cấp token bằng key riêng trong phút này không.
+fn own_token_allowed(rate: &crate::rate_limit::RateLimiter, user_id: &str) -> bool {
+    rate.allow(&format!("realtime-own:{user_id}"), OWN_TOKENS_PER_MINUTE)
+}
+
 /// Thông báo khi tài khoản chưa được dùng chép trực tiếp.
 const NOT_ALLOWED: &str = "Tài khoản này chưa được dùng chép trực tiếp.";
 const MINT_FAILED: &str = "Không mở được phiên chép trực tiếp, thử lại sau.";
@@ -349,6 +358,7 @@ pub async fn token(
         cost_ratio: price.cost,
         el_ratio: price.el,
         byok: None,
+        key_nonce: None,
     };
     if let Err(e) = realtime_token::insert(&state.db, &doc).await {
         refund(&state.db, &charge, reserved, price, "không ghi được token").await;
@@ -376,6 +386,9 @@ async fn hours_blocked(state: &AppState, user_id: &str, month: &str, limit: i64,
 /// Token cấp bằng key riêng của người dùng (`own`: ElevenLabs hoặc OpenAI). Không giữ chỗ; app vẫn không stream quá
 /// `reservedSeconds` bằng một token (đổi token như thường).
 async fn own_token(state: &AppState, user_id: &str, session_id: Option<String>, own: Vendor) -> Result<Value, AppError> {
+    if !own_token_allowed(&state.rate, user_id) {
+        return Err(AppError::TooManyRequests("xin token chép trực tiếp quá nhanh, thử lại sau một phút".into()));
+    }
     let provider = if own == Vendor::ElevenLabs { Provider::ElevenLabs } else { Provider::OpenAi };
     let key = crate::user_keys::open(state, user_id, own).await.map_err(crate::user_keys::user_key_error)?;
     let minted = match provider {
@@ -392,6 +405,7 @@ async fn own_token(state: &AppState, user_id: &str, session_id: Option<String>, 
             return Err(AppError::Unavailable(MINT_FAILED.into()));
         }
     };
+    let key_nonce = realtime_token::nonce_hex(key.nonce());
     drop(key);
     let reserved = RESERVE_STEPS[0];
     let doc = TokenDoc {
@@ -409,6 +423,7 @@ async fn own_token(state: &AppState, user_id: &str, session_id: Option<String>, 
         cost_ratio: 0.0,
         el_ratio: 0.0,
         byok: Some(own.code().into()),
+        key_nonce: Some(key_nonce),
     };
     realtime_token::insert(&state.db, &doc).await?;
     let details = doc! { "tokenId": &doc.id, "sessionId": session_id, "seconds": reserved, "provider": &doc.provider, "byok": true };
@@ -429,6 +444,12 @@ fn token_reply(minted: &Minted, token_id: &str, reserved: i64, provider: Provide
         "url": minted.url,
         "sampleRate": SAMPLE_RATE,
     })
+}
+
+/// Nonce của bản key riêng đã cấp token (token cấp bằng key server hay token cũ không có trường này: `None`).
+fn own_key_nonce(t: &TokenDoc) -> Option<Vec<u8>> {
+    t.byok.as_ref()?;
+    realtime_token::nonce_from_hex(t.key_nonce.as_deref()?)
 }
 
 /// Kết quả một lần báo số giây.
@@ -530,8 +551,9 @@ pub async fn report_usage(
         match owned.filter(|t| t.provider == "elevenlabs") {
             // Key riêng hết credit: đánh dấu key đó, không đặt dấu hết quota tháng của server.
             Some(t) if t.byok.is_some() => {
-                if let Ok(key) = crate::user_keys::open(&state, &user.0, Vendor::ElevenLabs).await {
-                    crate::user_keys::report(&state, &key, crate::user_keys::Problem::NoCredit).await;
+                if let Some(nonce) = own_key_nonce(&t) {
+                    let problem = crate::user_keys::Problem::NoCredit;
+                    crate::user_keys::report_nonce(&state, &user.0, Vendor::ElevenLabs, &nonce, problem).await;
                 }
             }
             Some(t) => {
@@ -667,6 +689,47 @@ mod tests {
     }
 
     #[test]
+    fn a_late_quota_report_targets_the_key_that_minted_the_token() {
+        let nonce = [0u8, 1, 0xab, 0xff, 7, 8, 9, 10, 11, 12, 13, 14];
+        let hex = realtime_token::nonce_hex(&nonce);
+        assert_eq!(hex, "0001abff0708090a0b0c0d0e");
+        assert_eq!(realtime_token::nonce_from_hex(&hex).as_deref(), Some(&nonce[..]));
+        assert_eq!(realtime_token::nonce_from_hex("abc"), None);
+        assert_eq!(realtime_token::nonce_from_hex("zz"), None);
+        let token = |byok: Option<&str>, key_nonce: Option<&str>| TokenDoc {
+            id: "t".into(),
+            user_id: "u".into(),
+            session_id: None,
+            month: "2026-10".into(),
+            free_pool: false,
+            day: None,
+            charged_s: 0,
+            settled: false,
+            created_at: DateTime::from_millis(0),
+            report_by: DateTime::from_millis(0),
+            provider: "elevenlabs".into(),
+            cost_ratio: 0.0,
+            el_ratio: 0.0,
+            byok: byok.map(str::to_string),
+            key_nonce: key_nonce.map(str::to_string),
+        };
+        assert_eq!(own_key_nonce(&token(Some("elevenlabs"), Some(&hex))), Some(nonce.to_vec()));
+        // Token cũ không có nonce: không đánh dấu key nào (không đoán là key hiện tại).
+        assert_eq!(own_key_nonce(&token(Some("elevenlabs"), None)), None);
+        assert_eq!(own_key_nonce(&token(None, Some(&hex))), None);
+    }
+
+    #[test]
+    fn minting_with_an_own_key_is_rate_limited_per_account() {
+        let rate = crate::rate_limit::RateLimiter::new();
+        for _ in 0..OWN_TOKENS_PER_MINUTE {
+            assert!(own_token_allowed(&rate, "u1"));
+        }
+        assert!(!own_token_allowed(&rate, "u1"), "lần thứ 11 trong phút bị chặn");
+        assert!(own_token_allowed(&rate, "u2"), "tài khoản khác không bị ảnh hưởng");
+    }
+
+    #[test]
     fn ids_are_short_lowercase_tokens() {
         assert!(valid_id("0b9c1e7e-1f0a-4c1e-9a55-3c7a8c4b2d10"));
         assert!(!valid_id(""));
@@ -727,6 +790,49 @@ mod tests {
         assert!(!minted.token.is_empty());
     }
 
+    /// Báo hết quota trễ của token cấp bằng key cũ trên Mongo thật (DB dev): người dùng đã nhập key mới thì key mới không bị
+    /// đánh dấu; token của key hiện tại thì đánh dấu đúng key đó. `TRANSCRIPT_TEST_MONGO_URI=… TRANSCRIPT_TEST_DB_NAME=…
+    /// cargo test late_quota_report_on_real_mongo -- --ignored`. User giả, key giả, tự dọn.
+    #[tokio::test]
+    #[ignore]
+    async fn late_quota_report_on_real_mongo() {
+        use crate::user_keys::{crypto, store};
+        let uri = std::env::var("TRANSCRIPT_TEST_MONGO_URI").expect("TRANSCRIPT_TEST_MONGO_URI");
+        let db_name = std::env::var("TRANSCRIPT_TEST_DB_NAME").expect("TRANSCRIPT_TEST_DB_NAME");
+        let db = crate::db::connect(&uri, &db_name).await.expect("kết nối Mongo");
+        let user = format!("selftest-{}", uuid::Uuid::new_v4());
+        let secret = crypto::Secret::from_bytes(&[5u8; 32]).expect("bí mật");
+        let old = crypto::seal(&secret, &user, "elevenlabs", "sk_test_old_key_000001").expect("mã hoá");
+        store::save(&db, &user, Vendor::ElevenLabs, &old, "0001").await.expect("lưu key cũ");
+        let token = TokenDoc {
+            id: format!("{user}-t"),
+            user_id: user.clone(),
+            session_id: None,
+            month: "2026-10".into(),
+            free_pool: false,
+            day: None,
+            charged_s: 0,
+            settled: false,
+            created_at: DateTime::now(),
+            report_by: DateTime::now(),
+            provider: "elevenlabs".into(),
+            cost_ratio: 0.0,
+            el_ratio: 0.0,
+            byok: Some("elevenlabs".into()),
+            key_nonce: Some(realtime_token::nonce_hex(&old.nonce)),
+        };
+        let fresh = crypto::seal(&secret, &user, "elevenlabs", "sk_test_new_key_000002").expect("mã hoá");
+        store::save(&db, &user, Vendor::ElevenLabs, &fresh, "0002").await.expect("lưu key mới");
+        let nonce = own_key_nonce(&token).expect("nonce của token");
+        assert!(!store::set_status(&db, &user, Vendor::ElevenLabs, &nonce, store::Status::Quota).await.expect("đánh dấu"));
+        assert_eq!(store::list(&db, &user).await.expect("đọc")[0].status, store::Status::Valid, "key mới không bị đánh dấu");
+        let current = TokenDoc { key_nonce: Some(realtime_token::nonce_hex(&fresh.nonce)), ..token };
+        let nonce = own_key_nonce(&current).expect("nonce");
+        assert!(store::set_status(&db, &user, Vendor::ElevenLabs, &nonce, store::Status::Quota).await.expect("đánh dấu"));
+        assert_eq!(store::list(&db, &user).await.expect("đọc")[0].status, store::Status::Quota);
+        store::delete(&db, &user, Vendor::ElevenLabs).await.expect("dọn");
+    }
+
     /// Trên Mongo thật (DB dev): `TRANSCRIPT_TEST_MONGO_URI=… TRANSCRIPT_TEST_DB_NAME=… cargo test
     /// realtime_metering -- --ignored`. Tháng giả riêng, tự dọn.
     #[tokio::test]
@@ -773,6 +879,7 @@ mod tests {
             cost_ratio: price.cost,
             el_ratio: price.el,
             byok: None,
+            key_nonce: None,
         };
         let later = DateTime::from_millis(DateTime::now().timestamp_millis() + 3_600_000);
         let id_a = format!("{user}-a");

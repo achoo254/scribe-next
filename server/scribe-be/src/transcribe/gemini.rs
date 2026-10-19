@@ -69,7 +69,8 @@ fn request_body(audio: &[u8]) -> Value {
         ] }],
         "generationConfig": {
             "temperature": 0.0,
-            "maxOutputTokens": MAX_OUTPUT_TOKENS + llm::GEMINI_THINKING_HEADROOM,
+            "maxOutputTokens": llm::output_cap(Vendor::Gemini, MAX_OUTPUT_TOKENS),
+            "thinkingConfig": llm::gemini_thinking(MODEL),
             "responseMimeType": "application/json",
             "responseSchema": llm::gemini_schema(&schema()),
         },

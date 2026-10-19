@@ -30,9 +30,25 @@ const HTTP_RETRIES: u32 = 3;
 const DEADLINE: Duration = Duration::from_secs(80);
 /// Chỉ thử lại khi còn ít nhất chừng này giây (sau thời gian chờ lùi) cho lần thử mới.
 const MIN_ATTEMPT: Duration = Duration::from_secs(25);
-/// Gemini Flash suy nghĩ trước khi trả lời và token suy nghĩ tính vào `maxOutputTokens`: chừa thêm chỗ để kết quả không
-/// bị cắt (token suy nghĩ vẫn được tính tiền như token ra, [`Completion::output_tokens`] gồm cả chúng).
-pub(crate) const GEMINI_THINKING_HEADROOM: i64 = 8_000;
+/// Gemini 3 suy nghĩ trước khi trả lời; Scribe hạ mức suy nghĩ xuống thấp nhất ([`gemini_thinking`], `MINIMAL`: "little to
+/// no thinking") và chừa thêm chừng này token trong `maxOutputTokens` (trần của cả câu trả lời) để kết quả không bị cắt.
+/// Token suy nghĩ được tính tiền như token ra ([`Completion::output_tokens`] gồm cả chúng), nên phần giữ chỗ cũng cộng
+/// phần chừa này ([`output_cap`]): ước lượng luôn là cận trên.
+pub(crate) const GEMINI_THINKING_HEADROOM: i64 = 2_000;
+
+/// Số token ra tối đa nhà cung cấp có thể tính cho một lượt có trần `max_output_tokens` (Gemini cộng phần suy nghĩ).
+pub fn output_cap(vendor: Vendor, max_output_tokens: i64) -> i64 {
+    match vendor {
+        Vendor::Gemini => max_output_tokens + GEMINI_THINKING_HEADROOM,
+        _ => max_output_tokens,
+    }
+}
+
+/// Mức suy nghĩ thấp nhất của Gemini 3 trở lên (`thinkingConfig.thinkingLevel`; model cũ hơn báo lỗi nếu có trường này).
+pub(crate) fn gemini_thinking(model: &str) -> Option<Value> {
+    let major: u32 = model.strip_prefix("gemini-")?.split(['.', '-']).next()?.parse().ok()?;
+    (major >= 3).then(|| json!({ "thinkingLevel": "MINIMAL" }))
+}
 
 /// Key không dùng được (sai, thu hồi, thiếu quyền) hoặc tài khoản hết credit: lỗi "dừng hẳn", các lượt sau cũng sẽ hỏng.
 pub const KEY_INVALID: &str = "Model chữ: API key không hợp lệ, bị thu hồi hoặc thiếu quyền";
@@ -120,10 +136,13 @@ pub fn is_listed(vendor: Vendor, model: &str) -> bool {
     models(vendor).iter().any(|m| m.id == model)
 }
 
-/// Giá của `model`; model lạ (đặt qua `LLM_MODEL`) dùng giá model mặc định của nhà cung cấp.
+/// Giá của `model`. Model ngoài danh sách không bao giờ chạy bằng key server (`config::llm_model` đổi về model mặc định
+/// lúc khởi động) hay key riêng (`user_keys::text_model`); nếu vẫn gặp thì tính theo model đắt nhất của nhà cung cấp, để
+/// trần chi phí không bị tính thiếu.
 pub fn price_of(vendor: Vendor, model: &str) -> Price {
     let list = models(vendor);
-    match list.iter().find(|m| m.id == model).or_else(|| list.first()) {
+    let priciest = || list.iter().max_by_key(|m| m.price.cost_e8(1_000_000, 1_000_000));
+    match list.iter().find(|m| m.id == model).or_else(priciest) {
         Some(m) => m.price,
         None => price(40, 160),
     }
@@ -294,19 +313,22 @@ fn anthropic_thinking(model: &str) -> Option<Value> {
 /// URL và thân request theo nhà cung cấp.
 fn request_parts(base: &str, llm: &Llm<'_>, prompt: &Prompt<'_>) -> (String, Value) {
     match llm.vendor {
-        Vendor::Gemini => (
-            format!("{base}/v1beta/models/{}:generateContent", llm.model),
-            json!({
+        Vendor::Gemini => {
+            let mut body = json!({
                 "systemInstruction": { "parts": [{ "text": prompt.instructions }] },
                 "contents": [{ "role": "user", "parts": [{ "text": prompt.input }] }],
                 "generationConfig": {
                     "temperature": 0.2,
-                    "maxOutputTokens": prompt.max_output_tokens + GEMINI_THINKING_HEADROOM,
+                    "maxOutputTokens": output_cap(Vendor::Gemini, prompt.max_output_tokens),
                     "responseMimeType": "application/json",
                     "responseSchema": gemini_schema(&prompt.schema),
                 },
-            }),
-        ),
+            });
+            if let Some(thinking) = gemini_thinking(llm.model) {
+                body["generationConfig"]["thinkingConfig"] = thinking;
+            }
+            (format!("{base}/v1beta/models/{}:generateContent", llm.model), body)
+        }
         Vendor::Anthropic => {
             let mut body = json!({
                 "model": llm.model,
@@ -424,7 +446,7 @@ pub(crate) fn parse_response<T: DeserializeOwned>(vendor: Vendor, body: &str) ->
 pub(crate) fn retryable(vendor: Vendor, status: u16, body: &str) -> bool {
     match vendor {
         Vendor::Anthropic => matches!(status, 429 | 500 | 502 | 503 | 529),
-        Vendor::Gemini => matches!(status, 429 | 500 | 502 | 503 | 504),
+        Vendor::Gemini => matches!(status, 429 | 500 | 502 | 503 | 504) && !gemini_quota_exhausted(status, body),
         Vendor::OpenAi | Vendor::ElevenLabs => matches!(status, 429 | 500 | 502 | 503) && !is_quota(body),
     }
 }
@@ -444,7 +466,7 @@ pub(crate) fn api_error(vendor: Vendor, status: u16, body: &str) -> String {
     }
     let no_credit = match vendor {
         Vendor::Anthropic => status == 402 || lower.contains("credit balance"),
-        Vendor::Gemini => false,
+        Vendor::Gemini => gemini_quota_exhausted(status, body),
         Vendor::OpenAi | Vendor::ElevenLabs => is_quota(body),
     };
     if no_credit {
@@ -456,6 +478,19 @@ pub(crate) fn api_error(vendor: Vendor, status: u16, body: &str) -> String {
         .unwrap_or_else(|| body.chars().take(200).collect());
     tracing::warn!(status, vendor = vendor.code(), "nhà cung cấp từ chối lượt gọi model chữ: {message}");
     format!("Dịch vụ {} đang lỗi (HTTP {status})", vendor.label())
+}
+
+/// Gemini 429 `RESOURCE_EXHAUSTED` vì hết hạn mức theo ngày hoặc hết tiền (chi tiết `QuotaFailure` có `quotaId` theo ngày,
+/// hoặc thông điệp về hạn mức chi tiêu): thử lại không giúp gì, coi như hết credit. 429 theo phút (`PerMinute`) vẫn là quá
+/// tải tạm thời, thử lại được.
+pub(crate) fn gemini_quota_exhausted(status: u16, body: &str) -> bool {
+    if status != 429 {
+        return false;
+    }
+    let lower = body.to_ascii_lowercase();
+    let daily = lower.contains("quotafailure") && lower.contains("perday");
+    let spend = lower.contains("spend") && lower.contains("limit");
+    daily || spend
 }
 
 /// Gốc API của nhà cung cấp.
@@ -559,6 +594,7 @@ mod tests {
         let config = &body["generationConfig"];
         assert_eq!(config["responseMimeType"], "application/json");
         assert_eq!(config["maxOutputTokens"], super::super::MAX_OUTPUT_TOKENS + GEMINI_THINKING_HEADROOM);
+        assert_eq!(config["thinkingConfig"], json!({ "thinkingLevel": "MINIMAL" }));
         let schema = &config["responseSchema"];
         assert_eq!(schema["type"], "OBJECT");
         assert!(schema.get("additionalProperties").is_none());
@@ -659,6 +695,29 @@ mod tests {
     }
 
     #[test]
+    fn gemini_thinking_is_capped_and_counted_in_the_output_cap() {
+        assert_eq!(gemini_thinking("gemini-3.8-flash"), Some(json!({ "thinkingLevel": "MINIMAL" })));
+        assert_eq!(gemini_thinking("gemini-3.5-flash-lite"), Some(json!({ "thinkingLevel": "MINIMAL" })));
+        // Model cũ hơn Gemini 3 báo lỗi nếu có trường này.
+        assert_eq!(gemini_thinking("gemini-2.5-flash"), None);
+        assert_eq!(gemini_thinking("gpt-4.1-mini"), None);
+        assert_eq!(output_cap(Vendor::Gemini, 1_500), 1_500 + GEMINI_THINKING_HEADROOM);
+        assert_eq!(output_cap(Vendor::OpenAi, 1_500), 1_500);
+        assert_eq!(output_cap(Vendor::Anthropic, 1_500), 1_500);
+    }
+
+    #[test]
+    fn gemini_daily_quota_is_no_credit_but_per_minute_limits_are_retried() {
+        let daily = r#"{"error":{"code":429,"message":"You exceeded your current quota, please check your plan and billing details.","status":"RESOURCE_EXHAUSTED","details":[{"@type":"type.googleapis.com/google.rpc.QuotaFailure","violations":[{"quotaMetric":"generativelanguage.googleapis.com/generate_content_free_tier_requests","quotaId":"GenerateRequestsPerDayPerProjectPerModel-FreeTier"}]},{"@type":"type.googleapis.com/google.rpc.RetryInfo","retryDelay":"36s"}]}}"#;
+        let minute = r#"{"error":{"code":429,"message":"You exceeded your current quota, please check your plan and billing details.","status":"RESOURCE_EXHAUSTED","details":[{"@type":"type.googleapis.com/google.rpc.QuotaFailure","violations":[{"quotaId":"GenerateRequestsPerMinutePerProjectPerModel"}]},{"@type":"type.googleapis.com/google.rpc.RetryInfo","retryDelay":"20s"}]}}"#;
+        assert!(gemini_quota_exhausted(429, daily) && !retryable(Vendor::Gemini, 429, daily));
+        assert_eq!(api_error(Vendor::Gemini, 429, daily), NO_CREDIT);
+        assert!(!gemini_quota_exhausted(429, minute) && retryable(Vendor::Gemini, 429, minute));
+        assert!(!is_key_broken(&api_error(Vendor::Gemini, 429, minute)));
+        assert!(!gemini_quota_exhausted(500, daily));
+    }
+
+    #[test]
     fn prices_follow_the_catalog() {
         assert_eq!(default_model(Vendor::OpenAi), "gpt-4.1-mini");
         assert_eq!(default_model(Vendor::Gemini), "gemini-3.8-flash");
@@ -667,8 +726,10 @@ mod tests {
         assert!(is_listed(Vendor::Anthropic, "claude-sonnet-5-5") && !is_listed(Vendor::Anthropic, "gpt-4.1-mini"));
         // $0,40 / $1,60 mỗi triệu token.
         assert_eq!(price_of(Vendor::OpenAi, "gpt-4.1-mini").cost_e8(1_000_000, 1_000_000), 200_000_000);
-        // Model lạ: giá model mặc định.
+        // Model ngoài danh sách: giá model đắt nhất của nhà cung cấp, không bao giờ rẻ hơn.
         assert_eq!(price_of(Vendor::OpenAi, "gpt-x"), price_of(Vendor::OpenAi, "gpt-4.1-mini"));
+        assert_eq!(price_of(Vendor::Anthropic, "claude-opus-5-5"), price_of(Vendor::Anthropic, "claude-sonnet-5-5"));
+        assert_eq!(price_of(Vendor::Gemini, "gemini-x"), price_of(Vendor::Gemini, "gemini-3.8-flash"));
         // Haiku 5.5: trên 100.000 token đầu vào thì giá cao hơn cho cả lượt.
         let haiku = price_of(Vendor::Anthropic, "claude-haiku-5-5");
         assert_eq!(haiku.cost_e8(100_000, 0), 1_000_000);

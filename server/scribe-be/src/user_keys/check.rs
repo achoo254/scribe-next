@@ -84,6 +84,7 @@ fn verdict(provider: Vendor, status: u16, body: &str) -> Verdict {
         (_, 402) => Verdict::NoCredit,
         (Vendor::ElevenLabs | Vendor::OpenAi, 401 | 429) if quota => Verdict::NoCredit,
         (_, 401 | 403) => Verdict::Invalid,
+        (Vendor::Gemini, 429) if crate::summary::llm::gemini_quota_exhausted(status, body) => Verdict::NoCredit,
         (Vendor::Gemini, 400) if lower.contains("api_key_invalid") || lower.contains("api key not valid") => Verdict::Invalid,
         _ => {
             tracing::warn!(provider = provider.code(), status, "kiểm key riêng: nhà cung cấp trả lỗi không rõ");
@@ -119,6 +120,9 @@ mod tests {
         assert_eq!(verdict(Vendor::Gemini, 400, r#"{"error":{"details":[{"reason":"API_KEY_INVALID"}]}}"#), Verdict::Invalid);
         assert_eq!(verdict(Vendor::Gemini, 400, r#"{"error":{"message":"other"}}"#), Verdict::Unreachable);
         assert_eq!(verdict(Vendor::Anthropic, 403, "{}"), Verdict::Invalid);
+        let daily = r#"{"error":{"status":"RESOURCE_EXHAUSTED","details":[{"@type":"type.googleapis.com/google.rpc.QuotaFailure","violations":[{"quotaId":"GenerateRequestsPerDayPerProjectPerModel-FreeTier"}]}]}}"#;
+        assert_eq!(verdict(Vendor::Gemini, 429, daily), Verdict::NoCredit);
+        assert_eq!(verdict(Vendor::Gemini, 429, r#"{"error":{"status":"RESOURCE_EXHAUSTED"}}"#), Verdict::Unreachable);
         assert_eq!(verdict(Vendor::Anthropic, 500, "{}"), Verdict::Unreachable);
     }
 

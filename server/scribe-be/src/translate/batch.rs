@@ -137,7 +137,7 @@ fn output_tokens(chars: usize, lines: usize) -> i64 {
 /// Chi phí giữ chỗ (giây tương đương) của một lô `chars` ký tự, `lines` câu: chặn trên chi phí thật.
 pub fn estimate_seconds(chars: usize, lines: usize) -> i64 {
     let input = meter::estimate_input_tokens(chars) + LINE_OVERHEAD_TOKENS * lines as i64;
-    meter::cost_seconds(input, output_tokens(chars, lines))
+    meter::estimate_seconds(input, output_tokens(chars, lines))
 }
 
 /// Gọi model dịch một lô.

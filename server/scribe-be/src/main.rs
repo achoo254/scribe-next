@@ -111,6 +111,9 @@ async fn main() {
     }
 
     let port = config.port;
+    if let Some(model) = config::unlisted_llm_model() {
+        tracing::error!(model = %model, fallback = %config.summary_model, "LLM_MODEL không có trong bảng giá — dùng model mặc định");
+    }
     let transcriber = transcribe::Transcriber::load(&config);
     // Key riêng: thiếu hoặc sai tệp bí mật thì tính năng tắt (giao diện báo), server vẫn chạy.
     let user_keys_secret = match config.user_keys_secret_path.as_deref() {

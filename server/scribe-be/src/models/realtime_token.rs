@@ -54,6 +54,23 @@ pub struct TokenDoc {
     /// Token cấp bằng key riêng của người dùng (mã nhà cung cấp): không giữ chỗ, không quyết toán sổ nào.
     #[serde(default)]
     pub byok: Option<String>,
+    /// Nonce (hex) của đúng bản key riêng đã cấp token: báo hết quota trễ chỉ đánh dấu bản key đó, không đụng key người
+    /// dùng vừa nhập lại. Không phải bí mật (nonce nằm cạnh bản mã).
+    #[serde(rename = "keyNonce", default)]
+    pub key_nonce: Option<String>,
+}
+
+/// Nonce ra hex (ghi vào token).
+pub fn nonce_hex(nonce: &[u8]) -> String {
+    nonce.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// Hex ra nonce; sai dạng thì `None`.
+pub fn nonce_from_hex(hex: &str) -> Option<Vec<u8>> {
+    if !hex.len().is_multiple_of(2) {
+        return None;
+    }
+    (0..hex.len()).step_by(2).map(|i| u8::from_str_radix(hex.get(i..i + 2)?, 16).ok()).collect()
 }
 
 fn openai() -> String {
@@ -110,6 +127,7 @@ pub async fn insert(db: &Database, t: &TokenDoc) -> Result<(), AppError> {
         "costRatio": t.cost_ratio,
         "elRatio": t.el_ratio,
         "byok": &t.byok,
+        "keyNonce": &t.key_nonce,
     };
     db.collection::<Document>(COLL)
         .insert_one(d)

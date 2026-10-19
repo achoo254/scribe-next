@@ -168,6 +168,11 @@ impl UserKey {
     pub fn value(&self) -> &str {
         self.value.as_str()
     }
+
+    /// Nonce của bản key đã giải mã: nhận diện đúng bản key này khi báo lỗi về sau.
+    pub fn nonce(&self) -> &[u8] {
+        &self.nonce
+    }
 }
 
 /// Câu người dùng thấy khi key riêng không dùng được.
@@ -234,15 +239,24 @@ pub fn problem_of(e: &str) -> Option<Problem> {
 
 /// Key riêng lỗi lúc dùng: đánh dấu đúng bản key đã dùng, ghi audit (không có key), trả câu cho người dùng.
 pub async fn report(state: &AppState, key: &UserKey, problem: Problem) -> String {
+    report_nonce(state, &key.user_id, key.provider, &key.nonce, problem).await
+}
+
+/// Như [`report`] khi chỉ còn nonce của bản key đã dùng (vd token chép trực tiếp cấp từ trước): key người dùng đã thay
+/// từ đó (nonce khác) thì không bị đánh dấu.
+pub async fn report_nonce(state: &AppState, user_id: &str, provider: Vendor, nonce: &[u8], problem: Problem) -> String {
     let status = match problem {
         Problem::Invalid => Status::Invalid,
         Problem::NoCredit => Status::Quota,
     };
-    if let Err(e) = store::set_status(&state.db, &key.user_id, key.provider, &key.nonce, status).await {
-        tracing::warn!("đánh dấu key riêng lỗi: {e:?}");
+    match store::set_status(&state.db, user_id, provider, nonce, status).await {
+        Ok(true) => {
+            audit::record(state, Some(user_id), "user_key.failed", doc! { "provider": provider.code(), "status": status.code() });
+        }
+        Ok(false) => {}
+        Err(e) => tracing::warn!("đánh dấu key riêng lỗi: {e:?}"),
     }
-    audit::record(state, Some(&key.user_id), "user_key.failed", doc! { "provider": key.provider.code(), "status": status.code() });
-    failure_message(key.provider, status_reason(status))
+    failure_message(provider, status_reason(status))
 }
 
 /// Lỗi trả cho request khi key riêng không dùng được.

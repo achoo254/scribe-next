@@ -337,16 +337,25 @@ pub async fn create(
 /// Bị key/credit chặn ở lượt tóm tắt hay hỏi đáp: tạm ngưng cả hai tính năng, báo quản trị một lần.
 pub(crate) fn report_key_broken(state: &AppState, e: &str) {
     if state.summaries.pause() {
-        tracing::error!("key OpenAI không dùng được cho tóm tắt và hỏi đáp ({e}) — tạm ngưng tới khi khởi động lại");
-        audit::record(state, None, "summary.key_invalid", doc! { "reason": e });
-        notify::send(state, format!("Tóm tắt và hỏi đáp tạm ngưng: key OpenAI của server không dùng được ({e}). Kiểm tra key rồi khởi động lại."));
+        let provider = state.config.llm_provider;
+        tracing::error!(provider = provider.code(), "key model chữ của server không dùng được ({e}) — tạm ngưng tới khi khởi động lại");
+        audit::record(state, None, "summary.key_invalid", doc! { "reason": e, "provider": provider.code() });
+        notify::send(state, pause_alert(provider, e));
     }
+}
+
+/// Câu báo chủ sản phẩm khi key model chữ của server hỏng, nêu đúng nhà cung cấp `LLM_PROVIDER`.
+fn pause_alert(provider: Vendor, e: &str) -> String {
+    format!(
+        "Tóm tắt, hỏi đáp và dịch tạm ngưng: key {} của server không dùng được ({e}). Kiểm tra key rồi khởi động lại.",
+        provider.label()
+    )
 }
 
 /// Phần có tiền của một lượt: mọi đường ra đều quyết toán phần đã giữ.
 async fn run(state: AppState, job: Job, _running: RunningGuard) -> Result<Json<Value>, AppError> {
     let (db, user_id, key) = (&state.db, job.user_id.as_str(), job.key.as_str());
-    let estimate = meter::cost_seconds(meter::estimate_input_tokens(job.chars), MAX_OUTPUT_TOKENS);
+    let estimate = meter::estimate_seconds(meter::estimate_input_tokens(job.chars), MAX_OUTPUT_TOKENS);
     let reservation = reserve_for(&state, Feature::Summary, user_id, Some(key), job.plan, estimate, &job.text_key).await?;
 
     // Từ đây phần giữ chỗ phải được quyết toán ở mọi đường ra.
@@ -420,6 +429,13 @@ mod tests {
         let moved = std::thread::spawn(move || drop(first));
         moved.join().expect("thread");
         assert!(running.start("u", "s:abc").is_some());
+    }
+
+    #[test]
+    fn the_pause_alert_names_the_server_text_provider() {
+        assert!(pause_alert(Vendor::Anthropic, "x").contains("key Anthropic Claude của server"));
+        assert!(pause_alert(Vendor::Gemini, "x").contains("key Google Gemini của server"));
+        assert!(pause_alert(Vendor::OpenAi, "x").contains("key OpenAI của server"));
     }
 
     #[test]

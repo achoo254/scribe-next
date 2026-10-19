@@ -357,7 +357,7 @@ pub async fn ask(
 async fn run(state: AppState, job: Job, _running: RunningGuard) -> Result<Json<Value>, AppError> {
     let user_id = job.user_id.as_str();
     let chars = job.input.chars().count();
-    let estimate = meter::cost_seconds(meter::estimate_input_tokens(chars), MAX_OUTPUT_TOKENS);
+    let estimate = meter::estimate_seconds(meter::estimate_input_tokens(chars), MAX_OUTPUT_TOKENS);
     let reservation =
         summary::reserve_for(&state, Feature::Ask, user_id, job.key.as_deref(), job.plan, estimate, &job.text_key).await?;
 
