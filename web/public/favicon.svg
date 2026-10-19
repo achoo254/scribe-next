@@ -1,49 +1,36 @@
 <svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
-  <!-- Scribe app icon — concept: waveform → text (speech → transcript).
-       Palette = theme Scribe dark (src/tokens/brand.ts):
-       bg #0d0d0d, primary green #49c98d, accent orange #f7ad30.
-       Master vector; regen mọi format bằng: npx tauri icon src-tauri/icons/icon-source.svg -->
+  <!-- Scribe app icon: sound wave (violet, primary) turning into transcript lines (plum, accent).
+       Same drawing as BrandMark (src/components/brand/wordmark.tsx), dark-theme tokens of src/styles/tokens.css:
+       bg #111113, primary #baa7ff / solid #6e56cf (violet), accent #e796f3 (plum).
+       iOS AppIcon PNG = this drawing with a square, opaque background (iOS rounds the corners). -->
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#1c1c1c"/>
-      <stop offset="1" stop-color="#0a0a0a"/>
+      <stop offset="0" stop-color="#1c1b22"/>
+      <stop offset="1" stop-color="#111113"/>
     </linearGradient>
+    <radialGradient id="glow" cx="0.36" cy="0.5" r="0.55">
+      <stop offset="0" stop-color="#6e56cf" stop-opacity="0.28"/>
+      <stop offset="1" stop-color="#6e56cf" stop-opacity="0"/>
+    </radialGradient>
     <linearGradient id="wave" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#6fe0aa"/>
-      <stop offset="1" stop-color="#3bbf80"/>
+      <stop offset="0" stop-color="#c9baff"/>
+      <stop offset="1" stop-color="#8b74e6"/>
     </linearGradient>
     <linearGradient id="text" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#ffce6b"/>
-      <stop offset="1" stop-color="#f5a623"/>
+      <stop offset="0" stop-color="#f0b4f8"/>
+      <stop offset="1" stop-color="#d27ae0"/>
     </linearGradient>
-    <radialGradient id="glow" cx="0.32" cy="0.5" r="0.5">
-      <stop offset="0" stop-color="#49c98d" stop-opacity="0.20"/>
-      <stop offset="1" stop-color="#49c98d" stop-opacity="0"/>
-    </radialGradient>
   </defs>
-
-  <!-- background squircle + subtle green glow behind the waveform -->
-  <rect x="0" y="0" width="1024" height="1024" rx="224" ry="224" fill="url(#bg)"/>
-  <rect x="0" y="0" width="1024" height="1024" rx="224" ry="224" fill="url(#glow)"/>
-  <rect x="6" y="6" width="1012" height="1012" rx="218" ry="218" fill="none" stroke="#ffffff" stroke-opacity="0.06" stroke-width="4"/>
-
-  <!-- waveform (sóng âm) — 5 rounded bars, green -->
+  <rect width="1024" height="1024" rx="224" fill="url(#bg)"/>
+  <rect width="1024" height="1024" rx="224" fill="url(#glow)"/>
   <g fill="url(#wave)">
-    <rect x="150" y="437" width="46" height="150" rx="23"/>
-    <rect x="226" y="362" width="46" height="300" rx="23"/>
-    <rect x="302" y="302" width="46" height="420" rx="23"/>
-    <rect x="378" y="382" width="46" height="260" rx="23"/>
-    <rect x="454" y="427" width="46" height="170" rx="23"/>
+    <rect x="180.5" y="356.0" width="91.0" height="312.0" rx="45.5"/>
+    <rect x="323.5" y="252.0" width="91.0" height="520.0" rx="45.5"/>
+    <rect x="466.5" y="330.0" width="91.0" height="364.0" rx="45.5"/>
   </g>
-
-  <!-- flow arrow (wave → text) -->
-  <path d="M520 466 L560 512 L520 558" fill="none" stroke="#49c98d" stroke-opacity="0.85"
-        stroke-width="22" stroke-linecap="round" stroke-linejoin="round"/>
-
-  <!-- transcript lines (dòng chữ) — 3 rounded bars, orange -->
   <g fill="url(#text)">
-    <rect x="588" y="351" width="300" height="58" rx="29"/>
-    <rect x="588" y="483" width="246" height="58" rx="29"/>
-    <rect x="588" y="615" width="182" height="58" rx="29"/>
+    <rect x="635.5" y="330.0" width="208.0" height="91.0" rx="45.5"/>
+    <rect x="635.5" y="466.5" width="169.0" height="91.0" rx="45.5"/>
+    <rect x="635.5" y="603.0" width="130.0" height="91.0" rx="45.5"/>
   </g>
 </svg>
