@@ -99,7 +99,24 @@ rộng nhà cung cấp).
       **chưa thử với key thật** (chưa có key).
 - [x] Giao diện điện thoại và máy tính, sáng/tối: e2e với stub, ảnh chụp đã xem; vitest cho hộp thoại và thẻ mức dùng.
 
+## Sửa sau review bảo mật (`plans/dattqh/reports/code-reviewer-261019-1000-user-keys-review.md`)
+- M1: Gemini chạy `thinkingConfig.thinkingLevel: MINIMAL` (Gemini 3+), chừa 2.000 token suy nghĩ trong `maxOutputTokens`
+  và phần giữ chỗ của tóm tắt/hỏi đáp/dịch cộng phần chừa đó (`meter::estimate_seconds`, `llm::output_cap`).
+- M2: `LLM_MODEL` ngoài bảng giá ⟹ dùng model mặc định, ghi lỗi lúc khởi động; `price_of` gặp model lạ thì tính giá
+  model đắt nhất của nhà cung cấp.
+- L1: token chép trực tiếp bằng key riêng lưu nonce của bản key đã cấp (`keyNonce`); báo hết quota trễ chỉ đánh dấu bản đó.
+- L2: `/api/me` trả `ownKeys: null` (ghi log) khi đọc key riêng lỗi.
+- L3: cảnh báo tạm ngưng nêu đúng nhà cung cấp `LLM_PROVIDER`.
+- L4: Gemini 429 hết hạn mức theo ngày (`QuotaFailure` `…PerDay…`) hoặc hạn mức chi tiêu ⟹ hết credit (key riêng bị đánh
+  dấu `quota`, lúc lưu báo `KEY_NO_CREDIT`); 429 theo phút vẫn thử lại.
+- L5: cấp token chép trực tiếp bằng key riêng tối đa 10 lần/phút mỗi tài khoản.
+- Thân request đã đối chiếu tài liệu chính thức: Anthropic `output_config.format` (GA, không cần beta header, có Haiku 5.5
+  và Sonnet 5.5) và bảng `thinking` theo model (Haiku 5.5 nhận `disabled`, Sonnet 5.5 thấp nhất là `between_tools`);
+  Gemini `generationConfig.responseMimeType`, `responseSchema`, `thinkingConfig.thinkingLevel`, `Schema.nullable`,
+  `Schema.propertyOrdering` có trong tài liệu API. Vẫn chưa gọi thật Gemini/Anthropic (chưa có key).
+- Tài liệu: lệnh tạo tệp bí mật chạy bằng root qua SSH prod, không cần sudo, không ghi đè tệp đang có.
+
 ## Việc của chủ dự án trước khi deploy
-- Tạo tệp bí mật trên server và thêm `USER_KEYS_SECRET_PATH` vào `.env.production` (deploy doc §Key riêng); sao lưu tệp
+- Tạo tệp bí mật trên server (lệnh root qua SSH prod ở deploy doc §Key riêng) và thêm `USER_KEYS_SECRET_PATH` vào `.env.production` (deploy doc §Key riêng); sao lưu tệp
   riêng với Mongo.
 - Khi có key Gemini/Anthropic: thử một lượt thật mỗi nhà cung cấp (biên bản, và chép lời Gemini).
