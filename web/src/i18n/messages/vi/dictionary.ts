@@ -1,6 +1,7 @@
 import { chat } from "./chat";
 import { common } from "./common";
 import { errors } from "./errors";
+import { keys } from "./keys";
 import { layout } from "./layout";
 import { login } from "./login";
 import { record } from "./record";
@@ -19,6 +20,7 @@ export const vi = {
 	chat,
 	common,
 	errors,
+	keys,
 	layout,
 	login,
 	record,

@@ -109,4 +109,30 @@ describe("UsageCard", () => {
 		expect(usageTone(75)).toBe("warning");
 		expect(usageTone(90)).toBe("error");
 	});
+
+	it("shows uses that run on the user's own keys instead of Scribe's minutes", async () => {
+		renderCard(
+			{
+				...FREE,
+				ownKeys: {
+					available: true,
+					transcribe: "elevenlabs",
+					live: "elevenlabs",
+					text: "anthropic",
+					textModel: "claude-haiku-5-5",
+					minutes: 37,
+				},
+			},
+			50 * MB,
+			200 * MB,
+		);
+		const card = await screen.findByRole("region", { name: "Gói và mức dùng" });
+		expect(card).toHaveTextContent("Chép lờiDùng key của bạn (ElevenLabs)");
+		expect(card).toHaveTextContent("37 phút bằng key của bạn tháng này");
+		expect(card).toHaveTextContent(
+			"Biên bản, hỏi đáp, dịchDùng key của bạn (Anthropic Claude)",
+		);
+		expect(screen.queryByText("Chép lời tháng này")).toBeNull();
+		expect(screen.queryByText("Hôm nay")).toBeNull();
+	});
 });

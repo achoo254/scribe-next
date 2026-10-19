@@ -25,6 +25,16 @@ import type {
 	TranslationProgress,
 } from "../../src/features/transcript-docs/transcript-docs-api";
 import type { Transcript } from "../../src/features/transcript/transcript-api";
+import {
+	type KeyProvider,
+	type KeyUse,
+	type StoredKey,
+	USE_PROVIDERS,
+} from "../../src/features/user-keys/key-uses";
+import type {
+	KeyChoice,
+	UserKeys,
+} from "../../src/features/user-keys/user-keys-api";
 import { E2E_ORIGIN } from "./e2e-origin";
 import { E2E_STUB_MARKER } from "./stub-markers";
 
@@ -57,8 +67,60 @@ export interface ApiFixtures {
 	 * started by `POST …/translation` has ended (its `lang` is the one asked).
 	 */
 	translation: TranscriptTranslation | null;
+	/** "Key riêng" as `GET /api/me/keys` answers before the spec changes it. */
+	userKeys: UserKeys;
 	/** Replies that win over the stub's own, by `METHOD /path` (e.g. an error). */
 	replies: Record<string, StubReply>;
+}
+
+const NO_CHOICE: KeyChoice = {
+	transcribe: null,
+	live: null,
+	text: null,
+	textModel: null,
+};
+
+/** The text models `GET /api/me/keys` lists (the backend's short list). */
+export const STUB_TEXT_MODELS: UserKeys["models"] = {
+	openai: [
+		{ id: "gpt-4.1-mini", label: "GPT-4.1 mini" },
+		{ id: "gpt-4.1-nano", label: "GPT-4.1 nano (rẻ hơn)" },
+	],
+	gemini: [
+		{ id: "gemini-3.8-flash", label: "Gemini 3.8 Flash" },
+		{ id: "gemini-3.5-flash-lite", label: "Gemini 3.5 Flash-Lite (rẻ hơn)" },
+	],
+	anthropic: [
+		{ id: "claude-haiku-5-5", label: "Claude Haiku 5.5" },
+		{ id: "claude-sonnet-5-5", label: "Claude Sonnet 5.5 (tốt hơn, đắt hơn)" },
+	],
+};
+
+/** A key the stubbed provider refuses on save. */
+export const REJECTED_KEY = "sk-test-rejected-000000";
+
+/** What runs on which key: the user's pick when valid, else the first valid one (as the backend). */
+function activeChoice(keys: StoredKey[], prefs: KeyChoice): KeyChoice {
+	const valid = new Set(
+		keys.filter((k) => k.status === "valid").map((k) => k.provider),
+	);
+	const pick = (use: KeyUse): KeyProvider | null => {
+		const chosen = prefs[use];
+		if (chosen && valid.has(chosen)) return chosen;
+		return USE_PROVIDERS[use].find((p) => valid.has(p)) ?? null;
+	};
+	const text = pick("text");
+	const models = text ? (STUB_TEXT_MODELS[text] ?? []) : [];
+	return {
+		transcribe: pick("transcribe"),
+		live: pick("live"),
+		text,
+		textModel: text
+			? (models.find((m) => m.id === prefs.textModel)?.id ??
+				models[0]?.id ??
+				null)
+			: null,
+	};
 }
 
 export interface StubReply {
@@ -204,6 +266,13 @@ export function apiFixtures(overrides: Partial<ApiFixtures> = {}): ApiFixtures {
 		search: { results: [], total: 0 },
 		answer: { answer: "Không tìm thấy trong bản ghi.", citations: [] },
 		translation: null,
+		userKeys: {
+			available: true,
+			keys: [],
+			prefs: NO_CHOICE,
+			active: NO_CHOICE,
+			models: STUB_TEXT_MODELS,
+		},
 		replies: {},
 		...overrides,
 	};
@@ -254,6 +323,8 @@ export interface ApiStub {
 	readonly exports: URLSearchParams[];
 	/** `names` of every `PATCH /api/transcript-docs/:key/speakers`, in order. */
 	readonly speakerRenames: Array<Record<string, string | null>>;
+	/** Provider of every `PUT /api/me/keys/:provider`, in order (the key itself is not kept). */
+	readonly keySaves: string[];
 	/** Stands in for the user sending `/start` to the bot on chat.hoandat.com. */
 	linkChat: () => void;
 }
@@ -324,6 +395,7 @@ export async function stubApi(
 		translations: [],
 		exports: [],
 		speakerRenames: [],
+		keySaves: [],
 		linkChat: () => {
 			chatLinked = true;
 		},
@@ -337,6 +409,14 @@ export async function stubApi(
 	// "Lịch sử ghi" and transcripts change as the spec uploads, transcribes
 	// and deletes.
 	let historyItems: RecordingItem[] = [...fixtures.recordings.items];
+	// "Key riêng" changes as the spec saves, deletes and picks.
+	let userKeys: UserKeys = {
+		...fixtures.userKeys,
+		active: activeChoice(fixtures.userKeys.keys, fixtures.userKeys.prefs),
+	};
+	const setKeys = (keys: StoredKey[], prefs: KeyChoice = userKeys.prefs) => {
+		userKeys = { ...userKeys, keys, prefs, active: activeChoice(keys, prefs) };
+	};
 	const transcripts = [...fixtures.transcripts];
 	// Transcripts whose speakers the spec renames.
 	const details: Record<string, TranscriptDetail> = {
@@ -431,6 +511,33 @@ export async function stubApi(
 			const bodySize = request.postDataBuffer()?.length ?? 0;
 			const override = fixtures.replies[call];
 			if (override) return json(route, override.status, override.body);
+			const keyPath = /^\/api\/me\/keys\/([a-z]+)$/.exec(url.pathname);
+			if (keyPath) {
+				const provider = keyPath[1] as KeyProvider;
+				const others = userKeys.keys.filter((k) => k.provider !== provider);
+				if (request.method() === "DELETE") {
+					setKeys(others);
+					return json(route, 200, { deleted: true });
+				}
+				stub.keySaves.push(provider);
+				const key = stringField(request.postDataJSON(), "key") ?? "";
+				if (key === REJECTED_KEY) {
+					return json(route, 400, {
+						error:
+							"OpenAI từ chối key này: key sai, đã bị thu hồi hoặc thiếu quyền.",
+						code: "KEY_REJECTED",
+					});
+				}
+				const stored: StoredKey = {
+					provider,
+					last4: key.slice(-4),
+					status: "valid",
+					updatedAt: FIXED_NOW.toISOString(),
+					lastCheckedAt: FIXED_NOW.toISOString(),
+				};
+				setKeys([...others, stored]);
+				return json(route, 200, stored);
+			}
 			const docAction = DOC_ACTION.exec(url.pathname);
 			if (docAction) {
 				const [, rawKey = "", action, id] = docAction;
@@ -496,8 +603,29 @@ export async function stubApi(
 			switch (call) {
 				case "GET /api/me":
 					return fixtures.user
-						? json(route, 200, fixtures.user)
+						? json(route, 200, {
+								...fixtures.user,
+								ownKeys: {
+									available: userKeys.available,
+									...userKeys.active,
+									minutes: 0,
+								},
+							})
 						: json(route, 401, { error: "Chưa đăng nhập" });
+				case "GET /api/me/keys":
+					return json(route, 200, userKeys);
+				case "PUT /api/me/key-prefs": {
+					const body: unknown = request.postDataJSON();
+					const provider = (name: KeyUse): KeyProvider | null =>
+						(stringField(body, name) as KeyProvider | null) ?? null;
+					setKeys(userKeys.keys, {
+						transcribe: provider("transcribe"),
+						live: provider("live"),
+						text: provider("text"),
+						textModel: stringField(body, "textModel"),
+					});
+					return json(route, 200, userKeys);
+				}
 				case "GET /api/me/usage":
 					return json(route, 200, fixtures.usage);
 				case "GET /api/search":

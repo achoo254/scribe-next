@@ -33,6 +33,12 @@ export const errors = {
 		search: "Không tìm được trong bản chép lời",
 		ask: "Không hỏi được Scribe",
 	},
+	keys: {
+		load: "Không tải được key riêng",
+		save: "Không lưu được key",
+		delete: "Không xoá được key",
+		prefs: "Không đổi được lựa chọn",
+	},
 	chat: {
 		status: "Không kiểm được liên kết chat",
 		link: "Không tạo được đường dẫn liên kết",

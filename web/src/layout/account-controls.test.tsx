@@ -88,9 +88,34 @@ describe("account menu", () => {
 		expect(items).toEqual([
 			"account-menu-account",
 			"account-menu-apps",
+			"account-menu-keys",
 			"account-menu-chat-link",
 			"topbar-logout",
 		]);
+	});
+
+	it("opens Key riêng from the menu for every account", async () => {
+		const user = userEvent.setup();
+		renderControls(undefined, undefined, {
+			user: { email: USER.email, canTranscribe: false },
+			routes: {
+				"GET /api/me/keys": jsonResponse({
+					available: true,
+					keys: [],
+					prefs: {},
+					active: {},
+					models: {},
+				}),
+			},
+		});
+		await openMenu();
+		await user.click(screen.getByRole("menuitem", { name: "Key riêng" }));
+		expect(
+			await screen.findByRole("dialog", { name: "Key riêng" }),
+		).toBeVisible();
+		expect(
+			await screen.findByRole("region", { name: "ElevenLabs" }),
+		).toBeVisible();
 	});
 
 	it("has no chat entry for an account that cannot transcribe", async () => {

@@ -5,6 +5,7 @@ import { useT } from "../i18n/i18n-context";
 import type { MessageKey } from "../i18n/message-types";
 import { cn } from "../lib/cn";
 import { formatDate, formatDayMonth, formatStorage } from "../lib/format";
+import { PROVIDER_INFO } from "./key-providers";
 import { Badge } from "./ui/badge";
 import { cardClassName } from "./ui/card";
 import { MeterBar, type MeterTone } from "./ui/meter-bar";
@@ -67,6 +68,43 @@ function UsageRow({
 	);
 }
 
+/** Name of a provider the backend sent, or the raw code when unknown. */
+function useProviderName(): (code: string) => string {
+	const t = useT();
+	return (code) => {
+		const info = Object.entries(PROVIDER_INFO).find(([key]) => key === code);
+		return info ? t(info[1].name) : code;
+	};
+}
+
+interface OwnKeyRowProps {
+	label: string;
+	provider: string;
+	detail?: string;
+	"data-id": string;
+}
+
+/** A use that runs on the user's own key: no Scribe allowance to show. */
+function OwnKeyRow({
+	label,
+	provider,
+	detail,
+	"data-id": dataId,
+}: OwnKeyRowProps) {
+	const t = useT();
+	return (
+		<div data-id={dataId} className="grid min-w-0 gap-1">
+			<div className="flex items-baseline justify-between gap-2 text-xs">
+				<span className="truncate text-muted">{label}</span>
+				<span data-id={`${dataId}-value`} className="shrink-0 text-fg">
+					{t("ui.usage.ownKey.value", { provider })}
+				</span>
+			</div>
+			{detail ? <span className="text-muted text-xs">{detail}</span> : null}
+		</div>
+	);
+}
+
 /**
  * The plan and what of it is used, in one compact card above every page:
  * plan badge (with its end date) and how long files are kept, then storage,
@@ -78,11 +116,14 @@ export function UsageCard() {
 	const t = useT();
 	const { user } = useAuth();
 	const { data: storage } = useUsageQuery();
+	const providerName = useProviderName();
 	if (!storage) return null;
+	const own = user?.ownKeys ?? null;
 	const plan: PlanInfo["name"] = user?.plan?.name ?? storage.plan ?? "free";
 	const until = user?.plan?.until ?? null;
 	const retentionDays = user?.plan?.retentionDays ?? storage.retentionDays ?? 0;
-	const minutes = user?.transcription ?? null;
+	// Transcription on the user's own key: Scribe's minutes do not apply.
+	const minutes = own?.transcribe ? null : (user?.transcription ?? null);
 	const reset = formatDayMonth(minutes?.resetsAt);
 	const storageFull =
 		storage.quotaBytes > 0 && storage.usageBytes >= storage.quotaBytes;
@@ -135,6 +176,25 @@ export function UsageCard() {
 						})}
 						used={minutes.usedMinutes}
 						limit={minutes.limitMinutes}
+					/>
+				) : null}
+				{own?.transcribe ? (
+					<OwnKeyRow
+						data-id="usage-own-transcribe"
+						label={t("ui.usage.ownKey.transcribe")}
+						provider={providerName(own.transcribe)}
+						detail={
+							own.minutes > 0
+								? t("ui.usage.ownKey.minutes", { count: own.minutes })
+								: undefined
+						}
+					/>
+				) : null}
+				{own?.text ? (
+					<OwnKeyRow
+						data-id="usage-own-text"
+						label={t("ui.usage.ownKey.text")}
+						provider={providerName(own.text)}
 					/>
 				) : null}
 				{minutes?.daily ? (

@@ -39,6 +39,22 @@ export interface CurrentUser {
 	/** Missing from older backends. */
 	plan?: PlanInfo | null;
 	transcription?: Transcription | null;
+	/** Which uses run on the user's own keys ("Key riêng"); missing from older backends. */
+	ownKeys?: OwnKeys | null;
+}
+
+/**
+ * Uses that run on the user's own keys: the provider of each (null: on
+ * Scribe's key, metered as usual) and the minutes transcribed this month
+ * on the user's keys.
+ */
+export interface OwnKeys {
+	available: boolean;
+	transcribe: string | null;
+	live: string | null;
+	text: string | null;
+	textModel: string | null;
+	minutes: number;
 }
 
 /**

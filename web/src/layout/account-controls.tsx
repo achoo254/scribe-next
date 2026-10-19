@@ -1,12 +1,13 @@
 /* Copied from localman-next apps/web/src/components/layout/account-controls.tsx.
    Scribe change: signs out through auth-context (`useSignOut`) instead of
    Localman's logout form, and asks first while a recording or an upload
-   would be cut short; links and unlinks chat.hoandat.com. */
+   would be cut short; links and unlinks chat.hoandat.com; opens "Key riêng". */
 import { useState } from "react";
 import type { CurrentUser } from "../auth/auth-api";
 import { ChatLinkDialog } from "../components/chat-link-dialog";
 import { ConfirmModal } from "../components/ui/confirm-modal";
 import { useToast } from "../components/ui/toast";
+import { UserKeysDialog } from "../components/user-keys-dialog";
 import {
 	useChatLinkQuery,
 	useUnlinkChat,
@@ -47,6 +48,7 @@ export function AccountControls({
 	const chatLink = useChatLinkQuery(canSend);
 	const unlink = useUnlinkChat();
 	const [linking, setLinking] = useState(false);
+	const [keysOpen, setKeysOpen] = useState(false);
 
 	function unlinkChat(): void {
 		unlink.mutate(undefined, {
@@ -88,8 +90,10 @@ export function AccountControls({
 				}
 				logoutBusy={session.busy}
 				onLogout={requestSignOut}
+				onOpenKeys={() => setKeysOpen(true)}
 				compact={compact}
 			/>
+			<UserKeysDialog open={keysOpen} onOpenChange={setKeysOpen} />
 			{canSend ? (
 				<ChatLinkDialog open={linking} onOpenChange={setLinking} />
 			) : null}

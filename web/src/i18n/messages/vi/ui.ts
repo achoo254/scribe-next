@@ -21,6 +21,12 @@ export const ui = {
 		today: "Hôm nay",
 		todayMeter: "Phút chép lời đã dùng hôm nay",
 		minutes: "{used}/{limit} phút",
+		ownKey: {
+			transcribe: "Chép lời",
+			text: "Biên bản, hỏi đáp, dịch",
+			value: "Dùng key của bạn ({provider})",
+			minutes: { other: "{count} phút bằng key của bạn tháng này" },
+		},
 		storageFull:
 			"Đã đầy dung lượng: xoá bớt bản ghi hoặc tệp để ghi và tải lên tiếp.",
 	},

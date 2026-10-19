@@ -2,9 +2,11 @@
    Scribe change: no in-app account, notification, docs, home or admin
    entries (Scribe has none of those pages) and no feature flags; the
    trigger names the email, the only identity the session carries; the
-   chat.hoandat.com link entry (where the minutes are sent). */
+   chat.hoandat.com link entry (where the minutes are sent); "Key riêng"
+   (the user's own API keys). */
 import {
 	IconChevronDown,
+	IconKey,
 	IconLogout,
 	IconMessageCircle,
 	IconMessageOff,
@@ -53,6 +55,8 @@ export interface AccountMenuProps {
 	chat?: AccountMenuChat;
 	logoutBusy: boolean;
 	onLogout: () => void;
+	/** Opens "Key riêng" (every signed-in account). */
+	onOpenKeys: () => void;
 	/** Avatar and chevron only: the email stays in the menu and the label. */
 	compact?: boolean;
 }
@@ -63,6 +67,7 @@ export function AccountMenu({
 	chat,
 	logoutBusy,
 	onLogout,
+	onOpenKeys,
 	compact = false,
 }: AccountMenuProps) {
 	const t = useT();
@@ -101,6 +106,13 @@ export function AccountMenu({
 				) : null}
 				<DropdownMenuSeparator />
 				<IdpAccountItems />
+				<DropdownMenuItem
+					data-id="account-menu-keys"
+					icon={<IconKey {...ICON} />}
+					onSelect={onOpenKeys}
+				>
+					{t("keys.menu")}
+				</DropdownMenuItem>
 				<DropdownMenuSeparator />
 				{chat && (chat.linked || chat.enabled) ? (
 					<>
