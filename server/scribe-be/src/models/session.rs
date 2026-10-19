@@ -294,6 +294,23 @@ pub async fn device_refresh(db: &Database, device_id: &str) -> Result<Option<Str
     Ok(d.and_then(|d| d.get_str("refresh").ok().map(str::to_string)))
 }
 
+/// Refresh token IdP (đã mã hoá) của mọi thiết bị của user, để thu hồi ở IdP trước khi xoá tài khoản.
+pub async fn device_refreshes(db: &Database, user_id: &str) -> Result<Vec<String>, AppError> {
+    let mut cur = db
+        .collection::<Document>(DEVICES)
+        .find(doc! { "userId": user_id })
+        .projection(doc! { "refresh": 1 })
+        .await
+        .map_err(internal("đọc thiết bị của user"))?;
+    let mut out = Vec::new();
+    while let Some(d) = cur.next().await {
+        if let Ok(refresh) = d.map_err(internal("đọc thiết bị của user"))?.get_str("refresh") {
+            out.push(refresh.to_string());
+        }
+    }
+    Ok(out)
+}
+
 /// Xoá thiết bị và mọi phiên của nó (máy bị thu hồi ở IdP, hoặc đăng xuất trên app).
 pub async fn delete_device(db: &Database, device_id: &str) -> Result<Vec<String>, AppError> {
     db.collection::<Document>(DEVICES).delete_one(doc! { "_id": device_id }).await.map_err(internal("xoá thiết bị"))?;

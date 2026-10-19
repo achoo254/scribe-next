@@ -3,14 +3,19 @@
    entries (Scribe has none of those pages) and no feature flags; the
    trigger names the email, the only identity the session carries; the
    chat.hoandat.com link entry (where the minutes are sent); "Key riêng"
-   (the user's own API keys). */
+   (the user's own API keys); the privacy policy and terms; "Xoá tài khoản"
+   (App Store guideline 5.1.1(v)). */
 import {
 	IconChevronDown,
+	IconFileText,
 	IconKey,
 	IconLogout,
 	IconMessageCircle,
 	IconMessageOff,
+	IconShieldLock,
+	IconTrash,
 } from "@tabler/icons-react";
+import { useNavigate } from "react-router";
 import type { CurrentUser } from "../auth/auth-api";
 import { buttonClassName } from "../components/ui/button";
 import {
@@ -25,6 +30,7 @@ import { PLAN_LABEL } from "../components/usage-card";
 import { useT } from "../i18n/i18n-context";
 import { cn } from "../lib/cn";
 import { formatDate, formatTimeAndDay } from "../lib/format";
+import { PATHS } from "./app-paths";
 import { IdpAccountItems } from "./idp-account-items";
 import { UserAvatar } from "./user-avatar";
 
@@ -57,6 +63,8 @@ export interface AccountMenuProps {
 	onLogout: () => void;
 	/** Opens "Key riêng" (every signed-in account). */
 	onOpenKeys: () => void;
+	/** Opens "Xoá tài khoản". */
+	onDeleteAccount: () => void;
 	/** Avatar and chevron only: the email stays in the menu and the label. */
 	compact?: boolean;
 }
@@ -68,9 +76,11 @@ export function AccountMenu({
 	logoutBusy,
 	onLogout,
 	onOpenKeys,
+	onDeleteAccount,
 	compact = false,
 }: AccountMenuProps) {
 	const t = useT();
+	const navigate = useNavigate();
 	return (
 		<DropdownMenu>
 			<DropdownMenuTrigger asChild>
@@ -155,6 +165,29 @@ export function AccountMenu({
 						<DropdownMenuSeparator />
 					</>
 				) : null}
+				<DropdownMenuItem
+					data-id="account-menu-privacy"
+					icon={<IconShieldLock {...ICON} />}
+					onSelect={() => navigate(PATHS.privacy)}
+				>
+					{t("legal.nav.privacy")}
+				</DropdownMenuItem>
+				<DropdownMenuItem
+					data-id="account-menu-terms"
+					icon={<IconFileText {...ICON} />}
+					onSelect={() => navigate(PATHS.terms)}
+				>
+					{t("legal.nav.terms")}
+				</DropdownMenuItem>
+				<DropdownMenuSeparator />
+				<DropdownMenuItem
+					data-id="account-menu-delete"
+					icon={<IconTrash {...ICON} />}
+					danger
+					onSelect={onDeleteAccount}
+				>
+					{t("account.menu")}
+				</DropdownMenuItem>
 				<DropdownMenuItem
 					data-id="topbar-logout"
 					icon={<IconLogout {...ICON} />}

@@ -34,6 +34,8 @@ interface StubOptions {
 	globalName: string;
 	email: string;
 	status: NativeRecorderStatus;
+	/** What `Recorder.getTranscript` answers (live transcript); empty by default. */
+	transcript: unknown;
 }
 
 /**
@@ -50,13 +52,14 @@ function installCapacitorStub({
 	globalName,
 	email,
 	status,
+	transcript,
 }: StubOptions) {
 	const results: Record<string, unknown> = {
 		"Recorder.getStatus": status,
 		"Recorder.stop": { ...status, state: "idle" },
 		"Recorder.start": { sessionId: "e2e-session" },
 		"Recorder.syncUploads": { lostSegments: 0, lostSecondsMax: 0 },
-		"Recorder.getTranscript": { sessionId: null, entries: [], status: {} },
+		"Recorder.getTranscript": transcript,
 		"HoandatAuth.signIn": { email },
 		"NativeFiles.cache": { url: "" },
 		"Secrets.get": {},
@@ -117,12 +120,14 @@ export async function stubNativeShell(
 	page: Page,
 	email: string,
 	status: NativeRecorderStatus = IDLE_RECORDER,
+	transcript: unknown = { sessionId: null, entries: [], status: {} },
 ): Promise<void> {
 	await page.addInitScript(installCapacitorStub, {
 		marker: E2E_STUB_MARKER,
 		globalName: NATIVE_STUB_GLOBAL,
 		email,
 		status,
+		transcript,
 	});
 }
 

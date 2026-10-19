@@ -9,18 +9,20 @@ import { Alert } from "../components/ui/alert";
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
 import { useT } from "../i18n/i18n-context";
+import { LegalLinks } from "../layout/legal-links";
 
 /**
  * Sign-in with the hoandat account (hoandat-auth: Google, GitHub…); the
  * backend decides who may enter (allowlist). A failed web sign-in comes
- * back here with `?error=<code>`. Laid out like the hoandat-auth sign-in
+ * back here with `?error=<code>`; after "Xoá tài khoản" the page says the
+ * account is gone (`accountDeleted`). Laid out like the hoandat-auth sign-in
  * page: the 100px grid behind, a top bar with the wordmark, one 420px
  * card 48px under it with a mono title, a subtitle, the button and a
  * muted note.
  */
 export function LoginPage() {
 	const t = useT();
-	const { login } = useAuth();
+	const { login, accountDeleted } = useAuth();
 	const navigate = useNavigate();
 	const [params] = useSearchParams();
 	const [busy, setBusy] = useState(false);
@@ -63,6 +65,13 @@ export function LoginPage() {
 						</h1>
 						<p className="m-0 text-muted text-sm">{t("login.subtitle")}</p>
 					</div>
+					{accountDeleted ? (
+						<Alert tone="success" data-id="login-account-deleted">
+							{accountDeleted === "pending"
+								? t("login.accountDeletedPending")
+								: t("login.accountDeleted")}
+						</Alert>
+					) : null}
 					<Button
 						variant="primary"
 						size="lg"
@@ -82,6 +91,7 @@ export function LoginPage() {
 					<p className="m-0 text-center text-muted text-sm">
 						{t("login.note")}
 					</p>
+					<LegalLinks className="justify-center text-sm" />
 				</Card>
 			</main>
 		</div>

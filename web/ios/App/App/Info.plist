@@ -28,8 +28,12 @@
 	<true/>
 	<key>NSCameraUsageDescription</key>
 	<string>Scribe dùng camera khi bạn chọn quay video để tải lên và chép lời.</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Scribe dùng micro để ghi âm cuộc họp, kể cả khi màn hình khoá.</string>
+	<string>Scribe dùng micro để ghi âm cuộc họp, kể cả khi màn hình khoá. Bản ghi được tải lên tài khoản Scribe của bạn để lưu và chép lời.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Scribe lưu bản ghi hoặc video vào thư viện Ảnh khi bạn chọn Lưu video trong bảng chia sẻ.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
@@ -59,7 +63,7 @@
 	<string>Main</string>
 	<key>UIRequiredDeviceCapabilities</key>
 	<array>
-		<string>armv7</string>
+		<string>arm64</string>
 	</array>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>

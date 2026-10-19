@@ -1,6 +1,7 @@
 //! Scribe Web backend — axum, bind 127.0.0.1 (nginx `/api` proxy), graceful shutdown SIGTERM.
 
 mod access_log;
+mod account;
 mod admin;
 mod audit;
 mod auth;
@@ -105,6 +106,9 @@ async fn main() {
                 tracing::warn!("tạo index chat_link_tokens thất bại: {e}");
             }
             if let Err(e) = models::realtime_token::ensure_indexes(&db).await {
+                tracing::warn!("{e}");
+            }
+            if let Err(e) = account::ensure_indexes(&db).await {
                 tracing::warn!("{e}");
             }
         });

@@ -4,6 +4,9 @@ export const PATHS = {
 	split: "/split",
 	transcripts: "/transcripts",
 	search: "/search",
+	/** Public: no sign-in needed (App Store privacy and terms URLs). */
+	privacy: "/privacy",
+	terms: "/terms",
 } as const;
 
 /**

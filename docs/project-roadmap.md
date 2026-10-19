@@ -51,13 +51,17 @@ Web hóa Scribe làm ghi + cắt media (BỎ AI transcribe — box .65 không GP
 - ✅ **7b — đăng nhập hoandat-auth + domain**: web (`scribe-web`) và iPhone (`scribe-mobile`) đăng nhập qua `auth.hoandat.com`, user cũ ghép theo email, phiên lưu Mongo thu hồi được; prod ở `scribe.hoandat.com` (Cloudflare SSL Full); bỏ Firebase và domain `scribe.inetdev.io.vn`. iPhone mới đã cài và kiểm trên máy thật.
 - ✅ **7c — mở chép lời cho mọi người** (`TRANSCRIBE_OPEN=1`): bật 16/10 14:19 theo quyết định của chủ sản phẩm (Jev khuyên chờ vài ngày, 0,78). Gói free: 120 phút/tháng, 30 phút/ngày, tài khoản mới chờ 24 giờ, quỹ free $10, trần tổng $30.
 
-## Scribe iOS — lộ trình App Store (chưa thực thi)
+## Scribe iOS — lộ trình App Store
+
+**19/10/2026 — sẵn sàng nộp, chờ Apple duyệt tài khoản Developer** (plan `dattqh/261019-1105-app-store-readiness`): trang `/privacy` và `/terms` công khai; "Xoá tài khoản" trong app (`DELETE /api/me`); `PrivacyInfo.xcprivacy`, `ITSAppUsesNonExemptEncryption`, chỉ iPhone; script `pnpm run ios:release` (archive + tải lên App Store Connect bằng key API); hồ sơ App Store và ảnh chụp ở `docs/app-store/`. Các bước khi được duyệt: [ios-app.md](./ios-app.md#phát-hành-testflight--app-store). Mã chưa deploy lên prod.
+
+Phân tích ban đầu (trước 19/10):
 
 Chi tiết và lập luận: phase 4 của plan iOS. Tóm tắt:
 
 - **Cần tài khoản Apple Developer ($99/năm)**: profile 1 năm thay 7 ngày, TestFlight, Live Activity (đồng hồ + nút Dừng trên màn hình khoá), mở đường ghi màn hình bằng ReplayKit.
-- **Giấy tờ khi nộp**: Privacy Manifest (`PrivacyInfo.xcprivacy`); App Privacy khai "Audio Data" liên kết danh tính, và khai việc gửi audio tới OpenAI khi người dùng bấm Chép lời; ghi chú cho App Review về `UIBackgroundModes: audio`; nút xoá tài khoản trong app (chưa có).
-- **Chặn thật nằm ở hạ tầng, không phải iOS**: allowlist đăng nhập đang mở cho mọi tài khoản hoandat-auth có email đã xác minh; chặng Cloudflare↔origin là HTTPS nhưng chứng chỉ tự ký (SSL Full, chưa strict); chưa có chính sách riêng tư và điều khoản; server chỉ giữ file 14 ngày. (Đã xong 16/10: phiên lưu Mongo, thu hồi được.)
+- **Giấy tờ khi nộp**: Privacy Manifest, App Privacy, ghi chú cho App Review về `UIBackgroundModes: audio`, xoá tài khoản trong app — đã làm 19/10 (xem trên).
+- **Chặn thật nằm ở hạ tầng, không phải iOS**: allowlist đăng nhập đang mở cho mọi tài khoản hoandat-auth có email đã xác minh; chặng Cloudflare↔origin là HTTPS nhưng chứng chỉ tự ký (SSL Full, chưa strict); server chỉ giữ file 14 ngày (nói rõ trong điều khoản). Chính sách riêng tư và điều khoản: có từ 19/10. (Đã xong 16/10: phiên lưu Mongo, thu hồi được.)
 - **Rà mã iOS (2026-10-15), cả 4 mục đạt**: `AudioRecorder` không import Capacitor · Team ID chỉ có trong `web/scripts/ios-device.sh`, không có trong mã app hay `project.pbxproj` · chuỗi xin quyền micro nêu rõ mục đích kể cả khi khoá màn hình · không dùng API không công khai.
 - **Thứ tự nếu quyết định lên Store**: trả $99 → profile 1 năm → Live Activity → TestFlight vài người thử → hạ tầng đủ điều kiện công khai → nộp.
 

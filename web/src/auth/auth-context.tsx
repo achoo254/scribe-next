@@ -19,10 +19,15 @@ import {
 	fetchCurrentUser,
 } from "./auth-api";
 
+/** The account was just deleted here: all gone, or the server still finishes. */
+export type AccountDeleted = "done" | "pending";
+
 interface AuthState {
 	/** False until `/api/me` has answered once. */
 	ready: boolean;
 	user: CurrentUser | null;
+	/** Set once the account is deleted on this page, for the sign-in page to say so. */
+	accountDeleted?: AccountDeleted;
 }
 
 interface AuthApi extends AuthState {
@@ -33,6 +38,13 @@ interface AuthApi extends AuthState {
 	 */
 	login: () => Promise<void>;
 	logout: () => Promise<void>;
+	/**
+	 * After the account was deleted (`DELETE /api/me` already ended every
+	 * session): clears what this device holds, without ending the
+	 * hoandat-auth session (the hoandat account still exists). The app then
+	 * lands on /login, which reads `accountDeleted`.
+	 */
+	forgetDeletedAccount: (deleted: AccountDeleted) => Promise<void>;
 	/** Re-reads `/api/me` (minutes left after a transcription request). */
 	refresh: () => Promise<void>;
 }
@@ -73,28 +85,50 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 		setState({ ready: true, user });
 	}, []);
 
+	/**
+	 * Signs this device out. `endSession`: also end the backend session and,
+	 * on the web, the hoandat-auth one (returns where to go for that).
+	 */
+	const signOutHere = useCallback(
+		async (
+			endSession: boolean,
+			accountDeleted?: AccountDeleted,
+		): Promise<string | null> => {
+			let endSessionUrl: string | null = null;
+			// iOS: stop recording and uploads first, so nothing reaches the old
+			// account after the cookie is gone (plan D5.2).
+			if (isNativeShell()) {
+				await NativeRecorderPlugin.signOut().catch(() => undefined);
+				// Audio copied for playback belongs to this account.
+				await NativeFiles.clear().catch(() => undefined);
+				// Drops the device token from the Keychain (the server answers
+				// even when the device is already gone).
+				await HoandatAuth.signOut().catch(() => undefined);
+				// Older builds kept the user's own OpenAI key in the Keychain.
+				await Secrets.remove({ name: "openaiApiKey" }).catch(() => undefined);
+			} else if (endSession) {
+				endSessionUrl = await deleteSession();
+			}
+			// The next user must not see this user's cached lists.
+			queryClient.clear();
+			setState({ ready: true, user: null, accountDeleted });
+			return endSessionUrl;
+		},
+		[queryClient],
+	);
+
 	const logout = useCallback(async () => {
-		// iOS: stop recording and uploads first, so nothing reaches the old
-		// account after the cookie is gone (plan D5.2).
-		if (isNativeShell()) {
-			await NativeRecorderPlugin.signOut().catch(() => undefined);
-			// Audio copied for playback belongs to this account.
-			await NativeFiles.clear().catch(() => undefined);
-		}
-		const endSessionUrl = isNativeShell()
-			? await HoandatAuth.signOut()
-					.then(() => null)
-					.catch(() => null)
-			: await deleteSession();
-		// Older builds kept the user's own OpenAI key in the Keychain: remove it.
-		if (isNativeShell())
-			await Secrets.remove({ name: "openaiApiKey" }).catch(() => undefined);
-		// The next user must not see this user's cached lists.
-		queryClient.clear();
-		setState({ ready: true, user: null });
+		const endSessionUrl = await signOutHere(true);
 		// Web: also end the hoandat-auth session (it returns to the sign-in page).
 		if (endSessionUrl) window.location.assign(endSessionUrl);
-	}, [queryClient]);
+	}, [signOutHere]);
+
+	const forgetDeletedAccount = useCallback(
+		async (deleted: AccountDeleted) => {
+			await signOutHere(false, deleted);
+		},
+		[signOutHere],
+	);
 
 	const refresh = useCallback(async () => {
 		const user = await fetchCurrentUser().catch(() => null);
@@ -102,8 +136,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 	}, []);
 
 	const api = useMemo<AuthApi>(
-		() => ({ ...state, login, logout, refresh }),
-		[state, login, logout, refresh],
+		() => ({ ...state, login, logout, forgetDeletedAccount, refresh }),
+		[state, login, logout, forgetDeletedAccount, refresh],
 	);
 	return <AuthContext.Provider value={api}>{children}</AuthContext.Provider>;
 }

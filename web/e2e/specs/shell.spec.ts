@@ -75,6 +75,9 @@ for (const scheme of COLOR_SCHEMES) {
 				"Ứng dụng, mở trang hoandat ở thẻ mới",
 				"Key riêng",
 				"Liên kết chat.hoandat.com",
+				"Quyền riêng tư",
+				"Điều khoản",
+				"Xoá tài khoản",
 				"Đăng xuất",
 			]);
 			await expect(page).toHaveScreenshot(`account-menu-${scheme}.png`);
@@ -101,7 +104,14 @@ for (const scheme of COLOR_SCHEMES) {
 				"href",
 				"https://auth.hoandat.com/account#account-apps",
 			);
-			// Phones get the one-button theme switch so the footer stays one row.
+			const legal = footer.getByRole("navigation", { name: "Văn bản pháp lý" });
+			await expect(
+				legal.getByRole("link", { name: "Quyền riêng tư" }),
+			).toHaveAttribute("href", "/privacy");
+			await expect(
+				legal.getByRole("link", { name: "Điều khoản" }),
+			).toHaveAttribute("href", "/terms");
+			// Phones get the one-button theme switch next to the account links.
 			if (isMobile) {
 				await expect(
 					footer.getByRole("button", { name: /— bấm để đổi$/ }),

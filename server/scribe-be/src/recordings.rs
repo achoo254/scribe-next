@@ -339,6 +339,46 @@ pub(crate) async fn active_session_keys(state: &AppState, user_id: &str) -> Resu
     Ok(keys)
 }
 
+/// Phiên ghi không nhận chunk nào trong khoảng này (giây) coi như đã bỏ dở: trình duyệt gửi chunk vài giây
+/// một lần trong lúc ghi.
+const RECORDING_IDLE_S: i64 = 120;
+
+/// Phiên ghi còn sống ở thời điểm `now_ms`: vừa mở, hoặc `.part` vừa nhận chunk (mốc ms, nếu đã có).
+fn recording_alive(created_ms: i64, part_modified_ms: Option<i64>, now_ms: i64) -> bool {
+    let last = part_modified_ms.map_or(created_ms, |m| m.max(created_ms));
+    now_ms - last < RECORDING_IDLE_S * 1000
+}
+
+/// User có phiên ghi (trình duyệt) đang chạy không: xoá tài khoản từ chối khi đang ghi.
+pub(crate) async fn recording_live(state: &AppState, user_id: &str) -> Result<bool, AppError> {
+    let read = |e: mongodb::error::Error| AppError::Internal(format!("tra phiên ghi đang chạy: {e}"));
+    let mut cur = state
+        .db
+        .collection::<Document>(SESSIONS)
+        .find(doc! { "userId": user_id })
+        .projection(doc! { "_id": 1, "createdAt": 1 })
+        .await
+        .map_err(read)?;
+    let now = DateTime::now().timestamp_millis();
+    while let Some(d) = cur.next().await {
+        let d = d.map_err(read)?;
+        let created = d.get_datetime("createdAt").map_or(0, |t| t.timestamp_millis());
+        let modified = match d.get_str("_id").ok().and_then(|id| part_path(state, user_id, id).ok()) {
+            Some(path) => tokio::fs::metadata(&path)
+                .await
+                .ok()
+                .and_then(|m| m.modified().ok())
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_millis() as i64),
+            None => None,
+        };
+        if recording_alive(created, modified, now) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
 /// Một đoạn tải lên bắt đầu quá chừng này (phút) mà chưa finalize thì coi như bỏ dở (app bị gỡ, mất mạng hẳn).
 const UPLOAD_STALE_MINUTES: i64 = 10;
 
@@ -371,8 +411,21 @@ fn part_path(state: &AppState, user_id: &str, session_id: &str) -> Result<String
 
 #[cfg(test)]
 mod tests {
-    use super::finalizable_size;
+    use super::{finalizable_size, recording_alive, RECORDING_IDLE_S};
     use crate::models::plan::Plan;
+
+    #[test]
+    fn a_recording_is_alive_while_chunks_keep_arriving() {
+        let idle = RECORDING_IDLE_S * 1000;
+        let now = 10_000_000;
+        // Vừa mở, chưa có chunk.
+        assert!(recording_alive(now - 5_000, None, now));
+        // Mở lâu rồi nhưng chunk mới tới.
+        assert!(recording_alive(now - 3_600_000, Some(now - 3_000), now));
+        // Bỏ dở: không chunk nào trong khoảng chờ.
+        assert!(!recording_alive(now - 3_600_000, Some(now - idle), now));
+        assert!(!recording_alive(now - idle - 1, None, now));
+    }
 
     #[test]
     fn finalize_keeps_what_was_received_after_a_plan_downgrade() {

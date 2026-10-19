@@ -261,6 +261,8 @@ async fn recompute(db: &Database, month: &str, apply: bool) -> Result<Value, Str
     for user_id in usage::user_ids_with_ledger(db, month).await.map_err(err)? {
         per_user.entry(user_id).or_default();
     }
+    // Lượt của tài khoản đã xoá vẫn tính vào quỹ free và trần tổng ở trên, nhưng không còn sổ riêng để đối soát.
+    per_user.remove(crate::account::DELETED_USER);
     let mut diffs = Vec::new();
     for (user_id, seconds) in &per_user {
         let ledger = usage::month_usage(db, user_id, month).await.map_err(err)?.user_seconds;

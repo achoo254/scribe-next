@@ -43,6 +43,11 @@ function isHttpOrigin(value: string): boolean {
 	}
 }
 
+/** Same rule as `supportEmailOf` in src/lib/legal.ts. */
+function isSupportEmail(value: string): boolean {
+	return /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(value);
+}
+
 export default defineConfig(({ command, mode }) => {
 	// Without VITE_NATIVE_API_ORIGIN the iPhone app has no backend; fail the build
 	// instead. Read from web/.env (not in git, copy web/.env.example; see
@@ -61,6 +66,13 @@ export default defineConfig(({ command, mode }) => {
 		if (idp && !isHttpOrigin(idp)) {
 			throw new Error(
 				`VITE_IDP_ORIGIN must be an http(s) origin such as https://auth.hoandat.com, got "${idp}".`,
+			);
+		}
+		// Optional too; a typo must not ship a broken contact on the legal pages.
+		const support = env.VITE_SUPPORT_EMAIL;
+		if (support && !isSupportEmail(support)) {
+			throw new Error(
+				`VITE_SUPPORT_EMAIL must be an email address, got "${support}".`,
 			);
 		}
 	}

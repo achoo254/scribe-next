@@ -51,6 +51,8 @@ function renderControls(
 						}
 					/>
 					<Route path="/login" element={<p>trang đăng nhập</p>} />
+					<Route path="/privacy" element={<p>trang /privacy</p>} />
+					<Route path="/terms" element={<p>trang /terms</p>} />
 				</Routes>
 			</MemoryRouter>
 		</TestProviders>,
@@ -90,8 +92,36 @@ describe("account menu", () => {
 			"account-menu-apps",
 			"account-menu-keys",
 			"account-menu-chat-link",
+			"account-menu-privacy",
+			"account-menu-terms",
+			"account-menu-delete",
 			"topbar-logout",
 		]);
+	});
+
+	it.each([
+		["Quyền riêng tư", "/privacy"],
+		["Điều khoản", "/terms"],
+	])("opens '%s' inside the app", async (label, path) => {
+		renderControls();
+		await openMenu();
+		await userEvent.click(screen.getByRole("menuitem", { name: label }));
+		expect(await screen.findByText(`trang ${path}`)).toBeInTheDocument();
+	});
+
+	it("opens 'Xoá tài khoản', which waits while a recording runs", async () => {
+		renderControls({ ...IDLE_ACTIVITY, recording: true });
+		await openMenu();
+		await userEvent.click(
+			screen.getByRole("menuitem", { name: "Xoá tài khoản" }),
+		);
+		const dialog = await screen.findByRole("dialog", {
+			name: "Xoá tài khoản Scribe",
+		});
+		expect(dialog).toHaveTextContent("Dừng ghi và chờ tải xong");
+		expect(
+			screen.getByRole("button", { name: "Xoá tài khoản" }),
+		).toBeDisabled();
 	});
 
 	it("opens Key riêng from the menu for every account", async () => {

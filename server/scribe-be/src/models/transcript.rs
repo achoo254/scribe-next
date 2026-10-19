@@ -650,6 +650,19 @@ pub async fn delete_owned(db: &Database, user_id: &str, file_ids: &[ObjectId]) -
     Ok(removed)
 }
 
+/// Xoá mọi lượt chép của user (xoá tài khoản), quyết toán lượt còn mở như khi xoá file. Trả số doc đã xoá.
+pub async fn delete_user(db: &Database, user_id: &str) -> Result<u64, AppError> {
+    let ids: Vec<ObjectId> = db
+        .collection::<bson::Document>(COLL)
+        .distinct("_id", doc! { "userId": user_id })
+        .await
+        .map_err(|e| AppError::Internal(format!("tìm lượt chép của user: {e}")))?
+        .into_iter()
+        .filter_map(|b| b.as_object_id())
+        .collect();
+    delete_owned(db, user_id, &ids).await
+}
+
 /// Xoá cùng file (gọi từ `file::delete_doc`, nơi duy nhất xoá doc file).
 pub async fn delete(db: &Database, file_id: ObjectId) -> Result<(), AppError> {
     delete_and_settle(db, doc! { "_id": file_id }).await.map(|_| ())

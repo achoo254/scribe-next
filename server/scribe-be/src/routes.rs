@@ -1,7 +1,7 @@
 //! Lắp router: public (health/auth) + protected (guard middleware + upload/jobs).
 
 use crate::state::AppState;
-use crate::{access_log, auth, chat_link, files, jobs, rate_limit, realtime, recordings, search, summary, transcribe, translate, upload, user_keys};
+use crate::{access_log, account, auth, chat_link, files, jobs, rate_limit, realtime, recordings, search, summary, transcribe, translate, upload, user_keys};
 use axum::extract::DefaultBodyLimit;
 use axum::middleware::{from_fn, from_fn_with_state};
 use axum::routing::{delete, get, patch, post, put};
@@ -37,7 +37,8 @@ pub fn build_router(state: AppState) -> Router {
 
     // Route cần đăng nhập → guard verify session; rate-limit chung (ngưỡng cao, không cản recording).
     let protected = Router::new()
-        .route("/api/me", get(auth::me))
+        // Xoá tài khoản Scribe ngay trong app (App Store 5.1.1(v)), body `{confirm: "XOÁ"}`.
+        .route("/api/me", get(auth::me).delete(account::delete_me))
         .route("/api/me/usage", get(files::usage))
         .route("/api/upload/init", post(upload::init))
         .route("/api/upload/chunk", post(upload::chunk))

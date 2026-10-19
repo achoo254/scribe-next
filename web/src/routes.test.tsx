@@ -7,6 +7,7 @@ import { fakeFetch, jsonResponse } from "./test/fake-fetch";
 import { TestProviders } from "./test/test-providers";
 
 const auth = vi.hoisted(() => ({
+	signedIn: true,
 	canTranscribe: true,
 	splitThrows: false,
 	stateMounts: 0,
@@ -15,7 +16,9 @@ const auth = vi.hoisted(() => ({
 vi.mock("./auth/auth-context", () => ({
 	useAuth: () => ({
 		ready: true,
-		user: { email: "a@b.c", canTranscribe: auth.canTranscribe },
+		user: auth.signedIn
+			? { email: "a@b.c", canTranscribe: auth.canTranscribe }
+			: null,
 		logout: async () => undefined,
 	}),
 }));
@@ -100,6 +103,7 @@ beforeEach(() => {
 
 afterEach(() => {
 	vi.unstubAllGlobals();
+	auth.signedIn = true;
 	auth.canTranscribe = true;
 	auth.splitThrows = false;
 	auth.stateMounts = 0;
@@ -149,6 +153,49 @@ describe("app routes", () => {
 			screen.getAllByRole("link", { name: "Ghi âm" }).length,
 		).toBeGreaterThan(0);
 		auth.splitThrows = false;
+		await act(() => router.navigate("/record"));
+		expect(await screen.findByText("record page")).toBeInTheDocument();
+		expect(auth.stateMounts).toBe(1);
+	});
+
+	it("opens the legal pages without signing in, every other page goes to /login", async () => {
+		auth.signedIn = false;
+		const router = renderAt("/privacy");
+		expect(
+			await screen.findByRole("heading", {
+				level: 1,
+				name: "Chính sách quyền riêng tư",
+			}),
+		).toBeInTheDocument();
+		expect(auth.stateMounts).toBe(0);
+		await userEvent.click(
+			screen.getAllByRole("link", { name: "Điều khoản" })[0],
+		);
+		expect(
+			await screen.findByRole("heading", {
+				level: 1,
+				name: "Điều khoản sử dụng",
+			}),
+		).toBeInTheDocument();
+		expect(router.state.location.pathname).toBe("/terms");
+		await act(() => router.navigate("/record"));
+		expect(await screen.findByText("login")).toBeInTheDocument();
+		expect(router.state.location.pathname).toBe("/login");
+	});
+
+	it("shows the legal pages inside the shell when signed in, keeping the recording state", async () => {
+		const router = renderAt("/record");
+		expect(await screen.findByText("record page")).toBeInTheDocument();
+		await act(() => router.navigate("/terms"));
+		expect(
+			await screen.findByRole("heading", {
+				level: 1,
+				name: "Điều khoản sử dụng",
+			}),
+		).toBeInTheDocument();
+		expect(
+			screen.getAllByRole("link", { name: "Ghi âm" }).length,
+		).toBeGreaterThan(0);
 		await act(() => router.navigate("/record"));
 		expect(await screen.findByText("record page")).toBeInTheDocument();
 		expect(auth.stateMounts).toBe(1);

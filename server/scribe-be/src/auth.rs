@@ -84,6 +84,11 @@ fn cookie_name(state: &AppState) -> &'static str {
     }
 }
 
+/// `jar` bỏ cookie phiên (đăng xuất, xoá tài khoản).
+pub(crate) fn without_session_cookie(state: &AppState, jar: CookieJar) -> CookieJar {
+    jar.remove(Cookie::build(cookie_name(state)).path("/").build())
+}
+
 fn session_cookie(state: &AppState, value: String, ttl_secs: i64) -> Cookie<'static> {
     Cookie::build((cookie_name(state), value))
         .http_only(true)
@@ -401,7 +406,7 @@ pub async fn logout(State(state): State<AppState>, jar: CookieJar, body: Option<
         }
         url.map(|u| u.to_string())
     });
-    let jar = jar.remove(Cookie::build(name).path("/").build());
+    let jar = without_session_cookie(&state, jar);
     (jar, Json(json!({ "ok": true, "endSessionUrl": end_session.flatten() })))
 }
 

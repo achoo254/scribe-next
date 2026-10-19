@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A1B2C3D4000000000000001E /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4000000000000000E /* PrivacyInfo.xcprivacy */; };
 		A1B2C3D4000000000000001A /* SecretsPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4000000000000000A /* SecretsPlugin.swift */; };
 		A1B2C3D40000000000000019 /* SessionAuth.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D40000000000000009 /* SessionAuth.swift */; };
 		A1B2C3D40000000000000018 /* RecorderPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D40000000000000008 /* RecorderPlugin.swift */; };
@@ -31,6 +32,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		A1B2C3D4000000000000000E /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		A1B2C3D4000000000000000A /* SecretsPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecretsPlugin.swift; sourceTree = "<group>"; };
 		A1B2C3D40000000000000009 /* SessionAuth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionAuth.swift; sourceTree = "<group>"; };
 		A1B2C3D40000000000000008 /* RecorderPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Recorder/RecorderPlugin.swift; sourceTree = "<group>"; };
@@ -107,6 +109,7 @@
 				504EC30E1FED79650016851F /* Assets.xcassets */,
 				504EC3101FED79650016851F /* LaunchScreen.storyboard */,
 				504EC3131FED79650016851F /* Info.plist */,
+				A1B2C3D4000000000000000E /* PrivacyInfo.xcprivacy */,
 				2FAD9762203C412B000D30F8 /* config.xml */,
 				50B271D01FEDC1A000F3C39B /* public */,
 			);
@@ -184,6 +187,7 @@
 				50379B232058CBB4000EE86E /* capacitor.config.json in Resources */,
 				504EC30D1FED79650016851F /* Main.storyboard in Resources */,
 				2FAD9763203C412B000D30F8 /* config.xml in Resources */,
+				A1B2C3D4000000000000001E /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -361,7 +365,7 @@
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Debug;
 		};
@@ -382,7 +386,7 @@
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "";
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Release;
 		};

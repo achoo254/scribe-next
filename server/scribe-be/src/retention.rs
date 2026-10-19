@@ -76,6 +76,8 @@ async fn sweep_once(state: &AppState) -> Result<(), AppError> {
     let orphan_docs = sweep_orphan_transcript_docs(&state.db).await + sweep_orphan_translations(&state.db).await;
     let orphan_sentences = sweep_orphan_sentences(&state.db).await;
     let reindexed = reconcile_search_index(&state.db).await;
+    // Việc nền ghi thêm sau khi một tài khoản bị xoá (lượt chép xong muộn, job cắt): dọn lại.
+    let deleted_accounts = crate::account::sweep_deleted(&state.db, data_dir).await;
 
     if removed > 0
         || orphan_parts > 0
@@ -84,9 +86,10 @@ async fn sweep_once(state: &AppState) -> Result<(), AppError> {
         || orphan_docs > 0
         || orphan_sentences > 0
         || reindexed > 0
+        || deleted_accounts > 0
     {
         tracing::info!(
-            "retention: xoá {removed} file (~{} MB), {orphan_parts} .part mồ côi, {stale_sessions} session cũ, {stale_jobs} job cũ, {orphan_docs} transcript và bản dịch mồ côi, {orphan_sentences} câu mồ côi trong index tìm kiếm; dựng lại index {reindexed} phiên lệch",
+            "retention: xoá {removed} file (~{} MB), {orphan_parts} .part mồ côi, {stale_sessions} session cũ, {stale_jobs} job cũ, {orphan_docs} transcript và bản dịch mồ côi, {orphan_sentences} câu mồ côi trong index tìm kiếm; dựng lại index {reindexed} phiên lệch; dọn thêm {deleted_accounts} tệp và doc của tài khoản đã xoá",
             bytes / 1_048_576
         );
     }

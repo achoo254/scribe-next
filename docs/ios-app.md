@@ -19,6 +19,35 @@ Cần trên máy build:
 - Lần đầu cài: trên iPhone vào *Cài đặt → Cài đặt chung → Quản lý VPN & thiết bị* để tin cậy nhà phát triển.
 - Sau mỗi lần Xcode cập nhật: nếu `xcodebuild -checkFirstLaunchStatus` trả khác 0 (17/10/2026, Xcode 27.1 trả 69), chạy `sudo xcodebuild -runFirstLaunch` một lần; nếu không, `devicectl`/`simctl` treo chờ bước này.
 
+## Phát hành TestFlight / App Store
+
+Chuẩn bị sẵn trong repo (19/10/2026, plan `plans/dattqh/261019-1105-app-store-readiness/`):
+
+- `web/ios/App/App/PrivacyInfo.xcprivacy` — privacy manifest của app: dữ liệu thu thập (audio, ảnh/video tự chọn, nội dung người dùng, email, tên, mã tài khoản, nhật ký hành động), tất cả liên kết tài khoản, không tracking, mục đích App Functionality; API cần lý do: chỉ mốc thời gian tệp (`C617.1`, `SegmentStore.swift` đọc ngày tạo thư mục bản ghi trong container của app). Capacitor có manifest riêng cho API nó dùng (UserDefaults…).
+- `Info.plist`: `ITSAppUsesNonExemptEncryption = false` (chỉ HTTPS chuẩn), mô tả quyền tiếng Việt cho micro, camera, lưu vào Ảnh (`NSPhotoLibraryAddUsageDescription`, bảng chia sẻ "Lưu video"); `UIRequiredDeviceCapabilities` = `arm64`. Không dùng mạng cục bộ.
+- Chỉ iPhone (`TARGETED_DEVICE_FAMILY = 1`): không cần ảnh iPad khi nộp.
+- Phiên bản: `MARKETING_VERSION` = `1.0` trong `project.pbxproj`; số build (`CFBundleVersion`) do script đặt lúc archive = giờ UTC `YYYYMMDD.HHMM` (luôn tăng), hoặc `IOS_BUILD_NUMBER`.
+- Trang công khai `/privacy`, `/terms`; "Xoá tài khoản" trong menu tài khoản; hồ sơ App Store và ảnh chụp: [app-store/metadata.md](./app-store/metadata.md).
+
+### Việc của chủ dự án khi Apple duyệt tài khoản
+
+1. **Team ID**: developer.apple.com → Account → Membership details → Team ID (10 ký tự). Dùng làm `IOS_TEAM` (không ghi vào repo; `ios-device.sh` vẫn mặc định Personal Team cũ, đặt `IOS_TEAM` để cài bằng team mới — profile hết hạn sau 1 năm thay vì 7 ngày).
+2. **Tạo app** ở App Store Connect → Apps → "+" → New App: Platform iOS, Name `Scribe – Ghi âm & chép lời`, Primary language Vietnamese, Bundle ID `com.hoandat.scribe` (đăng ký trước ở developer.apple.com → Identifiers nếu danh sách chưa có; Xcode tự đăng ký ở lần archive đầu khi dùng ký tự động), SKU `scribe-ios`, User Access Full Access.
+3. **Tạo key API**: App Store Connect → Users and Access → Integrations → App Store Connect API → Team Keys → "+". Role: **Admin** — ký phân phối tự động bằng key (cloud signing) cần quyền này theo báo cáo trên Apple Developer Forums; key **App Manager** tải lên được nhưng có thể lỗi "Cloud signing permission error" ở bước ký. Tải tệp `AuthKey_<KEY_ID>.p8` (chỉ tải được một lần), ghi Key ID và Issuer ID.
+4. **Cất key**: tệp `.p8` để ngoài repo, quyền 600 (ví dụ `~/.appstoreconnect/private_keys/AuthKey_<KEY_ID>.p8`, thư mục mặc định Xcode cũng tìm); Key ID, Issuer ID và bản sao tệp `.p8` lưu vào tệp access-tokens trên iCloud với service `appstoreconnect.apple.com`. Không commit, không gửi qua chat.
+5. **Chạy script** (từ `web/`, `web/.env` có `VITE_NATIVE_API_ORIGIN=https://scribe.hoandat.com` và nên có `VITE_SUPPORT_EMAIL`):
+
+   ```bash
+   cd web
+   IOS_TEAM=<Team ID> ASC_KEY_ID=<Key ID> ASC_ISSUER_ID=<Issuer ID>    ASC_KEY_PATH=~/.appstoreconnect/private_keys/AuthKey_<KEY_ID>.p8    pnpm run ios:release
+   ```
+
+   `web/scripts/ios-release.sh`: build web → `cap sync ios` → `xcodebuild archive` (Release, ký tự động, `-allowProvisioningUpdates` + key API) → `xcodebuild -exportArchive` với `method: app-store-connect`, `destination: upload` (ký phân phối và tải thẳng lên App Store Connect, không dùng `altool`) → in phiên bản và số build. Tuỳ chọn `IOS_BUILD_NUMBER`, `IOS_RELEASE_DIR` (giữ lại archive).
+6. **TestFlight**: build hiện trong tab TestFlight sau khi Apple xử lý (vài phút tới vài chục phút). Lần đầu trả lời câu hỏi mã hoá đã được `ITSAppUsesNonExemptEncryption` trả lời sẵn. Tạo nhóm Internal Testing, thêm người thử (tài khoản trong Users and Access, tối đa 100), bật build cho nhóm.
+7. **Nộp duyệt** (khi muốn lên App Store): điền hồ sơ từ [app-store/metadata.md](./app-store/metadata.md) (mô tả, từ khoá, ảnh `docs/app-store/screenshots/`, App Privacy, Age Rating, ghi chú cho người duyệt, tài khoản demo), chọn build, Submit for Review.
+
+Việc cần Apple duyệt tài khoản trước: Team ID, tạo app, key API, chạy script, TestFlight. Làm được ngay: tài khoản demo cho người duyệt, `VITE_SUPPORT_EMAIL`, deploy backend có `DELETE /api/me` và trang `/privacy`, `/terms` lên prod.
+
 ## Cách app hoạt động
 
 | Phần | Ở đâu | Ghi chú |
@@ -34,6 +63,7 @@ Cần trên máy build:
 | Lưu bền | `Recorder/SegmentStore.swift` | `Documents/recordings/<userKey>/<sessionId>/session.json` + `seg-NNN.m4a`; đối soát khi mở app, báo đoạn cụt nếu app bị kill |
 | Đánh dấu từ màn hình khoá / AirPods | `Recorder/NowPlayingBookmarks.swift` | Xem mục "Đánh dấu khi khoá màn hình" bên dưới |
 | Tải lên | `Recorder/UploadQueue.swift` | Mỗi đoạn một bản ghi tên `<sessionId>#<index>`; Lịch sử ghi gom thành một dòng "Bản ghi trên iPhone". Mất phản hồi finalize thì tra theo tên trước khi tạo lại (không sinh bản trùng) |
+| Xoá tài khoản | (không có phần native) | Menu tài khoản → "Xoá tài khoản" gọi `DELETE /api/me`; xong thì app dừng ghi, xoá cache audio và token thiết bị như đăng xuất (`forgetDeletedAccount` ở `auth-context.tsx`), không kết thúc phiên ở hoandat-auth |
 | Làm mới phiên | `SessionAuth.swift` | Token thiết bị của Scribe giữ trong Keychain của app (`AfterFirstUnlockThisDeviceOnly`). Phiên mobile 12 giờ; gặp 401 khi đang tải, hàng đợi đổi token thiết bị lấy cookie mới ở `POST /api/auth/native/refresh` (chỉ được khi hoandat-auth còn công nhận máy; thu hồi máy ở `/account` của IdP thì lần làm mới sau thất bại), rồi mới báo "cần đăng nhập lại". Đăng xuất thì xoá token và thiết bị trên server |
 | Chép lời | (không có phần native) | Dùng key OpenAI của server, tính vào phút của tài khoản. `SecretsPlugin.swift` chỉ còn để xoá key người dùng tự nhập ở bản cũ khi đăng xuất |
 | Chép trực tiếp | `Recorder/RealtimeTranscriber.swift`, `Recorder/TranscriptStore.swift` | Xem mục "Chép trực tiếp" bên dưới |

@@ -325,6 +325,8 @@ export interface ApiStub {
 	readonly speakerRenames: Array<Record<string, string | null>>;
 	/** Provider of every `PUT /api/me/keys/:provider`, in order (the key itself is not kept). */
 	readonly keySaves: string[];
+	/** `confirm` of every `DELETE /api/me` (account deletion), in order. */
+	readonly accountDeletes: string[];
 	/** Stands in for the user sending `/start` to the bot on chat.hoandat.com. */
 	linkChat: () => void;
 }
@@ -383,6 +385,8 @@ export async function stubApi(
 	fixtures: ApiFixtures = apiFixtures(),
 ): Promise<ApiStub> {
 	let chatLinked = fixtures.chatLinked;
+	// `DELETE /api/me` ends the session: `/api/me` answers 401 from then on.
+	let user = fixtures.user;
 	const stub: ApiStub = {
 		unexpected: [],
 		requests: [],
@@ -396,6 +400,7 @@ export async function stubApi(
 		exports: [],
 		speakerRenames: [],
 		keySaves: [],
+		accountDeletes: [],
 		linkChat: () => {
 			chatLinked = true;
 		},
@@ -601,10 +606,22 @@ export async function stubApi(
 				if (detail) return json(route, 200, detail);
 			}
 			switch (call) {
+				case "DELETE /api/me": {
+					stub.accountDeletes.push(
+						stringField(request.postDataJSON(), "confirm") ?? "",
+					);
+					user = null;
+					return json(route, 200, {
+						deleted: true,
+						files: historyItems.length,
+						bytes: 0,
+						complete: true,
+					});
+				}
 				case "GET /api/me":
-					return fixtures.user
+					return user
 						? json(route, 200, {
-								...fixtures.user,
+								...user,
 								ownKeys: {
 									available: userKeys.available,
 									...userKeys.active,

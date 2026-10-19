@@ -1,8 +1,10 @@
+import { account } from "./account";
 import { chat } from "./chat";
 import { common } from "./common";
 import { errors } from "./errors";
 import { keys } from "./keys";
 import { layout } from "./layout";
+import { legal } from "./legal";
 import { login } from "./login";
 import { record } from "./record";
 import { recorder } from "./recorder";
@@ -17,11 +19,13 @@ import { ui } from "./ui";
  * is typed `Messages` and must fill exactly these keys.
  */
 export const vi = {
+	account,
 	chat,
 	common,
 	errors,
 	keys,
 	layout,
+	legal,
 	login,
 	record,
 	recorder,

@@ -20,11 +20,18 @@ function SessionCheck() {
 	);
 }
 
-/** Children only for a signed-in user; otherwise /login. */
-export function RequireAuth({ children }: { children: ReactNode }) {
+/** Children only for a signed-in user; otherwise `guest`, or /login. */
+export function RequireAuth({
+	children,
+	guest,
+}: {
+	children: ReactNode;
+	/** What a visitor sees instead (public pages); /login when absent. */
+	guest?: ReactNode;
+}) {
 	const { ready, user } = useAuth();
 	if (!ready) return <SessionCheck />;
-	if (!user) return <Navigate to="/login" replace />;
+	if (!user) return guest ?? <Navigate to="/login" replace />;
 	return children;
 }
 

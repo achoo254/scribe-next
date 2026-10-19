@@ -5,7 +5,9 @@ import { RequireAuth, RequireGuest } from "./auth/require-auth";
 import { PATHS } from "./layout/app-paths";
 import { AppShell } from "./layout/app-shell";
 import { PageError } from "./layout/page-error";
+import { PUBLIC_ROUTE, PublicLayout } from "./layout/public-layout";
 import { SignedInState } from "./layout/signed-in-state";
+import { LegalPage } from "./pages/legal-page";
 import { LoginPage } from "./pages/login-page";
 import { RecordPage } from "./pages/record/record-page";
 import { SearchPage } from "./pages/search/search-page";
@@ -36,12 +38,15 @@ function RequireTranscribe({ children }: { children: ReactNode }) {
  * it, `SignedInState` (recording, "Cắt file" upload and job), placed under
  * `RequireAuth` so signing out unmounts it. Pages are not lazy: a tab left
  * open across a deploy must not ask for a chunk that no longer exists.
+ * The legal pages are public (`PUBLIC_ROUTE`): a visitor gets them in
+ * `PublicLayout`, a signed-in user inside the shell, so opening them while
+ * recording does not unmount the recording.
  */
 export const appRoutes: RouteObject[] = [
 	{
 		path: "/",
 		element: (
-			<RequireAuth>
+			<RequireAuth guest={<PublicLayout />}>
 				<SignedInState>
 					<AppShell />
 				</SignedInState>
@@ -79,6 +84,16 @@ export const appRoutes: RouteObject[] = [
 								<TranscriptReaderPage />
 							</RequireTranscribe>
 						),
+					},
+					{
+						path: PATHS.privacy,
+						element: <LegalPage doc="privacy" />,
+						handle: PUBLIC_ROUTE,
+					},
+					{
+						path: PATHS.terms,
+						element: <LegalPage doc="terms" />,
+						handle: PUBLIC_ROUTE,
 					},
 					// Unknown signed-in paths stay inside the layout: no provider remount.
 					{ path: "*", element: <Navigate to={PATHS.record} replace /> },
