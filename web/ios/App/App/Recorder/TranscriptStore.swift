@@ -7,7 +7,7 @@ import os
 ///
 /// Each line is written with a single append; a line torn by a kill is
 /// skipped when the file is read back, so every other line survives.
-/// Lines come in arrival order (OpenAI may finish sentences out of order);
+/// Lines come in arrival order (the provider may finish sentences out of order);
 /// readers get them sorted by session position.
 actor TranscriptStore {
     static let shared = TranscriptStore()
@@ -16,7 +16,8 @@ actor TranscriptStore {
     /// A finished sentence, or a stretch the stream missed (`gapUntilS` set,
     /// empty `text`): the full transcript after the recording fills it.
     struct Entry: Codable, Equatable {
-        /// OpenAI item id of the sentence, or `gap-…`.
+        /// Provider id of the sentence (OpenAI item id, or `<tokenId>-<n>` for
+        /// ElevenLabs), or `gap-…`.
         let id: String
         /// Session position (seconds of recorded audio) where it starts.
         let atS: Double

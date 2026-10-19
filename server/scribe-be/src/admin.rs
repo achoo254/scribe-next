@@ -197,18 +197,19 @@ async fn elevenlabs_quota(config: &Config, db: &Database, args: &[String]) -> Re
     Ok(out)
 }
 
-/// Tính lại sổ tháng: lượt đã quyết toán (`transcribe_runs.sentS`) + lượt còn mở (phần đang giữ,
+/// Tính lại sổ tháng: lượt đã quyết toán (`transcribe_runs.sentS`; sổ quy theo USD dùng `costS` khi có) + lượt còn mở (phần đang giữ,
 /// `chargedS` — quyết toán sau sẽ cộng chênh lệch); trần tổng cộng thêm chi phí tóm tắt và hỏi đáp
 /// (`summary_runs.costS`, `ask_runs.costS`). In chênh lệch; `apply` cộng chênh lệch bằng `$inc` và
 /// chỉ chạy khi tháng không còn lượt nào đang mở (giữ chỗ đang dở sẽ làm số sai).
 async fn recompute(db: &Database, month: &str, apply: bool) -> Result<Value, String> {
     let mut per_user: HashMap<String, i64> = HashMap::new();
     let (mut free_pool, mut total) = (0_i64, 0_i64);
-    let mut add = |user: &str, free: bool, seconds: i64| {
+    // `cost`: giây trên sổ quy theo USD (chép trực tiếp có giá khác chép lời theo tệp).
+    let mut add = |user: &str, free: bool, seconds: i64, cost: i64| {
         *per_user.entry(user.to_string()).or_default() += seconds;
-        total += seconds;
+        total += cost;
         if free {
-            free_pool += seconds;
+            free_pool += cost;
         }
     };
     let read = |e: mongodb::error::Error| format!("đọc sổ: {e}");
@@ -216,7 +217,8 @@ async fn recompute(db: &Database, month: &str, apply: bool) -> Result<Value, Str
     while let Some(r) = runs.next().await {
         let r = r.map_err(read)?;
         let seconds = r.get_i64("sentS").unwrap_or(0);
-        add(r.get_str("userId").unwrap_or("-"), r.get_bool("freePool").unwrap_or(false), seconds);
+        let cost = r.get_i64("costS").unwrap_or(seconds);
+        add(r.get_str("userId").unwrap_or("-"), r.get_bool("freePool").unwrap_or(false), seconds, cost);
     }
     let mut open_runs = 0;
     let mut open = db
@@ -227,12 +229,12 @@ async fn recompute(db: &Database, month: &str, apply: bool) -> Result<Value, Str
     while let Some(t) = open.next().await {
         let t = t.map_err(read)?;
         open_runs += 1;
-        add(&t.user_id, t.free_pool, t.charged_s);
+        add(&t.user_id, t.free_pool, t.charged_s, t.charged_s);
     }
     // Token chép trực tiếp chưa quyết toán: sổ đang tính trọn phần giữ chỗ (đã quyết toán thì nằm trong
     // `transcribe_runs` ở trên). Không chặn `--apply`: báo cáo đến muộn chỉ cộng chênh lệch bằng `$inc`.
-    for (user, free, charged) in crate::models::realtime_token::unsettled(db, month).await.map_err(err)? {
-        add(&user, free, charged);
+    for (user, free, charged, cost) in crate::models::realtime_token::unsettled(db, month).await.map_err(err)? {
+        add(&user, free, charged, cost);
     }
     // Chi phí token của tóm tắt, hỏi đáp và dịch chỉ tính vào trần tổng (không vào sổ phút của user hay quỹ
     // free); lượt đang gọi model giữ chỗ theo ước lượng và quyết toán sau, nên cũng chặn `--apply` như

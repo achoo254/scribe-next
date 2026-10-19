@@ -406,7 +406,7 @@ async fn refund_provider(db: &mongodb::Database, month: &str, need: i64, run_id:
 
 /// ElevenLabs báo hết quota tháng: đánh dấu tháng (chặn gửi tới tháng sau hoặc tới khi quản trị gỡ bằng
 /// `admin elevenlabs-quota --clear`), ghi audit và báo chủ sản phẩm một lần. Không phải key hỏng: không ngắt chép lời.
-async fn report_quota_exhausted(state: &AppState, month: &str) {
+pub(crate) async fn report_quota_exhausted(state: &AppState, month: &str) {
     if usage::mark_provider_exhausted(&state.db, month).await {
         tracing::error!(month, "ElevenLabs báo hết quota tháng — dừng gửi tới tháng sau");
         audit::record(state, None, "transcript.provider_quota", doc! { "month": month });

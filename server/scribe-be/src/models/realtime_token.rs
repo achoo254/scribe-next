@@ -1,6 +1,8 @@
-//! `realtime_tokens`: mỗi token tạm thời của chép trực tiếp (OpenAI Realtime) đã cấp cho app iPhone.
+//! `realtime_tokens`: mỗi token tạm thời của chép trực tiếp (ElevenLabs Scribe v2 Realtime, hoặc OpenAI Realtime khi
+//! `REALTIME_PROVIDER=openai`) đã cấp cho app iPhone.
 //!
-//! Lúc cấp, backend giữ chỗ `chargedS` giây trên sổ phút (`usage`) — cùng hạn mức với chép lời cả file.
+//! Lúc cấp, backend giữ chỗ `chargedS` giây trên sổ phút (`usage`) — cùng hạn mức với chép lời cả file. Sổ quy theo USD
+//! (quỹ free, trần tổng) giữ số giây quy đổi theo giá (`costRatio`), sổ giờ ElevenLabs giữ theo `elRatio`.
 //! App báo số giây audio thật sự đã stream bằng token đó khi đóng phiên hoặc đổi token; báo trước
 //! `reportBy` thì quyết toán theo số thật (`sentS`). Không báo (app bị tắt, mất mạng) thì phần giữ chỗ
 //! được tính trọn: không cần job dọn, sổ đã có sẵn số đó. Đóng theo một lệnh nguyên tử
@@ -17,7 +19,7 @@ const COLL: &str = "realtime_tokens";
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct TokenDoc {
-    /// Id do backend sinh (UUID), không phải giá trị token của OpenAI (token không được lưu).
+    /// Id do backend sinh (UUID), không phải giá trị token của nhà cung cấp (token không được lưu).
     #[serde(rename = "_id")]
     pub id: String,
     #[serde(rename = "userId")]
@@ -40,11 +42,44 @@ pub struct TokenDoc {
     /// Hạn nhận báo cáo; quá hạn thì phần giữ chỗ tính trọn.
     #[serde(rename = "reportBy")]
     pub report_by: DateTime,
+    /// `elevenlabs` hoặc `openai` (token cấp trước khi có trường này là OpenAI).
+    #[serde(default = "openai")]
+    pub provider: String,
+    /// Giây trên sổ quy theo USD cho mỗi giây audio: giá chép trực tiếp / giá chép lời theo tệp của bản build.
+    #[serde(rename = "costRatio", default = "one")]
+    pub cost_ratio: f64,
+    /// Giây trên sổ giờ ElevenLabs cho mỗi giây audio (giá Realtime / giá Scribe v2); 0 khi không qua ElevenLabs.
+    #[serde(rename = "elRatio", default)]
+    pub el_ratio: f64,
+}
+
+fn openai() -> String {
+    "openai".into()
+}
+
+fn one() -> f64 {
+    1.0
+}
+
+/// Giây quy đổi của `seconds` giây audio theo `ratio`, làm tròn lên. Bỏ phần lẻ do sai số dấu phẩy động (600 × 2,1666…
+/// ra 1300,0000000002 vẫn là 1300).
+pub fn weighted(seconds: i64, ratio: f64) -> i64 {
+    (seconds.max(0) as f64 * ratio - 1e-6).ceil().max(0.0) as i64
 }
 
 impl TokenDoc {
     pub fn charge(&self) -> Charge {
         Charge { user_id: self.user_id.clone(), month: self.month.clone(), free_pool: self.free_pool, day: self.day.clone() }
+    }
+
+    /// Giây trên sổ quy theo USD của `seconds` giây audio.
+    pub fn cost_s(&self, seconds: i64) -> i64 {
+        weighted(seconds, self.cost_ratio)
+    }
+
+    /// Giây trên sổ giờ ElevenLabs của `seconds` giây audio.
+    pub fn el_s(&self, seconds: i64) -> i64 {
+        weighted(seconds, self.el_ratio)
     }
 }
 
@@ -68,6 +103,9 @@ pub async fn insert(db: &Database, t: &TokenDoc) -> Result<(), AppError> {
         "settled": false,
         "createdAt": t.created_at,
         "reportBy": t.report_by,
+        "provider": &t.provider,
+        "costRatio": t.cost_ratio,
+        "elRatio": t.el_ratio,
     };
     db.collection::<Document>(COLL)
         .insert_one(d)
@@ -98,15 +136,16 @@ pub async fn close(db: &Database, user_id: &str, id: &str, sent_s: i64, now: Dat
     Ok(res.modified_count > 0)
 }
 
-/// Token chưa quyết toán trong tháng: (userId, freePool, chargedS) — sổ đang tính trọn phần giữ chỗ.
-/// Token đã quyết toán nằm trong `usage::RUNS_COLL` như lượt chép file.
-pub async fn unsettled(db: &Database, month: &str) -> Result<Vec<(String, bool, i64)>, AppError> {
+/// Token chưa quyết toán trong tháng: (userId, freePool, chargedS, giây trên sổ quy theo USD) — sổ đang tính trọn phần
+/// giữ chỗ. Token đã quyết toán nằm trong `usage::RUNS_COLL` như lượt chép file.
+pub async fn unsettled(db: &Database, month: &str) -> Result<Vec<(String, bool, i64, i64)>, AppError> {
     let read = |e: mongodb::error::Error| AppError::Internal(format!("đọc token chép trực tiếp: {e}"));
     let mut cur = db.collection::<TokenDoc>(COLL).find(doc! { "month": month, "settled": false }).await.map_err(read)?;
     let mut out = Vec::new();
     while let Some(t) = cur.next().await {
         let t = t.map_err(read)?;
-        out.push((t.user_id, t.free_pool, t.charged_s));
+        let cost = t.cost_s(t.charged_s);
+        out.push((t.user_id, t.free_pool, t.charged_s, cost));
     }
     Ok(out)
 }

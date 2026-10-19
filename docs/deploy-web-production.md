@@ -87,7 +87,7 @@ Tất cả trong `/opt/scribe-be`, chủ `scribe`, quyền 600, ghi bằng stdin
 |---|---|---|
 | `.session-key` | `SESSION_KEY_PATH` | BE tự sinh nếu chưa có; khoá mã hoá refresh token IdP của thiết bị |
 | `.oidc-web-secret` | `OIDC_WEB_CLIENT_SECRET_PATH` | Secret của client `scribe-web`; phía IdP là `SCRIBE_WEB_CLIENT_SECRET` trong `/var/www/hoandat-auth/.env` — đổi thì đổi cả hai |
-| `.openai-key` | `OPENAI_KEY_PATH` | Key OpenAI của server: tóm tắt, hỏi đáp, dịch, chép trực tiếp; chép lời khi `TRANSCRIBE_PROVIDER=openai` (§Deploy) |
+| `.openai-key` | `OPENAI_KEY_PATH` | Key OpenAI của server: tóm tắt, hỏi đáp, dịch; chép lời khi `TRANSCRIBE_PROVIDER=openai`, chép trực tiếp khi `REALTIME_PROVIDER=openai` (§Deploy) |
 | `.elevenlabs-key` | `ELEVENLABS_KEY_PATH` | Key ElevenLabs của server: chép lời tệp và phiên iPhone (§Deploy) |
 | `.notify-bot-token` | `NOTIFY_BOT_TOKEN_PATH` | Token bot `@bot_scribe_bot`: báo động, liên kết chat và gửi biên bản (§Deploy) |
 
@@ -98,7 +98,7 @@ Tất cả trong `/opt/scribe-be`, chủ `scribe`, quyền 600, ghi bằng stdin
 - **Binary KHÔNG đọc env lúc chạy** → KHÔNG dùng systemd `EnvironmentFile`.
 - **Danh sách biến là `server/scribe-be/build.rs`** (biến nào không có ở đó thì không vào binary); mặc định và ý nghĩa ở `server/scribe-be/src/config.rs`.
 - **Bắt buộc lúc build:** `DB_NAME`, `PUBLIC_URL`, `SESSION_KEY_PATH`, `DATA_DIR`, `OIDC_WEB_CLIENT_SECRET_PATH`. Thiếu biến nào thì binary **dừng ngay khi khởi động** và log tên biến thiếu (để không bao giờ chạy với database hay thư mục sai).
-- **Tuỳ chọn:** `MONGO_URI` (mặc định `mongodb://127.0.0.1:27017`), `PORT` (`8787`), `ALLOWED_DOMAINS`, `ALLOWED_EMAILS`, `TRANSCRIBE_EMAILS`, `TRANSCRIBE_OPEN`, các biến OIDC, `OPENAI_KEY_PATH`, `TRANSCRIBE_PROVIDER`, `ELEVENLABS_KEY_PATH`, `ELEVENLABS_MONTHLY_HOURS`, các biến hạn mức chép lời, báo động, tóm tắt, hỏi đáp và liên kết chat (bảng dưới).
+- **Tuỳ chọn:** `MONGO_URI` (mặc định `mongodb://127.0.0.1:27017`), `PORT` (`8787`), `ALLOWED_DOMAINS`, `ALLOWED_EMAILS`, `TRANSCRIBE_EMAILS`, `TRANSCRIBE_OPEN`, các biến OIDC, `OPENAI_KEY_PATH`, `TRANSCRIBE_PROVIDER`, `REALTIME_PROVIDER`, `ELEVENLABS_KEY_PATH`, `ELEVENLABS_MONTHLY_HOURS`, các biến hạn mức chép lời, báo động, tóm tắt, hỏi đáp và liên kết chat (bảng dưới).
 
 > Đổi bất kỳ biến nào = **build lại binary** rồi redeploy; sửa env trên server vô tác dụng.
 
@@ -114,8 +114,9 @@ Tất cả trong `/opt/scribe-be`, chủ `scribe`, quyền 600, ghi bằng stdin
 | `OIDC_WEB_CLIENT_SECRET_PATH` | `/opt/scribe-be/.oidc-web-secret` |
 | `OIDC_ISSUER`, `OIDC_WEB_CLIENT_ID`, `OIDC_MOBILE_CLIENT_ID`, `OIDC_MOBILE_REDIRECT_URI` | Prod dùng mặc định: `https://auth.hoandat.com`, `scribe-web`, `scribe-mobile`, `com.hoandat.scribe:/auth/callback` |
 | `OPENAI_KEY_PATH` | `/opt/scribe-be/.openai-key` |
-| `TRANSCRIBE_PROVIDER` | `elevenlabs` (mặc định, không cần đặt) hoặc `openai` (luồng cũ, giữ làm dự phòng một bản phát hành). Chỉ áp cho chép lời tệp/phiên; chép trực tiếp luôn dùng OpenAI Realtime |
-| `ELEVENLABS_KEY_PATH` | `/opt/scribe-be/.elevenlabs-key`. Thiếu tệp khi `TRANSCRIBE_PROVIDER=elevenlabs` thì chép lời tắt (journal: "thiếu key chép lời của nhà cung cấp") |
+| `TRANSCRIBE_PROVIDER` | `elevenlabs` (mặc định, không cần đặt) hoặc `openai` (luồng cũ, giữ làm dự phòng một bản phát hành). Chỉ áp cho chép lời tệp/phiên |
+| `REALTIME_PROVIDER` | Chép trực tiếp trên iPhone: `elevenlabs` (mặc định từ 19/10/2026, Scribe v2 Realtime 0,39 USD/giờ, token dùng một lần cấp bằng key `ELEVENLABS_KEY_PATH`) hoặc `openai` (OpenAI Realtime `gpt-4o-mini-transcribe`, giữ làm dự phòng một bản phát hành). App iPhone bản 17/10 chỉ nói được với OpenAI: cài app mới trước hoặc cùng lúc deploy backend mặc định, hoặc build tạm với `REALTIME_PROVIDER=openai`. Qua ElevenLabs, chép trực tiếp tính vào sổ giờ `ELEVENLABS_MONTHLY_HOURS` theo giờ Scribe v2 tương đương (1 giờ realtime ≈ 1,77 giờ trên sổ) và vào trần USD theo giá realtime |
+| `ELEVENLABS_KEY_PATH` | `/opt/scribe-be/.elevenlabs-key`. Đọc khi `TRANSCRIBE_PROVIDER` hoặc `REALTIME_PROVIDER` là `elevenlabs`. Thiếu tệp thì chép lời (journal: "thiếu key chép lời của nhà cung cấp") và chép trực tiếp bằng ElevenLabs tắt |
 | `ELEVENLABS_MONTHLY_HOURS` | Trần giờ audio ElevenLabs mỗi tháng (giờ VN), mặc định `25` (gói Starter có khoảng 27 giờ Scribe v2). Độc lập với trần USD |
 | `TRANSCRIBE_EMAILS` | Email được dùng "Chép lời" (cách nhau dấu phẩy) khi chưa bật `TRANSCRIBE_OPEN` |
 | `REALTIME_EMAILS` | Email được dùng "Chép trực tiếp" trên iPhone (cách nhau dấu phẩy). Rỗng = **không ai**, không theo `TRANSCRIBE_OPEN`. Phút tính chung hạn mức chép lời. **Trước lần build prod có tính năng này, chủ sản phẩm thêm email của mình vào `.env.production`** (chưa thêm thì app nhận 403, ghi âm vẫn chạy) |
@@ -197,7 +198,7 @@ nginx -t && systemctl reload nginx
 
 > **Restart BE khi đang chép lời:** không mất lượt (key nằm ở server): lượt đang chạy được xếp lại và chạy từ đầu, nhưng audio gửi lại bị OpenAI tính tiền lần nữa; lượt đã bị cắt ngang một lần thì dừng hẳn. Vẫn nên chờ hàng đợi rỗng trước khi restart: đếm `db.transcripts.countDocuments({status:{$in:["queued","running"]}})` qua `scripts/prod-mongosh.sh` của skill `scribe-ops-prod`.
 >
-> **Key OpenAI của server**: tệp `OPENAI_KEY_PATH` (`/opt/scribe-be/.openai-key`), chủ `$DEPLOY_USER`, quyền 600, ghi bằng stdin, không bao giờ in. Đọc lúc khởi động; dùng cho tóm tắt, hỏi đáp, dịch, chép trực tiếp (`gpt-4o-mini-transcribe` Realtime), và chép lời khi `TRANSCRIBE_PROVIDER=openai`. Thiếu hoặc sai dạng thì các tính năng đó tắt (journal: "không đọc được tệp key OpenAI"). Key hỏng ở lượt chép lời bằng OpenAI thì BE ngắt chép lời tới lần khởi động sau (audit `transcript.key_invalid`). Đổi key: ghi đè tệp rồi restart.
+> **Key OpenAI của server**: tệp `OPENAI_KEY_PATH` (`/opt/scribe-be/.openai-key`), chủ `$DEPLOY_USER`, quyền 600, ghi bằng stdin, không bao giờ in. Đọc lúc khởi động; dùng cho tóm tắt, hỏi đáp, dịch, chép lời khi `TRANSCRIBE_PROVIDER=openai` và chép trực tiếp khi `REALTIME_PROVIDER=openai`. Thiếu hoặc sai dạng thì các tính năng đó tắt (journal: "không đọc được tệp key OpenAI"). Key hỏng ở lượt chép lời bằng OpenAI thì BE ngắt chép lời tới lần khởi động sau (audit `transcript.key_invalid`). Đổi key: ghi đè tệp rồi restart.
 >
 > **Key ElevenLabs của server** (chép lời mặc định, Scribe v2, từ 17/10/2026): tệp `ELEVENLABS_KEY_PATH` (`/opt/scribe-be/.elevenlabs-key`), chủ `$DEPLOY_USER`, quyền 600. Cài bằng stdin, không qua argv, không in, ví dụ dán key vào lệnh `read -rs` rồi:
 > `printf '%s' "$KEY" | ssh <server> "sudo install -m 600 -o $DEPLOY_USER -g $DEPLOY_USER /dev/stdin /opt/scribe-be/.elevenlabs-key"`, sau đó `unset KEY` và restart BE. Key cần quyền Speech to Text; dùng thương mại phải là gói trả phí (gói Free không cho dùng thương mại).

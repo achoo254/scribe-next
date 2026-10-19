@@ -185,7 +185,7 @@ Bốn hành vi đã verify, phải hiện diện trong thiết kế client:
 | 2 | [Recorder + upload](./phase-02-recorder-va-upload.md) | **L** | Xong, QA trên iPhone 16/10 (khoá màn hình, kill app, đăng xuất khi còn đoạn, 48 phút không sạc). Còn: cuộc gọi đến, AirPods, chế độ máy bay |
 | 3 | [UI parity tab Ghi âm](./phase-03-ui-parity-tab-ghi-am.md) | **M** | Xong, QA trên iPhone 16/10. Giao diện mới (refactor 16/10 chiều) chưa cài lên máy — xem "Lần cắm iPhone tới" |
 | 4 | [Deploy, vận hành, lộ trình App Store](./phase-04-deploy-va-van-hanh.md) | **S** | Xong: `pnpm run ios:device`, `docs/ios-app.md`, lộ trình App Store trong `docs/project-roadmap.md` |
-| 5 | [Realtime transcript](./phase-05-realtime-transcript.md) | **L** | Đang làm — mã xong 17/10 (backend, Swift, giao diện; chỉ email trong `REALTIME_EMAILS`). Còn đo trên iPhone thật: Gate 0 bước 2 và Success Criteria |
+| 5 | [Realtime transcript](./phase-05-realtime-transcript.md) | **L** | Đang làm — mã xong 17/10 (backend, Swift, giao diện; chỉ email trong `REALTIME_EMAILS`); 19/10 đổi sang ElevenLabs Scribe v2 Realtime (OpenAI dự phòng qua `REALTIME_PROVIDER`), đã thử thật từ Mac. Còn đo trên iPhone thật: Gate 0 bước 2 và Success Criteria |
 | 6 | [Chép lời bản ghi bằng OpenAI (key của server)](./phase-06-ban-hoan-chinh-sau-buoi-ghi.md) | **L** | Xong 16/10: dùng key OpenAI của server, tính phút theo tài khoản (commit `a90a7e8`), mở cho mọi người 16/10 14:19; đã chép lời trên iPhone thật |
 
 Thứ tự: **1 → 2 → 3 → 4**, rồi **6 trước 5** (2026-10-15: Phase 6 không cần iPhone để kiểm phần lớn). Ngày 16/10 Phase 6 đổi sang key OpenAI của server, tính vào phút của tài khoản — quyết định T1/T3/T4 (key người dùng tự nhập) không còn hiệu lực. Phase 5 và 6 thêm ngày 2026-10-15, sau khi đo OpenAI Realtime cho tiếng Việt ([báo cáo](../dattqh/reports/research-261015-1415-realtime-transcription-probe.md)).
@@ -234,10 +234,13 @@ Bấm thử trên máy, theo thứ tự:
 11. ~~Bỏ qua theo chủ dự án 17/10~~ Đeo AirPods (micro vẫn là micro iPhone) khi đang ghi và khoá máy: bấm 1 lần, rồi bấm 2 lần → mỗi lần thêm một mốc, không dừng ghi. Thử thêm khi AirPods là micro nếu chọn được.
 12. Mở khoá, mở app → nút "Đánh dấu" vẫn chạy như cũ; dừng ghi → mở bản chép lời: các mốc bấm từ màn hình khoá/AirPods nằm đúng giây. Thử thêm: bấm mốc khi khoá → vuốt tắt app → mở lại → mốc vẫn có.
 13. Còn nợ từ trước: cuộc gọi đến khi đang ghi, AirPods, chế độ máy bay khi đang tải (cần máy thứ hai + AirPods).
+Mục 14–18 chạy với ElevenLabs (19/10): cài app mới **trước hoặc cùng lúc** deploy backend mới — app cũ (17/10) gặp backend mặc định ElevenLabs sẽ báo lỗi chép trực tiếp (ghi vẫn chạy).
+
 14. **Chép trực tiếp** (cần bản backend có `REALTIME_EMAILS` chứa email chủ sản phẩm): bật công tắc "Chép trực tiếp" → ghi → panel "Đang chép" hiện câu sau mỗi lần ngừng nói, mốc đúng đồng hồ ghi. Tài khoản khác (ngoài danh sách) → panel báo chưa được dùng, ghi vẫn chạy. Tắt công tắc → ghi bình thường, log backend không có `realtime.token`.
 15. Gate 0 bước 2 của Phase 5: bật chép trực tiếp, ghi **30 phút khoá máy liên tục** → mở lại thấy đủ câu nói trong lúc khoá; đếm số dòng "mất đoạn này" (số lần rớt kết nối); ghi % pin ở *Cài đặt → Pin*. Sau đó ghi 60 phút để đo Success Criteria (≥ 95% câu, pin ≤ 15%).
 16. Giữa phiên bật **chế độ máy bay 2 phút** → panel "Mất kết nối từ mm:ss", tắt máy bay → tự nối lại, có một dòng "mất đoạn này"; file m4a nguyên vẹn, Lịch sử ghi đủ đoạn.
-17. Ghi quá 10 phút có chép trực tiếp → qua mốc đổi token (mỗi ~10 phút) không mất câu; `admin usage` thấy phút tăng xấp xỉ thời lượng stream (không gấp đôi).
+17. Ghi quá 10 phút có chép trực tiếp → qua mốc đổi token (mỗi ~10 phút) không mất câu; `admin usage` thấy phút tăng xấp xỉ thời lượng stream (không gấp đôi), sổ giờ ElevenLabs (`elevenlabs.usedMinutes`) tăng khoảng 1,77 lần thời lượng stream.
+18. ElevenLabs: chữ tạm hiện trong lúc nói rồi được thay bằng câu chốt (chốt sau khoảng 1 giây im lặng; nói liền thì tối đa khoảng 36 giây một câu); mốc câu khớp đồng hồ ghi, kể cả sau khi nối lại (máy bay ở mục 16) và sau mốc đổi token; ngồi im hơn 15 giây vẫn không mất kết nối (app gửi audio liên tục). So độ chính xác với bản chép cả file sau khi tải lên.
 
 ## Success Criteria (toàn plan)
 

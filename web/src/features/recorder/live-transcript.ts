@@ -1,6 +1,7 @@
 /**
  * Live transcript while recording in the iOS app ("Chép trực tiếp"). Swift
- * streams the audio to OpenAI Realtime and keeps the sentences next to the
+ * streams the audio to the realtime provider the backend picks (ElevenLabs
+ * Scribe v2 Realtime by default) and keeps the sentences next to the
  * session (web/ios/App/App/Recorder/RealtimeTranscriber.swift); this is
  * only a preview — the full transcript still runs after the upload.
  *
@@ -11,7 +12,7 @@
 import type { RecorderNativePlugin } from "./native-recorder";
 
 export interface LiveSentence {
-	/** OpenAI item id, or `gap-…` for a stretch the stream missed. */
+	/** Provider sentence id, or `gap-…` for a stretch the stream missed. */
 	id: string;
 	/** Session position (seconds of recorded audio) where it starts. */
 	atS: number;

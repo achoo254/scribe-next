@@ -17,7 +17,8 @@ pub const PLUS_MAX_FILE_BYTES: u64 = 2 * 1024 * MIB;
 pub const RETENTION_DAYS: i64 = 14;
 
 /// Nhà cung cấp chép lời theo tệp (`TRANSCRIBE_PROVIDER`, chủ dự án chốt 17/10/2026): ElevenLabs Scribe v2 mặc định,
-/// OpenAI giữ làm dự phòng một bản phát hành. Chép trực tiếp trên iPhone vẫn dùng OpenAI Realtime.
+/// OpenAI giữ làm dự phòng một bản phát hành. Chép trực tiếp trên iPhone chọn riêng bằng `REALTIME_PROVIDER` (chủ dự án
+/// chốt 19/10/2026: ElevenLabs Scribe v2 Realtime mặc định, OpenAI Realtime dự phòng một bản phát hành).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Provider {
     #[default]
@@ -51,6 +52,28 @@ impl Provider {
     pub fn model(self) -> &'static str {
         match self {
             Provider::ElevenLabs => "scribe_v2",
+            Provider::OpenAi => "gpt-4o-mini-transcribe",
+        }
+    }
+
+    /// Nhà cung cấp chép trực tiếp của bản build này (`REALTIME_PROVIDER`).
+    pub fn realtime_from_build() -> Provider {
+        Provider::parse(option_env!("REALTIME_PROVIDER"))
+    }
+
+    /// Giá một phút chép trực tiếp (USD): Scribe v2 Realtime 0,39 USD/giờ, OpenAI Realtime với
+    /// `gpt-4o-mini-transcribe` 0,003 USD/phút.
+    pub fn realtime_usd_per_minute(self) -> f64 {
+        match self {
+            Provider::ElevenLabs => 0.39 / 60.0,
+            Provider::OpenAi => 0.003,
+        }
+    }
+
+    /// Model chép trực tiếp.
+    pub fn realtime_model(self) -> &'static str {
+        match self {
+            Provider::ElevenLabs => "scribe_v2_realtime",
             Provider::OpenAi => "gpt-4o-mini-transcribe",
         }
     }
@@ -219,6 +242,8 @@ pub struct Config {
     pub elevenlabs_key_path: Option<String>,
     /// Trần giây audio ElevenLabs mỗi tháng (`ELEVENLABS_MONTHLY_HOURS`).
     pub elevenlabs_monthly_seconds: i64,
+    /// Nhà cung cấp chép trực tiếp trên iPhone (`REALTIME_PROVIDER`).
+    pub realtime_provider: Provider,
     /// `TRANSCRIBE_OPEN=1`: mọi user đăng nhập được chép lời (trong hạn mức gói), không chỉ `TRANSCRIBE_EMAILS`.
     pub transcribe_open: bool,
     pub transcribe_limits: TranscribeLimits,
@@ -286,6 +311,7 @@ impl Config {
             transcribe_provider: Provider::from_build(),
             elevenlabs_key_path: option_env!("ELEVENLABS_KEY_PATH").filter(|p| !p.is_empty()).map(str::to_string),
             elevenlabs_monthly_seconds: elevenlabs_monthly_seconds(option_env!("ELEVENLABS_MONTHLY_HOURS")),
+            realtime_provider: Provider::realtime_from_build(),
             transcribe_open: matches!(option_env!("TRANSCRIBE_OPEN"), Some("1" | "true")),
             transcribe_limits: TranscribeLimits::from_parts(
                 option_env!("TRANSCRIBE_FREE_MINUTES"),
@@ -412,6 +438,10 @@ mod tests {
         let d = TranscribeLimits::from_parts(None, None, None, None, Provider::ElevenLabs.usd_per_minute());
         assert_eq!((d.free_pool_seconds, d.monthly_cap_seconds), (163_636, 490_909));
         assert_eq!((Provider::ElevenLabs.model(), Provider::OpenAi.model()), ("scribe_v2", "gpt-4o-mini-transcribe"));
+        // Chép trực tiếp: 0,39 USD mỗi giờ với Scribe v2 Realtime.
+        assert!((Provider::ElevenLabs.realtime_usd_per_minute() * 60.0 - 0.39).abs() < 1e-12);
+        assert_eq!(Provider::OpenAi.realtime_usd_per_minute(), 0.003);
+        assert_eq!(Provider::ElevenLabs.realtime_model(), "scribe_v2_realtime");
         assert_eq!(elevenlabs_monthly_seconds(None), 90_000);
         assert_eq!(elevenlabs_monthly_seconds(Some(" 10.5 ")), 37_800);
         assert_eq!(elevenlabs_monthly_seconds(Some("-1")), 90_000);

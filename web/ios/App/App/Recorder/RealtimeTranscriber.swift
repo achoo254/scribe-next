@@ -3,8 +3,9 @@ import Foundation
 import os
 
 /// Live preview of the words while recording: the recorder's input tap is
-/// converted to PCM16 24 kHz mono, cut into 100 ms frames and streamed to
-/// OpenAI Realtime (transcription session, server VAD) over a WebSocket.
+/// converted to PCM16 24 kHz mono, cut into 100 ms frames and streamed over a
+/// WebSocket to the provider the backend picks per token: ElevenLabs Scribe v2
+/// Realtime (default; VAD commits) or OpenAI Realtime (fallback, server VAD).
 /// Finished sentences go to `TranscriptStore` and to `onEvent`.
 ///
 /// The m4a file stays the source of truth: nothing here can stop or slow
@@ -17,9 +18,10 @@ import os
 /// `reservedSeconds` of the user's transcription minutes per token. One
 /// token streams at most that much audio: before it runs out a new token
 /// opens a new WebSocket, audio switches over, and the old one is committed
-/// and closed a few seconds later so its last sentence still arrives. The
-/// seconds actually streamed with each token are reported back
-/// (`POST /api/realtime/usage`) when it is retired.
+/// and closed a few seconds later so its last sentence still arrives. An
+/// ElevenLabs token opens exactly one socket, so every reconnection asks for
+/// a new token too. The seconds actually streamed with each token are
+/// reported back (`POST /api/realtime/usage`) when it is retired.
 ///
 /// All state lives on `queue`; `feed` runs on the audio tap thread.
 final class RealtimeTranscriber: @unchecked Sendable {
@@ -50,7 +52,9 @@ final class RealtimeTranscriber: @unchecked Sendable {
     let sessionId: String
     let dir: URL
 
-    private static let realtimeURL = URL(string: "wss://api.openai.com/v1/realtime")
+    /// Socket address for a backend that does not send `url` (OpenAI).
+    private static let openAIURL = URL(string: "wss://api.openai.com/v1/realtime")
+    /// Both providers take PCM16 mono at 24 kHz (ElevenLabs `pcm_24000`).
     private static let sampleRate = 24_000.0
     /// 100 ms of PCM16 mono at 24 kHz.
     private static let frameBytes = 4_800
@@ -83,26 +87,41 @@ final class RealtimeTranscriber: @unchecked Sendable {
     private var accepting = true
 
     // `queue` only.
+    private enum Provider {
+        case openAI
+        case elevenLabs
+    }
+
     private struct Token {
         let value: String
         let id: String
         let expiresAt: Date
         let reservedS: Double
+        let provider: Provider
+        let url: URL
         var sentS: Double = 0
+        /// An ElevenLabs token is consumed by the socket it opens.
+        var used = false
     }
 
     private final class Connection: @unchecked Sendable {
         let task: URLSessionWebSocketTask
         let tokenId: String
+        let provider: Provider
         var open = false
         /// Session position of the first frame sent on this socket: OpenAI's
-        /// `audio_start_ms` counts from there.
+        /// `audio_start_ms` and ElevenLabs' word timestamps count from there.
         var baseS: Double?
         var sentS = 0.0
         var speechStart: [String: Double] = [:]
-        init(task: URLSessionWebSocketTask, tokenId: String) {
+        /// ElevenLabs: index of the segment being transcribed (its id is
+        /// `<tokenId>-<segment>`) and where it starts, in socket seconds.
+        var segment = 0
+        var segmentStartS = 0.0
+        init(task: URLSessionWebSocketTask, tokenId: String, provider: Provider) {
             self.task = task
             self.tokenId = tokenId
+            self.provider = provider
         }
     }
 
@@ -123,6 +142,9 @@ final class RealtimeTranscriber: @unchecked Sendable {
     private var retryScheduled = false
     private var attempt = 0
     private var finished = false
+    /// ElevenLabs said the server account is out of credit: told to the
+    /// backend with the last usage report.
+    private var quotaExceeded = false
     private var ping: DispatchSourceTimer?
 
     init(sessionId: String, dir: URL, store: TranscriptStore = .shared,
@@ -219,8 +241,7 @@ final class RealtimeTranscriber: @unchecked Sendable {
         if connection.baseS == nil { connection.baseS = startS }
         connection.sentS += Self.frameSeconds
         lastSentEndS = startS + Self.frameSeconds
-        // Base64 needs no JSON escaping.
-        let message = "{\"type\":\"input_audio_buffer.append\",\"audio\":\"\(frame.base64EncodedString())\"}"
+        let message = Self.audioMessage(frame, provider: connection.provider, commit: false)
         connection.task.send(.string(message)) { [weak self] error in
             guard let self, let error else { return }
             self.queue.async { self.lost(connection, reason: error.localizedDescription) }
@@ -241,7 +262,8 @@ final class RealtimeTranscriber: @unchecked Sendable {
     private func requestToken() {
         guard !finished, !fetching, !retryScheduled, opening == nil, finalAfterBudget == nil else { return }
         let needNew = token.map { t in
-            t.sentS >= t.reservedS - Self.rotateMarginS
+            t.used
+                || t.sentS >= t.reservedS - Self.rotateMarginS
                 || t.expiresAt.timeIntervalSinceNow < Self.expiryMarginS
         } ?? true
         if !needNew, let current = token {
@@ -304,10 +326,23 @@ final class RealtimeTranscriber: @unchecked Sendable {
     // MARK: - Sockets
 
     private func connect(with token: Token) {
-        guard let url = Self.realtimeURL else { return end(error: "Địa chỉ chép trực tiếp không hợp lệ.") }
-        var request = URLRequest(url: url)
-        request.setValue("Bearer \(token.value)", forHTTPHeaderField: "Authorization")
-        let connection = Connection(task: sockets.webSocketTask(with: request), tokenId: token.id)
+        var request: URLRequest
+        switch token.provider {
+        case .openAI:
+            request = URLRequest(url: token.url)
+            request.setValue("Bearer \(token.value)", forHTTPHeaderField: "Authorization")
+        case .elevenLabs:
+            // The single-use token rides in the query (the API key never leaves the server).
+            guard var parts = URLComponents(url: token.url, resolvingAgainstBaseURL: false) else {
+                return end(error: "Địa chỉ chép trực tiếp không hợp lệ.")
+            }
+            parts.queryItems = (parts.queryItems ?? []) + [URLQueryItem(name: "token", value: token.value)]
+            guard let url = parts.url else { return end(error: "Địa chỉ chép trực tiếp không hợp lệ.") }
+            request = URLRequest(url: url)
+            self.token?.used = true
+        }
+        let connection = Connection(task: sockets.webSocketTask(with: request), tokenId: token.id,
+                                    provider: token.provider)
         opening = connection
         connection.task.resume()
         receive(on: connection)
@@ -332,9 +367,16 @@ final class RealtimeTranscriber: @unchecked Sendable {
 
     private func handle(_ text: String, on connection: Connection) {
         guard let data = text.data(using: .utf8),
-              let message = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
-              let type = message["type"] as? String
+              let message = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
         else { return }
+        switch connection.provider {
+        case .openAI: handleOpenAI(message, on: connection)
+        case .elevenLabs: handleElevenLabs(message, on: connection)
+        }
+    }
+
+    private func handleOpenAI(_ message: [String: Any], on connection: Connection) {
+        guard let type = message["type"] as? String else { return }
         let itemId = message["item_id"] as? String ?? ""
         switch type {
         case "session.created", "session.updated":
@@ -364,6 +406,48 @@ final class RealtimeTranscriber: @unchecked Sendable {
         }
     }
 
+    /// ElevenLabs: `partial_transcript` carries the whole text of the current
+    /// segment so far; `committed_transcript_with_timestamps` closes it with
+    /// word timestamps counted from the socket's first frame (the plain
+    /// `committed_transcript` before it is skipped: the backend always asks
+    /// for timestamps).
+    private func handleElevenLabs(_ message: [String: Any], on connection: Connection) {
+        guard let type = message["message_type"] as? String else { return }
+        let segmentId = "\(connection.tokenId)-\(connection.segment)"
+        switch type {
+        case "session_started":
+            if opening === connection { promote(connection) }
+        case "partial_transcript":
+            let text = (message["text"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { return }
+            let atS = (connection.baseS ?? lastSentEndS ?? 0) + connection.segmentStartS
+            emit(.partial(id: segmentId, atS: atS, text: text))
+        case "committed_transcript_with_timestamps":
+            let words = (message["words"] as? [[String: Any]] ?? []).filter { $0["type"] as? String == "word" }
+            let firstS = (words.first?["start"] as? NSNumber)?.doubleValue ?? connection.segmentStartS
+            let lastS = (words.last?["end"] as? NSNumber)?.doubleValue
+            connection.segment += 1
+            connection.segmentStartS = lastS ?? connection.sentS
+            let text = (message["text"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { return }
+            let atS = (connection.baseS ?? lastSentEndS ?? 0) + firstS
+            save(TranscriptStore.Entry(id: segmentId, atS: atS, text: text))
+        case "quota_exceeded":
+            log.warning("realtime quota_exceeded: \(message["error"] as? String ?? "", privacy: .public)")
+            quotaExceeded = true
+            end(error: "Đã dùng hết giờ chép lời của tháng này — chép trực tiếp dừng, bản ghi vẫn tiếp tục.")
+        case "committed_transcript", "warning", "commit_throttled", "insufficient_audio_activity":
+            break
+        default:
+            // Any other `message_type` with an `error` is a failure of this
+            // socket (auth, rate limit, time limit…): drop it and reconnect with
+            // a new token; `lost` ignores sockets already being retired.
+            guard let error = message["error"] as? String else { return }
+            log.warning("realtime \(type, privacy: .public): \(error, privacy: .public)")
+            lost(connection, reason: type)
+        }
+    }
+
     private func startOf(_ itemId: String, on connection: Connection) -> Double {
         connection.speechStart[itemId] ?? connection.baseS.map { $0 + connection.sentS } ?? lastSentEndS ?? 0
     }
@@ -389,7 +473,12 @@ final class RealtimeTranscriber: @unchecked Sendable {
     }
 
     private func retire(_ connection: Connection) {
-        connection.task.send(.string("{\"type\":\"input_audio_buffer.commit\"}")) { _ in }
+        let commit: String
+        switch connection.provider {
+        case .openAI: commit = "{\"type\":\"input_audio_buffer.commit\"}"
+        case .elevenLabs: commit = Self.audioMessage(Data(), provider: .elevenLabs, commit: true)
+        }
+        connection.task.send(.string(commit)) { _ in }
         retiring.append(connection)
         queue.asyncAfter(deadline: .now() + Self.retireDelayS) {
             connection.task.cancel(with: .normalClosure, reason: nil)
@@ -440,7 +529,9 @@ final class RealtimeTranscriber: @unchecked Sendable {
         opening = nil
         if let connection = active { retire(connection) }
         active = nil
-        if let current = token { Self.report(tokenId: current.id, seconds: current.sentS, log: log) }
+        if let current = token {
+            Self.report(tokenId: current.id, seconds: current.sentS, quotaExceeded: quotaExceeded, log: log)
+        }
         token = nil
         backlog.removeAll()
         status.connected = false
@@ -471,6 +562,19 @@ final class RealtimeTranscriber: @unchecked Sendable {
         DispatchQueue.main.async { self.onEvent(event) }
     }
 
+    /// One audio frame (or, with an empty frame and `commit`, a bare commit).
+    /// Base64 needs no JSON escaping.
+    private static func audioMessage(_ frame: Data, provider: Provider, commit: Bool) -> String {
+        let audio = frame.base64EncodedString()
+        switch provider {
+        case .openAI:
+            return "{\"type\":\"input_audio_buffer.append\",\"audio\":\"\(audio)\"}"
+        case .elevenLabs:
+            return "{\"message_type\":\"input_audio_chunk\",\"audio_base_64\":\"\(audio)\","
+                + "\"commit\":\(commit),\"sample_rate\":\(Int(sampleRate))}"
+        }
+    }
+
     // MARK: - Backend
 
     private static func fetchToken(sessionId: String) async -> Result<Token, TokenFailure> {
@@ -487,11 +591,18 @@ final class RealtimeTranscriber: @unchecked Sendable {
             let message = json["error"] as? String
             switch status {
             case 200..<300:
+                // No `provider` = a backend from before ElevenLabs: OpenAI.
+                let provider: Provider = json["provider"] as? String == "elevenlabs" ? .elevenLabs : .openAI
+                let url = (json["url"] as? String).flatMap(URL.init(string:))
+                    ?? (provider == .openAI ? Self.openAIURL : nil)
+                let rate = (json["sampleRate"] as? NSNumber)?.doubleValue ?? sampleRate
                 guard let value = json["token"] as? String, let id = json["tokenId"] as? String,
                       let expires = (json["expiresAt"] as? String).flatMap(parseDate),
-                      let reserved = (json["reservedSeconds"] as? NSNumber)?.doubleValue, reserved > 0
+                      let reserved = (json["reservedSeconds"] as? NSNumber)?.doubleValue, reserved > 0,
+                      let url, url.scheme == "wss", rate == sampleRate
                 else { return .failure(.transient("Máy chủ trả token chép trực tiếp không đọc được.")) }
-                return .success(Token(value: value, id: id, expiresAt: expires, reservedS: reserved))
+                return .success(Token(value: value, id: id, expiresAt: expires, reservedS: reserved,
+                                      provider: provider, url: url))
             case 401:
                 return .failure(.final("Phiên đăng nhập đã hết hạn — chép trực tiếp dừng, bản ghi vẫn tiếp tục."))
             // Only the backend's own `{ "error": … }` is final; a proxy page with the same status is not.
@@ -508,11 +619,15 @@ final class RealtimeTranscriber: @unchecked Sendable {
 
     /// Reports the seconds streamed with a retired token; a few tries, then
     /// the reservation simply stands (the backend counts it in full).
-    private static func report(tokenId: String, seconds: Double, log: Logger) {
+    /// `quotaExceeded` tells the backend ElevenLabs is out of credit.
+    private static func report(tokenId: String, seconds: Double, quotaExceeded: Bool = false, log: Logger) {
+        var body: [String: Any] = ["tokenId": tokenId, "seconds": seconds]
+        if quotaExceeded { body["quotaExceeded"] = true }
+        let payload = body
         Task {
             for attempt in 1...3 {
                 do {
-                    let (status, _) = try await post("/api/realtime/usage", ["tokenId": tokenId, "seconds": seconds])
+                    let (status, _) = try await post("/api/realtime/usage", payload)
                     if status == 401 { try? await SessionAuth.refreshSession() }
                     // 404/409: unknown or already settled — nothing left to do.
                     if (200..<300).contains(status) || status == 404 || status == 409 { return }

@@ -2,9 +2,9 @@
 //! request, có người nói, xem [`whole`]) hoặc OpenAI `gpt-4o-mini-transcribe` (`TRANSCRIBE_PROVIDER=openai`, cắt mảnh).
 //!
 //! Key nằm trong tệp `ELEVENLABS_KEY_PATH` / `OPENAI_KEY_PATH` trên server, đọc một lần lúc khởi động ([`Transcriber`]):
-//! không có trong repo, binary, log hay audit. Key OpenAI còn dùng cho tóm tắt, hỏi đáp, dịch và chép trực tiếp. Tiền
-//! là của chủ sản phẩm nên mỗi lượt giữ chỗ phút trong sổ (`models::usage`) trước khi xếp hàng và quyết toán theo số
-//! giây thật sự đã gửi khi kết thúc. Chỉ email trong `TRANSCRIBE_EMAILS` được dùng, trừ khi bật `TRANSCRIBE_OPEN`.
+//! không có trong repo, binary, log hay audit. Key OpenAI còn dùng cho tóm tắt, hỏi đáp, dịch; chép trực tiếp dùng key
+//! của `REALTIME_PROVIDER` (mặc định ElevenLabs). Tiền là của chủ sản phẩm nên mỗi lượt giữ chỗ phút trong sổ
+//! (`models::usage`) trước khi xếp hàng và quyết toán theo số giây thật sự đã gửi khi kết thúc. Chỉ email trong `TRANSCRIBE_EMAILS` được dùng, trừ khi bật `TRANSCRIBE_OPEN`.
 //!
 //! Hàng đợi riêng (collection `transcripts`, mỗi file một doc), chạy tuần tự từng lượt — không chặn hàng đợi Cắt
 //! file. Backend khởi động lại thì lượt dở chạy lại.
@@ -16,6 +16,7 @@ pub(crate) mod elevenlabs;
 mod export;
 pub(crate) mod openai;
 mod whole;
+pub(crate) use whole::report_quota_exhausted;
 pub(crate) mod words;
 
 use crate::audit;
@@ -61,9 +62,10 @@ pub(crate) const PAUSED: &str = "Chép lời đang tạm ngưng, quản trị đ
 #[derive(Default)]
 pub struct Transcriber {
     provider: Provider,
-    /// Key OpenAI: chép lời khi `provider = OpenAi`; tóm tắt, hỏi đáp, dịch, chép trực tiếp luôn dùng key này.
+    /// Key OpenAI: chép lời khi `provider = OpenAi`, chép trực tiếp khi `REALTIME_PROVIDER=openai`; tóm tắt, hỏi đáp,
+    /// dịch luôn dùng key này.
     key: Option<ApiKey>,
-    /// Key ElevenLabs: chép lời khi `provider = ElevenLabs`.
+    /// Key ElevenLabs: chép lời khi `provider = ElevenLabs`, chép trực tiếp khi `REALTIME_PROVIDER` là ElevenLabs.
     elevenlabs: Option<ApiKey>,
     broken: AtomicBool,
     wake: Notify,
@@ -100,13 +102,16 @@ fn valid_elevenlabs_key(key: &str) -> bool {
 
 impl Transcriber {
     /// Đọc các key từ tệp. Thiếu key của nhà cung cấp chép lời thì chép lời tắt; thiếu key OpenAI thì tóm tắt, hỏi
-    /// đáp, dịch, chép trực tiếp tắt.
-    pub fn load(provider: Provider, openai_path: Option<&str>, elevenlabs_path: Option<&str>) -> Transcriber {
+    /// đáp, dịch tắt; thiếu key của nhà cung cấp chép trực tiếp (`realtime`) thì chép trực tiếp tắt.
+    pub fn load(
+        provider: Provider,
+        realtime: Provider,
+        openai_path: Option<&str>,
+        elevenlabs_path: Option<&str>,
+    ) -> Transcriber {
         let key = read_key(openai_path, "OpenAI", valid_openai_key);
-        let elevenlabs = match provider {
-            Provider::ElevenLabs => read_key(elevenlabs_path, "ElevenLabs", valid_elevenlabs_key),
-            Provider::OpenAi => None,
-        };
+        let needs_elevenlabs = provider == Provider::ElevenLabs || realtime == Provider::ElevenLabs;
+        let elevenlabs = if needs_elevenlabs { read_key(elevenlabs_path, "ElevenLabs", valid_elevenlabs_key) } else { None };
         let transcriber = Transcriber { provider, key, elevenlabs, broken: AtomicBool::new(false), wake: Notify::new() };
         if transcriber.ready() {
             tracing::info!(provider = ?provider, "chép lời bật (key server)");
@@ -138,6 +143,13 @@ impl Transcriber {
     pub(crate) fn api_key(&self) -> Option<&str> {
         let tripped = self.provider == Provider::OpenAi && self.broken.load(Ordering::Relaxed);
         self.key.as_ref().filter(|_| !tripped).map(|k| k.0.as_str())
+    }
+
+    /// Key ElevenLabs khi còn dùng được (chép trực tiếp). Khi chép lời theo tệp cũng chạy bằng ElevenLabs thì key hỏng
+    /// ở lượt nào cũng ngắt cả hai (cùng một key).
+    pub(crate) fn elevenlabs_key(&self) -> Option<&str> {
+        let tripped = self.provider == Provider::ElevenLabs && self.broken.load(Ordering::Relaxed);
+        self.elevenlabs.as_ref().filter(|_| !tripped).map(|k| k.0.as_str())
     }
 
     /// Lần đầu key hỏng thì trả `true` (để ghi audit một lần).
@@ -186,15 +198,20 @@ async fn check_provider_hours(state: &AppState, need: i64, now: chrono::DateTime
     let limit = state.config.elevenlabs_monthly_seconds;
     let used = usage::provider_seconds(&state.db, &month).await?;
     if usage::provider_exhausted(&state.db, &month).await? || used + need > limit {
-        return Err(AppError::Quota {
-            code: "PROVIDER_HOURS",
-            message: hours_exhausted_message(now),
-            used_minutes: usage::used_minutes(used),
-            limit_minutes: limit / 60,
-            retry_at: Some(usage::next_reset(now).to_rfc3339()),
-        });
+        return Err(provider_hours_error(used, limit, now));
     }
     Ok(())
+}
+
+/// Lỗi 403 `PROVIDER_HOURS`: sổ giờ ElevenLabs của tháng đã đầy (`used`/`limit` giây) hoặc ElevenLabs báo hết quota.
+pub(crate) fn provider_hours_error(used: i64, limit: i64, now: chrono::DateTime<chrono::Utc>) -> AppError {
+    AppError::Quota {
+        code: "PROVIDER_HOURS",
+        message: hours_exhausted_message(now),
+        used_minutes: usage::used_minutes(used),
+        limit_minutes: limit / 60,
+        retry_at: Some(usage::next_reset(now).to_rfc3339()),
+    }
 }
 
 /// Giờ mở lại cho người dùng đọc (giờ Việt Nam).

@@ -27,6 +27,7 @@ Chất lượng bản realtime kém bản chép cả file khoảng 5 điểm kh�
 | R4 | Mất mạng thì realtime hụt đoạn đó, **không** chặn ghi | File AAC vẫn nguyên; chép lời cả file sau buổi ghi vẫn chạy như cũ |
 | R5 | Công tắc "Chép trực tiếp" trên thẻ ghi, **mặc định tắt**, nhớ lựa chọn trên từng máy | Jev chốt 2026-10-17. Có buổi ghi không được phép gửi audio ra ngoài; tắt thì ghi như Phase 2 |
 | R6 | Chữ realtime chỉ là bản xem trước: lưu cạnh phiên trên máy, hiện ở màn ghi, **không** lưu thành bản chép lời | Jev chốt 2026-10-17. Bản chép lời vẫn là kết quả chép cả file sau khi tải lên |
+| R7 | **Đổi sang ElevenLabs Scribe v2 Realtime** (`scribe_v2_realtime`, `language_code=vi`, `commit_strategy=vad`, im lặng 1,0 giây), key ElevenLabs của server cấp token dùng một lần. OpenAI Realtime giữ làm dự phòng một bản phát hành qua biến build `REALTIME_PROVIDER=openai`. Thay R1 | Chủ dự án chốt 2026-10-19 (roadmap P1): OpenAI tắt `gpt-4o-mini-transcribe` ngày 26/02/2027; chép lời theo tệp đã chạy ElevenLabs từ 17/10, nên đường giọng nói không còn phụ thuộc OpenAI |
 
 ## Gate 0 — đo trước khi viết code (bắt buộc)
 
@@ -63,9 +64,38 @@ Kiểm lại 2026-10-17 từ Mac bằng đúng đường mã của backend (test
 - **Web** (chỉ nhánh native): công tắc "Chép trực tiếp", panel "Đang chép" (`live-transcript-panel.tsx`, state ở `features/recorder/live-transcript.ts`).
 - Chi tiết vận hành: [docs/ios-app.md](../../docs/ios-app.md) mục "Chép trực tiếp".
 
+## Chuyển sang ElevenLabs Scribe v2 Realtime (2026-10-19)
+
+### Dữ kiện ElevenLabs đã dùng
+
+| Hạng mục | Giá trị | Nguồn |
+|---|---|---|
+| WebSocket | `wss://api.elevenlabs.io/v1/speech-to-text/realtime`, query `model_id=scribe_v2_realtime`, `audio_format` (`pcm_8000`…`pcm_48000`, `ulaw_8000`), `language_code`, `commit_strategy` (`manual`/`vad`), `vad_silence_threshold_secs`, `include_timestamps`, `token` | [API reference](https://elevenlabs.io/docs/api-reference/speech-to-text/v-1-speech-to-text-realtime) |
+| Gửi audio | `{"message_type":"input_audio_chunk","audio_base_64":…,"commit":false,"sample_rate":24000}`; `commit:true` kèm audio rỗng chốt phần đang dở (đã thử) | như trên |
+| Nhận | `session_started`; `partial_transcript` (toàn văn đoạn đang dở, thay thế); `committed_transcript` rồi `committed_transcript_with_timestamps` (từ có `start`/`end`); lỗi theo `message_type` (`auth_error`, `quota_exceeded`, `rate_limited`, `session_time_limit_exceeded`…) | như trên |
+| Token phía client | `POST https://api.elevenlabs.io/v1/single-use-token/realtime_scribe`, header `xi-api-key`, trả `{"token":"sutkn_…"}`; hết hạn 15 phút; dùng một lần | [Tokens](https://elevenlabs.io/docs/api-reference/tokens/create), [Client-side streaming](https://elevenlabs.io/docs/eleven-api/guides/how-to/speech-to-text/realtime/client-side-streaming.md) |
+| Đóng khi im | Server đóng kết nối sau 15 giây không có tin nhắn nào của client; tự chốt sau khoảng 36 giây audio; nên gửi khúc 0,1–1 giây; chỉ mono | [Transcripts and commit strategies](https://elevenlabs.io/docs/eleven-api/guides/how-to/speech-to-text/realtime/transcripts-and-commit-strategies.md) |
+| Giá | 0,39 USD/giờ (Scribe v2 theo tệp: 0,22 USD/giờ); giá không đổi theo gói, gói chỉ khác số giờ kèm theo | [API pricing](https://elevenlabs.io/pricing/api) |
+
+Đo từ Mac (2026-10-19, key prod của chủ dự án, tổng khoảng 1 phút audio):
+
+- `language_code=vi` và `pcm_24000` được nhận (`session_started` báo lại đúng cấu hình).
+- Mốc từ tính từ khung audio **đầu tiên của kết nối**, cộng dồn qua các lần chốt (đoạn thứ hai bắt đầu ở 20,26 giây).
+- Có `include_timestamps=true` thì mỗi lần chốt về cả `committed_transcript` lẫn `committed_transcript_with_timestamps` (cách nhau khoảng 40 ms).
+- Mở lại WebSocket bằng token đã dùng → `auth_error`: **một token = một kết nối**.
+- Cấp token không có thân request mà thiếu `Content-Length: 0` → HTTP 411 (đã sửa, test giả lập kiểm header này).
+- Đường mã của backend (test `live_elevenlabs_realtime_mint_returns_a_single_use_token`) cấp token và dựng `url`; script trên Mac mở đúng `url` đó, stream 10 giây buổi họp Viettel từ phút 10:00 ở tốc độ thật → `committed_transcript_with_timestamps` tiếng Việt về ở giây thứ 11, khoảng 1 giây sau lệnh chốt cuối ("Nếu như do chính VCS tự phát triển, bọn em có một team…").
+
+### Đã đổi
+
+- **Backend** (`realtime.rs`): `REALTIME_PROVIDER` (mặc định ElevenLabs, `openai` = OpenAI như cũ). ElevenLabs: cấp token dùng một lần bằng key `ELEVENLABS_KEY_PATH` (key được đọc cả khi chỉ chép trực tiếp dùng ElevenLabs), `expiresAt` = lúc xin + 900 giây. Phản hồi giữ nguyên các trường cũ, thêm `provider`, `url` (WebSocket kèm cấu hình phiên, app chỉ thêm `token`), `sampleRate` (24000). Sổ quy theo USD (quỹ free, trần tổng) tính theo giá chép trực tiếp (`costRatio` = 0,39/0,22 với ElevenLabs); sổ giờ ElevenLabs `el:<tháng>` giữ chỗ, quyết toán, hoàn như sổ phút, quy đổi theo `elRatio` = 0,39/0,22 vì realtime trừ credit nhanh hơn 1,77 lần (`ELEVENLABS_MONTHLY_HOURS` là giờ Scribe v2 tương đương). Sổ giờ đầy hoặc ElevenLabs đã báo hết quota → 403 `PROVIDER_HOURS`. Cấp token gặp 402 → dấu hết quota tháng như chép lời theo tệp; 401/403 → ngắt key (cùng key với chép lời theo tệp thì ngắt cả hai). App báo `quotaExceeded` khi WebSocket trả `quota_exceeded` → cũng đặt dấu hết quota tháng. `transcribe_runs` của lượt realtime ghi thêm `provider`, `costS`, `elS`; `admin usage --recompute` dùng `costS` cho quỹ free và trần tổng.
+- **Swift** (`RealtimeTranscriber.swift`): hai giao thức theo `provider` của từng token (thiếu = OpenAI). Vẫn PCM16 24 kHz khung 100 ms cho cả hai (ElevenLabs nhận `pcm_24000`, khỏi đổi tần số lấy mẫu giữa chừng khi backend lùi về OpenAI). ElevenLabs: token đã mở một socket thì nối lại hay đổi token đều xin token mới; câu = `committed_transcript_with_timestamps`, id `<tokenId>-<n>`, mốc = vị trí khung đầu của socket + `start` của từ đầu; chữ tạm = `partial_transcript`; khi nghỉ socket gửi chốt rỗng. Lỗi của socket → bỏ socket, nối lại có backoff bằng token mới; `quota_exceeded` → dừng chép trực tiếp (ghi vẫn chạy). Giữ nguyên: backoff, 30 giây audio chờ khi nối lại, dấu "mất đoạn này", không đụng tệp AAC.
+- **Web**: chữ giúp của công tắc không nhắc OpenAI ("Gửi âm thanh tới dịch vụ chép lời…").
+- **App cũ đang cài** (bản 17/10) không biết `provider`: gặp backend mặc định ElevenLabs sẽ mở OpenAI bằng token ElevenLabs và báo lỗi (ghi vẫn chạy). Cài app mới trước hoặc cùng lúc deploy backend; hoặc build backend với `REALTIME_PROVIDER=openai` tới khi cài app mới.
+
 ## Cần iPhone thật
 
-Gate 0 bước 2 và toàn bộ Success Criteria dưới đây (trừ dòng build) — danh sách bấm thử ở mục "Lần cắm iPhone tới" của [plan](./plan.md). Trước khi build prod: thêm email chủ sản phẩm vào `REALTIME_EMAILS` trong `.env.production`.
+Gate 0 bước 2 và toàn bộ Success Criteria dưới đây (trừ dòng build) — danh sách bấm thử ở mục "Lần cắm iPhone tới" của [plan](./plan.md), làm lại với ElevenLabs (mục 14–18). Trước khi build prod: thêm email chủ sản phẩm vào `REALTIME_EMAILS` trong `.env.production`.
 
 ## Requirements
 
@@ -131,6 +161,7 @@ AudioRecorder (Phase 2) ── tap PCM ──▶ RealtimeTranscriber.swift
 - [ ] Tài khoản ngoài allowlist xin token → 403; chạm trần phút → lỗi rõ ràng, việc ghi vẫn chạy.
 - [ ] Pin ≤ 15% cho 60 phút, đo theo *Cài đặt → Pin*.
 - [x] `xcodebuild build` EXIT 0, 0 warning Swift; `cargo clippy` sạch; `tsc` EXIT 0 (2026-10-17).
+- [x] Bản ElevenLabs: `xcodebuild` Simulator EXIT 0, 0 warning Swift; Rust test token giả lập + sổ phút/sổ giờ trên Mongo dev; thử thật từ Mac ra câu tiếng Việt (2026-10-19).
 
 ## Rủi ro
 
@@ -139,7 +170,7 @@ AudioRecorder (Phase 2) ── tap PCM ──▶ RealtimeTranscriber.swift
 | Không tạo được token tạm thời cho phiên transcription | Cao | Gate 0 bước 1; lối lui là relay qua backend (đo RAM `.65`) |
 | iOS cắt WebSocket khi khoá máy lâu | Cao | Gate 0 bước 2; audio session đang chạy giữ app sống, nối lại có backoff, Phase 6 bù phần hụt |
 | Phiên realtime có trần thời lượng nhỏ hơn buổi họp | Trung bình | Nối lại liên tục với token mới (Gate 0 bước 1) |
-| Chi phí vượt ngân sách | Trung bình | Phút chung hạn mức chép lời + `REALTIME_EMAILS` |
+| Chi phí vượt ngân sách | Trung bình | Phút chung hạn mức chép lời + `REALTIME_EMAILS`; sổ giờ ElevenLabs tính realtime theo giá quy đổi |
 | App bị tắt trước khi báo số giây | Thấp | Phần giữ chỗ (tối đa 10 phút mỗi token) tính trọn — lệch về phía an toàn cho chi phí |
 | Audio rời máy | Chấp nhận có điều kiện | Công tắc realtime (R5); chỉ chạy khi bật |
 

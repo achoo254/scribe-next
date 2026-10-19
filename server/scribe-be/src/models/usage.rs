@@ -180,6 +180,11 @@ async fn add(db: &Database, id: &str, delta: i64) -> Result<(), AppError> {
         .map_err(|e| AppError::Internal(format!("quyết toán phút: {e}")))
 }
 
+/// Sổ quy theo USD (quỹ free, trần tổng): một lượt có giá khác chép lời theo tệp (chép trực tiếp) trừ số giây quy đổi.
+fn priced(blocked: &Blocked) -> bool {
+    matches!(blocked, Blocked::FreePool | Blocked::TotalCap)
+}
+
 /// Giữ `need` giây trên mọi sổ của `charge` (`Charge::books`); `user_limit` là hạn mức tháng của gói.
 /// Một bước hỏng thì trả lại các bước đã giữ. Tổng hai request đồng thời không bao giờ vượt giới hạn nào.
 pub async fn reserve(
@@ -189,30 +194,49 @@ pub async fn reserve(
     need: i64,
     limits: &TranscribeLimits,
 ) -> Result<Result<(), Blocked>, AppError> {
-    let mut taken: Vec<String> = Vec::new();
+    reserve_priced(db, charge, user_limit, need, need, limits).await
+}
+
+/// Như [`reserve`], nhưng sổ quy theo USD giữ `cost` giây (giây chép lời theo tệp cùng giá) thay cho `need`.
+pub async fn reserve_priced(
+    db: &Database,
+    charge: &Charge,
+    user_limit: i64,
+    need: i64,
+    cost: i64,
+    limits: &TranscribeLimits,
+) -> Result<Result<(), Blocked>, AppError> {
+    let mut taken: Vec<(String, i64)> = Vec::new();
     for (id, blocked) in charge.books() {
-        let outcome = take(db, &id, need, limit_of(&blocked, user_limit, limits)).await;
+        let amount = if priced(&blocked) { cost } else { need };
+        let outcome = take(db, &id, amount, limit_of(&blocked, user_limit, limits)).await;
         if !matches!(outcome, Ok(true)) {
             // Bị chặn hoặc lỗi Mongo: trả lại mọi bước đã giữ (lỗi khi trả chỉ log, đối soát sửa sau).
-            for done in &taken {
-                if let Err(e) = add(db, done, -need).await {
-                    tracing::error!(doc = %done, need, "trả lại phút đã giữ lỗi: {e:?}");
+            for (done, amount) in &taken {
+                if let Err(e) = add(db, done, -amount).await {
+                    tracing::error!(doc = %done, amount, "trả lại phút đã giữ lỗi: {e:?}");
                 }
             }
             return outcome.map(|_| Err(blocked));
         }
-        taken.push(id);
+        taken.push((id, amount));
     }
     Ok(Ok(()))
 }
 
 /// Điều chỉnh mọi sổ của một lần giữ chỗ (`delta` âm = hoàn, dương = thu thêm).
 pub async fn settle(db: &Database, charge: &Charge, delta: i64) -> Result<(), AppError> {
+    settle_priced(db, charge, delta, delta).await
+}
+
+/// Như [`settle`], nhưng sổ quy theo USD đổi `cost_delta` giây.
+pub async fn settle_priced(db: &Database, charge: &Charge, delta: i64, cost_delta: i64) -> Result<(), AppError> {
     // Lượt đã đánh dấu quyết toán thì không thử lại: một sổ lỗi không được làm các sổ sau bỏ lỡ.
     let mut first_err = None;
-    for (id, _) in charge.books() {
-        if let Err(e) = add(db, &id, delta).await {
-            tracing::error!(doc = %id, delta, "quyết toán sổ lỗi: {e:?}");
+    for (id, blocked) in charge.books() {
+        let amount = if priced(&blocked) { cost_delta } else { delta };
+        if let Err(e) = add(db, &id, amount).await {
+            tracing::error!(doc = %id, amount, "quyết toán sổ lỗi: {e:?}");
             first_err.get_or_insert(e);
         }
     }

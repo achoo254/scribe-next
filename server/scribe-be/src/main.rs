@@ -112,6 +112,7 @@ async fn main() {
     let port = config.port;
     let transcriber = transcribe::Transcriber::load(
         config.transcribe_provider,
+        config.realtime_provider,
         config.openai_key_path.as_deref(),
         config.elevenlabs_key_path.as_deref(),
     );
