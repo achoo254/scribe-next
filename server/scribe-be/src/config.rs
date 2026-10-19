@@ -77,9 +77,10 @@ const DEFAULT_PLUS_MINUTES: i64 = 3000;
 const DEFAULT_FREE_POOL_USD: f64 = 10.0;
 const DEFAULT_MONTHLY_CAP_USD: f64 = 30.0;
 /// Chống lạm dụng gói free (người dùng chốt 2026-10-16; bỏ giới hạn theo IP vì người dùng 4G chung IP
-/// nhà mạng): phút mỗi ngày mỗi tài khoản và số giờ tài khoản mới phải chờ trước khi chép lời.
+/// nhà mạng): phút mỗi ngày mỗi tài khoản và số giờ tài khoản mới phải chờ trước khi chép lời. Chủ dự án bỏ thời gian
+/// chờ 19/10/2026: mặc định 0 (không chờ); `TRANSCRIBE_FREE_DELAY_HOURS` vẫn đặt lại được.
 const DEFAULT_FREE_DAILY_MINUTES: i64 = 30;
-const DEFAULT_FREE_DELAY_HOURS: i64 = 24;
+const DEFAULT_FREE_DELAY_HOURS: i64 = 0;
 
 /// Tóm tắt (biên bản): lượt mỗi ngày giờ Việt Nam (Jev chốt 16/10/2026) và model mặc định.
 const DEFAULT_SUMMARY_FREE_DAILY: i64 = 10;
@@ -391,9 +392,10 @@ mod tests {
         let c = TranscribeLimits::from_parts(Some("60"), Some("x"), Some("-5"), Some("15"), openai);
         assert_eq!((c.free_seconds, c.plus_seconds), (3600, 3000 * 60));
         assert_eq!((c.free_pool_seconds, c.monthly_cap_seconds), (200_000, 300_000));
-        assert_eq!((d.free_daily_seconds, d.free_delay_hours), (1800, 24));
-        let g = d.with_free_guards(Some("10"), Some("0"));
-        assert_eq!((g.free_daily_seconds, g.free_delay_hours), (600, 0));
+        assert_eq!((d.free_daily_seconds, d.free_delay_hours), (1800, 0));
+        // Biến build vẫn đặt lại được thời gian chờ.
+        let g = d.with_free_guards(Some("10"), Some("24"));
+        assert_eq!((g.free_daily_seconds, g.free_delay_hours), (600, 24));
         assert_eq!(d.with_free_guards(Some("bad"), Some("-1")).free_daily_seconds, 1800);
     }
 
