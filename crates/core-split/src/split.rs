@@ -1,7 +1,7 @@
 //! Cắt 1 file → nhiều đoạn (ffmpeg segment muxer + `-c copy`). Tiến độ qua callback.
 
 use crate::probe::{probe_file, size_cut_times};
-use crate::{compute_segment_time, new_command, parts_cut_times, stem_of, MediaInfo, OutFile, SplitProgress};
+use crate::{compute_segment_time, new_command, parts_cut_times, step_cut_times, stem_of, MediaInfo, OutFile, SplitProgress};
 use std::path::Path;
 use std::process::Stdio;
 use std::time::Duration;
@@ -68,7 +68,7 @@ pub async fn split_file_into(
             Vec::new()
         };
         if times.is_empty() {
-            SegmentArg::Time(compute_segment_time(criterion, value, &info)?)
+            step_arg(compute_segment_time(criterion, value, &info)?, &info)
         } else {
             SegmentArg::Times(times)
         }
@@ -82,7 +82,7 @@ pub async fn split_file_into(
             SegmentArg::Times(times)
         }
     } else {
-        SegmentArg::Time(compute_segment_time(criterion, value, &info)?)
+        step_arg(compute_segment_time(criterion, value, &info)?, &info)
     };
 
     let subdir = Path::new(out_dir).join(sub);
@@ -126,6 +126,21 @@ pub async fn split_file_into(
         return Err("ffmpeg không tạo được đoạn nào".to_string());
     }
     Ok(outputs)
+}
+
+/// Cắt đều mỗi `step_s` giây: biết thời lượng thì dùng mốc tính sẵn (không có đoạn cuối gần rỗng), không
+/// biết thì để ffmpeg tự cắt theo `-segment_time`.
+fn step_arg(step_s: f64, info: &MediaInfo) -> SegmentArg {
+    if info.duration_s <= 0.0 {
+        return SegmentArg::Time(step_s);
+    }
+    let times = step_cut_times(info.duration_s, step_s);
+    if times.is_empty() {
+        // Ngắn hơn một đoạn: một đoạn duy nhất, mốc cắt nằm ngoài tệp.
+        SegmentArg::Time(info.duration_s + 1.0)
+    } else {
+        SegmentArg::Times(times)
+    }
 }
 
 /// Remux (fix cues/timestamps) input sang Matroska `-c copy` — KHÔNG re-encode.

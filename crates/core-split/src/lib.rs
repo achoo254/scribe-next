@@ -83,6 +83,19 @@ pub fn parts_cut_times(duration_s: f64, parts: f64) -> Vec<f64> {
     (1..k).map(|i| duration_s * f64::from(i) / f64::from(k)).collect()
 }
 
+/// Phần cuối ngắn hơn mức này thì gộp vào đoạn trước thay vì thành một đoạn riêng.
+const MIN_TAIL_S: f64 = 1.0;
+
+/// Mốc cắt mỗi `step_s` giây của một tệp dài `duration_s`, bỏ mốc cuối nếu phần còn lại ngắn hơn
+/// [`MIN_TAIL_S`] (tệp 120,02 giây cắt mỗi phút → 2 đoạn, không có đoạn thứ ba 0,02 giây). Cùng lý do với
+/// [`parts_cut_times`]: `-segment_time` cắt ở mọi bội số kể cả sát cuối tệp.
+pub fn step_cut_times(duration_s: f64, step_s: f64) -> Vec<f64> {
+    (1u32..)
+        .map(|k| step_s * f64::from(k))
+        .take_while(|t| duration_s - t >= MIN_TAIL_S)
+        .collect()
+}
+
 pub(crate) fn stem_of(path: &str) -> String {
     Path::new(path)
         .file_stem()
@@ -102,3 +115,17 @@ pub(crate) fn new_command(program: &str) -> tokio::process::Command {
     }
     cmd
 }
+
+#[cfg(test)]
+mod cut_time_tests {
+    use super::step_cut_times;
+
+    #[test]
+    fn a_tail_shorter_than_a_second_joins_the_last_part() {
+        assert_eq!(step_cut_times(120.02, 60.0), vec![60.0]);
+        assert_eq!(step_cut_times(121.5, 60.0), vec![60.0, 120.0]);
+        assert_eq!(step_cut_times(600.0, 120.0), vec![120.0, 240.0, 360.0, 480.0]);
+        assert!(step_cut_times(59.0, 60.0).is_empty());
+    }
+}
+
