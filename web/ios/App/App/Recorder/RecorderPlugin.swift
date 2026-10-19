@@ -113,6 +113,9 @@ public class RecorderPlugin: CAPPlugin, CAPBridgedPlugin {
                         + "uploaded=\(seg.uploaded) attempts=\(seg.attempts) failure=\(seg.failure ?? "-")")
                 }
                 await queue.stop()
+                // Account deleted: nothing of it stays on the phone.
+                try await store.removeAll(userKey: userKey)
+                NSLog("%@", "SELFTEST discard pending=\(await store.pending(userKey: userKey).count)")
             } catch {
                 NSLog("%@", "SELFTEST error \(error.localizedDescription)")
             }
@@ -215,15 +218,34 @@ public class RecorderPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     /// Sign-out: stop recording and uploads so nothing reaches the old account.
+    /// `{ discardUserKey }` (the account was deleted): also remove what the phone
+    /// keeps for that account — segments not uploaded, live transcripts, bookmarks —
+    /// so a later sign-in with the same email never uploads them.
     @objc func signOut(_ call: CAPPluginCall) {
+        let discard = call.getString("discardUserKey").flatMap { Self.isUserKey($0) ? $0 : nil }
         DispatchQueue.main.async {
             self.userKey = nil
             self.recorder.stop()
             SessionAuth.clear()
             Task {
                 await self.queue.stop()
+                if let discard { await self.discardLocalData(userKey: discard) }
                 call.resolve()
             }
+        }
+    }
+
+    /// `userKeyOf` of the web layer: 24 lowercase hex characters (never a path).
+    static func isUserKey(_ key: String) -> Bool {
+        key.count == 24 && key.allSatisfy { $0.isHexDigit && !$0.isUppercase }
+    }
+
+    @MainActor private func discardLocalData(userKey: String) async {
+        do {
+            try await store.removeAll(userKey: userKey)
+            try bookmarks.removeAll(userKey: userKey)
+        } catch {
+            NSLog("%@", "discard local data failed: \(error.localizedDescription)")
         }
     }
 
@@ -401,6 +423,9 @@ public class RecorderPlugin: CAPPlugin, CAPBridgedPlugin {
             notifyListeners("needsSignIn", data: [:])
         case .quotaFull(let message):
             notifyListeners("quotaFull", data: ["message": message])
+        case .accountDeleted(let userKey):
+            try? bookmarks.removeAll(userKey: userKey)
+            notifyListeners("needsSignIn", data: [:])
         }
     }
 }

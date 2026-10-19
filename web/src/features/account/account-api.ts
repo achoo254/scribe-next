@@ -2,7 +2,7 @@ import { apiJson } from "../../lib/api";
 import { normalizeText } from "../search/normalize";
 
 /**
- * What `DELETE /api/me` answers: the Scribe account and its data are gone.
+ * What `POST /api/me/delete` answers: the Scribe account and its data are gone.
  * `complete: false` when part of the data could not be removed yet (the
  * server finishes it within the hour).
  */
@@ -24,15 +24,17 @@ export function confirmMatches(typed: string): boolean {
 /**
  * Deletes the Scribe account of the session and everything in it; the
  * server also ends every session and device of the account. 409
- * `RECORDING_OPEN` while a browser recording is running.
+ * `RECORDING_OPEN` while a browser recording is running. POST, not
+ * `DELETE /api/me`: in the iOS app requests go through CapacitorHttp, whose
+ * JSON body is proven on POST only.
  */
 export async function deleteAccount(
 	confirm: string,
 	fetcher: typeof fetch = fetch,
 ): Promise<AccountDeletion> {
 	const body = await apiJson<Partial<AccountDeletion>>(
-		"/api/me",
-		{ method: "DELETE", json: { confirm } },
+		"/api/me/delete",
+		{ method: "POST", json: { confirm } },
 		fetcher,
 	);
 	return {

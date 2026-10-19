@@ -37,8 +37,10 @@ pub fn build_router(state: AppState) -> Router {
 
     // Route cần đăng nhập → guard verify session; rate-limit chung (ngưỡng cao, không cản recording).
     let protected = Router::new()
-        // Xoá tài khoản Scribe ngay trong app (App Store 5.1.1(v)), body `{confirm: "XOÁ"}`.
+        // Xoá tài khoản Scribe ngay trong app (App Store 5.1.1(v)), body `{confirm: "XOÁ"}`. App dùng POST (thân JSON của
+        // DELETE qua CapacitorHttp chưa từng được kiểm); DELETE giữ cho client khác.
         .route("/api/me", get(auth::me).delete(account::delete_me))
+        .route("/api/me/delete", post(account::delete_me))
         .route("/api/me/usage", get(files::usage))
         .route("/api/upload/init", post(upload::init))
         .route("/api/upload/chunk", post(upload::chunk))

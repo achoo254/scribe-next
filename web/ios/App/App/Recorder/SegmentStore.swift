@@ -261,6 +261,13 @@ actor SegmentStore {
 
     // MARK: Files
 
+    /// Account deleted: every session of `userKey` (segments, manifests, live transcripts) leaves the phone.
+    func removeAll(userKey: String) throws {
+        let dir = root.appendingPathComponent(userKey, isDirectory: true)
+        guard FileManager.default.fileExists(atPath: dir.path) else { return }
+        try FileManager.default.removeItem(at: dir)
+    }
+
     private func sessionDir(userKey: String, sessionId: String) -> URL {
         root.appendingPathComponent(userKey, isDirectory: true)
             .appendingPathComponent(sessionId, isDirectory: true)

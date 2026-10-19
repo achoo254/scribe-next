@@ -116,6 +116,8 @@ pub struct Profile {
     pub created_at: Option<DateTime>,
     /// Quản trị đã khoá tài khoản (`admin block`): không đăng nhập, không chép lời.
     pub blocked: bool,
+    /// Người dùng đã xoá tài khoản, việc dọn đang chạy (`deletingAt`): coi như không còn.
+    pub deleting: bool,
 }
 
 pub async fn find_profile(db: &Database, user_id: &str) -> Result<Option<Profile>, AppError> {
@@ -123,7 +125,7 @@ pub async fn find_profile(db: &Database, user_id: &str) -> Result<Option<Profile
     let doc = db
         .collection::<Document>(COLL)
         .find_one(doc! { "_id": oid })
-        .projection(doc! { "email": 1, "plan": 1, "planUntil": 1, "createdAt": 1, "blocked": 1 })
+        .projection(doc! { "email": 1, "plan": 1, "planUntil": 1, "createdAt": 1, "blocked": 1, "deletingAt": 1 })
         .await
         .map_err(|e| AppError::Internal(format!("mongo find user: {e}")))?;
     Ok(doc.map(|d| Profile {
@@ -133,7 +135,18 @@ pub async fn find_profile(db: &Database, user_id: &str) -> Result<Option<Profile
         created_at: d.get_datetime("createdAt").ok().copied(),
         // Dấu khoá do CLI ghi là `{at, reason}`; `true` sửa tay cũng tính là khoá.
         blocked: d.get_document("blocked").is_ok() || d.get_bool("blocked").unwrap_or(false),
+        deleting: d.get_datetime("deletingAt").is_ok(),
     }))
+}
+
+/// Đánh dấu tài khoản đang bị xoá: từ đây mọi đường đăng nhập và phiên coi tài khoản như không còn.
+pub async fn mark_deleting(db: &Database, user_id: &str) -> Result<(), AppError> {
+    let oid = ObjectId::parse_str(user_id).map_err(|_| AppError::BadRequest("user id không hợp lệ".into()))?;
+    db.collection::<Document>(COLL)
+        .update_one(doc! { "_id": oid, "deletingAt": { "$exists": false } }, doc! { "$set": { "deletingAt": DateTime::now() } })
+        .await
+        .map(|_| ())
+        .map_err(|e| AppError::Internal(format!("đánh dấu xoá tài khoản: {e}")))
 }
 
 /// Gói đang có hiệu lực của user (dung lượng, hạn tệp). Không có user thì là free.

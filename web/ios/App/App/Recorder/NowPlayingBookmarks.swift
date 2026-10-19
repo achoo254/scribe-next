@@ -82,6 +82,13 @@ final class NativeBookmarkStore {
         }
     }
 
+    /// Account deleted: its pending bookmarks leave the phone.
+    func removeAll(userKey: String) throws {
+        let url = file(userKey)
+        guard FileManager.default.fileExists(atPath: url.path) else { return }
+        try FileManager.default.removeItem(at: url)
+    }
+
     private func write(_ bookmarks: [NativeBookmark], userKey: String) throws {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true, attributes: [
             .protectionKey: FileProtectionType.completeUntilFirstUserAuthentication,

@@ -121,6 +121,9 @@ pub(crate) fn login_failed(state: &AppState, code: &str) -> Response {
     Redirect::to(&format!("{}/login?error={code}", state.config.public_url)).into_response()
 }
 
+/// Lý do từ chối đăng nhập khi tài khoản Scribe đang bị xoá (web đổi thành mã `deleting`).
+const DELETING: &str = "tài khoản Scribe vừa được xoá, đang dọn dữ liệu — thử lại sau vài phút";
+
 /// Kiểm danh tính từ IdP rồi ghép user. Email chưa xác minh hoặc ngoài allowlist thì từ chối.
 async fn admit(state: &AppState, claims: &crate::oidc::IdClaims) -> Result<String, AppError> {
     let email = claims.email.as_deref().filter(|e| !e.is_empty()).filter(|_| claims.email_verified);
@@ -136,7 +139,14 @@ async fn admit(state: &AppState, claims: &crate::oidc::IdClaims) -> Result<Strin
     if linked {
         audit::record(state, Some(&user_id), "auth.link", doc! { "email": email });
     }
-    if user::find_profile(&state.db, &user_id).await?.is_some_and(|p| p.blocked) {
+    let profile = user::find_profile(&state.db, &user_id).await?;
+    if profile.as_ref().is_some_and(|p| p.deleting) {
+        // Xoá tài khoản chưa xong (bị ngắt?): làm tiếp, không cho đăng nhập vào tài khoản đang bị xoá.
+        crate::account::resume(state, &user_id);
+        audit::record(state, Some(&user_id), "auth.login_denied", doc! { "reason": "deleting" });
+        return Err(AppError::Forbidden(DELETING.into()));
+    }
+    if profile.is_some_and(|p| p.blocked) {
         audit::record(state, Some(&user_id), "auth.login_denied", doc! { "reason": "blocked" });
         return Err(AppError::Forbidden("tài khoản đã bị khoá".into()));
     }
@@ -200,7 +210,13 @@ pub async fn callback(State(state): State<AppState>, jar: CookieJar, Query(q): Q
             (jar, Redirect::to(&format!("{}/", state.config.public_url))).into_response()
         }
         Err(AppError::Forbidden(m)) => {
-            let code = if m.contains("xác minh") { "unverified" } else { "forbidden" };
+            let code = if m.contains("xác minh") {
+                "unverified"
+            } else if m == DELETING {
+                "deleting"
+            } else {
+                "forbidden"
+            };
             (jar, login_failed(&state, code)).into_response()
         }
         Err(AppError::Unavailable(_)) => (jar, login_failed(&state, "idp")).into_response(),
@@ -314,6 +330,14 @@ pub async fn native_refresh(
         sessions::DeviceLock::Locked(device) => device,
         sessions::DeviceLock::Busy => return Err(AppError::Conflict("đang làm mới phiên, thử lại sau giây lát".into())),
         sessions::DeviceLock::Missing => {
+            // Tài khoản vừa bị xoá: app xoá đoạn ghi còn trên máy thay vì chờ đăng nhập lại để tải lên.
+            if crate::account::device_of_deleted_account(&state.db, &crate::session::hash_token(&body.device_token)).await? {
+                return Err(AppError::Coded {
+                    status: axum::http::StatusCode::GONE,
+                    code: "ACCOUNT_DELETED",
+                    message: "tài khoản Scribe đã bị xoá".into(),
+                });
+            }
             return Err(AppError::Unauthorized("máy đã bị đăng xuất, đăng nhập lại".into()));
         }
     };
@@ -389,7 +413,7 @@ pub async fn logout(State(state): State<AppState>, jar: CookieJar, body: Option<
         // Thu hồi grant ở IdP để máy không còn treo ở /account.
         if let Ok(Some(sealed)) = sessions::device_refresh(&state.db, &device_id).await {
             if let Some(refresh) = open(&state.session_key, &sealed) {
-                state.oidc.revoke(&state.http, &state.config.oidc_mobile_client_id, &refresh).await;
+                let _ = state.oidc.revoke(&state.http, &state.config.oidc_mobile_client_id, &refresh).await;
             }
         }
         if let Ok(removed) = sessions::delete_device(&state.db, &device_id).await {
@@ -553,7 +577,7 @@ pub async fn require_auth(
             // Allowlist có thể đã đổi từ lúc đăng nhập (build mới), tài khoản có thể vừa bị khoá: kiểm lại
             // mỗi lần cache hết hạn.
             let profile = user::find_profile(&state.db, &session.user_id).await?;
-            let allowed = profile.is_some_and(|p| !p.blocked && state.config.email_allowed(&p.email));
+            let allowed = profile.is_some_and(|p| !p.blocked && !p.deleting && state.config.email_allowed(&p.email));
             if !allowed {
                 let removed = sessions::delete_by_user(&state.db, &session.user_id, None).await?;
                 state.session_cache.forget(&removed);

@@ -350,13 +350,23 @@ impl Oidc {
     }
 
     /// Thu hồi refresh token của client native (đăng xuất trên app: grant không còn treo ở `/account`).
-    /// Lỗi chỉ log — phiên Scribe đã xoá.
-    pub async fn revoke(&self, http: &reqwest::Client, client_id: &str, refresh_token: &str) {
-        let Ok(discovery) = self.discovery(http).await else { return };
-        let Some(endpoint) = discovery.revocation_endpoint.clone() else { return };
+    /// Trả `true` khi IdP nhận (2xx, RFC 7009 trả 200 cả với token đã hết hiệu lực); lỗi chỉ log — người gọi
+    /// quyết định có thử lại không (xoá tài khoản thử lại ở vòng retention).
+    pub async fn revoke(&self, http: &reqwest::Client, client_id: &str, refresh_token: &str) -> bool {
+        let Ok(discovery) = self.discovery(http).await else { return false };
+        // IdP không có endpoint thu hồi: không có gì để thử lại.
+        let Some(endpoint) = discovery.revocation_endpoint.clone() else { return true };
         let form = [("token", refresh_token), ("token_type_hint", "refresh_token"), ("client_id", client_id)];
-        if let Err(e) = http.post(&endpoint).form(&form).timeout(Duration::from_secs(10)).send().await {
-            tracing::warn!("thu hồi refresh token ở IdP lỗi: {e}");
+        match http.post(&endpoint).form(&form).timeout(Duration::from_secs(10)).send().await {
+            Ok(res) if res.status().is_success() => true,
+            Ok(res) => {
+                tracing::warn!(status = %res.status(), "IdP từ chối thu hồi refresh token");
+                false
+            }
+            Err(e) => {
+                tracing::warn!("thu hồi refresh token ở IdP lỗi: {e}");
+                false
+            }
         }
     }
 

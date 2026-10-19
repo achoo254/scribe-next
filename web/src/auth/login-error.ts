@@ -12,6 +12,7 @@ const LOGIN_ERRORS = {
 	invalid: "login.errors.invalid",
 	unverified: "login.errors.unverified",
 	forbidden: "login.errors.forbidden",
+	deleting: "login.errors.deleting",
 	idp: "login.errors.idp",
 	busy: "login.errors.busy",
 	failed: "login.errors.failed",

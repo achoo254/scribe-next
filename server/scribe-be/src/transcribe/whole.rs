@@ -219,7 +219,7 @@ async fn transcribe_unit(state: &AppState, members: &[Member]) -> Outcomes {
     let mut out = Outcomes::default();
     let Some(first) = members.first() else { return out };
     // Khoá sau khi đã xếp hàng: không gửi audio nữa; lượt đóng với 0 giây đã gửi nên được hoàn hết.
-    if user::find_profile(&state.db, &first.t.user_id).await.ok().flatten().is_some_and(|p| p.blocked) {
+    if user::find_profile(&state.db, &first.t.user_id).await.ok().flatten().is_some_and(|p| p.blocked || p.deleting) {
         out.error = Some("tài khoản đã bị khoá".into());
         return out;
     }

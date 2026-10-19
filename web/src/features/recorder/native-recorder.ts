@@ -58,7 +58,12 @@ export interface RecorderNativePlugin {
 		lostSegments: number;
 		lostSecondsMax: number;
 	}>;
-	signOut(): Promise<void>;
+	/**
+	 * Stops recording and uploads. `discardUserKey` (the account was deleted):
+	 * also removes the segments, live transcripts and bookmarks the phone keeps
+	 * for that account, so a later sign-in never uploads them.
+	 */
+	signOut(options?: { discardUserKey?: string }): Promise<void>;
 	/** Bookmarks saved by Swift and not acknowledged yet (absent from older app builds). */
 	takePendingBookmarks(options: { userKey: string }): Promise<{
 		bookmarks: unknown[];

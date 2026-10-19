@@ -77,7 +77,7 @@ async fn sweep_once(state: &AppState) -> Result<(), AppError> {
     let orphan_sentences = sweep_orphan_sentences(&state.db).await;
     let reindexed = reconcile_search_index(&state.db).await;
     // Việc nền ghi thêm sau khi một tài khoản bị xoá (lượt chép xong muộn, job cắt): dọn lại.
-    let deleted_accounts = crate::account::sweep_deleted(&state.db, data_dir).await;
+    let deleted_accounts = crate::account::sweep_deleted(state).await;
 
     if removed > 0
         || orphan_parts > 0

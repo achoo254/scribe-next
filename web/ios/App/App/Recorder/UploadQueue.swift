@@ -27,6 +27,8 @@ actor UploadQueue {
         case uploaded(name: String)
         case needsSignIn
         case quotaFull(String)
+        /// The account was deleted: its segments are gone from the phone.
+        case accountDeleted(userKey: String)
     }
 
     private enum Outcome: Error {
@@ -34,6 +36,7 @@ actor UploadQueue {
         case redo(String)
         case terminal(String)
         case unauthorized
+        case accountDeleted
         case quotaFull(String)
     }
 
@@ -193,6 +196,13 @@ actor UploadQueue {
             paused = true
             onEvent?(.quotaFull(message))
             return .stopLoop
+        case .accountDeleted:
+            // Never upload these into whatever account signs in next with the same email.
+            paused = true
+            try? await store.removeAll(userKey: user)
+            log.notice("account deleted: local segments removed")
+            onEvent?(.accountDeleted(userKey: user))
+            return .stopLoop
         }
     }
 
@@ -225,6 +235,8 @@ actor UploadQueue {
             do {
                 try await SessionAuth.refreshSession(session: session)
                 log.notice("session renewed from refresh token")
+            } catch is SessionAuth.AccountDeleted {
+                throw Outcome.accountDeleted
             } catch {
                 throw Outcome.unauthorized
             }

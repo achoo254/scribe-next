@@ -21,6 +21,12 @@ enum SessionAuth {
     /// Host part of `backendOrigin`, for matching request URLs.
     static var backendHost: String { URL(string: backendOrigin)?.host ?? "" }
 
+    /// The backend says the account behind this device was deleted (410 on refresh): what the phone still
+    /// keeps for it (segments not uploaded, bookmarks) must go, never into a later account.
+    struct AccountDeleted: LocalizedError {
+        var errorDescription: String? { "Tài khoản Scribe đã bị xoá." }
+    }
+
     struct AuthError: LocalizedError {
         let message: String
         init(_ message: String) { self.message = message }
@@ -89,6 +95,9 @@ enum SessionAuth {
         } catch let error as HTTPError where error.status == 401 {
             clear()
             throw AuthError(error.message)
+        } catch let error as HTTPError where error.status == 410 {
+            clear()
+            throw AccountDeleted()
         }
     }
 

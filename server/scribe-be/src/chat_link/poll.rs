@@ -225,7 +225,7 @@ impl Store for Mongo<'_> {
         chat_link::drop_token(self.0, token, chat_id).await
     }
     async fn account(&self, user_id: &str) -> Result<Option<Account>, AppError> {
-        Ok(user::find_profile(self.0, user_id).await?.map(|p| Account { email: p.email, blocked: p.blocked }))
+        Ok(user::find_profile(self.0, user_id).await?.map(|p| Account { email: p.email, blocked: p.blocked || p.deleting }))
     }
     async fn link(&self, user_id: &str, chat_id: i64, chat_name: Option<&str>) -> Result<Option<Option<i64>>, AppError> {
         chat_link::link(self.0, user_id, chat_id, chat_name).await

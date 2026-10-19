@@ -8,7 +8,10 @@ import {
 	useMemo,
 	useState,
 } from "react";
-import { NativeRecorderPlugin } from "../features/recorder/native-recorder";
+import {
+	NativeRecorderPlugin,
+	userKeyOf,
+} from "../features/recorder/native-recorder";
 import { activeTranslator } from "../i18n/active-translator";
 import { apiUrl, isNativeShell } from "../lib/api";
 import { HoandatAuth, NativeFiles, Secrets } from "../lib/native";
@@ -39,7 +42,7 @@ interface AuthApi extends AuthState {
 	login: () => Promise<void>;
 	logout: () => Promise<void>;
 	/**
-	 * After the account was deleted (`DELETE /api/me` already ended every
+	 * After the account was deleted (`POST /api/me/delete` already ended every
 	 * session): clears what this device holds, without ending the
 	 * hoandat-auth session (the hoandat account still exists). The app then
 	 * lands on /login, which reads `accountDeleted`.
@@ -96,9 +99,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 		): Promise<string | null> => {
 			let endSessionUrl: string | null = null;
 			// iOS: stop recording and uploads first, so nothing reaches the old
-			// account after the cookie is gone (plan D5.2).
+			// account after the cookie is gone (plan D5.2). A deleted account's
+			// segments still on the phone go too.
 			if (isNativeShell()) {
-				await NativeRecorderPlugin.signOut().catch(() => undefined);
+				const email = state.user?.email;
+				const discardUserKey =
+					accountDeleted && email ? await userKeyOf(email) : undefined;
+				await NativeRecorderPlugin.signOut(
+					discardUserKey ? { discardUserKey } : undefined,
+				).catch(() => undefined);
 				// Audio copied for playback belongs to this account.
 				await NativeFiles.clear().catch(() => undefined);
 				// Drops the device token from the Keychain (the server answers
@@ -114,7 +123,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 			setState({ ready: true, user: null, accountDeleted });
 			return endSessionUrl;
 		},
-		[queryClient],
+		[queryClient, state.user?.email],
 	);
 
 	const logout = useCallback(async () => {

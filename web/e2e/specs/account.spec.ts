@@ -125,15 +125,21 @@ test("deletes the account after typing XOÁ, then signs out", async ({
 		"Đã xoá tài khoản Scribe",
 	);
 	expect(api.accountDeletes).toEqual(["XOÁ"]);
+	expect(api.requests).toContain("POST /api/me/delete");
 	// The web stays signed in at hoandat-auth: no logout call to Scribe.
 	expect(api.requests).not.toContain("POST /api/auth/logout");
 	if (isMobile) {
-		const calls = (await nativeCalls(page)).map(
-			(call) => `${call.plugin}.${call.method}`,
-		);
-		expect(calls).toEqual(
+		const calls = await nativeCalls(page);
+		expect(calls.map((call) => `${call.plugin}.${call.method}`)).toEqual(
 			expect.arrayContaining(["Recorder.signOut", "HoandatAuth.signOut"]),
 		);
+		// The deleted account's segments and bookmarks leave the phone.
+		const signOut = calls.find(
+			(call) => call.plugin === "Recorder" && call.method === "signOut",
+		);
+		expect(signOut?.options).toEqual({
+			discardUserKey: expect.stringMatching(/^[0-9a-f]{24}$/),
+		});
 	}
 	expect(api.unexpected).toEqual([]);
 });

@@ -63,7 +63,7 @@ describe("DeleteAccountDialog", () => {
 
 	it("deletes only after the user types XOÁ, then signs this device out", async () => {
 		const { calls } = open({
-			"DELETE /api/me": jsonResponse({
+			"POST /api/me/delete": jsonResponse({
 				deleted: true,
 				files: 3,
 				bytes: 1024,
@@ -86,14 +86,14 @@ describe("DeleteAccountDialog", () => {
 			expect(auth.forgetDeletedAccount).toHaveBeenCalledWith("done"),
 		);
 		expect(auth.forgetDeletedAccount).toHaveBeenCalledTimes(1);
-		const call = calls.find((c) => c.method === "DELETE");
-		expect(call?.url).toMatch(/\/api\/me$/);
+		const call = calls.find((c) => c.method === "POST");
+		expect(call?.url).toMatch(/\/api\/me\/delete$/);
 		expect(call?.body).toEqual({ confirm: "xóa" });
 	});
 
 	it("signs out with 'pending' when the server still finishes the deletion", async () => {
 		open({
-			"DELETE /api/me": jsonResponse({
+			"POST /api/me/delete": jsonResponse({
 				deleted: true,
 				files: 0,
 				bytes: 0,
@@ -112,7 +112,7 @@ describe("DeleteAccountDialog", () => {
 
 	it("keeps the account and explains why while a recording runs on the server", async () => {
 		open({
-			"DELETE /api/me": jsonResponse(
+			"POST /api/me/delete": jsonResponse(
 				{ error: "Đang có bản ghi chạy.", code: "RECORDING_OPEN" },
 				409,
 			),

@@ -37,10 +37,30 @@ bắt đầu được TestFlight và nộp App Store.
 5. **Chỉ iPhone** để không phải nộp ảnh iPad.
 6. **Key API**: Admin (cloud signing bằng key cần quyền này theo Apple Developer Forums), lệch đề nghị App Manager.
 
+## Sửa sau review (`plans/dattqh/reports/code-reviewer-261019-1150-account-deletion-review.md`)
+- M1: `users.deletingAt` + `deleted_users` trước khi xoá; đăng nhập web/iPhone và làm mới phiên bị chặn (mã `deleting`)
+  và làm tiếp việc xoá; phần còn lại chạy trong `tokio::spawn`, lỗi sau dấu xoá trả 200 `complete: false`.
+- M2: `realtime_tokens` ẩn danh như sổ chi tiết (token chưa quyết toán vẫn vào đối soát).
+- M3: xoá trong app gửi `discardUserKey` → Swift xoá đoạn, chữ chép trực tiếp, dấu mốc của tài khoản; xoá từ máy khác
+  → `native/refresh` trả 410 `ACCOUNT_DELETED` (id thiết bị giữ trong `deleted_users`) → hàng đợi xoá đoạn. Thu hồi máy
+  thường (401) vẫn giữ đoạn để tải nốt khi đăng nhập lại cùng tài khoản (hành vi đã kiểm trên máy thật 16/10). Khoá
+  thư mục vẫn theo băm email (đổi sang id user cần đổi tên thư mục cũ; không cần khi đã xoá lúc xoá tài khoản).
+- M4: app gọi `POST /api/me/delete`; `DELETE /api/me` giữ.
+- L1 audit bỏ thêm `chatId`, `error`, `reason` của `admin.block`; L2 thu hồi IdP kiểm mã trạng thái, lỗi thì thử lại
+  từ vòng retention; L3 bỏ phiên đã xoá khỏi cache; L4 index `userId` và tiền tố `_id` riêng từng sổ; L7 chính sách:
+  nhà cung cấp chữ theo cấu hình, bản sao lưu, số liệu ẩn danh, quyền lưu vào Ảnh; L8 chỉ xoá tệp trong thư mục user.
+
 ## Kiểm (19/10)
 `cargo clippy -D warnings` sạch; `cargo test` 211 đạt (30 bỏ qua); test Mongo dev 22 đạt (tuần tự, bỏ `live_*` cần key
 nhà cung cấp); `pnpm lint` 274 tệp sạch, `typecheck` sạch, `vitest` 381/381, `build` 0 cảnh báo, e2e 107 đạt / 7 bỏ qua;
 Simulator `xcodebuild` BUILD SUCCEEDED, `PrivacyInfo.xcprivacy` có trong `App.app`.
+
+Sau sửa review (19/10 12:10): clippy sạch; `cargo test` 212 đạt / 30 bỏ qua; Mongo dev 22 đạt (gồm
+`purge_user_on_real_mongo`: dấu xoá, token chép trực tiếp ẩn danh, audit bỏ `chatId`/`error`); lint, typecheck sạch;
+vitest 381/381; build 0 cảnh báo; e2e 107 đạt / 7 bỏ qua (iPhone: `POST /api/me/delete`, `Recorder.signOut` có
+`discardUserKey`); Simulator BUILD SUCCEEDED; self-test `-OSSelfTest` trên Simulator: `SELFTEST discard pending=0`. Chưa
+chạy được trên iPhone/Simulator với backend thật: thân JSON của `POST /api/me/delete` qua CapacitorHttp (cùng đường POST
+JSON các tính năng khác đang dùng trên prod).
 
 ## Còn lại (chủ dự án)
 Khi Apple duyệt: Team ID, tạo app, key API, chạy `pnpm run ios:release`, TestFlight — `docs/ios-app.md`. Làm ngay
@@ -50,3 +70,5 @@ Khi Apple duyệt: Team ID, tạo app, key API, chạy `pnpm run ios:release`, T
 - Guideline 4.8: hoandat-auth chỉ có Google/GitHub — có thêm Sign in with Apple không nếu bị từ chối?
 - Xoá tài khoản rồi đăng nhập lại tạo tài khoản mới với hạn mức free mới (sổ phút đã xoá).
 - Thời gian giữ nhật ký truy cập (journald) trên `.65` chưa kiểm; chính sách không nêu số ngày.
+- Chính sách hứa xoá bản sao lưu khi bản cập nhật ổn định: trên `.65` đang còn nhiều thư mục `/root/scribe-backup-*`
+  từ 16–19/10 cần dọn.
