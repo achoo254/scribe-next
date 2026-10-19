@@ -1,6 +1,6 @@
 # Project Roadmap — Scribe
 
-Cập nhật 2026-10-16. Chi tiết kiến trúc: [codebase-summary.md](./codebase-summary.md).
+Cập nhật 2026-10-19. Chi tiết kiến trúc: [codebase-summary.md](./codebase-summary.md).
 
 ## Scribe Web — plan `260711-1657-scribe-web-media-rust` — ✅ HOÀN TẤT (5/5 phase)
 
@@ -78,6 +78,7 @@ Chi tiết và lập luận: phase 4 của plan iOS. Tóm tắt:
 | ✅ P2 | **Dịch lời chép Việt ↔ Anh** (plan `dattqh/261017-1235-transcript-translation`): nút "Dịch" ở màn hình đọc chọn Tiếng Anh / Tiếng Việt, dịch từng câu giữ mốc giây bằng `gpt-4.1-mini`, xem Gốc / Bản dịch / Song song, câu sửa sau khi dịch có nhãn "bản dịch cũ" và nút "Dịch lại câu đã sửa"; menu "Tải xuống" chọn ngôn ngữ cho cả 5 định dạng | Xong 17/10, chưa deploy. Lượt dịch mỗi ngày riêng (`TRANSLATE_FREE_DAILY` 3 / `TRANSLATE_PAID_DAILY` 20); trần chi phí tháng và trần tổng dùng chung với tóm tắt và hỏi đáp. Biên bản trong tài liệu xuất giữ ngôn ngữ gốc |
 | ✅ P1 | **Chép lời bằng ElevenLabs + phân biệt người nói** (plan `dattqh/261017-1530-elevenlabs-transcription`): chủ dự án chốt 17/10 sau bài nghe mù. Scribe v2 (0,22 USD/giờ) cho chép lời tệp; phiên iPhone chép một lần cho cả phiên; câu có mốc thật và người nói ("Người 1/2", đổi tên được, có trong tệp xuất và biên bản); trần giờ ElevenLabs mỗi tháng `ELEVENLABS_MONTHLY_HOURS` (25); hết credit thì dừng tới tháng sau và báo bot | Xong 17/10, chưa deploy. Trước khi deploy: chủ sản phẩm cài tệp key ElevenLabs (gói trả phí Starter) lên server. `TRANSCRIBE_PROVIDER=openai` giữ luồng cũ một bản phát hành |
 | ✅ P1 | **Chuyển chép trực tiếp iPhone khỏi `gpt-4o-mini-transcribe` trước 26/2/2027** | **Mã xong 19/10, chưa deploy, còn thử trên iPhone thật.** Chép trực tiếp chạy ElevenLabs Scribe v2 Realtime (0,39 USD/giờ, token dùng một lần do server cấp, tính vào phút, trần USD và sổ giờ ElevenLabs); `REALTIME_PROVIDER=openai` giữ OpenAI Realtime một bản phát hành. Đã thử từ Mac: cấp token qua đường mã backend, stream 10 giây ra câu tiếng Việt. Deploy cùng lúc với bản app iPhone mới (app 17/10 chỉ nói được với OpenAI). Sau một bản phát hành ổn định thì bỏ cả `REALTIME_PROVIDER=openai` và `TRANSCRIBE_PROVIDER=openai` |
+| ✅ P1 | **Key riêng — người dùng tự nhập key API** (plan `dattqh/261019-0905-user-api-keys`): ElevenLabs, OpenAI, Google Gemini, Anthropic Claude; lưu mã hoá trên server, chỉ ghi; chọn nhà cung cấp cho chép lời tệp, chép trực tiếp, biên bản/hỏi đáp/dịch (kèm model); việc chạy bằng key riêng không tính hạn mức của Scribe. Server chọn được model chữ (`LLM_PROVIDER`/`LLM_MODEL`) | **Mã xong 19/10, chưa deploy.** Trước khi deploy: tạo tệp `USER_KEYS_SECRET_PATH` trên server (deploy doc §Key riêng). Gemini và Claude chưa thử với key thật |
 | P1 | **QA app iPhone còn lại** — cuộc gọi đến, AirPods, máy bay | Cần máy thứ hai + AirPods |
 | ✅ P1 | **Realtime transcript trên iPhone** (Phase 5 plan iOS) | Đã làm và deploy 17/10 (token tạm thời từ server, `REALTIME_EMAILS`, tính phút chung sổ). Còn đo trên máy thật: WebSocket khi khoá màn hình lâu, độ trễ, mất mạng giữa buổi |
 | P2 | **QA thủ công web** — ghi mic + màn hình/system thật (Chrome), cắt file thật | getUserMedia/getDisplayMedia không automate được |
