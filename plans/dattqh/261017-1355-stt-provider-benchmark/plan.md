@@ -1,11 +1,15 @@
 ---
 title: Đo chép lời tiếng Việt trên 3 nhà cung cấp (OpenAI, ElevenLabs Scribe v2, AssemblyAI)
-status: in-progress
+status: completed
 created: 2026-10-17
 tier: M
 ---
 
 # Đo chép lời tiếng Việt trên 3 nhà cung cấp
+
+> **Đóng plan (2026-10-19):** sau số đo và bài nghe mù, chủ dự án chốt ngày 17/10 chuyển chép lời tệp sang
+> ElevenLabs Scribe v2 (kèm phân biệt người nói); triển khai ở `../261017-1530-elevenlabs-transcription/`, lên prod
+> 17/10 16:07. AssemblyAI không được đo vì chủ dự án chọn không thêm key.
 
 Yêu cầu chủ dự án 17/10/2026 13:55. Bối cảnh: OpenAI tắt `gpt-4o-mini-transcribe` (model đang chạy ở
 `openai.rs`), `gpt-4o-transcribe`, `whisper-1` và `gpt-4o-transcribe-diarize` vào **26/02/2027**; model thay thế là
@@ -46,8 +50,8 @@ thật trên cuộc họp tiếng Việt trước khi chọn model chép lời m
 |---|---|---|
 | 1. Harness + test | M | done |
 | 2. Chạy OpenAI, báo cáo `reports/stt-bench-261017-1355-openai.md` | S | done |
-| 3. Chạy ElevenLabs + AssemblyAI khi có key, chấm phân biệt người nói | S | chờ key của chủ dự án |
-| 4. Chọn model chép lời mới (trước 26/02/2027) và nhà cung cấp phân biệt người nói | M | chờ phase 3 |
+| 3. Chạy ElevenLabs + AssemblyAI khi có key, chấm phân biệt người nói | S | done với ElevenLabs; AssemblyAI không đo (chủ dự án không thêm key) |
+| 4. Chọn model chép lời mới (trước 26/02/2027) và nhà cung cấp phân biệt người nói | M | done 17/10: ElevenLabs Scribe v2 cho chép lời tệp và phân biệt người nói |
 
 ## Tiêu chí nhận
 - Một lệnh chạy được cả 4 cấu hình; thiếu key thì bỏ qua và báo rõ; key không bao giờ bị in hay ghi ra đĩa.

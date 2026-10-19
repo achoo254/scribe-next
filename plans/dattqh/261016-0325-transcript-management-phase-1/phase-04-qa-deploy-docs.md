@@ -1,7 +1,7 @@
 ---
 phase: 4
 title: "QA iPhone, deploy prod, docs"
-status: pending
+status: in-progress
 priority: P1
 effort: "S"
 dependencies: [2, 3]

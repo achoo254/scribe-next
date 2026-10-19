@@ -1,6 +1,13 @@
+---
+status: completed
+---
+
 # Kế hoạch — Cải tiến tính năng Transcript (Mode C + auto-transcript Mode A)
 
-> Trạng thái: **DONE (đã triển khai + verify, chưa commit)** · 2026-07-08 · Branch nền: `main`
+> **Đóng plan (2026-10-19):** 4 phase đã giao trên app desktop; app desktop bỏ ngày 2026-10-16. Dạng sau trên web: màn hình
+> đọc chạm câu để tua, sửa câu, xuất TXT/SRT/VTT/Markdown/Word.
+>
+> Trạng thái: **DONE (đã triển khai + verify)** · 2026-07-08 · Branch nền: `main`
 >
 > **Kết quả triển khai** (Mac mini M4): cả 4 phase xong. Quyết định tự chốt cho máy này:
 > word_timestamps bật mặc định (ct2+mlx); asset scope `["**"]` read-only + command `save_transcript`;

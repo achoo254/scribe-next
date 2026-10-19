@@ -1,13 +1,16 @@
 ---
 title: "Ghi tiếng output hệ thống (loopback) — Windows"
 description: "Tùy chọn nguồn ghi: Mic (cpal) hoặc Tiếng hệ thống (WASAPI loopback). Output-only, Windows-first."
-status: implemented
+status: completed
 priority: P2
 created: "2026-06-15"
 tags: [tauri, rust, audio, wasapi, loopback, mode-a]
 ---
 
 # Ghi tiếng output hệ thống (loopback)
+
+> **Đóng plan (2026-10-19):** đã giao trên app desktop (Windows); app desktop bỏ ngày 2026-10-16. Web ghi tiếng hệ thống
+> qua chia sẻ màn hình của Chrome.
 
 ## Overview
 

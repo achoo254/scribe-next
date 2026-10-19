@@ -1,7 +1,7 @@
 ---
 title: "Scribe Web — media ghi+cắt (BE Rust/axum, bỏ AI)"
 description: "Web hóa Scribe làm ghi+cắt media (bỏ AI transcribe); BE Rust/axum → 1 static musl binary env-compile-time, FE Vue3/Vite+design system, MongoDB, deploy box .65 qua nginx (:80, CF proxied lo TLS) + systemd; frontend nền tảng chừa chỗ cắm transcribe sau"
-status: done
+status: completed
 priority: P2
 branch: "main"
 tags: [web, rust, axum, vue, mongodb, ffmpeg, oauth, no-ai, self-contained-musl]
@@ -13,6 +13,9 @@ source: skill
 ---
 
 # Scribe Web — media ghi+cắt (BE Rust/axum, bỏ AI)
+
+> **Đóng plan (2026-10-19):** đã giao; backend Rust/axum và MongoDB của plan này vẫn là nền prod. Frontend Vue sau đó được
+> viết lại bằng React (`../261015-1524-web-react-rewrite/`), Firebase thay bằng hoandat-auth (16/10).
 
 ## Overview
 

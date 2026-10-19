@@ -1,13 +1,16 @@
 ---
 title: "Tự động transcript khi ghi âm (Mode A)"
 description: "Tùy chọn opt-in: vừa ghi âm vừa transcribe từng đoạn, hiển thị transcript inline"
-status: implemented
+status: completed
 priority: P2
 created: "2026-06-15"
 tags: [tauri, vue, audio, whisper, transcribe, mode-a]
 ---
 
 # Tự động transcript khi ghi âm
+
+> **Đóng plan (2026-10-19):** đã giao trên app desktop; app desktop bỏ ngày 2026-10-16. Dạng sau của tính năng là chép
+> trực tiếp trên iPhone và chép lời trên server.
 
 ## Overview
 

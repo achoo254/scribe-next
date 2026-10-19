@@ -13,6 +13,10 @@ created: 2026-10-16
 
 # Quản lý transcript — giai đoạn 1 (xem và sửa)
 
+> **Rà trạng thái (2026-10-19):** phase 1–3 xong, đã deploy prod 2026-10-16 11:07 (phase 4); `transcript_docs` và tab Transcript
+> đang chạy và là nền cho biên bản, dấu mốc, dịch. **Còn lại, nên giữ in-progress:** QA trên iPhone thật (mục 5–6 phase 4: chạm câu tua đúng đoạn,
+> tự sang đoạn kế trong WKWebView, sửa/chép lại/đổi tên/xoá, xoá cache khi đăng xuất); xoá bản sao lưu `/root/onescribe-backup-20261016-110644/` sau 2026-10-30 (hỏi trước).
+
 ## Overview
 
 Mở tab Transcript (đang khoá "Sắp có"): mỗi **phiên ghi** là một transcript có tiêu đề, đọc kèm audio (chạm câu để tua), sửa câu, đổi tên, xoá. Thiết kế cho màn hình iPhone; web dùng chung mã. Chỉ người dùng đang được phép chép lời (`canTranscribe`) thấy tab.
@@ -42,10 +46,10 @@ files (recording)        transcripts (máy, theo file)      transcript_docs (ng�
 
 | # | Phase | Tier | Status | Phụ thuộc |
 |---|-------|------|--------|-----------|
-| 1 | [Backend: transcript theo phiên + API](./phase-01-backend-transcript-docs.md) | M | Pending | — |
-| 2 | [Dữ liệu cũ: kiểm tra chỉ đọc trước deploy](./phase-02-legacy-data-audit.md) | S | Pending | 1 |
-| 3 | [Web/iPhone: tab Transcript, đọc, sửa, đổi tên, xoá](./phase-03-transcript-tab-ui.md) | M | Pending | 1 |
-| 4 | [QA iPhone, deploy prod, docs](./phase-04-qa-deploy-docs.md) | S | Pending | 2, 3 |
+| 1 | [Backend: transcript theo phiên + API](./phase-01-backend-transcript-docs.md) | M | Done | — |
+| 2 | [Dữ liệu cũ: kiểm tra chỉ đọc trước deploy](./phase-02-legacy-data-audit.md) | S | Done | 1 |
+| 3 | [Web/iPhone: tab Transcript, đọc, sửa, đổi tên, xoá](./phase-03-transcript-tab-ui.md) | M | Done | 1 |
+| 4 | [QA iPhone, deploy prod, docs](./phase-04-qa-deploy-docs.md) | S | Đã deploy 16/10; chờ QA iPhone thật | 2, 3 |
 
 ## Non-goals
 

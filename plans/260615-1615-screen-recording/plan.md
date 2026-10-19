@@ -1,4 +1,11 @@
+---
+status: completed
+---
+
 # Ghi màn hình (Mode A mở rộng) — Scribe
+
+> **Đóng plan (2026-10-19):** P0–P4 đã giao trên app desktop (Windows); app desktop bỏ ngày 2026-10-16. Web ghi màn hình
+> kèm tiếng hệ thống bằng chia sẻ màn hình của trình duyệt (Chrome desktop).
 
 Thêm ghi màn hình (toàn màn hình + chọn vùng kiểu Bandicam) vào tính năng ghi âm hiện có,
 xuất MP4 (video + audio mic/hệ thống), vẫn auto-transcribe audio track như Mode A.

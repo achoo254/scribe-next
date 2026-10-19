@@ -1,7 +1,7 @@
 ---
 phase: 3
 title: "Màn hình và parity tính năng"
-status: in-progress
+status: done
 priority: P1
 effort: L
 dependencies: [2]

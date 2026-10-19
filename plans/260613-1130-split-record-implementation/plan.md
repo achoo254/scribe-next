@@ -1,7 +1,7 @@
 ---
 title: "Scribe Desktop App Implementation"
 description: "Tauri v2 desktop app (Win+macOS): ghi mic + split live, cắt file sẵn có, transcribe offline tiếng Việt"
-status: pending
+status: completed
 priority: P2
 branch: ""
 tags: [tauri, rust, audio, ffmpeg, whisper, desktop]
@@ -13,6 +13,9 @@ source: skill
 ---
 
 # Scribe Desktop App Implementation
+
+> **Đóng plan (2026-10-19):** Mode A/B/C đã giao và có bộ cài Windows NSIS (2026-07-09). App desktop đã bỏ ngày
+> 2026-10-16 (sản phẩm chỉ còn web và iPhone), nên bản macOS và QA máy sạch không làm nữa; logic cắt sống tiếp trong crate `core-split`.
 
 > **Tên app**: **Scribe** · bundle id `com.hoandat.scribe` · package `scribe-next` · window title "Scribe". *(Thư mục repo hiện tại `split-record` — đổi tên `scribe-next` là tùy chọn, không bắt buộc để build.)*
 

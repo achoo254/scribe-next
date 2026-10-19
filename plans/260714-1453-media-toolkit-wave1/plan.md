@@ -1,7 +1,7 @@
 ---
 title: "Scribe Web — Media toolkit Wave 1 (Convert/Extract/Trim)"
 description: "Thêm Convert/Export định dạng, Tách audio từ video, Trim theo mốc — tái dùng core-split + job queue. Non-AI."
-status: pending
+status: cancelled
 priority: P2
 branch: "main"
 tags: [web, media, ffmpeg, core-split]
@@ -13,6 +13,9 @@ source: skill
 ---
 
 # Scribe Web — Media toolkit Wave 1 (Convert/Extract/Trim)
+
+> **Huỷ (2026-10-19):** cả 3 phase chưa làm (code không có job `convert`/`extract`/`trim`). Hướng sản phẩm từ 10/2026 chuyển
+> sang chép lời, biên bản và kho bản ghi; plan này không nằm trong lộ trình hiện tại. Mở lại bằng plan mới nếu cần.
 
 ## Overview
 

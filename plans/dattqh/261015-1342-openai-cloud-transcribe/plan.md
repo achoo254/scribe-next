@@ -1,6 +1,13 @@
+---
+status: completed
+---
+
 # Nguồn chép OpenAI (gpt-4o-mini-transcribe) cho Mode C
 
-Tier: **M**, gồm 1 phase, đụng sidecar, Rust và giao diện. Trạng thái: ✅ code xong, đã kiểm chứng sidecar end-to-end; chờ QA trong app (keychain + UI).
+> **Đóng plan (2026-10-19):** code desktop đã xong và kiểm qua sidecar; app desktop bỏ ngày 2026-10-16 nên QA trong app không làm.
+> Hướng chép lời bằng cloud sống tiếp trên server (OpenAI từ 15/10, chép lời tệp chuyển sang ElevenLabs Scribe v2 từ 17/10).
+
+Tier: **M**, gồm 1 phase, đụng sidecar, Rust và giao diện.
 
 ## Mục tiêu
 

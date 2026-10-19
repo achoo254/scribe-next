@@ -1,7 +1,7 @@
 ---
 title: "Viết lại web Scribe bằng React theo design system của localman-next"
 description: "Bỏ Vue + Vuetify + @hobui/ui; dựng lại web bằng React 19 + Vite 7 + Tailwind 4 với tokens.css giống hệt localman-next, giữ nguyên backend và tính năng."
-status: in-progress
+status: completed
 priority: P1
 effort: L
 branch: main
@@ -12,6 +12,10 @@ created: 2026-10-15
 ---
 
 # Viết lại web Scribe bằng React
+
+> **Đóng plan (2026-10-19):** bản React lên prod 2026-10-15, bản Vue đã xoá 16/10, `web/package.json` không còn
+> `vue`/`vuetify`/`@hobui/*`; các gói sau (transcript, biên bản, kho bản ghi, ElevenLabs) đều xây trên bản này.
+> Phần QA tay còn sót (ghi kèm màn hình/tiếng hệ thống, ngắt mạng rồi tải tiếp) chuyển sang mục "QA thủ công web" trong backlog roadmap.
 
 ## Bối cảnh và quyết định của chủ sở hữu (2026-10-15)
 
@@ -43,7 +47,7 @@ created: 2026-10-15
 |---|---|---|---|
 | 1 | [Khung dự án, token và primitive UI](./phase-01-khung-du-an-token-primitive.md) | M | Done |
 | 2 | [Lớp API, auth và logic nghiệp vụ](./phase-02-lop-api-auth-logic.md) | M | Done |
-| 3 | [Màn hình và parity tính năng](./phase-03-man-hinh-parity.md) | L | Code xong, chờ QA parity trên backend thật |
+| 3 | [Màn hình và parity tính năng](./phase-03-man-hinh-parity.md) | L | Done: parity đạt ở dev local 2026-10-15 (phần chưa kiểm chuyển sang backlog roadmap) |
 | 4 | [Thay thế bản Vue, deploy prod, cập nhật plan iOS](./phase-04-thay-the-deploy.md) | S | Đã deploy prod 2026-10-15 |
 
 Thứ tự: **1 → 2 → 3 → 4**.

@@ -1,7 +1,7 @@
 ---
 title: "Bật GPU CUDA transcript + model turbo + glossary DevOps"
 description: "Bật CUDA cho faster-whisper sidecar (RTX 5070 Ti Blackwell), thêm model whisper-large-v3-turbo, xác nhận glossary DevOps mặc định"
-status: pending
+status: completed
 priority: P2
 effort: 10h
 branch: main
@@ -10,6 +10,9 @@ created: 2026-07-09
 ---
 
 # GPU CUDA Transcription Upgrade — Overview
+
+> **Đóng plan (2026-10-19):** phase 01–07 đã làm và kiểm trên RTX 5070 Ti (2026-07-09). App desktop (Tauri + sidecar) đã bỏ
+> ngày 2026-10-16 và chép lời nay chạy trên server bằng ElevenLabs, nên bước QA GUI còn lại không còn áp dụng.
 
 Research: `plans/dattqh/reports/gpu-transcription-model-upgrade-260709-2124-rtx5070ti-report.md`
 

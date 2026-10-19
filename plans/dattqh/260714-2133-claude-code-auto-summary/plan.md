@@ -1,7 +1,7 @@
 ---
 title: "Scribe — Tự tóm tắt/biên bản qua Claude Code headless (hướng B)"
 description: "Scribe làm driver gọi `claude -p` ngầm (dùng gói sub Claude Code trên máy) để tóm tắt transcript: rolling realtime lúc ghi (Mode A) + biên bản đầy đủ khi dừng; Mode C tóm tắt file có sẵn. Fallback: chỉ báo khi chưa cài/chưa login."
-status: draft
+status: cancelled
 priority: P2
 branch: "main"
 tags: [claude-code, headless, summary, tauri, desktop, mode-a, mode-c]
@@ -10,6 +10,9 @@ createdBy: "ck:ask → plan"
 ---
 
 # Scribe — Tự tóm tắt/biên bản qua Claude Code headless
+
+> **Huỷ (2026-10-19):** chỉ làm xong Phase 0 (spike); phase 1–3 chưa làm. App desktop đã bỏ ngày 2026-10-16; biên bản
+> nay được tạo trên server bằng `gpt-4.1-mini` (gói "Sau cuộc họp", plan `../261016-2133-after-meeting-package/`).
 
 > **Định vị (chốt với user 2026-07-14):** tính năng **cá nhân/nội bộ desktop**, KHÔNG phải feature ship kèm sản phẩm. Scribe = driver; **Claude Code trên máy** = engine ẩn; dùng **login/gói sub sẵn có** của user (không API key, không tốn token). Giống mô hình pencil.dev ở chỗ *piggyback lên Claude Code đã cài*, nhưng ngược hướng: Scribe điều khiển Claude Code (hướng B), không phải Claude Code điều khiển Scribe (hướng A/MCP).
 

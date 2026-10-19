@@ -1,6 +1,13 @@
+---
+status: completed
+---
+
 # Fix: Cắt-khi-ghi (Mode A web) ra nhiều đoạn + bản ghi tua được
 
-Status: DONE (chờ QA thật + commit) · Branch: main · 2026-07-18
+> **Đóng plan (2026-10-19):** đã giao trên web Vue, bản React giữ nguyên hành vi: "Cắt bản ghi thành nhiều bản ghi" đạt
+> trong bảng parity ngày 2026-10-15 (plan `../261015-1524-web-react-rewrite/`).
+
+Branch: main · 2026-07-18
 
 ## Bối cảnh (chẩn đoán)
 
