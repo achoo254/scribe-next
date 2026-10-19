@@ -120,3 +120,10 @@ rộng nhà cung cấp).
 - Tạo tệp bí mật trên server (lệnh root qua SSH prod ở deploy doc §Key riêng) và thêm `USER_KEYS_SECRET_PATH` vào `.env.production` (deploy doc §Key riêng); sao lưu tệp
   riêng với Mongo.
 - Khi có key Gemini/Anthropic: thử một lượt thật mỗi nhà cung cấp (biên bản, và chép lời Gemini).
+
+## Deploy 19/10 10:31
+Chủ dự án cho phép (`/scribe-ops-prod deploy`; Jev chọn `ak-deploy` 0,99). Tệp bí mật `/opt/scribe-be/.user-keys-secret` tạo bằng root qua SSH (`scribe`, 600, 32 byte,
+không in); thêm `USER_KEYS_SECRET_PATH` vào `.env.production`. Build sạch từ `b979244`. Hàng đợi rỗng. Sao lưu `/root/scribe-backup-20261019-103131`,
+binary sha256 `a476b58ff26a80e7…`, `index-t7Cn8G6z.js`, health ok, `NRestarts=0`, journal "Key riêng bật". `GET /api/me/keys` chưa đăng nhập: 401.
+Chưa kiểm trên prod: lưu/kiểm/xoá key qua giao diện (AI không được nhập API key vào form trên prod — chủ dự án tự thử); Gemini/Claude chưa gọi thật.
+Việc của chủ dự án: sao lưu tệp bí mật ra nơi riêng, tách khỏi bản sao lưu Mongo.
