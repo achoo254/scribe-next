@@ -1,7 +1,7 @@
 //! Lắp router: public (health/auth) + protected (guard middleware + upload/jobs).
 
 use crate::state::AppState;
-use crate::{access_log, auth, chat_link, files, jobs, rate_limit, realtime, recordings, search, summary, transcribe, translate, upload};
+use crate::{access_log, auth, chat_link, files, jobs, rate_limit, realtime, recordings, search, summary, transcribe, translate, upload, user_keys};
 use axum::extract::DefaultBodyLimit;
 use axum::middleware::{from_fn, from_fn_with_state};
 use axum::routing::{delete, get, patch, post, put};
@@ -29,6 +29,10 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/chat/link", get(chat_link::status).post(chat_link::create).delete(chat_link::remove))
         .route("/api/search", get(search::search))
         .route("/api/ask", post(search::ask::ask))
+        // Key riêng: chỉ ghi (không bao giờ trả key), mọi tài khoản đăng nhập.
+        .route("/api/me/keys", get(user_keys::api::list))
+        .route("/api/me/keys/{provider}", put(user_keys::api::save).delete(user_keys::api::remove))
+        .route("/api/me/key-prefs", put(user_keys::api::save_prefs))
         .layer(DefaultBodyLimit::max(1024 * 1024));
 
     // Route cần đăng nhập → guard verify session; rate-limit chung (ngưỡng cao, không cản recording).

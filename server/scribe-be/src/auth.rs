@@ -514,6 +514,8 @@ pub async fn me(
         "canTranscribe": can_transcribe,
         "plan": plan_info,
         "transcription": transcription,
+        // Việc nào chạy bằng key riêng của người dùng (thẻ "Gói và mức dùng" hiện "Dùng key của bạn").
+        "ownKeys": crate::user_keys::me_summary(&state, &user.0).await?,
     })))
 }
 

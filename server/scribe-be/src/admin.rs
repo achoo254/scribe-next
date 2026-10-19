@@ -213,7 +213,8 @@ async fn recompute(db: &Database, month: &str, apply: bool) -> Result<Value, Str
         }
     };
     let read = |e: mongodb::error::Error| format!("đọc sổ: {e}");
-    let mut runs = db.collection::<Document>(usage::RUNS_COLL).find(doc! { "month": month }).await.map_err(read)?;
+    // Lượt bằng key riêng của người dùng (`byok`) không thuộc sổ nào của Scribe.
+    let mut runs = db.collection::<Document>(usage::RUNS_COLL).find(doc! { "month": month, "byok": null }).await.map_err(read)?;
     while let Some(r) = runs.next().await {
         let r = r.map_err(read)?;
         let seconds = r.get_i64("sentS").unwrap_or(0);

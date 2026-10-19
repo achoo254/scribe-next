@@ -9,6 +9,10 @@
 //! quota thì đánh dấu tháng và báo chủ sản phẩm ([`report_quota_exhausted`]). Phiên còn đoạn đang tải lên thì hoãn
 //! [`DEFER_S`] giây. Tiền: giây của từng đoạn cộng vào doc của đoạn đó TRƯỚC khi
 //! gửi; ElevenLabs trả `audio_duration_secs` thì chỉnh lại theo đúng số đó ([`allocate_billed`]).
+//!
+//! Lượt bằng key ElevenLabs riêng của người dùng (`byok`): key đọc và giải mã lúc chạy, không giữ phút, không đụng sổ
+//! giờ ElevenLabs của Scribe; key lỗi thì chỉ key đó bị đánh dấu (`user_keys::report`), không ngắt chép lời của server
+//! hay đặt dấu hết quota tháng.
 
 use super::chunking::{Sentence, SILENT_PEAK_DB};
 use super::{elevenlabs, is_key_broken, record, report_key_broken, reserve_shortfall, words, Outcome, CANCELLED};
@@ -177,7 +181,12 @@ async fn add_late_segments(
     first: &transcript::TranscriptDoc,
     session_ids: &[ObjectId],
 ) -> Result<usize, crate::error::AppError> {
-    let Some(charge) = first.charge() else { return Ok(0) };
+    let charge = first.charge();
+    let billing = match (first.own_provider(), &charge) {
+        (Some(provider), _) => transcript::Billing::Own(provider),
+        (None, Some(charge)) => transcript::Billing::Server(charge),
+        (None, None) => return Ok(0),
+    };
     let in_run: HashSet<ObjectId> = transcript::run_file_ids(db, &first.user_id, &first.run_id).await?;
     let missing: Vec<ObjectId> = session_ids.iter().copied().filter(|id| !in_run.contains(id)).collect();
     if missing.is_empty() {
@@ -190,7 +199,7 @@ async fn add_late_segments(
         .collect();
     let mut added = 0;
     for id in missing.into_iter().filter(|id| !known.contains(id)) {
-        if transcript::enqueue(db, id, &first.user_id, &first.run_id, &first.model, &charge, 0).await? {
+        if transcript::enqueue(db, id, &first.user_id, &first.run_id, &first.model, billing, 0).await? {
             added += 1;
         }
     }
@@ -214,9 +223,23 @@ async fn transcribe_unit(state: &AppState, members: &[Member]) -> Outcomes {
         out.error = Some("tài khoản đã bị khoá".into());
         return out;
     }
-    let Some(api_key) = state.transcriber.transcribe_key() else {
-        out.error = Some(PAUSED.into());
-        return out;
+    let own = match first.t.own_provider() {
+        Some(provider) => match crate::user_keys::open(state, &first.t.user_id, provider).await {
+            Ok(key) => Some(key),
+            Err(message) => {
+                out.error = Some(message);
+                return out;
+            }
+        },
+        None => None,
+    };
+    let api_key = match (&own, state.transcriber.transcribe_key()) {
+        (Some(key), _) => key.value(),
+        (None, Some(key)) => key.0.as_str(),
+        (None, None) => {
+            out.error = Some(PAUSED.into());
+            return out;
+        }
     };
     let mut live: Vec<(usize, f64)> = Vec::with_capacity(members.len());
     for (i, m) in members.iter().enumerate() {
@@ -240,10 +263,16 @@ async fn transcribe_unit(state: &AppState, members: &[Member]) -> Outcomes {
     let total: f64 = live.iter().map(|(_, d)| d).sum();
     let limit = Duration::from_secs(FILE_TIMEOUT_BASE_S + total as u64);
     let run_id = first.t.run_id.clone();
-    if tokio::time::timeout(limit, send(state, members, live, &api_key.0, &mut out)).await.is_err() {
+    if tokio::time::timeout(limit, send(state, members, live, api_key, own.is_some(), &mut out)).await.is_err() {
         // Có thể ElevenLabs đã xử lý: giữ nguyên giây đã tính, chỉ bỏ ghi chú giữ chỗ.
         usage::release_provider_hold(&state.db, &run_id).await;
         out.error.get_or_insert_with(|| TOO_LONG.to_string());
+    }
+    // Key riêng bị ElevenLabs từ chối hoặc hết credit: đánh dấu key đó, người dùng thấy câu chỉ cách sửa.
+    if let (Some(key), Some(e)) = (&own, &out.error) {
+        if let Some(problem) = crate::user_keys::problem_of(e) {
+            out.error = Some(crate::user_keys::report(state, key, problem).await);
+        }
     }
     out
 }
@@ -251,7 +280,9 @@ async fn transcribe_unit(state: &AppState, members: &[Member]) -> Outcomes {
 /// Ghép các đoạn `live` (`(chỉ số, thời lượng)` theo thứ tự), giữ giờ ElevenLabs, ghi giây đã gửi, gửi một lần rồi
 /// chia câu về từng đoạn. ElevenLabs từ chối chắc chắn ⟹ hoàn hết: giây đã ghi của từng đoạn (sổ phút người dùng và
 /// trần USD quyết toán theo đó) và giờ ElevenLabs.
-async fn send(state: &AppState, members: &[Member], live: Vec<(usize, f64)>, api_key: &str, out: &mut Outcomes) {
+/// `own_key`: lượt chạy bằng key riêng của người dùng ⟹ bỏ qua sổ giờ ElevenLabs của Scribe; lỗi key/quota trả nguyên
+/// (người gọi đánh dấu key riêng), không đặt dấu hết quota tháng của server.
+async fn send(state: &AppState, members: &[Member], live: Vec<(usize, f64)>, api_key: &str, own_key: bool, out: &mut Outcomes) {
     let db = &state.db;
     // Đoạn bị xoá hay chép lại từ lúc nhận: bỏ khỏi bản ghép.
     let mut kept = Vec::with_capacity(live.len());
@@ -277,12 +308,15 @@ async fn send(state: &AppState, members: &[Member], live: Vec<(usize, f64)>, api
         out.done.extend(live.iter().map(|(i, _)| (*i, Vec::new())));
         return;
     }
-    // Trần giờ ElevenLabs của tháng: giữ chỗ nguyên tử trước khi gửi, quyết toán theo số ElevenLabs tính.
+    // Trần giờ ElevenLabs của tháng: giữ chỗ nguyên tử trước khi gửi, quyết toán theo số ElevenLabs tính. Key riêng
+    // không dùng sổ này (`need` = 0 ⟹ mọi bước giữ/hoàn/chỉnh của sổ giờ đều không đổi gì).
     let now = chrono::Utc::now();
     let month = usage::month_key(now);
-    let need: i64 = live.iter().map(|(_, d)| d.ceil() as i64).sum();
+    let sent_s: i64 = live.iter().map(|(_, d)| d.ceil() as i64).sum();
+    let need = if own_key { 0 } else { sent_s };
     let limit = state.config.elevenlabs_monthly_seconds;
     let reserved = match usage::provider_exhausted(db, &month).await {
+        _ if own_key => Ok(true),
         Ok(true) => Ok(false),
         Ok(false) => usage::reserve_provider(db, &month, need, limit).await,
         Err(e) => Err(e),
@@ -299,8 +333,10 @@ async fn send(state: &AppState, members: &[Member], live: Vec<(usize, f64)>, api
             return;
         }
     }
-    if let Err(e) = usage::hold_provider(db, run_id, &month, need).await {
-        tracing::warn!("ghi phần giữ giờ ElevenLabs lỗi (khởi động lại sẽ không hoàn được): {e:?}");
+    if need > 0 {
+        if let Err(e) = usage::hold_provider(db, run_id, &month, need).await {
+            tracing::warn!("ghi phần giữ giờ ElevenLabs lỗi (khởi động lại sẽ không hoàn được): {e:?}");
+        }
     }
     // Ghi giây sắp gửi TRƯỚC khi gửi: tiền đã chi luôn nằm trong sổ, kể cả khi tiến trình chết.
     let counted = match count_all(db, members, &live).await {
@@ -331,7 +367,7 @@ async fn send(state: &AppState, members: &[Member], live: Vec<(usize, f64)>, api
                 uncount(db, members, &counted).await;
                 refund_provider(db, &month, need, run_id).await;
             }
-            out.error = Some(if e == elevenlabs::QUOTA_EXHAUSTED {
+            out.error = Some(if marks_server_quota(&e, own_key) {
                 report_quota_exhausted(state, &month).await;
                 super::hours_exhausted_message(now)
             } else {
@@ -341,8 +377,10 @@ async fn send(state: &AppState, members: &[Member], live: Vec<(usize, f64)>, api
         }
     };
     if let Some(billed) = result.duration_s {
-        if let Err(e) = usage::settle_provider(db, &month, billed.ceil() as i64 - need).await {
-            tracing::error!("chỉnh sổ giờ ElevenLabs lỗi: {e:?}");
+        if !own_key {
+            if let Err(e) = usage::settle_provider(db, &month, billed.ceil() as i64 - need).await {
+                tracing::error!("chỉnh sổ giờ ElevenLabs lỗi: {e:?}");
+            }
         }
         let shares = allocate_billed(billed, &durations);
         for ((i, d), share) in live.iter().zip(shares) {
@@ -394,6 +432,12 @@ async fn uncount(db: &mongodb::Database, members: &[Member], counted: &[(usize, 
             tracing::error!(file = %m.t.file_id(), seconds, "hoàn giây đã gửi lỗi: {e:?}");
         }
     }
+}
+
+/// ElevenLabs báo hết quota trên lượt bằng key server ⟹ dấu hết quota tháng của server. Lượt bằng key riêng thì không
+/// bao giờ (key riêng hết credit chỉ đánh dấu key đó).
+fn marks_server_quota(e: &str, own_key: bool) -> bool {
+    e == elevenlabs::QUOTA_EXHAUSTED && !own_key
 }
 
 /// Hoàn phần giờ ElevenLabs đã giữ của lượt.
@@ -474,6 +518,18 @@ fn allocate_billed(billed: f64, durations: &[f64]) -> Vec<i64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn own_key_failures_never_trip_the_server_key() {
+        assert!(marks_server_quota(elevenlabs::QUOTA_EXHAUSTED, false));
+        assert!(!marks_server_quota(elevenlabs::QUOTA_EXHAUSTED, true));
+        // Lỗi key riêng được thay bằng câu cho người dùng trước khi `run` xét cờ ngắt của server: câu đó không bao giờ
+        // là lỗi "dừng hẳn".
+        for provider in [crate::config::Vendor::ElevenLabs, crate::config::Vendor::OpenAi, crate::config::Vendor::Gemini] {
+            let shown = crate::user_keys::failure_message(provider, "x");
+            assert!(!is_key_broken(&shown) && !crate::summary::llm::is_key_broken(&shown), "{shown}");
+        }
+    }
 
     #[test]
     fn offsets_add_up_earlier_segments() {
@@ -614,7 +670,7 @@ mod tests {
         let run = format!("run-{}", uuid::Uuid::new_v4());
         usage::reserve(&db, &charge, 10_000, 120, &limits).await.expect("giữ").expect("đủ");
         for id in &ids[..2] {
-            assert!(transcript::enqueue_held(&db, *id, &user, &run, "scribe_v2", &charge, 60).await.expect("xếp"));
+            assert!(transcript::enqueue_held(&db, *id, &user, &run, "scribe_v2", transcript::Billing::Server(&charge), 60).await.expect("xếp"));
         }
         let coll = db.collection::<mongodb::bson::Document>("transcripts");
         let queued = |coll: mongodb::Collection<mongodb::bson::Document>, user: String| async move {
@@ -627,7 +683,7 @@ mod tests {
         assert_eq!(queued(coll.clone(), user.clone()).await, 2);
 
         // Đoạn 3 tải lên sau lúc bấm (chưa có lượt nào), đoạn 4 đã chép ở lượt khác: chỉ đoạn 3 được thêm vào lượt.
-        assert!(transcript::enqueue(&db, ids[3], &user, "run-cu", "scribe_v2", &charge, 0).await.expect("lượt khác"));
+        assert!(transcript::enqueue(&db, ids[3], &user, "run-cu", "scribe_v2", transcript::Billing::Server(&charge), 0).await.expect("lượt khác"));
         transcript::finish_failed(&db, ids[3], "run-cu", "lỗi cũ").await.expect("đóng lượt khác");
         coll.update_one(doc! { "_id": ids[0] }, doc! { "$set": { "status": "running" } }).await.expect("nhận đầu");
         let first = docs(vec![ids[0]]).await.remove(0);
@@ -683,7 +739,7 @@ mod tests {
         // Panic giữa lượt: mọi file còn mở của lượt đóng, không file nào kẹt `running`.
         let run2 = format!("run-{}", uuid::Uuid::new_v4());
         for id in [ids[0], ids[2]] {
-            assert!(transcript::enqueue(&db, id, &user, &run2, "scribe_v2", &charge, 0).await.expect("xếp lại"));
+            assert!(transcript::enqueue(&db, id, &user, &run2, "scribe_v2", transcript::Billing::Server(&charge), 0).await.expect("xếp lại"));
         }
         assert_eq!(transcript::fail_open_run(&db, &user, &run2, "lỗi nội bộ").await.expect("đóng"), 2);
         let open = coll.count_documents(doc! { "userId": &user, "open": true }).await.expect("đếm");

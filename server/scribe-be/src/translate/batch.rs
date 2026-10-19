@@ -141,18 +141,17 @@ pub fn estimate_seconds(chars: usize, lines: usize) -> i64 {
 }
 
 /// Gọi model dịch một lô.
-pub async fn translate(http: &reqwest::Client, api_key: &str, model: &str, lang: Lang, lines: &[&str]) -> llm::Call<Draft> {
+pub async fn translate(http: &reqwest::Client, model: &llm::Llm<'_>, lang: Lang, lines: &[&str]) -> llm::Call<Draft> {
     let chars: usize = lines.iter().map(|l| l.chars().count()).sum();
     let input = build_input(lang, lines);
     let prompt = llm::Prompt {
-        model,
         instructions: INSTRUCTIONS,
         input: &input,
         schema_name: "ban_dich",
         schema: schema(),
         max_output_tokens: (chars as i64 + 20 * lines.len() as i64 + 500).min(MAX_OUTPUT_TOKENS),
     };
-    llm::complete(http, api_key, &prompt).await
+    llm::complete(http, model, &prompt).await
 }
 
 #[cfg(test)]
@@ -213,7 +212,8 @@ mod tests {
             "Chị Lan gửi báo giá trước thứ Sáu giúp em nhé.",
         ];
         let http = reqwest::Client::new();
-        let call = translate(&http, &api_key, "gpt-4.1-mini", Lang::En, &sources).await;
+        let model = llm::Llm { vendor: crate::config::Vendor::OpenAi, model: "gpt-4.1-mini", api_key: &api_key };
+        let call = translate(&http, &model, Lang::En, &sources).await;
         let (input, output) = call.tokens();
         let texts = map_output(&sources, call.result.expect("gọi được").draft.expect("đúng schema")).expect("khớp 1:1");
         for (s, t) in sources.iter().zip(&texts) {

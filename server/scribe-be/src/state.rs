@@ -28,4 +28,6 @@ pub struct AppState {
     pub summaries: Arc<crate::summary::Summaries>,
     /// Username bot chat.hoandat.com (đọc một lần).
     pub chat_bot: Arc<crate::chat_link::BotProfile>,
+    /// Bí mật mã hoá key riêng của người dùng (`USER_KEYS_SECRET_PATH`); `None` = tính năng Key riêng tắt.
+    pub user_keys: Option<Arc<crate::user_keys::crypto::Secret>>,
 }

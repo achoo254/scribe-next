@@ -79,6 +79,87 @@ impl Provider {
     }
 }
 
+impl Provider {
+    /// Mã nhà cung cấp trong API và Mongo (`elevenlabs` | `openai`).
+    pub fn code(self) -> &'static str {
+        self.vendor().code()
+    }
+
+    /// Nhà cung cấp key tương ứng.
+    pub fn vendor(self) -> Vendor {
+        match self {
+            Provider::ElevenLabs => Vendor::ElevenLabs,
+            Provider::OpenAi => Vendor::OpenAi,
+        }
+    }
+}
+
+/// Nhà cung cấp mà người dùng có thể nhập key riêng (`user_keys`), cũng là nhà cung cấp model chữ của server
+/// (`LLM_PROVIDER`: OpenAI, Gemini hoặc Anthropic). Chủ dự án chốt 19/10/2026.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Vendor {
+    ElevenLabs,
+    OpenAi,
+    Gemini,
+    Anthropic,
+}
+
+impl Vendor {
+    pub const ALL: [Vendor; 4] = [Vendor::ElevenLabs, Vendor::OpenAi, Vendor::Gemini, Vendor::Anthropic];
+
+    pub fn code(self) -> &'static str {
+        match self {
+            Vendor::ElevenLabs => "elevenlabs",
+            Vendor::OpenAi => "openai",
+            Vendor::Gemini => "gemini",
+            Vendor::Anthropic => "anthropic",
+        }
+    }
+
+    /// Mã đúng từng chữ (chữ thường), như [`Vendor::code`].
+    pub fn parse(code: &str) -> Option<Vendor> {
+        Vendor::ALL.into_iter().find(|v| v.code() == code)
+    }
+
+    /// Tên cho người đọc.
+    pub fn label(self) -> &'static str {
+        match self {
+            Vendor::ElevenLabs => "ElevenLabs",
+            Vendor::OpenAi => "OpenAI",
+            Vendor::Gemini => "Google Gemini",
+            Vendor::Anthropic => "Anthropic Claude",
+        }
+    }
+
+    /// Model chữ (biên bản, hỏi đáp, dịch) chạy được bằng key của nhà cung cấp này.
+    pub fn has_text(self) -> bool {
+        matches!(self, Vendor::OpenAi | Vendor::Gemini | Vendor::Anthropic)
+    }
+}
+
+/// Nhà cung cấp model chữ của server (`LLM_PROVIDER`): `gemini`, `anthropic`; còn lại (kể cả không đặt) là OpenAI.
+fn llm_provider(raw: Option<&str>) -> Vendor {
+    match raw.map(str::trim).and_then(|v| Vendor::parse(&v.to_ascii_lowercase())) {
+        Some(v) if v.has_text() => v,
+        _ => Vendor::OpenAi,
+    }
+}
+
+/// Model chữ của server: `LLM_MODEL`, rồi `SUMMARY_MODEL` (tên cũ, chỉ khi nhà cung cấp là OpenAI), rồi model mặc định
+/// của nhà cung cấp (`summary::llm::default_model`).
+fn llm_model(provider: Vendor, llm_model: Option<&str>, summary_model: Option<&str>) -> String {
+    let pick = |v: Option<&str>| v.map(str::trim).filter(|m| !m.is_empty()).map(str::to_string);
+    pick(llm_model)
+        .or_else(|| pick(summary_model).filter(|_| provider == Vendor::OpenAi))
+        .unwrap_or_else(|| crate::summary::llm::default_model(provider).to_string())
+}
+
+/// Nhà cung cấp và model chữ của bản build này.
+pub fn llm_from_build() -> (Vendor, String) {
+    let provider = llm_provider(option_env!("LLM_PROVIDER"));
+    (provider, llm_model(provider, option_env!("LLM_MODEL"), option_env!("SUMMARY_MODEL")))
+}
+
 /// Trần giờ audio ElevenLabs mỗi tháng (giờ Việt Nam), mặc định 25 giờ: gói Starter ($6/tháng) có khoảng 27 giờ Scribe
 /// v2, chừa biên. Độc lập với trần USD (trần USD còn gồm chi phí tóm tắt, hỏi đáp, dịch của OpenAI).
 const DEFAULT_ELEVENLABS_MONTHLY_HOURS: f64 = 25.0;
@@ -112,7 +193,6 @@ const DEFAULT_SUMMARY_PAID_DAILY: i64 = 50;
 /// tiêu hết trần tổng của mọi người. 60 phút ≈ $0,18 ≈ vài chục biên bản thường.
 const DEFAULT_SUMMARY_FREE_MONTHLY_MINUTES: i64 = 60;
 const DEFAULT_SUMMARY_PAID_MONTHLY_MINUTES: i64 = 600;
-const DEFAULT_SUMMARY_MODEL: &str = "gpt-4.1-mini";
 /// Hỏi đáp trên bản chép lời: lượt mỗi ngày giờ Việt Nam (Jev chốt 16/10/2026). Trần chi phí tháng của
 /// tài khoản dùng chung với tóm tắt.
 const DEFAULT_ASK_DAILY: (i64, i64) = (30, 200);
@@ -255,9 +335,16 @@ pub struct Config {
     pub summary_limits: SummaryLimits,
     pub ask_limits: DailyLimits,
     pub translate_limits: DailyLimits,
-    /// Model OpenAI viết biên bản, trả lời hỏi đáp và dịch (`SUMMARY_MODEL`). Giá token để quy ra trần chi phí
-    /// là giá của `gpt-4.1-mini` (`summary::meter`): đổi model thì cập nhật giá ở đó.
+    /// Nhà cung cấp model chữ của server cho biên bản, hỏi đáp và dịch (`LLM_PROVIDER`, mặc định OpenAI).
+    pub llm_provider: Vendor,
+    /// Model chữ của server (`LLM_MODEL`; `SUMMARY_MODEL` cũ vẫn nhận khi nhà cung cấp là OpenAI). Giá token để quy ra
+    /// trần chi phí lấy từ bảng giá ở `summary::llm` (model lạ dùng giá của model mặc định, có log).
     pub summary_model: String,
+    /// Tệp key Gemini / Anthropic của server, chỉ đọc khi `LLM_PROVIDER` là nhà cung cấp đó.
+    pub gemini_key_path: Option<String>,
+    pub anthropic_key_path: Option<String>,
+    /// Tệp 32 byte bí mật mã hoá key riêng của người dùng (`USER_KEYS_SECRET_PATH`, 600). Thiếu thì tính năng tắt.
+    pub user_keys_secret_path: Option<String>,
     /// `CHAT_LINK_POLL=1`: chạy task long-poll của bot để liên kết chat. Mặc định tắt: dev và prod dùng
     /// chung token bot, backend dev bật poll sẽ lấy mất update của prod.
     pub chat_link_poll: bool,
@@ -339,11 +426,11 @@ impl Config {
                 option_env!("TRANSLATE_PAID_DAILY"),
                 DEFAULT_TRANSLATE_DAILY,
             ),
-            summary_model: option_env!("SUMMARY_MODEL")
-                .map(str::trim)
-                .filter(|m| !m.is_empty())
-                .unwrap_or(DEFAULT_SUMMARY_MODEL)
-                .to_string(),
+            llm_provider: llm_from_build().0,
+            summary_model: llm_from_build().1,
+            gemini_key_path: option_env!("GEMINI_KEY_PATH").filter(|p| !p.is_empty()).map(str::to_string),
+            anthropic_key_path: option_env!("ANTHROPIC_KEY_PATH").filter(|p| !p.is_empty()).map(str::to_string),
+            user_keys_secret_path: option_env!("USER_KEYS_SECRET_PATH").filter(|p| !p.is_empty()).map(str::to_string),
             chat_link_poll: matches!(option_env!("CHAT_LINK_POLL"), Some("1" | "true")),
             chat_bot_username: option_env!("CHAT_BOT_USERNAME")
                 .map(|u| u.trim().trim_start_matches('@'))
@@ -456,6 +543,24 @@ mod tests {
         assert!(!listed(&list, "other@example.com"));
         assert!(!listed(&list, ""));
         assert!(!listed(&parse_csv(Some("")), "owner@example.com"));
+    }
+
+    #[test]
+    fn llm_provider_and_model_default_to_openai_mini() {
+        assert_eq!(llm_provider(None), Vendor::OpenAi);
+        assert_eq!(llm_provider(Some(" Gemini ")), Vendor::Gemini);
+        assert_eq!(llm_provider(Some("anthropic")), Vendor::Anthropic);
+        // ElevenLabs không có model chữ.
+        assert_eq!(llm_provider(Some("elevenlabs")), Vendor::OpenAi);
+        assert_eq!(llm_model(Vendor::OpenAi, None, None), "gpt-4.1-mini");
+        assert_eq!(llm_model(Vendor::OpenAi, None, Some("gpt-4.1-nano")), "gpt-4.1-nano");
+        // `SUMMARY_MODEL` là model OpenAI: không áp cho nhà cung cấp khác.
+        assert_eq!(llm_model(Vendor::Anthropic, None, Some("gpt-4.1-nano")), "claude-haiku-5-5");
+        assert_eq!(llm_model(Vendor::Gemini, Some(" gemini-3.5-flash-lite "), None), "gemini-3.5-flash-lite");
+        assert_eq!(Vendor::parse("gemini"), Some(Vendor::Gemini));
+        assert_eq!(Vendor::parse("Gemini"), None);
+        assert!(Vendor::ALL.iter().all(|v| Vendor::parse(v.code()) == Some(*v)));
+        assert_eq!(Provider::ElevenLabs.code(), "elevenlabs");
     }
 
     #[test]

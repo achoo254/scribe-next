@@ -612,6 +612,7 @@ mod tests {
             open: false,
             settled: true,
             attempts: 0,
+            byok: None,
         }
     }
 

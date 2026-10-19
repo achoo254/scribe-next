@@ -16,10 +16,13 @@
 //!   trọn (`models::realtime_token`).
 //! - Cấu hình phiên (model, tiếng Việt, định dạng audio, VAD) do backend quyết: OpenAI gắn vào token lúc cấp; ElevenLabs
 //!   nằm trong `url` trả cho app (app chỉ thêm `token`).
+//! - Người dùng có key riêng cho chép trực tiếp (ElevenLabs hoặc OpenAI, `user_keys`): token cấp bằng key đó, không giữ
+//!   chỗ trên sổ nào, không chặn theo hạn mức hay sổ giờ của Scribe; báo số giây chỉ ghi vào sổ phút riêng của người
+//!   dùng. Key lỗi lúc cấp ⟹ 403 `USER_KEY_FAILED`, key bị đánh dấu, không dùng key server thay.
 
 use crate::audit;
 use crate::auth::UserId;
-use crate::config::{Provider, TranscribeLimits};
+use crate::config::{Provider, TranscribeLimits, Vendor};
 use crate::error::AppError;
 use crate::models::realtime_token::{self, weighted, TokenDoc};
 use crate::models::usage::{self, Blocked, Charge};
@@ -271,6 +274,9 @@ pub async fn token(
         audit::record(&state, Some(&user.0), "realtime.blocked", doc! { "reason": "NotAllowed" });
         return Err(AppError::Coded { status: StatusCode::FORBIDDEN, code: "REALTIME_NOT_ALLOWED", message: NOT_ALLOWED.into() });
     }
+    if let Some(own) = crate::user_keys::active(&state, &user.0).await?.live {
+        return own_token(&state, &user.0, session_id, own).await.map(Json);
+    }
     let provider = state.config.realtime_provider;
     let api_key = match provider {
         Provider::OpenAi => state.transcriber.api_key(),
@@ -339,9 +345,10 @@ pub async fn token(
         settled: false,
         created_at: DateTime::now(),
         report_by: DateTime::from_millis((minted.expires_at + REPORT_GRACE_S) * 1000),
-        provider: provider_name(provider).into(),
+        provider: provider.code().into(),
         cost_ratio: price.cost,
         el_ratio: price.el,
+        byok: None,
     };
     if let Err(e) = realtime_token::insert(&state.db, &doc).await {
         refund(&state.db, &charge, reserved, price, "không ghi được token").await;
@@ -366,11 +373,47 @@ async fn hours_blocked(state: &AppState, user_id: &str, month: &str, limit: i64,
     transcribe::provider_hours_error(used, limit, now)
 }
 
-fn provider_name(provider: Provider) -> &'static str {
-    match provider {
-        Provider::ElevenLabs => "elevenlabs",
-        Provider::OpenAi => "openai",
-    }
+/// Token cấp bằng key riêng của người dùng (`own`: ElevenLabs hoặc OpenAI). Không giữ chỗ; app vẫn không stream quá
+/// `reservedSeconds` bằng một token (đổi token như thường).
+async fn own_token(state: &AppState, user_id: &str, session_id: Option<String>, own: Vendor) -> Result<Value, AppError> {
+    let provider = if own == Vendor::ElevenLabs { Provider::ElevenLabs } else { Provider::OpenAi };
+    let key = crate::user_keys::open(state, user_id, own).await.map_err(crate::user_keys::user_key_error)?;
+    let minted = match provider {
+        Provider::OpenAi => mint_openai(&state.http, key.value()).await,
+        Provider::ElevenLabs => mint_elevenlabs(&state.http, ELEVENLABS_API, key.value()).await,
+    };
+    let minted = match minted {
+        Ok(minted) => minted,
+        Err(e) => {
+            if let Some(problem) = crate::user_keys::problem_of(&e) {
+                return Err(crate::user_keys::user_key_error(crate::user_keys::report(state, &key, problem).await));
+            }
+            tracing::warn!("cấp token chép trực tiếp bằng key riêng lỗi: {e}");
+            return Err(AppError::Unavailable(MINT_FAILED.into()));
+        }
+    };
+    drop(key);
+    let reserved = RESERVE_STEPS[0];
+    let doc = TokenDoc {
+        id: uuid::Uuid::new_v4().to_string(),
+        user_id: user_id.to_string(),
+        session_id: session_id.clone(),
+        month: usage::month_key(chrono::Utc::now()),
+        free_pool: false,
+        day: None,
+        charged_s: 0,
+        settled: false,
+        created_at: DateTime::now(),
+        report_by: DateTime::from_millis((minted.expires_at + REPORT_GRACE_S) * 1000),
+        provider: provider.code().into(),
+        cost_ratio: 0.0,
+        el_ratio: 0.0,
+        byok: Some(own.code().into()),
+    };
+    realtime_token::insert(&state.db, &doc).await?;
+    let details = doc! { "tokenId": &doc.id, "sessionId": session_id, "seconds": reserved, "provider": &doc.provider, "byok": true };
+    audit::record(state, Some(user_id), "realtime.token", details);
+    Ok(token_reply(&minted, &doc.id, reserved, provider))
 }
 
 /// Phản hồi cho app. `provider` vắng = OpenAI (app cũ đọc như trước); `url` là WebSocket app mở.
@@ -382,7 +425,7 @@ fn token_reply(minted: &Minted, token_id: &str, reserved: i64, provider: Provide
         "expiresAt": expires,
         "model": provider.realtime_model(),
         "reservedSeconds": reserved,
-        "provider": provider_name(provider),
+        "provider": provider.code(),
         "url": minted.url,
         "sampleRate": SAMPLE_RATE,
     })
@@ -421,6 +464,20 @@ pub async fn settle_report(db: &Database, user_id: &str, token_id: &str, seconds
         // Một báo cáo khác vừa nhận quyền quyết toán (hoặc vừa quá hạn).
         let again = realtime_token::find_owned(db, user_id, token_id).await?;
         return Ok(if again.is_some_and(|t| t.settled) { Report::Already } else { Report::TooLate });
+    }
+    if let Some(own) = &t.byok {
+        // Key riêng: chỉ ghi giây cho người dùng xem và sổ chi tiết.
+        if let Err(e) = usage::add_byok(db, user_id, &t.month, sent).await {
+            tracing::warn!(token = %t.id, "ghi giây chép trực tiếp bằng key riêng lỗi: {e:?}");
+        }
+        let run = doc! {
+            "kind": "realtime", "provider": &t.provider, "byok": own, "tokenId": &t.id, "userId": &t.user_id,
+            "month": &t.month, "sentS": sent, "at": now,
+        };
+        if let Err(e) = db.collection::<mongodb::bson::Document>(usage::RUNS_COLL).insert_one(run).await {
+            tracing::error!(token = %t.id, "ghi sổ lượt chép trực tiếp bằng key riêng lỗi: {e}");
+        }
+        return Ok(Report::Settled { charged: 0, sent });
     }
     let charge = t.charge();
     let cost_delta = t.cost_s(sent) - t.cost_s(t.charged_s);
@@ -470,9 +527,18 @@ pub async fn report_usage(
     }
     if req.quota_exceeded {
         let owned = realtime_token::find_owned(&state.db, &user.0, &req.token_id).await?;
-        if let Some(t) = owned.filter(|t| t.provider == "elevenlabs") {
-            audit::record(&state, Some(&user.0), "realtime.provider_quota", doc! { "tokenId": &t.id });
-            transcribe::report_quota_exhausted(&state, &t.month).await;
+        match owned.filter(|t| t.provider == "elevenlabs") {
+            // Key riêng hết credit: đánh dấu key đó, không đặt dấu hết quota tháng của server.
+            Some(t) if t.byok.is_some() => {
+                if let Ok(key) = crate::user_keys::open(&state, &user.0, Vendor::ElevenLabs).await {
+                    crate::user_keys::report(&state, &key, crate::user_keys::Problem::NoCredit).await;
+                }
+            }
+            Some(t) => {
+                audit::record(&state, Some(&user.0), "realtime.provider_quota", doc! { "tokenId": &t.id });
+                transcribe::report_quota_exhausted(&state, &t.month).await;
+            }
+            None => {}
         }
     }
     match settle_report(&state.db, &user.0, &req.token_id, req.seconds, DateTime::now()).await? {
@@ -706,6 +772,7 @@ mod tests {
             provider: if price.el > 0.0 { "elevenlabs".into() } else { "openai".into() },
             cost_ratio: price.cost,
             el_ratio: price.el,
+            byok: None,
         };
         let later = DateTime::from_millis(DateTime::now().timestamp_millis() + 3_600_000);
         let id_a = format!("{user}-a");

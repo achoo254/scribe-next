@@ -312,6 +312,22 @@ pub async fn refund_provider_holds(db: &Database) -> Result<u64, AppError> {
     Ok(refunded)
 }
 
+/// Giây chép lời (theo tệp và trực tiếp) chạy bằng key riêng của người dùng trong tháng: chỉ để người dùng xem, không
+/// chặn gì và không thuộc sổ nào của Scribe (`user_ids_with_ledger` chỉ đọc `u:`).
+fn byok_doc(user_id: &str, month: &str) -> String {
+    format!("b:{user_id}:{month}")
+}
+
+/// Cộng giây chép bằng key riêng (sau khi lượt kết thúc).
+pub async fn add_byok(db: &Database, user_id: &str, month: &str, seconds: i64) -> Result<(), AppError> {
+    add(db, &byok_doc(user_id, month), seconds.max(0)).await
+}
+
+/// Giây chép bằng key riêng của người dùng trong tháng.
+pub async fn byok_seconds(db: &Database, user_id: &str, month: &str) -> Result<i64, AppError> {
+    seconds_of(db, &byok_doc(user_id, month)).await
+}
+
 /// Giây ElevenLabs đã dùng trong tháng.
 pub async fn provider_seconds(db: &Database, month: &str) -> Result<i64, AppError> {
     seconds_of(db, &provider_doc(month)).await

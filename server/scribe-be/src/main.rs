@@ -25,6 +25,7 @@ mod summary;
 mod transcribe;
 mod translate;
 mod upload;
+mod user_keys;
 mod worker;
 
 use config::Config;
@@ -110,12 +111,29 @@ async fn main() {
     }
 
     let port = config.port;
-    let transcriber = transcribe::Transcriber::load(
-        config.transcribe_provider,
-        config.realtime_provider,
-        config.openai_key_path.as_deref(),
-        config.elevenlabs_key_path.as_deref(),
-    );
+    let transcriber = transcribe::Transcriber::load(&config);
+    // Key riêng: thiếu hoặc sai tệp bí mật thì tính năng tắt (giao diện báo), server vẫn chạy.
+    let user_keys_secret = match config.user_keys_secret_path.as_deref() {
+        Some(path) => match user_keys::crypto::Secret::load(path) {
+            Ok(secret) => {
+                tracing::info!("Key riêng bật");
+                Some(Arc::new(secret))
+            }
+            Err(e) => {
+                tracing::error!(path = %path, "Key riêng tắt: {e}");
+                None
+            }
+        },
+        None => {
+            tracing::info!("Key riêng tắt (chưa đặt USER_KEYS_SECRET_PATH)");
+            None
+        }
+    };
+    // Index unique `{userId, provider}`: hai lần lưu cùng lúc không tạo hai doc cho một key.
+    if let Err(e) = user_keys::store::ensure_indexes(&db).await {
+        tracing::error!("{e}");
+        std::process::exit(1);
+    }
     let oidc_issuer = config.oidc_issuer.clone();
     let oidc_web_secret = std::fs::read_to_string(&config.oidc_web_client_secret_path)
         .map(|s| s.trim().to_string())
@@ -146,6 +164,7 @@ async fn main() {
         transcriber: Arc::new(transcriber),
         summaries: Arc::default(),
         chat_bot: Arc::default(),
+        user_keys: user_keys_secret,
     };
 
     // Hồi phục job kẹt "running" sau crash/restart (red-team) + khởi worker queue nền.

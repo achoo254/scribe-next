@@ -10,6 +10,8 @@ use std::time::Duration;
 use tokio::process::Command;
 
 pub const MODEL: &str = "gpt-4o-mini-transcribe";
+/// Model chép lời bằng key riêng của người dùng (OpenAI khuyến nghị cho bản ghi, không có người nói, 0,0045 USD/phút).
+pub const USER_MODEL: &str = "gpt-transcribe";
 const API_URL: &str = "https://api.openai.com/v1/audio/transcriptions";
 /// Mảnh có dấu hiệu lặp thì gọi lại với temperature cao hơn.
 const RETRY_TEMPS: [&str; 3] = ["0", "0.4", "0.8"];
@@ -75,7 +77,7 @@ pub async fn transcribe_chunk(
     let mut first = None;
     let mut posts = 0;
     for temperature in RETRY_TEMPS {
-        let text = post(http, api_key, &audio, temperature).await?;
+        let text = post(http, api_key, &audio, Some(temperature)).await?;
         posts += 1;
         if !chunking::looks_looped(&text, seconds) {
             return Ok((text, posts));
@@ -86,18 +88,30 @@ pub async fn transcribe_chunk(
     Ok((first.unwrap_or_default(), posts))
 }
 
-async fn post(http: &reqwest::Client, api_key: &str, audio: &[u8], temperature: &str) -> Result<String, String> {
-    for attempt in 1..=HTTP_RETRIES {
-        let part = Part::bytes(audio.to_vec())
-            .file_name("chunk.ogg")
-            .mime_str("audio/ogg")
-            .map_err(|e| format!("dựng multipart: {e}"))?;
-        let form = Form::new()
+/// Chép một mảnh bằng `gpt-transcribe` (key riêng của người dùng): một lần gửi, không thử lại với temperature khác
+/// (model không nhận `temperature`).
+pub async fn transcribe_once(http: &reqwest::Client, api_key: &str, audio: &[u8]) -> Result<String, String> {
+    post(http, api_key, audio, None).await
+}
+
+/// Các trường multipart: `gpt-4o-mini-transcribe` khi có `temperature`, còn lại `gpt-transcribe` (`languages[]` thay cho
+/// `language`, theo tài liệu speech-to-text của OpenAI).
+fn form(audio: &[u8], temperature: Option<&str>) -> Result<Form, String> {
+    let part = Part::bytes(audio.to_vec()).file_name("chunk.ogg").mime_str("audio/ogg").map_err(|e| format!("dựng multipart: {e}"))?;
+    let form = match temperature {
+        Some(t) => Form::new()
             .text("model", MODEL)
             .text("language", "vi")
             .text("response_format", "json")
-            .text("temperature", temperature.to_string())
-            .part("file", part);
+            .text("temperature", t.to_string()),
+        None => Form::new().text("model", USER_MODEL).text("languages[]", "vi"),
+    };
+    Ok(form.part("file", part))
+}
+
+async fn post(http: &reqwest::Client, api_key: &str, audio: &[u8], temperature: Option<&str>) -> Result<String, String> {
+    for attempt in 1..=HTTP_RETRIES {
+        let form = form(audio, temperature)?;
         let sent = http
             .post(API_URL)
             .bearer_auth(api_key)
@@ -175,6 +189,19 @@ pub const NO_CREDIT: &str = "OpenAI: tài khoản của server đã hết credit
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Một mảnh thật qua `gpt-transcribe` (tốn ~0,5 cent): `OPENAI_API_KEY_FILE=<tệp key> TRANSCRIBE_SAMPLE=<tệp audio>
+    /// cargo test live_gpt_transcribe -- --ignored --nocapture`. Kiểm trường `languages[]`; chỉ in số ký tự.
+    #[tokio::test]
+    #[ignore]
+    async fn live_gpt_transcribe_accepts_the_documented_fields() {
+        let key = std::fs::read_to_string(std::env::var("OPENAI_API_KEY_FILE").expect("OPENAI_API_KEY_FILE")).expect("đọc key");
+        let sample = std::env::var("TRANSCRIBE_SAMPLE").expect("TRANSCRIBE_SAMPLE");
+        let (audio, _) = encode_chunk("ffmpeg", &sample, (0.0, 30.0)).await.expect("nén");
+        let text = transcribe_once(&reqwest::Client::new(), key.trim(), &audio).await.expect("chép");
+        println!("{} ký tự", text.chars().count());
+        assert!(!text.is_empty());
+    }
 
     #[test]
     fn maps_openai_errors_for_people() {

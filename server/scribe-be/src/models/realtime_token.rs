@@ -51,6 +51,9 @@ pub struct TokenDoc {
     /// Giây trên sổ giờ ElevenLabs cho mỗi giây audio (giá Realtime / giá Scribe v2); 0 khi không qua ElevenLabs.
     #[serde(rename = "elRatio", default)]
     pub el_ratio: f64,
+    /// Token cấp bằng key riêng của người dùng (mã nhà cung cấp): không giữ chỗ, không quyết toán sổ nào.
+    #[serde(default)]
+    pub byok: Option<String>,
 }
 
 fn openai() -> String {
@@ -106,6 +109,7 @@ pub async fn insert(db: &Database, t: &TokenDoc) -> Result<(), AppError> {
         "provider": &t.provider,
         "costRatio": t.cost_ratio,
         "elRatio": t.el_ratio,
+        "byok": &t.byok,
     };
     db.collection::<Document>(COLL)
         .insert_one(d)
@@ -140,7 +144,7 @@ pub async fn close(db: &Database, user_id: &str, id: &str, sent_s: i64, now: Dat
 /// giữ chỗ. Token đã quyết toán nằm trong `usage::RUNS_COLL` như lượt chép file.
 pub async fn unsettled(db: &Database, month: &str) -> Result<Vec<(String, bool, i64, i64)>, AppError> {
     let read = |e: mongodb::error::Error| AppError::Internal(format!("đọc token chép trực tiếp: {e}"));
-    let mut cur = db.collection::<TokenDoc>(COLL).find(doc! { "month": month, "settled": false }).await.map_err(read)?;
+    let mut cur = db.collection::<TokenDoc>(COLL).find(doc! { "month": month, "settled": false, "byok": null }).await.map_err(read)?;
     let mut out = Vec::new();
     while let Some(t) = cur.next().await {
         let t = t.map_err(read)?;

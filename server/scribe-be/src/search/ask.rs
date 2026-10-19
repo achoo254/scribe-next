@@ -21,9 +21,8 @@ use crate::models::sentence::{self, Order, Row};
 use crate::models::summary::Feature;
 use crate::models::{plan, user};
 use crate::state::AppState;
-use crate::summary::{self, llm, meter, RunningGuard, ASK_SLOT, PAUSED};
+use crate::summary::{self, llm, meter, RunningGuard, TextKey, ASK_SLOT, PAUSED};
 use crate::transcribe::docs::check_key;
-use crate::transcribe::openai::is_key_broken;
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::{Extension, Json};
@@ -268,7 +267,7 @@ struct Job {
     input: String,
     lines: Vec<Row>,
     meta: HashMap<String, SessionMeta>,
-    api_key: String,
+    text_key: TextKey,
 }
 
 fn scope(key: Option<&str>) -> &'static str {
@@ -319,12 +318,7 @@ pub async fn ask(
     if !state.config.transcribe_allowed(&profile.email) {
         return Err(AppError::Forbidden("tài khoản này chưa được dùng hỏi đáp".into()));
     }
-    let api_key = state
-        .transcriber
-        .api_key()
-        .filter(|_| !state.summaries.paused())
-        .ok_or_else(|| AppError::Unavailable(PAUSED.into()))?
-        .to_string();
+    let text_key = summary::text_key(&state, &user.0, PAUSED).await?;
     if !state.rate.allow(&format!("ask:{}", user.0), PER_MINUTE) {
         return Err(AppError::TooManyRequests("hỏi quá nhanh, thử lại sau một phút".into()));
     }
@@ -349,7 +343,7 @@ pub async fn ask(
         input: build_input(&question, &lines, &meta),
         lines,
         meta,
-        api_key,
+        text_key,
     };
     // Task giữ `running` tới khi xong; handler bị huỷ thì task vẫn chạy hết và quyết toán.
     let task = tokio::spawn(run(state, job, running));
@@ -364,26 +358,25 @@ async fn run(state: AppState, job: Job, _running: RunningGuard) -> Result<Json<V
     let user_id = job.user_id.as_str();
     let chars = job.input.chars().count();
     let estimate = meter::cost_seconds(meter::estimate_input_tokens(chars), MAX_OUTPUT_TOKENS);
-    let reservation = meter::reserve(&state, Feature::Ask, user_id, job.key.as_deref(), job.plan, estimate).await?;
+    let reservation =
+        summary::reserve_for(&state, Feature::Ask, user_id, job.key.as_deref(), job.plan, estimate, &job.text_key).await?;
 
     // Từ đây phần giữ chỗ phải được quyết toán ở mọi đường ra.
     let prompt = llm::Prompt {
-        model: &state.config.summary_model,
         instructions: INSTRUCTIONS,
         input: &job.input,
         schema_name: "tra_loi",
         schema: schema(),
         max_output_tokens: MAX_OUTPUT_TOKENS,
     };
-    let call = llm::complete::<Draft>(&state.http, &job.api_key, &prompt).await;
+    let call = llm::complete::<Draft>(&state.http, &job.text_key.llm(), &prompt).await;
     let cost_s = meter::settle(&state, &reservation, &call).await;
     let (input_tokens, output_tokens) = call.tokens();
     let draft = match call.result.and_then(|c| c.draft) {
         Ok(draft) => draft,
         Err(e) => {
-            if is_key_broken(&e) {
-                summary::report_key_broken(&state, &e);
-                return Err(AppError::Unavailable(PAUSED.into()));
+            if let Some(error) = summary::key_failure(&state, &job.text_key, &e, PAUSED).await {
+                return Err(error);
             }
             tracing::warn!("hỏi đáp lỗi: {e}");
             audit::record(&state, Some(user_id), "ask.failed", doc! { "scope": scope(job.key.as_deref()), "error": &e });

@@ -183,6 +183,8 @@ pub struct Run<'a> {
     pub month: &'a str,
     pub day: &'a str,
     pub reserved_s: i64,
+    /// Lượt chạy bằng key riêng của người dùng (mã nhà cung cấp): không tính vào sổ nào, lệnh đối soát bỏ qua.
+    pub byok: Option<&'a str>,
 }
 
 /// Kết quả quyết toán của một lượt.
@@ -206,6 +208,7 @@ pub async fn open_run(db: &Database, feature: Feature, run: &Run<'_>) -> Result<
         "day": run.day,
         "open": true,
         "reservedS": run.reserved_s,
+        "byok": run.byok,
         "startedAt": DateTime::now(),
     };
     db.collection::<Document>(feature.runs_coll())
@@ -236,7 +239,7 @@ pub async fn close_run(db: &Database, feature: Feature, id: ObjectId, closing: &
 pub async fn running_count(db: &Database, feature: Feature, month: &str) -> Result<u64, AppError> {
     let since = DateTime::from_millis(DateTime::now().timestamp_millis() - feature.stale_minutes() * 60_000);
     db.collection::<Document>(feature.runs_coll())
-        .count_documents(doc! { "month": month, "open": true, "startedAt": { "$gte": since } })
+        .count_documents(doc! { "month": month, "open": true, "byok": null, "startedAt": { "$gte": since } })
         .await
         .map_err(|e| AppError::Internal(format!("đếm lượt {} đang chạy: {e}", feature.runs_coll())))
 }
@@ -247,7 +250,8 @@ pub async fn month_cost_seconds(db: &Database, feature: Feature, month: &str) ->
     use futures_util::StreamExt;
     let charged = doc! { "$cond": [{ "$eq": ["$open", true] }, { "$ifNull": ["$reservedS", 0] }, { "$ifNull": ["$costS", 0] }] };
     let pipeline = vec![
-        doc! { "$match": { "month": month } },
+        // Lượt bằng key riêng không tính vào trần (`byok` vắng hoặc null ở lượt bằng key server).
+        doc! { "$match": { "month": month, "byok": null } },
         doc! { "$group": { "_id": null, "total": { "$sum": charged } } },
     ];
     let coll = feature.runs_coll();
@@ -303,5 +307,17 @@ mod tests {
         assert!(reserve_monthly(&db, &user, month, 400, 450).await.expect("giữ"));
         assert!(!reserve_monthly(&db, &user, month, 1, 450).await.expect("đầy"));
         db.collection::<Document>(USAGE_COLL).delete_many(doc! { "_id": { "$regex": format!("{user}:") } }).await.expect("dọn");
+
+        // Lượt bằng key riêng không tính vào trần tổng của lệnh đối soát, cũng không chặn `--apply` khi còn mở.
+        let month = format!("test-{}", uuid::Uuid::new_v4().simple());
+        let server = Run { user_id: &user, key: None, model: "m", month: &month, day, reserved_s: 40, byok: None };
+        let own = Run { byok: Some("anthropic"), reserved_s: 0, ..server };
+        let server_run = open_run(&db, Feature::Ask, &server).await.expect("mở");
+        let own_run = open_run(&db, Feature::Ask, &own).await.expect("mở");
+        assert_eq!(running_count(&db, Feature::Ask, &month).await.expect("đếm"), 1);
+        close_run(&db, Feature::Ask, own_run, &Closing { input_tokens: 9_000, output_tokens: 900, cost_s: 0, ok: true }).await;
+        close_run(&db, Feature::Ask, server_run, &Closing { input_tokens: 10, output_tokens: 10, cost_s: 25, ok: true }).await;
+        assert_eq!(month_cost_seconds(&db, Feature::Ask, &month).await.expect("cộng"), 25);
+        db.collection::<Document>(Feature::Ask.runs_coll()).delete_many(doc! { "userId": &user }).await.expect("dọn");
     }
 }

@@ -15,6 +15,10 @@
 //! kết quả: client ngắt kết nối (Cloudflare cắt ở ~100 giây, người dùng rời trang) thì task vẫn chạy
 //! hết, sổ không bị giữ chỗ treo và biên bản vẫn được lưu. Trình tự đo lường ở `meter`, dùng chung với
 //! hỏi đáp (`crate::search::ask`).
+//!
+//! Model chữ chạy bằng key server (`LLM_PROVIDER`/`LLM_MODEL`) hoặc key riêng của người dùng ([`TextKey`], chọn ở
+//! `user_keys`): lượt bằng key riêng không có lượt ngày hay trần nào (`meter::reserve_own`), lỗi key riêng chỉ đánh dấu
+//! key đó (`USER_KEY_FAILED`) và không tạm ngưng tính năng cho người khác.
 
 pub(crate) mod llm;
 pub(crate) mod meter;
@@ -25,9 +29,12 @@ use crate::auth::UserId;
 use crate::error::AppError;
 use crate::models::transcript_doc::{self, Action, Decision, StoredSummary};
 use crate::models::summary::Feature;
+use crate::config::Vendor;
 use crate::models::{plan, user};
 use crate::state::AppState;
-use crate::transcribe::{docs, openai::is_key_broken};
+use crate::transcribe::docs;
+use crate::user_keys::{self, UserKey};
+use llm::is_key_broken;
 use crate::notify;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
@@ -93,6 +100,96 @@ impl Summaries {
 impl Drop for RunningGuard {
     fn drop(&mut self) {
         self.summaries.keys.lock().unwrap_or_else(|p| p.into_inner()).remove(&self.id);
+    }
+}
+
+/// Key của một lượt gọi model chữ.
+pub(crate) enum TextKey {
+    /// Key server của `LLM_PROVIDER`, model `LLM_MODEL`.
+    Server { provider: Vendor, key: String, model: String },
+    /// Key riêng của người dùng và model họ chọn.
+    Own { key: UserKey, model: String },
+}
+
+impl TextKey {
+    pub(crate) fn llm(&self) -> llm::Llm<'_> {
+        match self {
+            TextKey::Server { provider, key, model } => llm::Llm { vendor: *provider, model, api_key: key },
+            TextKey::Own { key, model } => llm::Llm { vendor: key.provider, model, api_key: key.value() },
+        }
+    }
+
+    pub(crate) fn model(&self) -> &str {
+        match self {
+            TextKey::Server { model, .. } | TextKey::Own { model, .. } => model,
+        }
+    }
+}
+
+/// Key cho một lượt: key riêng của người dùng nếu có (không mở được ⟹ `USER_KEY_FAILED`, không dùng key server thay),
+/// không thì key server (thiếu hoặc đang tạm ngưng ⟹ 503 với câu `paused`).
+pub(crate) async fn text_key(state: &AppState, user_id: &str, paused: &str) -> Result<TextKey, AppError> {
+    if let Some((key, model)) = user_keys::text_key(state, user_id).await? {
+        return Ok(TextKey::Own { key, model });
+    }
+    let (provider, key) = state
+        .transcriber
+        .text_key()
+        .filter(|_| !state.summaries.paused())
+        .ok_or_else(|| AppError::Unavailable(paused.into()))?;
+    Ok(TextKey::Server { provider, key: key.to_string(), model: state.config.summary_model.clone() })
+}
+
+/// Bước giữ chỗ theo key: key server qua mọi hạn mức (`meter::reserve`), key riêng chỉ mở lượt (`meter::reserve_own`).
+pub(crate) async fn reserve_for(
+    state: &AppState,
+    feature: Feature,
+    user_id: &str,
+    key: Option<&str>,
+    plan: plan::Plan,
+    estimate: i64,
+    text_key: &TextKey,
+) -> Result<meter::Reservation, AppError> {
+    match text_key {
+        TextKey::Server { .. } => meter::reserve(state, feature, user_id, key, plan, estimate).await,
+        TextKey::Own { key: own, model } => meter::reserve_own(state, feature, user_id, key, own.provider, model).await,
+    }
+}
+
+/// Lỗi key/credit của một lượt: key server ⟹ tạm ngưng tính năng (báo quản trị) và 503 `paused`; key riêng ⟹ đánh dấu
+/// key đó và 403 `USER_KEY_FAILED`. Lỗi khác ⟹ `None`.
+pub(crate) async fn key_failure(state: &AppState, text_key: &TextKey, e: &str, paused: &str) -> Option<AppError> {
+    match (key_error_action(matches!(text_key, TextKey::Own { .. }), e), text_key) {
+        (KeyErrorAction::None, _) => None,
+        (KeyErrorAction::PauseServer, _) => {
+            report_key_broken(state, e);
+            Some(AppError::Unavailable(paused.into()))
+        }
+        (KeyErrorAction::MarkOwnKey(problem), TextKey::Own { key, .. }) => {
+            Some(user_keys::user_key_error(user_keys::report(state, key, problem).await))
+        }
+        (KeyErrorAction::MarkOwnKey(_), TextKey::Server { .. }) => None,
+    }
+}
+
+/// Việc phải làm khi một lượt gặp lỗi `e`.
+#[derive(Debug, PartialEq, Eq)]
+enum KeyErrorAction {
+    None,
+    /// Key server hỏng: tạm ngưng tính năng cho mọi người.
+    PauseServer,
+    /// Key riêng hỏng: chỉ đánh dấu key đó, không bao giờ đụng cờ tạm ngưng của server.
+    MarkOwnKey(user_keys::Problem),
+}
+
+fn key_error_action(own_key: bool, e: &str) -> KeyErrorAction {
+    if !is_key_broken(e) {
+        return KeyErrorAction::None;
+    }
+    if own_key {
+        KeyErrorAction::MarkOwnKey(user_keys::problem_of(e).unwrap_or(user_keys::Problem::Invalid))
+    } else {
+        KeyErrorAction::PauseServer
     }
 }
 
@@ -177,7 +274,7 @@ struct Job {
     chars: usize,
     hash: String,
     max_at: f64,
-    api_key: String,
+    text_key: TextKey,
 }
 
 /// `POST /api/transcript-docs/{key}/summary` — tạo (hoặc tạo lại) biên bản của phiên.
@@ -195,12 +292,7 @@ pub async fn create(
     if !state.config.transcribe_allowed(&profile.email) {
         return Err(AppError::Forbidden("tài khoản này chưa được dùng tóm tắt".into()));
     }
-    let api_key = state
-        .transcriber
-        .api_key()
-        .filter(|_| !state.summaries.paused())
-        .ok_or_else(|| AppError::Unavailable(PAUSED.into()))?
-        .to_string();
+    let text_key = text_key(&state, &user.0, PAUSED).await?;
     if !state.rate.allow(&format!("summary:{}", user.0), PER_MINUTE) {
         return Err(AppError::TooManyRequests("bấm tóm tắt quá nhanh, thử lại sau một phút".into()));
     }
@@ -232,7 +324,7 @@ pub async fn create(
         input,
         chars,
         max_at: loaded.duration_s(),
-        api_key,
+        text_key,
     };
     // Task giữ `running` tới khi xong; handler bị huỷ thì task vẫn chạy hết.
     let task = tokio::spawn(run(state, job, running));
@@ -255,11 +347,11 @@ pub(crate) fn report_key_broken(state: &AppState, e: &str) {
 async fn run(state: AppState, job: Job, _running: RunningGuard) -> Result<Json<Value>, AppError> {
     let (db, user_id, key) = (&state.db, job.user_id.as_str(), job.key.as_str());
     let estimate = meter::cost_seconds(meter::estimate_input_tokens(job.chars), MAX_OUTPUT_TOKENS);
-    let reservation = meter::reserve(&state, Feature::Summary, user_id, Some(key), job.plan, estimate).await?;
+    let reservation = reserve_for(&state, Feature::Summary, user_id, Some(key), job.plan, estimate, &job.text_key).await?;
 
     // Từ đây phần giữ chỗ phải được quyết toán ở mọi đường ra.
-    let model = state.config.summary_model.as_str();
-    let call = llm::summarize(&state.http, &job.api_key, model, &job.input).await;
+    let model = job.text_key.model();
+    let call = llm::summarize(&state.http, &job.text_key.llm(), &job.input).await;
     let cost_s = meter::settle(&state, &reservation, &call).await;
     let (input_tokens, output_tokens) = call.tokens();
     let draft = call.result.and_then(|c| c.draft);
@@ -267,9 +359,8 @@ async fn run(state: AppState, job: Job, _running: RunningGuard) -> Result<Json<V
     let draft = match draft {
         Ok(draft) => draft,
         Err(e) => {
-            if is_key_broken(&e) {
-                report_key_broken(&state, &e);
-                return Err(AppError::Unavailable(PAUSED.into()));
+            if let Some(error) = key_failure(&state, &job.text_key, &e, PAUSED).await {
+                return Err(error);
             }
             tracing::warn!(key = %key, "tóm tắt lỗi: {e}");
             audit::record(&state, Some(user_id), "summary.failed", doc! { "key": key, "error": &e });
@@ -293,6 +384,7 @@ async fn run(state: AppState, job: Job, _running: RunningGuard) -> Result<Json<V
         "costS": cost_s,
         "decisions": stored.decisions.len() as i64,
         "actions": stored.actions.len() as i64,
+        "byok": matches!(job.text_key, TextKey::Own { .. }),
     };
     audit::record(&state, Some(user_id), "summary.create", details);
     Ok(Json(to_json(&stored, &job.hash)))
@@ -328,6 +420,16 @@ mod tests {
         let moved = std::thread::spawn(move || drop(first));
         moved.join().expect("thread");
         assert!(running.start("u", "s:abc").is_some());
+    }
+
+    #[test]
+    fn an_own_key_failure_never_pauses_the_server() {
+        use user_keys::Problem;
+        assert_eq!(key_error_action(true, llm::KEY_INVALID), KeyErrorAction::MarkOwnKey(Problem::Invalid));
+        assert_eq!(key_error_action(true, llm::NO_CREDIT), KeyErrorAction::MarkOwnKey(Problem::NoCredit));
+        assert_eq!(key_error_action(false, llm::NO_CREDIT), KeyErrorAction::PauseServer);
+        assert_eq!(key_error_action(true, "Dịch vụ OpenAI đang lỗi (HTTP 500)"), KeyErrorAction::None);
+        assert_eq!(key_error_action(false, "Dịch vụ OpenAI đang lỗi (HTTP 500)"), KeyErrorAction::None);
     }
 
     #[test]

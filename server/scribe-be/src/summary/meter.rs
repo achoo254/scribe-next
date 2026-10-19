@@ -12,9 +12,14 @@
 //! Lượt ngày chỉ được trả lại khi OpenAI chắc chắn chưa xử lý gì ([`charge_of`]). Người gọi phải chạy cả
 //! [`reserve`] lẫn [`settle`] bên trong task riêng (`tokio::spawn`): client ngắt kết nối không được để
 //! phần giữ chỗ treo.
+//!
+//! Lượt chạy bằng key riêng của người dùng ([`reserve_own`]) không qua bước 1–3 và không quyết toán sổ nào: chỉ mở và
+//! đóng lượt trong nhật ký (đánh dấu `byok`) để người dùng và quản trị biết token đã dùng. Lệnh đối soát bỏ qua các lượt
+//! này.
 
 use super::llm;
 use crate::audit;
+use crate::config::Vendor;
 use crate::error::AppError;
 use crate::models::summary::{self as ledger, Feature};
 use crate::models::{plan, usage};
@@ -22,21 +27,19 @@ use crate::state::AppState;
 use crate::transcribe;
 use mongodb::bson::{doc, oid::ObjectId};
 
-/// Giá `gpt-4.1-mini` theo đơn vị 1e-8 USD mỗi token ($0,40 vào, $1,60 ra mỗi triệu token), để quy chi
-/// phí ra giây chép lời tương đương bằng số nguyên (không lệch làm tròn).
-const INPUT_PRICE_E8: i64 = 40;
-const OUTPUT_PRICE_E8: i64 = 160;
 /// Token của phần hướng dẫn và schema, cộng vào ước lượng đầu vào.
 const PROMPT_OVERHEAD_TOKENS: i64 = 800;
 
-/// Chi phí token quy ra giây chép lời tương đương (giá chép lời của nhà cung cấp đang dùng mỗi phút), làm tròn lên.
+/// Chi phí token của model chữ của server (`LLM_PROVIDER`/`LLM_MODEL`, giá ở `llm::MODELS`) quy ra giây chép lời
+/// tương đương (giá chép lời của nhà cung cấp đang dùng mỗi phút), làm tròn lên.
 pub fn cost_seconds(input_tokens: i64, output_tokens: i64) -> i64 {
-    cost_seconds_at(input_tokens, output_tokens, crate::config::usd_per_minute())
+    let (vendor, model) = crate::config::llm_from_build();
+    cost_seconds_at(llm::price_of(vendor, &model), input_tokens, output_tokens, crate::config::usd_per_minute())
 }
 
-/// Như [`cost_seconds`] với giá chép lời `usd_per_minute` cho trước.
-fn cost_seconds_at(input_tokens: i64, output_tokens: i64, usd_per_minute: f64) -> i64 {
-    let cost_e8 = input_tokens.max(0) * INPUT_PRICE_E8 + output_tokens.max(0) * OUTPUT_PRICE_E8;
+/// Như [`cost_seconds`] với giá model `price` và giá chép lời `usd_per_minute` cho trước.
+fn cost_seconds_at(price: llm::Price, input_tokens: i64, output_tokens: i64, usd_per_minute: f64) -> i64 {
+    let cost_e8 = price.cost_e8(input_tokens, output_tokens);
     // Giá một giây chép lời theo cùng đơn vị: OpenAI $0,003 / 60 = 5000 × 1e-8 USD; ElevenLabs $0,22 / 3600 ≈ 6111.
     let second_e8 = ((usd_per_minute / 60.0) * 1e8).round() as i64;
     (cost_e8 + second_e8 - 1) / second_e8
@@ -133,6 +136,8 @@ fn limits_of(state: &AppState, feature: Feature, plan: plan::Plan) -> (i64, i64)
 /// Phần đã giữ của một lượt, đủ để quyết toán sau khi gọi model.
 pub(crate) struct Reservation {
     feature: Feature,
+    /// Lượt chạy bằng key riêng của người dùng (nhà cung cấp): không có sổ nào để quyết toán.
+    byok: Option<Vendor>,
     user_id: String,
     day: String,
     month: String,
@@ -199,14 +204,31 @@ pub(crate) async fn reserve(
         }
     }
     let model = state.config.summary_model.as_str();
-    let opened = ledger::Run { user_id, key, model, month: &month, day: &day, reserved_s: estimate };
+    let opened = ledger::Run { user_id, key, model, month: &month, day: &day, reserved_s: estimate, byok: None };
     match ledger::open_run(db, feature, &opened).await {
-        Ok(run_id) => Ok(Reservation { feature, user_id: user_id.to_string(), day, month, estimate, run_id }),
+        Ok(run_id) => Ok(Reservation { feature, byok: None, user_id: user_id.to_string(), day, month, estimate, run_id }),
         Err(e) => {
             undo(db, feature, user_id, &day, &month, estimate, true).await;
             Err(e)
         }
     }
+}
+
+/// Lượt bằng key riêng của người dùng (`vendor`, `model`): không lượt ngày, không trần tháng, không trần tổng; chỉ mở
+/// lượt trong nhật ký. Lỗi ghi nhật ký thì không gọi model (như lượt bằng key server).
+pub(crate) async fn reserve_own(
+    state: &AppState,
+    feature: Feature,
+    user_id: &str,
+    key: Option<&str>,
+    vendor: Vendor,
+    model: &str,
+) -> Result<Reservation, AppError> {
+    let now = chrono::Utc::now();
+    let (day, month) = (usage::day_key(now), usage::month_key(now));
+    let opened = ledger::Run { user_id, key, model, month: &month, day: &day, reserved_s: 0, byok: Some(vendor.code()) };
+    let run_id = ledger::open_run(&state.db, feature, &opened).await?;
+    Ok(Reservation { feature, byok: Some(vendor), user_id: user_id.to_string(), day, month, estimate: 0, run_id })
 }
 
 /// Kết quả ghi sổ của một lượt (một hay nhiều lần gọi model).
@@ -232,6 +254,12 @@ pub(crate) async fn settle<T>(state: &AppState, r: &Reservation, call: &llm::Cal
 pub(crate) async fn settle_outcome(state: &AppState, r: &Reservation, outcome: &Outcome) -> i64 {
     let db = &state.db;
     let Outcome { cost_s, refund, input_tokens, output_tokens, ok } = *outcome;
+    if r.byok.is_some() {
+        // Key của người dùng: tiền của họ, không sổ nào của Scribe đổi. Chỉ ghi token.
+        let closing = ledger::Closing { input_tokens, output_tokens, cost_s: 0, ok };
+        ledger::close_run(db, r.feature, r.run_id, &closing).await;
+        return 0;
+    }
     if let Err(e) = usage::settle_total(db, &r.month, cost_s - r.estimate).await {
         tracing::error!(cost_s, estimate = r.estimate, "quyết toán trần cho {} lỗi: {e:?}", label(r.feature));
     }
@@ -255,11 +283,15 @@ mod tests {
     fn token_cost_converts_to_transcription_seconds() {
         // Giá OpenAI ($0,003/phút): 1M token vào = $0,40 = 133,3 phút = 8000 giây; 1M token ra = $1,60 = 32000 giây.
         let openai = crate::config::Provider::OpenAi.usd_per_minute();
-        assert_eq!(cost_seconds_at(1_000_000, 0, openai), 8_000);
-        assert_eq!(cost_seconds_at(0, 1_000_000, openai), 32_000);
+        let mini = llm::price_of(Vendor::OpenAi, "gpt-4.1-mini");
+        assert_eq!(cost_seconds_at(mini, 1_000_000, 0, openai), 8_000);
+        assert_eq!(cost_seconds_at(mini, 0, 1_000_000, openai), 32_000);
         // Lượt thường (20k vào, 1,5k ra) = $0,0104 ⟹ 208 giây OpenAI, 171 giây ElevenLabs ($0,22/giờ).
-        assert_eq!(cost_seconds_at(20_000, 1_500, openai), 208);
-        assert_eq!(cost_seconds_at(20_000, 1_500, crate::config::Provider::ElevenLabs.usd_per_minute()), 171);
+        assert_eq!(cost_seconds_at(mini, 20_000, 1_500, openai), 208);
+        assert_eq!(cost_seconds_at(mini, 20_000, 1_500, crate::config::Provider::ElevenLabs.usd_per_minute()), 171);
+        // Model khác của server theo bảng giá: Claude Haiku 5.5 ($0,10 / $0,50) rẻ bằng một phần tư.
+        let haiku = llm::price_of(Vendor::Anthropic, "claude-haiku-5-5");
+        assert_eq!(cost_seconds_at(haiku, 20_000, 1_500, openai), 55);
         assert_eq!(cost_seconds(1, 0), 1, "làm tròn lên");
         assert_eq!(cost_seconds(-5, 0), 0);
         // Ước lượng giữ chỗ không thấp hơn chi phí thật của một bản tiếng Việt thông thường.

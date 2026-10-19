@@ -9,7 +9,12 @@
 //! theo `runId` nên lượt cũ không chạm lượt mới: (1) `open: true → false`, `settled: false`; (2) nhận
 //! quyền quyết toán `settled: false → true` rồi cộng chênh lệch `sentS − chargedS` vào sổ. Bước (2) chạy
 //! lại được: Mongo standalone có thể báo lỗi dù đã ghi, lần thử lại vẫn quyết toán đúng một lần.
+//!
+//! Lượt chạy bằng key riêng của người dùng ([`Billing::Own`]) chỉ ghi nhà cung cấp (`byok`), không có tháng/sổ nào:
+//! không giữ chỗ, không quyết toán; lúc đóng chỉ ghi sổ chi tiết (`byok`) và sổ phút riêng của người dùng để họ xem.
+//! Key không bao giờ nằm trong doc: worker đọc và giải mã key lúc chạy.
 
+use crate::config::Vendor;
 use crate::error::AppError;
 use crate::models::usage::{self, Charge};
 use crate::transcribe::chunking::Sentence;
@@ -67,14 +72,34 @@ pub struct TranscriptDoc {
     /// Số lần lượt bị cắt ngang vì backend khởi động lại.
     #[serde(default)]
     pub attempts: i32,
+    /// Lượt chạy bằng key riêng của người dùng: mã nhà cung cấp (`elevenlabs` | `openai` | `gemini`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub byok: Option<String>,
+}
+
+/// Ai trả tiền cho một lượt.
+#[derive(Clone, Copy, Debug)]
+pub enum Billing<'a> {
+    /// Key server: phút đã giữ trên các sổ của `Charge`.
+    Server(&'a Charge),
+    /// Key riêng của người dùng, nhà cung cấp này.
+    Own(Vendor),
 }
 
 impl TranscriptDoc {
+    /// Nhà cung cấp của key riêng khi lượt chạy bằng key của người dùng.
+    pub fn own_provider(&self) -> Option<Vendor> {
+        self.byok.as_deref().and_then(Vendor::parse)
+    }
+
     pub fn file_id(&self) -> String {
         self.id.to_hex()
     }
 
     pub fn charge(&self) -> Option<Charge> {
+        if self.byok.is_some() {
+            return None;
+        }
         Some(Charge {
             user_id: self.user_id.clone(),
             month: self.month.clone()?,
@@ -87,6 +112,26 @@ impl TranscriptDoc {
 /// Quyết toán sổ của một lượt vừa đóng (doc là bản TRƯỚC khi đóng). Lỗi chỉ log: tiền đã chi, không
 /// làm hỏng việc ghi kết quả; lệnh đối soát `admin usage --recompute` sửa được về sau.
 async fn settle_closed(db: &Database, before: &TranscriptDoc) {
+    if let Some(provider) = &before.byok {
+        // Key riêng: không sổ nào của Scribe đổi; ghi số giây cho người dùng xem và sổ chi tiết.
+        let month = usage::month_key(chrono::Utc::now());
+        if let Err(e) = usage::add_byok(db, &before.user_id, &month, before.sent_s).await {
+            tracing::warn!(file = %before.id, "ghi giây chép bằng key riêng lỗi: {e:?}");
+        }
+        let run = doc! {
+            "fileId": before.id,
+            "runId": &before.run_id,
+            "userId": &before.user_id,
+            "month": &month,
+            "byok": provider,
+            "sentS": before.sent_s,
+            "at": DateTime::now(),
+        };
+        if let Err(e) = db.collection::<bson::Document>(usage::RUNS_COLL).insert_one(run).await {
+            tracing::error!(file = %before.id, "ghi sổ lượt chép bằng key riêng lỗi: {e}");
+        }
+        return;
+    }
     let Some(charge) = before.charge() else { return };
     let delta = before.sent_s - before.charged_s;
     if let Err(e) = usage::settle(db, &charge, delta).await {
@@ -143,10 +188,10 @@ pub async fn enqueue(
     user_id: &str,
     run_id: &str,
     model: &str,
-    charge: &Charge,
+    billing: Billing<'_>,
     charged_s: i64,
 ) -> Result<bool, AppError> {
-    enqueue_as(db, file_id, user_id, run_id, model, charge, charged_s, "queued").await
+    enqueue_as(db, file_id, user_id, run_id, model, billing, charged_s, "queued").await
 }
 
 /// Như [`enqueue`] nhưng ở trạng thái [`HELD`]: chưa được nhận cho tới khi [`release_held`].
@@ -156,10 +201,10 @@ pub async fn enqueue_held(
     user_id: &str,
     run_id: &str,
     model: &str,
-    charge: &Charge,
+    billing: Billing<'_>,
     charged_s: i64,
 ) -> Result<bool, AppError> {
-    enqueue_as(db, file_id, user_id, run_id, model, charge, charged_s, HELD).await
+    enqueue_as(db, file_id, user_id, run_id, model, billing, charged_s, HELD).await
 }
 
 /// Bật mọi file [`HELD`] của lượt `run_id` sang `queued` trong một lệnh.
@@ -181,35 +226,46 @@ async fn enqueue_as(
     user_id: &str,
     run_id: &str,
     model: &str,
-    charge: &Charge,
+    billing: Billing<'_>,
     charged_s: i64,
     status: &str,
 ) -> Result<bool, AppError> {
+    let mut set = doc! {
+        "userId": user_id,
+        "status": status,
+        "progress": 0.0,
+        "runId": run_id,
+        "text": "",
+        "sentences": [],
+        "model": model,
+        "updatedAt": DateTime::now(),
+        "chargedS": charged_s,
+        "sentS": 0_i64,
+        "open": true,
+        "settled": false,
+        "attempts": 0,
+    };
+    let mut unset = doc! { "error": "" };
+    match billing {
+        Billing::Server(charge) => {
+            set.insert("month", &charge.month);
+            set.insert("freePool", charge.free_pool);
+            set.insert("day", charge.day.as_deref());
+            unset.insert("byok", "");
+        }
+        Billing::Own(provider) => {
+            set.insert("byok", provider.code());
+            set.insert("chargedS", 0_i64);
+            for field in ["month", "freePool", "day"] {
+                unset.insert(field, "");
+            }
+        }
+    }
     let res = db
         .collection::<TranscriptDoc>(COLL)
         .update_one(
             doc! { "_id": file_id, "userId": user_id, "status": { "$nin": ACTIVE.to_vec() } },
-            doc! {
-                "$set": {
-                    "userId": user_id,
-                    "status": status,
-                    "progress": 0.0,
-                    "runId": run_id,
-                    "text": "",
-                    "sentences": [],
-                    "model": model,
-                    "updatedAt": DateTime::now(),
-                    "chargedS": charged_s,
-                    "sentS": 0_i64,
-                    "month": &charge.month,
-                    "freePool": charge.free_pool,
-                    "day": &charge.day,
-                    "open": true,
-                    "settled": false,
-                    "attempts": 0,
-                },
-                "$unset": { "error": "" },
-            },
+            doc! { "$set": set, "$unset": unset },
         )
         .upsert(true)
         .await;
@@ -445,7 +501,7 @@ pub async fn requeue_interrupted(db: &Database) -> Result<(u64, u64), AppError> 
         .map_err(|e| AppError::Internal(format!("xếp lại lượt dở: {e}")))?;
     // Lượt đã đóng mà quyết toán bị gián đoạn (tiến trình chết giữa hai bước).
     let mut unsettled = coll
-        .find(doc! { "open": false, "settled": false, "month": { "$exists": true } })
+        .find(doc! { "open": false, "settled": false, "$or": [{ "month": { "$exists": true } }, { "byok": { "$exists": true } }] })
         .await
         .map_err(|e| AppError::Internal(format!("đọc lượt chưa quyết toán: {e}")))?;
     while let Some(t) = unsettled.next().await {
@@ -616,6 +672,63 @@ mod tests {
         charge
     }
 
+    #[test]
+    fn an_own_key_run_has_no_ledger_to_charge() {
+        let own: TranscriptDoc = bson::from_document(doc! {
+            "_id": ObjectId::new(), "userId": "u", "status": "queued", "progress": 0.0, "runId": "r", "model": "scribe_v2",
+            "updatedAt": DateTime::now(), "byok": "elevenlabs", "chargedS": 0_i64, "open": true,
+        })
+        .expect("doc");
+        assert_eq!(own.own_provider(), Some(Vendor::ElevenLabs));
+        assert!(own.charge().is_none(), "không giữ chỗ, không quyết toán sổ nào");
+        let mut server = own.clone();
+        server.byok = None;
+        server.month = Some("2026-10".into());
+        assert!(server.charge().is_some() && server.own_provider().is_none());
+    }
+
+    /// Lượt bằng key riêng trên Mongo thật (DB dev): không đụng sổ phút, quỹ free, trần tổng; giây đã gửi vào sổ riêng
+    /// `b:` của người dùng và sổ chi tiết có `byok`. `TRANSCRIPT_TEST_MONGO_URI=… TRANSCRIPT_TEST_DB_NAME=… cargo test
+    /// own_key_run -- --ignored`. User và tháng giả riêng, tự dọn.
+    #[tokio::test]
+    #[ignore]
+    async fn own_key_run_is_not_metered_on_real_mongo() {
+        let uri = std::env::var("TRANSCRIPT_TEST_MONGO_URI").expect("TRANSCRIPT_TEST_MONGO_URI");
+        let db_name = std::env::var("TRANSCRIPT_TEST_DB_NAME").expect("TRANSCRIPT_TEST_DB_NAME");
+        let db = crate::db::connect(&uri, &db_name).await.expect("kết nối Mongo");
+        let user = format!("selftest-{}", uuid::Uuid::new_v4());
+        let month = usage::month_key(chrono::Utc::now());
+        let before = usage::month_usage(&db, &user, &month).await.expect("sổ");
+        let id = ObjectId::new();
+        assert!(enqueue(&db, id, &user, "run-own", "scribe_v2", Billing::Own(Vendor::ElevenLabs), 0).await.expect("xếp"));
+        let queued = db.collection::<TranscriptDoc>(COLL).find_one(doc! { "_id": id }).await.expect("đọc").expect("có");
+        assert_eq!((queued.byok.as_deref(), queued.month.as_deref(), queued.charged_s), (Some("elevenlabs"), None, 0));
+        assert!(add_sent(&db, id, "run-own", 90).await.expect("gửi"));
+        assert!(finish_failed(&db, id, "run-own", "lỗi").await.expect("đóng"));
+        let after = usage::month_usage(&db, &user, &month).await.expect("sổ");
+        assert_eq!(after.user_seconds, before.user_seconds, "sổ phút của user không đổi");
+        assert_eq!(usage::byok_seconds(&db, &user, &month).await.expect("sổ riêng"), 90);
+        let run = db.collection::<bson::Document>(usage::RUNS_COLL).find_one(doc! { "userId": &user }).await.expect("đọc").expect("có");
+        assert_eq!(run.get_str("byok"), Ok("elevenlabs"));
+        assert!(run.get("chargedS").is_none() && run.get("freePool").is_none());
+        // Xếp lại cùng file bằng key server: dấu `byok` bị gỡ.
+        let charge = Charge { user_id: user.clone(), month: format!("test-{}", uuid::Uuid::new_v4().simple()), free_pool: false, day: None };
+        assert!(enqueue(&db, id, &user, "run-server", "scribe_v2", Billing::Server(&charge), 0).await.expect("xếp lại"));
+        let again = db.collection::<TranscriptDoc>(COLL).find_one(doc! { "_id": id }).await.expect("đọc").expect("có");
+        assert!(again.byok.is_none() && again.charge().is_some());
+
+        delete(&db, id).await.expect("dọn");
+        db.collection::<bson::Document>(usage::RUNS_COLL).delete_many(doc! { "userId": &user }).await.expect("dọn");
+        db.collection::<bson::Document>("transcribe_usage")
+            .delete_many(doc! { "_id": { "$in": [format!("b:{user}:{month}"), format!("u:{user}:{}", charge.month)] } })
+            .await
+            .expect("dọn");
+        db.collection::<bson::Document>("transcribe_usage")
+            .delete_many(doc! { "_id": { "$regex": format!("{}$", charge.month) } })
+            .await
+            .expect("dọn");
+    }
+
     /// Vòng đời hàng đợi + sổ phút trên Mongo thật (DB dev): `TRANSCRIPT_TEST_MONGO_URI=<uri>
     /// TRANSCRIPT_TEST_DB_NAME=<db> cargo test transcript_queue -- --ignored`. User và tháng giả riêng, tự dọn.
     #[tokio::test]
@@ -641,10 +754,10 @@ mod tests {
 
         // Giữ 100 giây cho a và b, xếp hàng.
         let charge = take(&db, &user, &month, 100, &limits).await;
-        assert!(enqueue(&db, a, &user, "run-1", "m", &charge, 60).await.expect("a"));
-        assert!(enqueue(&db, b, &user, "run-1", "m", &charge, 40).await.expect("b"));
+        assert!(enqueue(&db, a, &user, "run-1", "m", Billing::Server(&charge), 60).await.expect("a"));
+        assert!(enqueue(&db, b, &user, "run-1", "m", Billing::Server(&charge), 40).await.expect("b"));
         // Xếp lại a khi a đang queued: bị từ chối (người gọi hoàn phần của nó).
-        assert!(!enqueue(&db, a, &user, "run-x", "m", &charge, 60).await.expect("a lần hai"));
+        assert!(!enqueue(&db, a, &user, "run-x", "m", Billing::Server(&charge), 60).await.expect("a lần hai"));
 
         // a chạy, gửi 50 giây rồi xong ⟹ quyết toán −10. b lỗi sau khi gửi 15 giây ⟹ hoàn 25.
         assert!(add_sent(&db, a, "run-1", 50).await.expect("sent a"));
@@ -658,7 +771,7 @@ mod tests {
 
         // Chép lại b (run-2) rồi lượt cũ run-1 mới báo lỗi muộn: không chạm run-2.
         let charge2 = take(&db, &user, &month, 40, &limits).await;
-        assert!(enqueue(&db, b, &user, "run-2", "m", &charge2, 40).await.expect("b lại"));
+        assert!(enqueue(&db, b, &user, "run-2", "m", Billing::Server(&charge2), 40).await.expect("b lại"));
         assert!(!finish_failed(&db, b, "run-1", "muộn").await.expect("muộn"));
         assert!(!add_sent(&db, b, "run-1", 99).await.expect("gửi muộn"));
         assert_eq!(used(db.clone(), user.clone(), month.clone()).await, 105);
@@ -670,7 +783,7 @@ mod tests {
 
         // Khởi động lại khi c đang chạy: lần một xếp lại, lần hai dừng và quyết toán.
         let charge3 = take(&db, &user, &month, 30, &limits).await;
-        assert!(enqueue(&db, c, &user, "run-1", "m", &charge3, 30).await.expect("c"));
+        assert!(enqueue(&db, c, &user, "run-1", "m", Billing::Server(&charge3), 30).await.expect("c"));
         let coll = db.collection::<TranscriptDoc>(COLL);
         coll.update_one(doc! { "_id": c }, doc! { "$set": { "status": "running" } }).await.expect("chạy");
         assert!(add_sent(&db, c, "run-1", 5).await.expect("sent c"));
@@ -688,7 +801,7 @@ mod tests {
         // Đóng được ghi nhưng báo lỗi (giả lập: open=false, settled=false), rồi thử lại: quyết toán đúng một lần.
         let d = ObjectId::new();
         let charge4 = take(&db, &user, &month, 20, &limits).await;
-        assert!(enqueue(&db, d, &user, "run-1", "m", &charge4, 20).await.expect("d"));
+        assert!(enqueue(&db, d, &user, "run-1", "m", Billing::Server(&charge4), 20).await.expect("d"));
         assert!(add_sent(&db, d, "run-1", 8).await.expect("sent d"));
         coll.update_one(doc! { "_id": d }, doc! { "$set": { "open": false, "settled": false, "status": "failed" } })
             .await
@@ -741,7 +854,7 @@ mod tests {
         let charge = Charge { user_id: user.clone(), month: format!("test-{}", uuid::Uuid::new_v4().simple()), free_pool: false, day: None };
         let ids = [ObjectId::new(), ObjectId::new(), ObjectId::new()];
         for id in ids {
-            assert!(enqueue(&db, id, &user, &run, "scribe_v2", &charge, 60).await.expect("xếp"));
+            assert!(enqueue(&db, id, &user, &run, "scribe_v2", Billing::Server(&charge), 60).await.expect("xếp"));
         }
         let coll = db.collection::<TranscriptDoc>(COLL);
         let mine = doc! { "userId": &user };

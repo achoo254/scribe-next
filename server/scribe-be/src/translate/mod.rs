@@ -22,9 +22,9 @@ use crate::models::summary::Feature;
 use crate::models::translation::{self, Item, Lang, NewItem, TranslationDoc};
 use crate::models::{plan, user};
 use crate::state::AppState;
-use crate::summary::{self, meter, RunningGuard};
+use crate::summary::llm::is_key_broken;
+use crate::summary::{self, meter, RunningGuard, TextKey};
 use crate::transcribe::docs::{self, check_key};
-use crate::transcribe::openai::is_key_broken;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
@@ -206,7 +206,7 @@ struct Job {
     lang: Lang,
     plan: plan::Plan,
     sources: Vec<Source>,
-    api_key: String,
+    text_key: TextKey,
 }
 
 /// `POST /api/transcript-docs/{key}/translation {lang}` — dịch các câu chưa có bản dịch hoặc có bản dịch cũ.
@@ -227,12 +227,7 @@ pub async fn create(
     if !state.config.transcribe_allowed(&profile.email) {
         return Err(AppError::Forbidden("tài khoản này chưa được dùng dịch".into()));
     }
-    let api_key = state
-        .transcriber
-        .api_key()
-        .filter(|_| !state.summaries.paused())
-        .ok_or_else(|| AppError::Unavailable(PAUSED.into()))?
-        .to_string();
+    let text_key = summary::text_key(&state, &user.0, PAUSED).await?;
     if !state.rate.allow(&format!("translate:{}", user.0), PER_MINUTE) {
         return Err(AppError::TooManyRequests("bấm dịch quá nhanh, thử lại sau một phút".into()));
     }
@@ -269,7 +264,7 @@ pub async fn create(
         lang,
         plan: plan::effective(profile.plan.as_deref(), profile.plan_until, DateTime::now()),
         sources,
-        api_key,
+        text_key,
     };
     // Task giữ `running` tới khi dịch xong; handler bị huỷ thì task vẫn chạy hết và quyết toán.
     let (started_tx, started_rx) = oneshot::channel();
@@ -345,10 +340,9 @@ fn translate_batch<'a>(
     Box::pin(async move {
         let chars: usize = lines.iter().map(|l| l.chars().count()).sum();
         let estimate = batch::estimate_seconds(chars, lines.len());
-        let model = state.config.summary_model.as_str();
         let mut last = String::new();
         for attempt in 1..=ATTEMPTS {
-            let call = batch::translate(&state.http, &job.api_key, model, job.lang, lines).await;
+            let call = batch::translate(&state.http, &job.text_key.llm(), job.lang, lines).await;
             tally.add(&call, estimate);
             let draft = match call.result.and_then(|c| c.draft) {
                 Ok(draft) => draft,
@@ -397,14 +391,14 @@ async fn run(state: AppState, job: Job, _running: RunningGuard, started: oneshot
     let chars: Vec<usize> = job.sources.iter().map(|s| s.text.chars().count()).collect();
     let ranges = batch::split(&chars, batch::MAX_LINES, batch::MAX_CHARS);
     let estimate: i64 = ranges.iter().map(|r| batch::estimate_seconds(chars[r.clone()].iter().sum(), r.len())).sum();
-    let reservation = match meter::reserve(&state, Feature::Translate, user_id, Some(key), job.plan, estimate).await {
+    let reservation = match summary::reserve_for(&state, Feature::Translate, user_id, Some(key), job.plan, estimate, &job.text_key).await {
         Ok(r) => r,
         Err(e) => {
             let _ = started.send(Err(e));
             return;
         }
     };
-    let model = state.config.summary_model.as_str();
+    let model = job.text_key.model();
     if let Err(e) = translation::start_run(db, user_id, key, lang, model, job.sources.len() as i64).await {
         meter::settle_outcome(&state, &reservation, &Tally::default().outcome(false)).await;
         let _ = started.send(Err(e));
@@ -422,8 +416,11 @@ async fn run(state: AppState, job: Job, _running: RunningGuard, started: oneshot
         let texts = match translate_batch(&state, &job, &lines, &mut tally).await {
             BatchEnd::Done(texts) => texts,
             BatchEnd::KeyBroken(e) => {
-                summary::report_key_broken(&state, &e);
-                failure = Some((PAUSED.into(), e));
+                let shown = match summary::key_failure(&state, &job.text_key, &e, PAUSED).await {
+                    Some(AppError::Coded { message, .. }) => message,
+                    _ => PAUSED.to_string(),
+                };
+                failure = Some((shown, e));
                 break;
             }
             BatchEnd::Failed(e) => {
