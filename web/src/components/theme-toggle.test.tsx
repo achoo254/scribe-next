@@ -2,7 +2,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
 import { THEME_STORAGE_KEY } from "../lib/theme";
-import { ThemeToggle } from "./theme-toggle";
+import { ThemeCycleButton, ThemeToggle } from "./theme-toggle";
 
 afterEach(() => {
 	delete document.documentElement.dataset.theme;
@@ -28,6 +28,19 @@ describe("ThemeToggle", () => {
 		await userEvent.click(
 			screen.getByRole("button", { name: "Theo hệ điều hành" }),
 		);
+		expect(document.documentElement.dataset.theme).toBeUndefined();
+	});
+
+	it("the one-button form moves light → dark → system", async () => {
+		render(<ThemeCycleButton />);
+		const button = () => screen.getByRole("button");
+		expect(button()).toHaveAccessibleName("Theo hệ điều hành — bấm để đổi");
+		await userEvent.click(button());
+		expect(document.documentElement.dataset.theme).toBe("light");
+		expect(button()).toHaveAccessibleName("Giao diện sáng — bấm để đổi");
+		await userEvent.click(button());
+		expect(document.documentElement.dataset.theme).toBe("dark");
+		await userEvent.click(button());
 		expect(document.documentElement.dataset.theme).toBeUndefined();
 	});
 });

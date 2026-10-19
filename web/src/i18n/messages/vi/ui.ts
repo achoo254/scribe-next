@@ -6,6 +6,7 @@ export const ui = {
 		light: "Giao diện sáng",
 		dark: "Giao diện tối",
 		system: "Theo hệ điều hành",
+		cycle: "{current} — bấm để đổi",
 	},
 	usage: {
 		region: "Gói và mức dùng",

@@ -4,12 +4,12 @@
    the top bar; no language switcher (one language); clears the iPhone
    home indicator (safe-area-inset-bottom). */
 import { IconExternalLink } from "@tabler/icons-react";
-import { ThemeToggle } from "../components/theme-toggle";
+import { ThemeCycleButton, ThemeToggle } from "../components/theme-toggle";
 import { useT } from "../i18n/i18n-context";
 import { IDP_ACCOUNT_URL, IDP_APPS_URL } from "../lib/idp";
 
 const FOOTER_LINK =
-	"inline-flex min-h-11 cursor-pointer items-center gap-1 rounded-sm font-mono font-semibold text-primary underline-offset-4 hover:underline";
+	"inline-flex min-h-11 cursor-pointer items-center gap-1 whitespace-nowrap rounded-sm font-mono font-semibold text-primary underline-offset-4 hover:underline";
 
 /** Page footer: links to the hoandat account pages and the theme switch. */
 export function AppFooter() {
@@ -25,12 +25,12 @@ export function AppFooter() {
 	return (
 		<footer
 			data-id="app-footer"
-			className="border-border-subtle border-t pt-4 pb-[calc(var(--space-4)+env(safe-area-inset-bottom))] text-[0.8125rem] text-muted"
+			className="border-border-subtle border-t pt-1 pb-[calc(var(--space-1)+env(safe-area-inset-bottom))] text-[0.8125rem] text-muted sm:pt-4 sm:pb-[calc(var(--space-4)+env(safe-area-inset-bottom))]"
 		>
-			<div className="mx-auto flex w-full max-w-page flex-wrap items-center justify-between gap-3 px-gutter">
+			<div className="mx-auto flex w-full max-w-page items-center justify-between gap-3 px-gutter">
 				<nav
 					aria-label={t("layout.footer.links")}
-					className="flex flex-wrap items-center gap-4"
+					className="flex min-w-0 items-center gap-3 sm:gap-4"
 				>
 					{links.map(({ id, label, href }) => (
 						// In the iOS app Capacitor opens target=_blank links in the
@@ -49,7 +49,14 @@ export function AppFooter() {
 						</a>
 					))}
 				</nav>
-				<ThemeToggle data-id="app-footer-theme" />
+				{/* Phones get one button so the footer stays a single row. */}
+				<ThemeCycleButton
+					data-id="app-footer-theme-cycle"
+					className="sm:hidden"
+				/>
+				<div className="hidden sm:block">
+					<ThemeToggle data-id="app-footer-theme" />
+				</div>
 			</div>
 		</footer>
 	);

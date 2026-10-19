@@ -100,9 +100,19 @@ for (const scheme of COLOR_SCHEMES) {
 				"href",
 				"https://auth.hoandat.com/account#account-apps",
 			);
-			await expect(
-				footer.getByRole("group", { name: "Giao diện" }),
-			).toBeVisible();
+			// Phones get the one-button theme switch so the footer stays one row.
+			if (isMobile) {
+				await expect(
+					footer.getByRole("button", { name: /— bấm để đổi$/ }),
+				).toBeVisible();
+				await expect(
+					footer.getByRole("group", { name: "Giao diện" }),
+				).toBeHidden();
+			} else {
+				await expect(
+					footer.getByRole("group", { name: "Giao diện" }),
+				).toBeVisible();
+			}
 			await expect(footer).toHaveScreenshot(`footer-${scheme}.png`);
 			expect(await seriousA11yViolations(page)).toEqual([]);
 			expect(api.unexpected).toEqual([]);

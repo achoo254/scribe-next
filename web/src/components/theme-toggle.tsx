@@ -26,10 +26,7 @@ const OPTIONS = [
  */
 export function ThemeToggle({ "data-id": dataId }: { "data-id"?: string }) {
 	const t = useT();
-	const preference = useSyncExternalStore(
-		subscribeThemePreference,
-		readThemePreference,
-	);
+	const preference = useThemePreference();
 
 	return (
 		<fieldset
@@ -57,5 +54,40 @@ export function ThemeToggle({ "data-id": dataId }: { "data-id"?: string }) {
 				</button>
 			))}
 		</fieldset>
+	);
+}
+
+function useThemePreference(): ThemePreference {
+	return useSyncExternalStore(subscribeThemePreference, readThemePreference);
+}
+
+/**
+ * One-button form of the switch for narrow screens: shows the current choice
+ * and moves to the next one (light → dark → system) on each tap.
+ */
+export function ThemeCycleButton({
+	"data-id": dataId,
+	className,
+}: { "data-id"?: string; className?: string }) {
+	const t = useT();
+	const preference = useThemePreference();
+	const index = OPTIONS.findIndex((o) => o.value === preference);
+	const current = OPTIONS[index] ?? OPTIONS[2];
+	const next = OPTIONS[(index + 1) % OPTIONS.length] ?? OPTIONS[0];
+	const label = t("ui.theme.cycle", { current: t(current.label) });
+	return (
+		<button
+			type="button"
+			data-id={dataId}
+			aria-label={label}
+			title={label}
+			onClick={() => applyThemePreference(next.value)}
+			className={cn(
+				"inline-flex size-11 cursor-pointer items-center justify-center rounded-md border border-border bg-surface text-muted transition-colors hover:text-fg",
+				className,
+			)}
+		>
+			<current.Icon size={18} aria-hidden="true" />
+		</button>
 	);
 }
