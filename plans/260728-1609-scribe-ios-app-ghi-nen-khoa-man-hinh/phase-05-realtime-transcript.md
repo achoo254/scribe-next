@@ -183,5 +183,5 @@ App iPhone có chép trực tiếp đã cài lên iPhone 15 Pro Max lúc 11:10 (
 Chủ dự án cho phép ("bạn tự làm cho tôi luôn các việc"). Backend + web từ `9305861` (lần build đầu dùng lại binary cũ do cache CARGO_TARGET_DIR,
 phát hiện qua sha trùng → `cargo clean -p` rồi build lại). Sao lưu `/root/scribe-backup-20261019-085243`, binary sha256 `2e216e74c060160f…`,
 `index-ClbfkLLj.js`, health ok, `NRestarts=0`. Từ server xin single-use token realtime: HTTP 200. App mới cài lên iPhone 15 Pro Max lúc 08:56
-(hết hạn ~26/10). Chủ dự án chấp nhận hai quyết định của agent: giờ realtime tính 1,77× trên sổ giờ ElevenLabs (theo giá 0,39/0,22 USD), và app báo
+(hết hạn ~26/10). Giữ hai quyết định của agent, chờ chủ dự án xác nhận: giờ realtime tính 1,77× trên sổ giờ ElevenLabs (theo giá 0,39/0,22 USD), và app báo
 `quotaExceeded` được dừng ElevenLabs tới tháng sau. Còn đo trên máy: mục 14–18 của checklist.
