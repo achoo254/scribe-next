@@ -1,5 +1,5 @@
 /* Copied from localman-next apps/web/src/components/layout/app-footer.tsx.
-   Scribe changes: the hoandat account links instead of the landing, Docs
+   Scribe changes: the IdP account links instead of the landing, Docs
    and feedback form (Scribe has none); the theme switch moved here from
    the top bar; no language switcher (one language); clears the iPhone
    home indicator (safe-area-inset-bottom); links to the privacy policy and
@@ -8,18 +8,20 @@ import { IconExternalLink } from "@tabler/icons-react";
 import { ThemeCycleButton, ThemeToggle } from "../components/theme-toggle";
 import { useT } from "../i18n/i18n-context";
 import { IDP_ACCOUNT_URL, IDP_APPS_URL } from "../lib/idp";
+import { useIdpName } from "../lib/idp-name";
 import { LegalLinks } from "./legal-links";
 
 const FOOTER_LINK =
 	"inline-flex min-h-11 cursor-pointer items-center gap-1 whitespace-nowrap rounded-sm font-mono font-semibold text-primary underline-offset-4 hover:underline";
 
-/** Page footer: hoandat account pages, privacy and terms, the theme switch. */
+/** Page footer: IdP account pages, privacy and terms, the theme switch. */
 export function AppFooter() {
 	const t = useT();
+	const idpName = useIdpName();
 	const links = [
 		{
 			id: "account",
-			label: t("layout.idpMenu.account"),
+			label: t("layout.idpMenu.account", { idpName }),
 			href: IDP_ACCOUNT_URL,
 		},
 		{ id: "apps", label: t("layout.idpMenu.apps"), href: IDP_APPS_URL },
@@ -47,7 +49,9 @@ export function AppFooter() {
 								className={FOOTER_LINK}
 							>
 								{label}
-								<span className="sr-only">{t("layout.idpMenu.opensIdp")}</span>
+								<span className="sr-only">
+									{t("layout.idpMenu.opensIdp", { idpName })}
+								</span>
 								<IconExternalLink size={14} aria-hidden="true" />
 							</a>
 						))}

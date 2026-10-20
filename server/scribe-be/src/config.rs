@@ -362,6 +362,13 @@ pub struct Config {
     pub anthropic_key_path: Option<String>,
     /// Tệp 32 byte bí mật mã hoá key riêng của người dùng (`USER_KEYS_SECRET_PATH`, 600). Thiếu thì tính năng tắt.
     pub user_keys_secret_path: Option<String>,
+    /// API nội bộ của hoandat-auth (`IDP_INTERNAL_API_URL`, vd `http://127.0.0.1:4501`) và tệp bí mật Basic của
+    /// tài khoản `scribe` (`IDP_INTERNAL_API_SECRET_PATH`, 600): hỏi tên hiển thị của tenant. Thiếu một trong hai
+    /// thì tắt, dùng `idp_display_name`.
+    pub idp_internal_api_url: Option<String>,
+    pub idp_internal_api_secret_path: Option<String>,
+    /// Tên tài khoản đăng nhập hiện cho người dùng tới khi hỏi được IdP (`IDP_DISPLAY_NAME`, mặc định "Auth Next").
+    pub idp_display_name: String,
     /// `CHAT_LINK_POLL=1`: chạy task long-poll của bot để liên kết chat. Mặc định tắt: dev và prod dùng
     /// chung token bot, backend dev bật poll sẽ lấy mất update của prod.
     pub chat_link_poll: bool,
@@ -449,6 +456,12 @@ impl Config {
             gemini_key_path: option_env!("GEMINI_KEY_PATH").filter(|p| !p.is_empty()).map(str::to_string),
             anthropic_key_path: option_env!("ANTHROPIC_KEY_PATH").filter(|p| !p.is_empty()).map(str::to_string),
             user_keys_secret_path: option_env!("USER_KEYS_SECRET_PATH").filter(|p| !p.is_empty()).map(str::to_string),
+            idp_internal_api_url: option_env!("IDP_INTERNAL_API_URL")
+                .map(|u| u.trim().trim_end_matches('/'))
+                .filter(|u| !u.is_empty())
+                .map(str::to_string),
+            idp_internal_api_secret_path: option_env!("IDP_INTERNAL_API_SECRET_PATH").filter(|p| !p.is_empty()).map(str::to_string),
+            idp_display_name: crate::idp_brand::build_display_name(option_env!("IDP_DISPLAY_NAME")),
             chat_link_poll: matches!(option_env!("CHAT_LINK_POLL"), Some("1" | "true")),
             chat_bot_username: option_env!("CHAT_BOT_USERNAME")
                 .map(|u| u.trim().trim_start_matches('@'))

@@ -71,8 +71,8 @@ for (const scheme of COLOR_SCHEMES) {
 			await expect(menu).toBeVisible();
 			await expect(menu).toContainText(SIGNED_IN_USER.email);
 			await expect(menu.getByRole("menuitem")).toHaveText([
-				"Tài khoản hoandat, mở trang hoandat ở thẻ mới",
-				"Ứng dụng, mở trang hoandat ở thẻ mới",
+				"Tài khoản Auth Next, mở trang Auth Next ở thẻ mới",
+				"Ứng dụng, mở trang Auth Next ở thẻ mới",
 				"Key riêng",
 				"Liên kết chat.hoandat.com",
 				"Quyền riêng tư",
@@ -96,7 +96,7 @@ for (const scheme of COLOR_SCHEMES) {
 			const footer = page.getByTestId("app-footer");
 			await footer.scrollIntoViewIfNeeded();
 			await expect(
-				footer.getByRole("link", { name: /^Tài khoản hoandat/ }),
+				footer.getByRole("link", { name: /^Tài khoản Auth Next/ }),
 			).toHaveAttribute("href", "https://auth.hoandat.com/account");
 			await expect(
 				footer.getByRole("link", { name: /^Ứng dụng/ }),

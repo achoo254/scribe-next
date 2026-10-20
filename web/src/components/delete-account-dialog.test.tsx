@@ -35,7 +35,7 @@ afterEach(() => {
 });
 
 describe("DeleteAccountDialog", () => {
-	it("says what is deleted, that the hoandat account stays, and where to delete it", async () => {
+	it("says what is deleted, that the IdP account stays, and where to delete it", async () => {
 		open({});
 		const dialog = await screen.findByRole("dialog", {
 			name: "Xoá tài khoản Scribe",
@@ -53,7 +53,9 @@ describe("DeleteAccountDialog", () => {
 			"Phiên đăng nhập trên mọi thiết bị và số liệu mức dùng của tài khoản.",
 		]);
 		expect(dialog).toHaveTextContent("Không hoàn tác được.");
-		expect(dialog).toHaveTextContent("Tài khoản hoandat dùng chung");
+		expect(dialog).toHaveTextContent(
+			"Tài khoản Auth Next dùng chung cho nhiều ứng dụng",
+		);
 		const idp = within(dialog).getByRole("link", {
 			name: "auth.hoandat.com/account",
 		});

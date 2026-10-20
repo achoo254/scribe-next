@@ -10,12 +10,12 @@ function render(ui: ReactElement) {
 
 describe("AppFooter", () => {
 	it.each([
-		["Tài khoản hoandat", "https://auth.hoandat.com/account"],
+		["Tài khoản Auth Next", "https://auth.hoandat.com/account"],
 		["Ứng dụng", "https://auth.hoandat.com/account#account-apps"],
 	])("links '%s' of the IdP in a new tab", (label, href) => {
 		render(<AppFooter />);
 		const link = screen.getByRole("link", {
-			name: new RegExp(`^${label} ?, mở trang hoandat ở thẻ mới$`),
+			name: new RegExp(`^${label} ?, mở trang Auth Next ở thẻ mới$`),
 		});
 		expect(link).toHaveAttribute("href", href);
 		expect(link).toHaveAttribute("target", "_blank");

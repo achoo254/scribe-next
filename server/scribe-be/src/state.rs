@@ -30,4 +30,6 @@ pub struct AppState {
     pub chat_bot: Arc<crate::chat_link::BotProfile>,
     /// Bí mật mã hoá key riêng của người dùng (`USER_KEYS_SECRET_PATH`); `None` = tính năng Key riêng tắt.
     pub user_keys: Option<Arc<crate::user_keys::crypto::Secret>>,
+    /// Tên hiển thị của tài khoản đăng nhập (tenant của IdP), làm mới nền mỗi giờ.
+    pub idp_brand: Arc<crate::idp_brand::IdpBrand>,
 }

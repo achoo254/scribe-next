@@ -7,6 +7,7 @@ import { renderRich } from "../i18n/rich-text";
 import { TEXT_LINK } from "../layout/legal-links";
 import { errorCode, errorMessage } from "../lib/api";
 import { IDP_ACCOUNT_URL } from "../lib/idp";
+import { useIdpName } from "../lib/idp-name";
 import { Alert } from "./ui/alert";
 import { Button } from "./ui/button";
 import { FormField } from "./ui/form-field";
@@ -24,7 +25,7 @@ export interface DeleteAccountDialogProps {
 
 /**
  * Deletes the Scribe account in the app (App Store guideline 5.1.1(v)):
- * says exactly what goes, that the hoandat account stays (with the link
+ * says exactly what goes, that the IdP account stays (with the link
  * to delete it at hoandat-auth), and asks the user to type "XOÁ". Once
  * deleted, the device signs out locally and the sign-in page says so.
  */
@@ -35,6 +36,7 @@ export function DeleteAccountDialog({
 	busy,
 }: DeleteAccountDialogProps) {
 	const t = useT();
+	const idpName = useIdpName();
 	const { forgetDeletedAccount } = useAuth();
 	const [typed, setTyped] = useState("");
 	const [working, setWorking] = useState(false);
@@ -124,7 +126,7 @@ export function DeleteAccountDialog({
 			</div>
 			<p className="m-0 text-muted text-sm">{t("account.delete.audit")}</p>
 			<p className="m-0 text-sm">
-				{renderRich(t("account.delete.idp"), {
+				{renderRich(t("account.delete.idp", { idpName }), {
 					// In the iOS app Capacitor opens target=_blank links in Safari.
 					account: (chunk) => (
 						<a

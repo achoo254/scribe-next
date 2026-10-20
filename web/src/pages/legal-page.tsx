@@ -2,13 +2,15 @@ import type { ReactNode } from "react";
 import { Link } from "react-router";
 import { cardClassName } from "../components/ui/card";
 import { useI18n } from "../i18n/i18n-context";
-import type { MessageKey, ParamsOf } from "../i18n/message-types";
+import type { MessageKey, ParamValue, ParamsOf } from "../i18n/message-types";
 import { type TagRenderers, renderRich } from "../i18n/rich-text";
+import type { Translate } from "../i18n/translate";
 import { PATHS } from "../layout/app-paths";
 import { LegalLinks, TEXT_LINK } from "../layout/legal-links";
 import { PageHeader } from "../layout/page-header";
 import { cn } from "../lib/cn";
 import { IDP_ACCOUNT_URL } from "../lib/idp";
+import { useIdpName } from "../lib/idp-name";
 import {
 	LEGAL_EFFECTIVE_DATE,
 	PROCESSOR_POLICY_URLS,
@@ -17,12 +19,29 @@ import {
 
 export type LegalDoc = "privacy" | "terms";
 
-/** Keys of texts without placeholders: `t(key)` takes no params. */
-type PlainKey = {
-	[K in MessageKey]: ParamsOf<K> extends undefined ? K : never;
+/**
+ * Keys of texts whose only placeholder, if any, is the sign-in account's
+ * name (`{idpName}`).
+ */
+type LegalKey = {
+	[K in MessageKey]: ParamsOf<K> extends
+		| undefined
+		| Readonly<Record<"idpName", ParamValue>>
+		? K
+		: never;
 }[MessageKey];
 
-type Section = readonly [id: string, title: PlainKey, body: PlainKey];
+type Section = readonly [id: string, title: LegalKey, body: LegalKey];
+
+/**
+ * The text of `key` with the account name filled in. `t` fills placeholders
+ * by name and ignores a parameter the text does not use, so one call shape
+ * serves every `LegalKey`; the cast only widens `t`'s per-key signature.
+ */
+function legalText(t: Translate, key: LegalKey, idpName: string): string {
+	const translate = t as (key: LegalKey, params: { idpName: string }) => string;
+	return translate(key, { idpName });
+}
 
 const PRIVACY_SECTIONS: readonly Section[] = [
 	["du-lieu", "legal.privacy.collect.title", "legal.privacy.collect.body"],
@@ -69,9 +88,9 @@ const DOCS = {
 } as const satisfies Record<
 	LegalDoc,
 	{
-		title: PlainKey;
-		intro: PlainKey;
-		english: PlainKey;
+		title: LegalKey;
+		intro: LegalKey;
+		english: LegalKey;
 		sections: readonly Section[];
 	}
 >;
@@ -145,12 +164,14 @@ export function renderLegalBody(text: string): ReactNode {
  */
 export function LegalPage({ doc }: { doc: LegalDoc }) {
 	const { t, formatDate } = useI18n();
+	const idpName = useIdpName();
+	const text = (key: LegalKey) => legalText(t, key, idpName);
 	const page = DOCS[doc];
-	const contact = SUPPORT_EMAIL ?? t("legal.contactFallback");
+	const contact = SUPPORT_EMAIL ?? t("legal.contactFallback", { idpName });
 	return (
 		<article data-id={`legal-${doc}`} className="grid gap-4">
 			<PageHeader
-				title={t(page.title)}
+				title={text(page.title)}
 				description={t("legal.effective", {
 					date: formatDate(LEGAL_EFFECTIVE_DATE),
 				})}
@@ -161,7 +182,7 @@ export function LegalPage({ doc }: { doc: LegalDoc }) {
 					"grid gap-6 px-5 py-6 text-[0.9375rem] text-fg leading-relaxed sm:px-8",
 				)}
 			>
-				<p className="m-0">{renderRich(t(page.intro), LINK_TAGS)}</p>
+				<p className="m-0">{renderRich(text(page.intro), LINK_TAGS)}</p>
 				{page.sections.map(([id, title, body]) => (
 					<section
 						key={id}
@@ -173,9 +194,9 @@ export function LegalPage({ doc }: { doc: LegalDoc }) {
 							id={`${id}-title`}
 							className="m-0 font-bold font-mono text-base"
 						>
-							{t(title)}
+							{text(title)}
 						</h2>
-						{renderLegalBody(t(body))}
+						{renderLegalBody(text(body))}
 					</section>
 				))}
 				<section
@@ -199,7 +220,7 @@ export function LegalPage({ doc }: { doc: LegalDoc }) {
 					<h2 id="english-title" className="m-0 font-bold font-mono text-base">
 						{t("legal.englishTitle")}
 					</h2>
-					<p className="m-0 text-muted">{t(page.english)}</p>
+					<p className="m-0 text-muted">{text(page.english)}</p>
 				</section>
 			</div>
 			<LegalLinks />

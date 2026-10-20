@@ -10,6 +10,7 @@ mod config;
 mod db;
 mod error;
 mod files;
+mod idp_brand;
 mod jobs;
 mod models;
 mod notify;
@@ -159,6 +160,7 @@ async fn main() {
         tracing::error!("{e}");
         std::process::exit(1);
     }
+    let config_display_name = config.idp_display_name.clone();
     let state = AppState {
         config: Arc::new(config),
         db,
@@ -172,6 +174,7 @@ async fn main() {
         summaries: Arc::default(),
         chat_bot: Arc::default(),
         user_keys: user_keys_secret,
+        idp_brand: Arc::new(idp_brand::IdpBrand::new(&config_display_name)),
     };
 
     // Hồi phục job kẹt "running" sau crash/restart (red-team) + khởi worker queue nền.
@@ -186,6 +189,7 @@ async fn main() {
     search::index::start_backfill(state.db.clone()); // đưa dữ liệu cũ vào index tìm kiếm một lần
     chat_link::warm_up(state.clone());
     chat_link::poll::start(state.clone()); // chỉ khi CHAT_LINK_POLL bật và có token bot
+    idp_brand::start(&state); // tên tenant của IdP, chỉ khi cấu hình API nội bộ
 
     let app = routes::build_router(state);
     let addr = SocketAddr::from(([127, 0, 0, 1], port)); // localhost-only; nginx proxy /api.

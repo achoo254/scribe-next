@@ -14,9 +14,9 @@ export const layout = {
 		signOut: "Đăng xuất",
 	},
 	idpMenu: {
-		account: "Tài khoản hoandat",
+		account: "Tài khoản {idpName}",
 		apps: "Ứng dụng",
-		opensIdp: ", mở trang hoandat ở thẻ mới",
+		opensIdp: ", mở trang {idpName} ở thẻ mới",
 	},
 	signOutConfirm: {
 		title: "Đăng xuất",

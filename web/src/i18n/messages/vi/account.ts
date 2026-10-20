@@ -14,7 +14,7 @@ export const account = {
 		undo: "Không hoàn tác được. Hãy tải về những gì cần giữ trước khi xoá.",
 		audit:
 			"Nhật ký bảo mật (thời điểm, hành động, địa chỉ IP) được giữ tới hết 180 ngày nhưng không còn email hay tên tệp; số liệu chi phí được giữ ở dạng ẩn danh.",
-		idp: "Tài khoản hoandat dùng chung cho các ứng dụng hoandat và không bị xoá ở đây. Muốn xoá cả tài khoản đó, vào <account>auth.hoandat.com/account</account>.",
+		idp: "Tài khoản {idpName} dùng chung cho nhiều ứng dụng và không bị xoá ở đây. Muốn xoá cả tài khoản đó, vào <account>auth.hoandat.com/account</account>.",
 		busy: "Đang ghi hoặc còn tệp đang tải lên. Dừng ghi và chờ tải xong rồi mới xoá tài khoản.",
 		confirmWord: "XOÁ",
 		confirmLabel: "Gõ {word} để xác nhận",

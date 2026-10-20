@@ -10,9 +10,11 @@ import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
 import { useT } from "../i18n/i18n-context";
 import { LegalLinks } from "../layout/legal-links";
+import { useIdpName } from "../lib/idp-name";
 
 /**
- * Sign-in with the hoandat account (hoandat-auth: Google, GitHub…); the
+ * Sign-in with the IdP account (hoandat-auth: Google, GitHub…), named by
+ * its tenant (`useIdpName`); the
  * backend decides who may enter (allowlist). A failed web sign-in comes
  * back here with `?error=<code>`; after "Xoá tài khoản" the page says the
  * account is gone (`accountDeleted`). Laid out like the hoandat-auth sign-in
@@ -22,6 +24,7 @@ import { LegalLinks } from "../layout/legal-links";
  */
 export function LoginPage() {
 	const t = useT();
+	const idpName = useIdpName();
 	const { login, accountDeleted } = useAuth();
 	const navigate = useNavigate();
 	const [params] = useSearchParams();
@@ -63,13 +66,15 @@ export function LoginPage() {
 						<h1 className="m-0 font-bold font-mono text-[1.375rem] tracking-[-0.01em]">
 							{t("login.title")}
 						</h1>
-						<p className="m-0 text-muted text-sm">{t("login.subtitle")}</p>
+						<p className="m-0 text-muted text-sm">
+							{t("login.subtitle", { idpName })}
+						</p>
 					</div>
 					{accountDeleted ? (
 						<Alert tone="success" data-id="login-account-deleted">
 							{accountDeleted === "pending"
 								? t("login.accountDeletedPending")
-								: t("login.accountDeleted")}
+								: t("login.accountDeleted", { idpName })}
 						</Alert>
 					) : null}
 					<Button
@@ -81,7 +86,7 @@ export function LoginPage() {
 						leadingIcon={<IconLogin2 size={20} aria-hidden="true" />}
 						onClick={() => void signIn()}
 					>
-						{t("login.submit")}
+						{t("login.submit", { idpName })}
 					</Button>
 					{error ? (
 						<Alert tone="danger" data-id="login-error">
@@ -89,7 +94,7 @@ export function LoginPage() {
 						</Alert>
 					) : null}
 					<p className="m-0 text-center text-muted text-sm">
-						{t("login.note")}
+						{t("login.note", { idpName })}
 					</p>
 					<LegalLinks className="justify-center text-sm" />
 				</Card>

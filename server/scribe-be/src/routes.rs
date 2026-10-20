@@ -1,7 +1,7 @@
 //! Lắp router: public (health/auth) + protected (guard middleware + upload/jobs).
 
 use crate::state::AppState;
-use crate::{access_log, account, auth, chat_link, files, jobs, rate_limit, realtime, recordings, search, summary, transcribe, translate, upload, user_keys};
+use crate::{access_log, account, auth, chat_link, files, idp_brand, jobs, rate_limit, realtime, recordings, search, summary, transcribe, translate, upload, user_keys};
 use axum::extract::DefaultBodyLimit;
 use axum::middleware::{from_fn, from_fn_with_state};
 use axum::routing::{delete, get, patch, post, put};
@@ -78,6 +78,8 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/auth/native/config", get(auth::native_config))
         .route("/api/auth/native/refresh", post(auth::native_refresh))
         .route("/api/auth/logout", post(auth::logout))
+        // Tên tài khoản đăng nhập cho trang đăng nhập (chưa có phiên); đọc bộ nhớ, không gọi IdP.
+        .route("/api/idp", get(idp_brand::info))
         .route_layer(from_fn_with_state(state.clone(), rate_limit::auth_limit));
 
     // Đổi code của app: route public, mỗi lần gọi IdP ⟹ giới hạn chặt riêng.
