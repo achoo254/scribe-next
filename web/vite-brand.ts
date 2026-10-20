@@ -3,8 +3,9 @@
  * SVGs through @shared-next/brand, so a rebrand is "edit the brand files,
  * pnpm brand:gen, rebuild":
  *
- * - index.html: %APP_NAME% in the title, plus the favicon.ico, Apple touch
- *   icon, manifest and iOS home screen title tags next to the SVG favicon;
+ * - index.html: %APP_NAME% in the title, plus the description, favicon.ico,
+ *   Apple touch icon, manifest and iOS home screen title tags next to the SVG
+ *   favicon;
  * - the icon files (brand/generated/icons/, made by pnpm brand:gen, and the
  *   brand SVG as /favicon.svg) and manifest.webmanifest at the site root,
  *   served in dev and emitted in builds.
@@ -137,6 +138,8 @@ export function renderIndexHtml(html: string, brand: ScribeBrand): string {
 	// Browsers with SVG favicons take the SVG (linked after the ICO); the
 	// others fall back to the ICO.
 	const tags = [
+		// Search results and link previews (brand.description is Vietnamese, like <html lang="vi">).
+		`<meta name="description" content="${escapeHtml(brand.description)}" />`,
 		`<link rel="manifest" href="/${MANIFEST_PATH}" />`,
 		`<link rel="apple-touch-icon" href="/${appleTouch.file}" sizes="${appleTouch.size}x${appleTouch.size}" />`,
 		// The iOS home screen name (iOS reads it before the manifest's short_name).

@@ -98,6 +98,14 @@ describe("index.html head", () => {
 		);
 	});
 
+	it("describes the app once, with brand.description", () => {
+		expect(brand.description.trim()).not.toBe("");
+		expect(html.match(/name="description"/g)).toHaveLength(1);
+		expect(html).toContain(
+			`<meta name="description" content="${brand.description}" />`,
+		);
+	});
+
 	it("keeps the single theme-color meta that src/lib/theme.ts updates", () => {
 		expect(html.match(/name="theme-color"/g)).toHaveLength(1);
 		expect(html).toContain('<meta name="theme-color" content="" />');
