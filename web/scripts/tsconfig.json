@@ -13,7 +13,7 @@
 	"include": [
 		"check-tokens.ts",
 		"check-tokens/**/*.ts",
-		"check-brand.ts",
-		"check-brand/**/*.ts"
+		"brand-gen.ts",
+		"brand.test.ts"
 	]
 }

@@ -21,13 +21,6 @@ export default defineConfig({
 					include: ["scripts/**/*.test.ts"],
 				},
 			},
-			{
-				test: {
-					name: "brand",
-					environment: "node",
-					include: ["brand/test/**/*.test.ts"],
-				},
-			},
 		],
 	},
 });

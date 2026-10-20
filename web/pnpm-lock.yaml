@@ -35,6 +35,9 @@ importers:
       '@radix-ui/react-tooltip':
         specifier: ^1.2.7
         version: 1.4.1(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      '@shared-next/brand':
+        specifier: github:achoo254/shared-next#v0.2.0&path:/packages/brand
+        version: https://codeload.github.com/achoo254/shared-next/tar.gz/2dfb78942308f36f459ef861fbb57489402c3eb5#path:/packages/brand
       '@tabler/icons-react':
         specifier: ^3.34.0
         version: 3.49.0(react@19.3.1)
@@ -87,9 +90,6 @@ importers:
       '@vitejs/plugin-react':
         specifier: ^5.0.0
         version: 5.2.0(vite@7.3.7(@types/node@22.20.5)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15))
-      ajv:
-        specifier: 8.20.0
-        version: 8.20.0
       apca-w3:
         specifier: ^0.1.9
         version: 0.1.9
@@ -1110,6 +1110,12 @@ packages:
     resolution: {integrity: sha512-EhX6N3XPMEnVU5cRfNgzPOKcSucsbu3nNNWuoAaEuKIqmddBKHN5b9d4rPe65T1I+FaOT176JKiZNsUBp3rqbA==}
     cpu: [x64]
     os: [win32]
+
+  '@shared-next/brand@https://codeload.github.com/achoo254/shared-next/tar.gz/2dfb78942308f36f459ef861fbb57489402c3eb5#path:/packages/brand':
+    resolution: {gitHosted: true, path: /packages/brand, tarball: https://codeload.github.com/achoo254/shared-next/tar.gz/2dfb78942308f36f459ef861fbb57489402c3eb5}
+    version: 0.2.0
+    engines: {node: '>=22.12'}
+    hasBin: true
 
   '@tabler/icons-react@3.49.0':
     resolution: {integrity: sha512-Um59pm5RVNUaQjFUtG0r4oYJbZuBS3tGugAA2tgBg0WufMk34Eio3nsO30RUkLuL2giYPQUNdY9HvqltLLYyNA==}
@@ -3236,6 +3242,10 @@ snapshots:
 
   '@rollup/rollup-win32-x64-msvc@4.64.7':
     optional: true
+
+  '@shared-next/brand@https://codeload.github.com/achoo254/shared-next/tar.gz/2dfb78942308f36f459ef861fbb57489402c3eb5#path:/packages/brand':
+    dependencies:
+      ajv: 8.20.0
 
   '@tabler/icons-react@3.49.0(react@19.3.1)':
     dependencies:

@@ -1,13 +1,15 @@
 /*
- * Browser view of web/brand.config.json (pattern of chat-next
- * apps/web/src/brand.ts @a5be0b4). brand/src reads the file with node:fs
- * and validates it against the schema; the app imports the JSON through Vite,
- * and the brand tests keep the file valid.
+ * Browser view of web/brand.config.json. defineBrand checks the required
+ * fields without a schema validator (Ajv is blocked by the CSP); the full
+ * schema runs at build time (pnpm brand:gen, vite-brand.ts, check:brand).
  */
+import { defineBrand } from "@shared-next/brand";
 import brandConfig from "../../brand.config.json";
 
+const brand = defineBrand(brandConfig);
+
 /** Product name shown in the UI (the wordmark); never hard-code it. */
-export const APP_NAME = brandConfig.appName;
+export const APP_NAME = brand.appName;
 
 /** Issuer of the primary tenant: the default IdP origin. */
-export const PRIMARY_ISSUER = brandConfig.primaryTenant.issuer;
+export const PRIMARY_ISSUER = brand.primaryTenant.issuer;
