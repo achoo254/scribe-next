@@ -1,4 +1,6 @@
 import type { CapacitorConfig } from "@capacitor/cli";
+// appId and appName come from brand.config.json through `pnpm brand:gen`.
+import brand from "./brand/generated/capacitor.json" with { type: "json" };
 
 /**
  * iOS shell around web/dist (plan 260728-1609, D3): the page runs at
@@ -8,8 +10,8 @@ import type { CapacitorConfig } from "@capacitor/cli";
  * running natively.
  */
 const config: CapacitorConfig = {
-	appId: "com.hoandat.scribe",
-	appName: "Scribe",
+	appId: brand.appId,
+	appName: brand.appName,
 	webDir: "dist",
 	plugins: {
 		CapacitorHttp: { enabled: true },

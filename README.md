@@ -11,6 +11,7 @@ Hai ứng dụng dùng chung một backend:
 | Backend | `server/scribe-be/` + `crates/core-split/` | Rust/axum, một binary musl tĩnh, MongoDB |
 
 - **Bundle id iPhone**: `com.hoandat.scribe`
+- **Brand**: tên, màu, icon, bundle id, URL scheme, tenant chính và mẫu host nằm ở một file `web/brand.config.json` (schema `web/brand.config.schema.json`). Sửa file đó (hoặc `web/brand/icon*.svg`) rồi chạy `cd web && pnpm run brand:gen` để sinh lại `web/brand/generated/` (web manifest, `capacitor.json`, icon web; web manifest và icon PNG/ICO chưa được phục vụ, web chỉ dùng `/favicon.svg` lấy từ icon brand). `pnpm run lint` chặn tên sản phẩm viết cứng (`check:brand`) và mã màu ngoài `web/src/styles/tokens.css` (`check:tokens`). Icon app iPhone (`Assets.xcassets`) và tên trong `Info.plist` giữ như bản đã phát hành, không sinh.
 - **Tính năng**: ghi mic và màn hình/tiếng hệ thống (trình duyệt), ghi khi khoá màn hình (iPhone), cắt file theo phút / dung lượng / số phần, lịch sử ghi và phát lại, chép lời bằng OpenAI `gpt-4o-mini-transcribe` (key của server, tính phút theo gói).
 - **Đăng nhập**: auth-next (`auth.hoandat.com`) cho cả web và iPhone.
 - **Môi trường**: dev local và prod (`https://scribe.hoandat.com`). Không có staging.
@@ -29,7 +30,7 @@ cd web && pnpm install && pnpm run dev   # → http://localhost:5173, proxy /api
 ## Kiểm tra
 
 ```bash
-cd web && pnpm run lint && pnpm run typecheck && pnpm run check:tokens && pnpm test
+cd web && pnpm run lint && pnpm run typecheck && pnpm test   # lint gồm check:brand và check:tokens
 cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace
 ```
 

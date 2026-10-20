@@ -10,5 +10,10 @@
 		"esModuleInterop": true,
 		"types": ["node"]
 	},
-	"include": ["check-tokens.ts", "check-tokens/**/*.ts"]
+	"include": [
+		"check-tokens.ts",
+		"check-tokens/**/*.ts",
+		"check-brand.ts",
+		"check-brand/**/*.ts"
+	]
 }

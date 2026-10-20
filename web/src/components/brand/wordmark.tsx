@@ -1,9 +1,10 @@
 import type { ComponentProps } from "react";
+import { APP_NAME } from "../../lib/brand";
 import { cn } from "../../lib/cn";
 
 export type WordmarkProps = Omit<ComponentProps<"span">, "children">;
 
-/** "Scribe" in bold JetBrains Mono, the "S" in violet step 11. */
+/** The app name in bold JetBrains Mono, its first letter in violet step 11. */
 export function Wordmark({ className, ...rest }: WordmarkProps) {
 	return (
 		<span
@@ -13,7 +14,8 @@ export function Wordmark({ className, ...rest }: WordmarkProps) {
 			)}
 			{...rest}
 		>
-			<span className="text-primary">S</span>cribe
+			<span className="text-primary">{APP_NAME.slice(0, 1)}</span>
+			{APP_NAME.slice(1)}
 		</span>
 	);
 }

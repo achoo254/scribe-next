@@ -10,6 +10,7 @@
 			"**/dist/**",
 			"**/*.d.ts",
 			"ios/**",
+			"brand/generated/**",
 			"pnpm-lock.yaml",
 			"**/*.css",
 			"**/*.html"

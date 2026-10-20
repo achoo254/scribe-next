@@ -1,0 +1,93 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "brand.config.schema.json",
+	"title": "Brand configuration",
+	"description": "Product name, identifiers and hosts of Scribe (copied from chat-next/brand.config.schema.json @a5be0b4, trimmed to what Scribe ships; keep in sync until a shared package exists). Renaming the product means editing this file, running pnpm brand:gen and rebuilding; no product name is hard-coded in web code.",
+	"type": "object",
+	"additionalProperties": false,
+	"required": [
+		"appName",
+		"shortName",
+		"description",
+		"colors",
+		"icon",
+		"iconMaskable",
+		"appIds",
+		"urlScheme",
+		"primaryTenant",
+		"hostTemplates"
+	],
+	"properties": {
+		"$schema": { "type": "string" },
+		"appName": { "type": "string", "minLength": 1, "maxLength": 40 },
+		"shortName": { "type": "string", "minLength": 1, "maxLength": 12 },
+		"description": { "type": "string", "minLength": 1, "maxLength": 200 },
+		"colors": {
+			"description": "Manifest colours; each must equal its token in src/styles/tokens.css (primary = --c-primary-solid, background = light --c-bg, backgroundDark = dark --c-bg), which a brand test checks.",
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["primary", "background", "backgroundDark"],
+			"properties": {
+				"primary": { "$ref": "#/$defs/hexColor" },
+				"background": { "$ref": "#/$defs/hexColor" },
+				"backgroundDark": { "$ref": "#/$defs/hexColor" }
+			}
+		},
+		"icon": {
+			"description": "Master icon (SVG), relative to web/: favicon and the rounded PNG icons.",
+			"type": "string",
+			"pattern": "^[a-z0-9][a-z0-9/._-]*\\.svg$"
+		},
+		"iconMaskable": {
+			"description": "Full-bleed icon (SVG) whose artwork stays inside the central 80% circle: manifest maskable icons and the Apple touch icon.",
+			"type": "string",
+			"pattern": "^[a-z0-9][a-z0-9/._-]*\\.svg$"
+		},
+		"appIds": {
+			"description": "Store identifiers. Changing one makes the store treat it as a different app.",
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["ios"],
+			"properties": {
+				"ios": { "$ref": "#/$defs/reverseDomain" }
+			}
+		},
+		"urlScheme": {
+			"description": "Private-use URI scheme (RFC 8252) of the native OIDC redirect; must match OIDC_MOBILE_REDIRECT_URI of the server and the redirect the IdP registers for scribe-mobile.",
+			"$ref": "#/$defs/reverseDomain"
+		},
+		"primaryTenant": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["domain", "issuer"],
+			"properties": {
+				"domain": { "$ref": "#/$defs/domain" },
+				"issuer": { "type": "string", "pattern": "^https://[a-z0-9.-]+$" }
+			}
+		},
+		"hostTemplates": {
+			"description": "Hosts of one tenant; {domain} is the tenant's domain.",
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["web"],
+			"properties": {
+				"web": { "$ref": "#/$defs/hostTemplate" }
+			}
+		}
+	},
+	"$defs": {
+		"hexColor": { "type": "string", "pattern": "^#[0-9a-f]{6}$" },
+		"reverseDomain": {
+			"type": "string",
+			"pattern": "^[a-z][a-z0-9]*(\\.[a-z][a-z0-9-]*){2,}$"
+		},
+		"domain": {
+			"type": "string",
+			"pattern": "^([a-z0-9]([a-z0-9-]*[a-z0-9])?\\.)+[a-z]{2,}$"
+		},
+		"hostTemplate": {
+			"type": "string",
+			"pattern": "^([a-z0-9-]+\\.)+\\{domain\\}$"
+		}
+	}
+}

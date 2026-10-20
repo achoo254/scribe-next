@@ -2,7 +2,8 @@
   <!-- Scribe app icon: sound wave (violet, primary) turning into transcript lines (plum, accent).
        Same drawing as BrandMark (src/components/brand/wordmark.tsx), dark-theme tokens of src/styles/tokens.css:
        bg #111113, primary #baa7ff / solid #6e56cf (violet), accent #e796f3 (plum).
-       iOS AppIcon PNG = this drawing with a square, opaque background (iOS rounds the corners). -->
+       iOS AppIcon PNG = this drawing with a square, opaque background (iOS rounds the corners), like
+       icon-maskable.svg. Edit both, then run pnpm brand:gen (brand.config.json "icon"). -->
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0" stop-color="#1c1b22"/>

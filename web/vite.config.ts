@@ -1,6 +1,7 @@
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig, loadEnv } from "vite";
+import { brandAssets } from "./vite-brand";
 
 /** Build-time config: the backend origin the native shell calls. */
 const REQUIRED_ENV = ["VITE_NATIVE_API_ORIGIN"] as const;
@@ -77,7 +78,7 @@ export default defineConfig(({ command, mode }) => {
 		}
 	}
 	return {
-		plugins: [react(), tailwindcss()],
+		plugins: [react(), tailwindcss(), brandAssets()],
 		server: {
 			port: 5173,
 			strictPort: true,

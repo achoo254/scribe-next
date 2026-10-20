@@ -1,0 +1,24 @@
+{
+	"$schema": "./brand.config.schema.json",
+	"appName": "Scribe",
+	"shortName": "Scribe",
+	"description": "Ghi âm, cắt tệp và chép lời tiếng Việt trên web và iPhone.",
+	"colors": {
+		"primary": "#6e56cf",
+		"background": "#f9f9fb",
+		"backgroundDark": "#111113"
+	},
+	"icon": "brand/icon.svg",
+	"iconMaskable": "brand/icon-maskable.svg",
+	"appIds": {
+		"ios": "com.hoandat.scribe"
+	},
+	"urlScheme": "com.hoandat.scribe",
+	"primaryTenant": {
+		"domain": "hoandat.com",
+		"issuer": "https://auth.hoandat.com"
+	},
+	"hostTemplates": {
+		"web": "scribe.{domain}"
+	}
+}
