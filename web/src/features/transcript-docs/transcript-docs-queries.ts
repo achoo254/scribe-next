@@ -273,10 +273,17 @@ export function useStartTranslation(key: string) {
 	const queryClient = useQueryClient();
 	return useMutation({
 		mutationFn: (lang: TranslationLang) => startTranslation(key, lang),
-		onSuccess: (progress: TranslationProgress, lang) => {
+		onSuccess: async (progress: TranslationProgress, lang) => {
 			// A status left from an earlier run must not end this one.
 			queryClient.removeQueries({
 				queryKey: transcriptDocKeys.translationStatus(key, lang),
+			});
+			// Picking a new language loads its translation while the POST is
+			// sent. That load may have been answered before the run started
+			// ("none"); a query with no data yet would only wait for it on
+			// invalidation, so it is dropped and asked again.
+			await queryClient.cancelQueries({
+				queryKey: transcriptDocKeys.translation(key, lang),
 			});
 			queryClient.setQueryData<TranscriptTranslation>(
 				transcriptDocKeys.translation(key, lang),
