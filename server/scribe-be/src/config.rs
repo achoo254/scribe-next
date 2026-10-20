@@ -322,6 +322,10 @@ pub struct Config {
     pub allowed_domains: Vec<String>,
     /// Allowlist email cụ thể (rỗng = không lọc theo email).
     pub allowed_emails: Vec<String>,
+    /// Tài khoản IdP (`sub`) được đăng nhập dù email chưa xác minh (`UNVERIFIED_EMAIL_SUBS`), cho
+    /// tài khoản duyệt App Store của hoandat-auth: theo `sub` chứ không theo email, vì email chưa
+    /// xác minh thì ai cũng có thể khai.
+    pub unverified_email_subs: Vec<String>,
     /// Email được dùng chép lời bằng OpenAI (rỗng = tắt tính năng với mọi người).
     pub transcribe_emails: Vec<String>,
     /// Email được dùng chép trực tiếp trên iPhone (`REALTIME_EMAILS`; rỗng = không ai). Không theo
@@ -407,6 +411,7 @@ impl Config {
             allowed_emails: parse_csv(option_env!("ALLOWED_EMAILS")),
             transcribe_emails: parse_csv(option_env!("TRANSCRIBE_EMAILS")),
             realtime_emails: parse_csv(option_env!("REALTIME_EMAILS")),
+            unverified_email_subs: parse_csv(option_env!("UNVERIFIED_EMAIL_SUBS")),
             openai_key_path: option_env!("OPENAI_KEY_PATH").filter(|p| !p.is_empty()).map(str::to_string),
             transcribe_provider: Provider::from_build(),
             elevenlabs_key_path: option_env!("ELEVENLABS_KEY_PATH").filter(|p| !p.is_empty()).map(str::to_string),
@@ -456,6 +461,11 @@ impl Config {
         })
     }
 
+    /// Email của tài khoản này dùng được dù IdP chưa xác minh (chỉ `sub` có tên trong danh sách).
+    pub fn accepts_unverified_email(&self, sub: &str) -> bool {
+        sub_listed(&self.unverified_email_subs, sub)
+    }
+
     /// Email có được phép không: chỉ gọi SAU khi đã xác nhận `email_verified`.
     /// Rỗng cả hai list = cho phép mọi email verified (chế độ mở user chốt).
     pub fn email_allowed(&self, email: &str) -> bool {
@@ -494,6 +504,11 @@ impl Config {
 /// `email` có trong danh sách không (không phân biệt hoa thường; email rỗng không bao giờ có).
 fn listed(list: &[String], email: &str) -> bool {
     !email.is_empty() && list.iter().any(|e| e.eq_ignore_ascii_case(email))
+}
+
+/// `sub` của IdP so khớp tuyệt đối (phân biệt hoa thường), khác email.
+fn sub_listed(list: &[String], sub: &str) -> bool {
+    !sub.is_empty() && list.iter().any(|s| s == sub)
 }
 
 fn parse_csv(v: Option<&str>) -> Vec<String> {
@@ -556,6 +571,15 @@ mod tests {
         assert!(!listed(&list, "other@example.com"));
         assert!(!listed(&list, ""));
         assert!(!listed(&parse_csv(Some("")), "owner@example.com"));
+    }
+
+    #[test]
+    fn unverified_email_subs_match_the_exact_sub_only() {
+        let list = parse_csv(Some(" acc_Review1 ,"));
+        assert!(sub_listed(&list, "acc_Review1"));
+        assert!(!sub_listed(&list, "acc_review1"));
+        assert!(!sub_listed(&list, ""));
+        assert!(!sub_listed(&parse_csv(None), "acc_Review1"));
     }
 
     #[test]

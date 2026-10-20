@@ -122,6 +122,7 @@ Tất cả trong `/opt/scribe-be`, chủ `scribe`, quyền 600, ghi bằng stdin
 | `ELEVENLABS_MONTHLY_HOURS` | Trần giờ audio ElevenLabs mỗi tháng (giờ VN), mặc định `25` (gói Starter có khoảng 27 giờ Scribe v2). Độc lập với trần USD |
 | `TRANSCRIBE_EMAILS` | Email được dùng "Chép lời" (cách nhau dấu phẩy) khi chưa bật `TRANSCRIBE_OPEN` |
 | `REALTIME_EMAILS` | Email được dùng "Chép trực tiếp" trên iPhone (cách nhau dấu phẩy). Rỗng = **không ai**, không theo `TRANSCRIBE_OPEN`. Phút tính chung hạn mức chép lời. **Trước lần build prod có tính năng này, chủ sản phẩm thêm email của mình vào `.env.production`** (chưa thêm thì app nhận 403, ghi âm vẫn chạy) |
+| `UNVERIFIED_EMAIL_SUBS` | Tài khoản hoandat-auth (`sub`, ví dụ `acc_…`, cách nhau dấu phẩy) được đăng nhập dù email chưa xác minh. Chỉ dùng cho tài khoản duyệt App Store (`app_review`, ADR 0010 của hoandat-auth): theo `sub` vì email chưa xác minh thì ai cũng khai được. Rỗng = mọi email phải được Google/GitHub/Apple xác minh. Gỡ khi tắt đăng nhập duyệt |
 | `TRANSCRIBE_OPEN` | `1`/`true` = mọi user đăng nhập được chép lời trong hạn mức gói. **Bật trên prod từ 2026-10-16 14:19** |
 | `TRANSCRIBE_FREE_MINUTES`, `TRANSCRIBE_PLUS_MINUTES`, `TRANSCRIBE_FREE_POOL_USD`, `TRANSCRIBE_MONTHLY_CAP_USD`, `TRANSCRIBE_FREE_DAILY_MINUTES`, `TRANSCRIBE_FREE_DELAY_HOURS` | Hạn mức chép lời (§Deploy); prod dùng mặc định |
 | `NOTIFY_BOT_API`, `NOTIFY_BOT_TOKEN_PATH`, `NOTIFY_CHAT_ID` | Báo động qua bot (§Deploy) |

@@ -124,9 +124,11 @@ pub(crate) fn login_failed(state: &AppState, code: &str) -> Response {
 /// Lý do từ chối đăng nhập khi tài khoản Scribe đang bị xoá (web đổi thành mã `deleting`).
 const DELETING: &str = "tài khoản Scribe vừa được xoá, đang dọn dữ liệu — thử lại sau vài phút";
 
-/// Kiểm danh tính từ IdP rồi ghép user. Email chưa xác minh hoặc ngoài allowlist thì từ chối.
+/// Kiểm danh tính từ IdP rồi ghép user. Email chưa xác minh (trừ tài khoản trong
+/// `UNVERIFIED_EMAIL_SUBS`) hoặc ngoài allowlist thì từ chối.
 async fn admit(state: &AppState, claims: &crate::oidc::IdClaims) -> Result<String, AppError> {
-    let email = claims.email.as_deref().filter(|e| !e.is_empty()).filter(|_| claims.email_verified);
+    let verified = claims.email_verified || state.config.accepts_unverified_email(&claims.sub);
+    let email = claims.email.as_deref().filter(|e| !e.is_empty()).filter(|_| verified);
     let Some(email) = email else {
         audit::record(state, None, "auth.login_denied", doc! { "reason": "email_unverified" });
         return Err(AppError::Forbidden("email chưa được xác minh".into()));
