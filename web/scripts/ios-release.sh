@@ -4,10 +4,10 @@
 # never in CI. Steps for the first release: docs/ios-app.md, "Phát hành
 # TestFlight / App Store".
 #
-#   IOS_TEAM=<Team ID> ASC_KEY_ID=<Key ID> ASC_ISSUER_ID=<Issuer ID> \
+#   ASC_KEY_ID=<Key ID> ASC_ISSUER_ID=<Issuer ID> \
 #   ASC_KEY_PATH=<path to AuthKey_XXXX.p8> pnpm run ios:release
 #
-# Optional: IOS_BUILD_NUMBER (default: UTC time YYYYMMDD.HHMM, always higher
+# Optional: IOS_TEAM (default AM5C55N339, the paid team), IOS_BUILD_NUMBER (default: UTC time YYYYMMDD.HHMM, always higher
 # than the previous upload), IOS_DERIVED_DATA, IOS_RELEASE_DIR (keeps the
 # archive; default: a temporary folder removed at exit), DEVELOPER_DIR.
 # The .p8 key is a secret: keep it outside the repository, mode 600.
@@ -20,7 +20,7 @@ fail() {
 }
 
 export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
-: "${IOS_TEAM:?Thiếu IOS_TEAM (Team ID 10 ký tự ở developer.apple.com → Membership details)}"
+IOS_TEAM="${IOS_TEAM:-AM5C55N339}"
 : "${ASC_KEY_ID:?Thiếu ASC_KEY_ID (App Store Connect → Users and Access → Integrations → Keys)}"
 : "${ASC_ISSUER_ID:?Thiếu ASC_ISSUER_ID (cùng trang Keys, dòng Issuer ID)}"
 : "${ASC_KEY_PATH:?Thiếu ASC_KEY_PATH (đường dẫn tệp AuthKey_<KEY_ID>.p8)}"
