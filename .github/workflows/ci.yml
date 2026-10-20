@@ -1,4 +1,4 @@
-# Kiểm tra tự động cho web (React) và backend (Rust). Chỉ kiểm, không deploy:
+# Kiểm tra tự động cho web (React: lint, typecheck, unit, build, e2e) và backend (Rust). Chỉ kiểm, không deploy:
 # deploy prod lên .65 vẫn làm tay theo docs/deploy-web-production.md.
 name: CI
 
@@ -10,6 +10,11 @@ on:
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
+
+# `vite build` dừng nếu thiếu biến này (web/vite.config.ts). Giá trị công khai, như web/.env của
+# prod: origin backend mà app iPhone gọi (docs/deploy-web-production.md).
+env:
+  VITE_NATIVE_API_ORIGIN: https://scribe.hoandat.com
 
 jobs:
   web:
@@ -32,6 +37,51 @@ jobs:
       - run: pnpm run lint
       - run: pnpm run typecheck
       - run: pnpm test
+      # Build prod (tsc đã chạy ở typecheck) + bảo đảm stub e2e không lọt vào dist.
+      - run: pnpm exec vite build
+      - run: pnpm run check:dist
+
+  # Playwright như chạy local (web/e2e/playwright.config.ts: Vite dev + API stub, chromium-desktop
+  # + webkit-iphone, 2 worker), rồi bản build prod dưới header bảo mật prod (pnpm run test:e2e:csp).
+  e2e:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: web/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      # Cache trình duyệt theo đúng phiên bản Playwright đã cài; thư viện hệ thống (apt) thì
+      # không cache được nên lần cache-hit chỉ cài install-deps.
+      - id: playwright
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+      - id: browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+      - if: steps.browsers.outputs.cache-hit != 'true'
+        run: node node_modules/@playwright/test/cli.js install --with-deps chromium webkit
+      - if: steps.browsers.outputs.cache-hit == 'true'
+        run: node node_modules/@playwright/test/cli.js install-deps chromium webkit
+      # Ảnh chụp mốc chỉ có bản macOS (*-darwin.png): trên Linux bỏ so sánh ảnh, giữ mọi assert khác.
+      - run: pnpm run test:e2e --ignore-snapshots
+      - run: pnpm exec vite build
+      - run: pnpm run test:e2e:csp
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-test-results
+          path: web/e2e/test-results
+          retention-days: 7
 
   rust:
     runs-on: ubuntu-latest

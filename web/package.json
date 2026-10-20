@@ -17,6 +17,7 @@
 		"test": "vitest run",
 		"test:watch": "vitest",
 		"test:e2e": "node node_modules/@playwright/test/cli.js test --config e2e/playwright.config.ts",
+		"test:e2e:csp": "node node_modules/@playwright/test/cli.js test --config e2e/csp/playwright.config.ts",
 		"screenshots:app-store": "node node_modules/@playwright/test/cli.js test --config e2e/app-store/playwright.config.ts",
 		"check:tokens": "tsx scripts/check-tokens.ts",
 		"check:brand": "tsx scripts/check-brand.ts",

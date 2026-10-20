@@ -77,6 +77,7 @@ Cloudflare (DNS proxied, SSL "Full")
 | BE binary | `/opt/scribe-be/scribe-be` | `cargo zigbuild` (xem §Deploy) → `x86_64-unknown-linux-musl/release/scribe-be` trong thư mục target |
 | systemd unit | `/etc/systemd/system/scribe-be.service` | `deploy/scribe-be.service` |
 | nginx vhost | `/etc/nginx/conf.d/scribe.conf` | `deploy/nginx-scribe.conf` |
+| nginx header bảo mật | `/etc/nginx/scribe/security-headers.inc` | `deploy/nginx-scribe-security-headers.inc` (§Header bảo mật) |
 | FE static | `/var/www/scribe/dist` | `web/` → `pnpm run build` → `web/dist` |
 
 ### Tệp bí mật trên server
@@ -165,7 +166,7 @@ Tuỳ chọn: `VITE_IDP_ORIGIN` — origin auth-next cho link "Tài khoản hoan
 ## CI và repo
 
 - **Repo duy nhất là GitHub** (`origin` = `achoo254/scribe-next`, private). GitLab đã bỏ hoàn toàn ngày 2026-10-16.
-- **CI** `.github/workflows/ci.yml` chạy mỗi lần push `main` và mỗi pull request, **chỉ kiểm, không deploy**: job `web` (`pnpm install --frozen-lockfile`, `lint` gồm `check:brand` và `check:tokens`, `typecheck`, `test`) và job `rust` (`cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`, có ffmpeg cho test cắt file thật).
+- **CI** `.github/workflows/ci.yml` chạy mỗi lần push `main` và mỗi pull request, **chỉ kiểm, không deploy**: job `web` (`pnpm install --frozen-lockfile`, `lint` gồm `check:brand` và `check:tokens`, `typecheck`, `test`, `vite build`, `check:dist`), job `e2e` (Playwright chromium + webkit, cache trình duyệt theo phiên bản: `test:e2e --ignore-snapshots` vì ảnh mốc chỉ có bản macOS, rồi `vite build` + `test:e2e:csp`, §Header bảo mật) và job `rust` (`cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`, có ffmpeg cho test cắt file thật). CI build với `VITE_NATIVE_API_ORIGIN=https://scribe.hoandat.com` khai trong workflow.
 
 ### SSH source-IP allowlist
 
@@ -305,6 +306,38 @@ curl -s  "https://$DEPLOY_DOMAIN/api/health"   # liveness
 - **IdP:** `scribe-web` và `scribe-mobile` bật trên auth-next; `SCRIBE_WEB_CLIENT_SECRET` nằm trong `/var/www/hoandat-auth/.env`.
 - **MongoDB `.65`:** auth ENABLED; `MONGO_URI` dùng user riêng `scribe` (database + authSource = `scribe`). **mongod dùng chung cho team theo chủ đích** → cổng `27017` mở ra ngoài + mật khẩu chia sẻ là **cố ý**, KHÔNG firewall về localhost / KHÔNG rotate (team cần kết nối trực tiếp).
 - **Sao lưu:** `/root/scribe-backup-<ts>/` (mới nhất `20261019-121148`, trước khi lên xoá tài khoản + trang pháp lý; `20261019-103131` trước Key riêng; `20261017-160739` trước khi chuyển chép lời sang ElevenLabs; `20261017-130838` trước dịch Việt ↔ Anh; `20261017-123216` trước xuất VTT/Markdown/Word; `20261017-111120` trước chép trực tiếp; `20261017-072952` có kèm `files-expiry-before.json` là hạn tệp trước khi đổi sang gói free 7 ngày) và `/root/onescribe-backup-20261016-124301/` (dump db `onescribe` trước đổi tên). Không có cron backup.
+
+## Header bảo mật
+
+nginx gắn bộ header bảo mật cho mọi response của Scribe (FE, `/assets/`, `/api/`, cả trang lỗi); BE Rust không tự đặt header nào. Nguồn duy nhất: `deploy/nginx-scribe-security-headers.inc`, `deploy/nginx-scribe.conf` include nó ở mức server (cho `/api/`) và lại trong `/assets/` và `/` — hai location này có `add_header Cache-Control` riêng nên nginx không thừa kế header của mức server. File include nằm ngoài `conf.d/` vì `conf.d/*.conf` nạp ở mức http, sẽ áp cho mọi vhost của box shared.
+
+| Header | Giá trị |
+|---|---|
+| `Strict-Transport-Security` | `max-age=31536000; includeSubDomains` (không preload) |
+| `X-Content-Type-Options` | `nosniff` |
+| `Referrer-Policy` | `strict-origin-when-cross-origin` |
+| `Permissions-Policy` | `camera=(), geolocation=(), microphone=(self), display-capture=(self)` — ghi âm micro và chia sẻ màn hình/âm thanh hệ thống (`web/src/features/recorder/media-capture.ts`) |
+| `Content-Security-Policy` | mọi nguồn `'self'`; script thêm hash của script inline áp theme trong `web/index.html`; `style-src 'unsafe-inline'` vì Radix chèn thẻ `<style>`; `object-src 'none'`, `form-action 'self'`, `frame-ancestors 'none'`, `manifest-src 'self'`. Lý do từng directive ghi trong file include |
+
+**Kiểm:** `pnpm run build && pnpm run test:e2e:csp` (trong `web/`, CI cũng chạy) phục vụ `web/dist` với đúng header đọc từ file include, chạy `e2e/csp/csp.spec.ts` và mọi spec giao diện web trên Chromium + WebKit; vi phạm CSP nào (sự kiện `securitypolicyviolation` trong trang, hoặc báo cáo `report-uri` từ các spec khác) cũng làm run thất bại. Sửa script inline trong `web/index.html` thì hash đổi: run báo vi phạm `script-src-elem`, cập nhật hash trong file include theo giá trị trình duyệt báo.
+
+**Lưu ý Cloudflare:** CSP chặn mọi script mà Cloudflare tự chèn (Web Analytics, Rocket Loader). Bật tính năng nào như vậy cho `scribe.hoandat.com` thì phải thêm origin của nó vào CSP trước.
+
+**Deploy lên `.65` — CẦN USER DUYỆT trước khi chạy** (đổi cấu hình nginx shared của prod). Từ máy deploy, `KEY` như §Deploy:
+
+```bash
+# 1) Đẩy file include + vhost (thư mục /etc/nginx/scribe/ tạo lần đầu)
+ssh -i "$KEY" -p 24700 root@103.72.98.65 'mkdir -p /etc/nginx/scribe && cp -a /etc/nginx/conf.d/scribe.conf /root/scribe.conf.bak-$(date +%Y%m%d-%H%M%S)'
+scp -i "$KEY" -P 24700 deploy/nginx-scribe-security-headers.inc root@103.72.98.65:/etc/nginx/scribe/security-headers.inc
+scp -i "$KEY" -P 24700 deploy/nginx-scribe.conf root@103.72.98.65:$DEPLOY_NGINX_CONF
+# 2) Kiểm cú pháp rồi mới reload; nginx -t lỗi thì chép lại bản .bak, KHÔNG reload
+ssh -i "$KEY" -p 24700 root@103.72.98.65 'nginx -t && systemctl reload nginx'
+# 3) Xác nhận từ ngoài
+curl -sI "https://$DEPLOY_DOMAIN/" | grep -iE 'strict-transport|content-security|permissions-policy|referrer-policy|x-content-type'
+curl -sI "https://$DEPLOY_DOMAIN/api/health" | grep -i content-security
+```
+
+Sau reload: mở web, đăng nhập, ghi thử vài giây và phát lại, mở account menu; DevTools Console không được có dòng `Refused to … Content Security Policy`.
 
 ## Log và audit
 
