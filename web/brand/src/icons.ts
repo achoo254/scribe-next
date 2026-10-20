@@ -1,7 +1,8 @@
 /*
  * Copied from chat-next/packages/brand @a5be0b4; keep in sync until shared
- * package exists. Scribe change: paths are rooted at web/. The iOS AppIcon
- * (ios/App/App/Assets.xcassets) is not generated: it ships as is.
+ * package exists. Scribe changes: paths are rooted at web/, and the SVG
+ * favicon keeps the /favicon.svg URL the site has always linked. The iOS
+ * AppIcon (ios/App/App/Assets.xcassets) is not generated: it ships as is.
  */
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
@@ -37,7 +38,7 @@ export const FAVICON_ICO_SIZES: readonly number[] = [16, 32, 48];
 
 export const FAVICON_ICO = "favicon.ico";
 /** URL path of the SVG favicon (a copy of the brand icon). */
-export const FAVICON_SVG = "icon.svg";
+export const FAVICON_SVG = "favicon.svg";
 /** Records which brand SVGs the generated icons were drawn from. */
 export const ICONS_SOURCE_FILE = "icons-source.json";
 
