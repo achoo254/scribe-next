@@ -24,6 +24,27 @@ export async function fontsReady(page: Page): Promise<void> {
 	});
 }
 
+/**
+ * Waits for the running CSS transitions and animations to end, so axe reads
+ * the colours a page settles on. Reduced motion makes them 1ms, but a
+ * transition only moves on at the browser's next rendering update, which
+ * headless WebKit on Linux may not run for hundreds of ms: axe then saw a
+ * just re-enabled button still at its disabled opacity.
+ */
+async function animationsFinished(page: Page): Promise<void> {
+	await page.evaluate(async () => {
+		const finite = document
+			.getAnimations()
+			.filter((animation) =>
+				Number.isFinite(animation.effect?.getComputedTiming().endTime),
+			);
+		// A cancelled animation rejects `finished`; it is over all the same.
+		await Promise.all(
+			finite.map((animation) => animation.finished.catch(() => undefined)),
+		);
+	});
+}
+
 export interface A11yFinding {
 	id: string;
 	impact: string | null;
@@ -40,6 +61,7 @@ export async function seriousA11yViolations(
 	page: Page,
 	include?: string,
 ): Promise<A11yFinding[]> {
+	await animationsFinished(page);
 	const builder = new AxeBuilder({ page }).withTags([
 		"wcag2a",
 		"wcag2aa",

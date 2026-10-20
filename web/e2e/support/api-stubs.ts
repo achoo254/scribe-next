@@ -24,7 +24,10 @@ import type {
 	TranscriptTranslation,
 	TranslationProgress,
 } from "../../src/features/transcript-docs/transcript-docs-api";
-import type { Transcript } from "../../src/features/transcript/transcript-api";
+import type {
+	ExportFormat,
+	Transcript,
+} from "../../src/features/transcript/transcript-api";
 import {
 	type KeyProvider,
 	type KeyUse,
@@ -122,6 +125,15 @@ function activeChoice(keys: StoredKey[], prefs: KeyChoice): KeyChoice {
 			: null,
 	};
 }
+
+/** Content-Type of each export, as the backend sends it (export.rs). */
+const EXPORT_MIME: Record<ExportFormat, string> = {
+	txt: "text/plain; charset=utf-8",
+	srt: "application/x-subrip; charset=utf-8",
+	vtt: "text/vtt; charset=utf-8",
+	md: "text/markdown; charset=utf-8",
+	docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+};
 
 export interface StubReply {
 	status: number;
@@ -707,17 +719,20 @@ export async function stubApi(
 					return json(route, 200, { items: fixtures.managedFiles });
 				case "GET /api/transcript-docs":
 					return json(route, 200, { items: fixtures.transcriptDocs });
-				case "GET /api/transcripts/export":
+				case "GET /api/transcripts/export": {
 					stub.exports.push(url.searchParams);
+					const format = (url.searchParams.get("format") ??
+						"txt") as ExportFormat;
 					// An attachment: the browser saves it and stays on the page.
 					return route.fulfill({
 						status: 200,
-						contentType: "text/markdown; charset=utf-8",
+						contentType: EXPORT_MIME[format],
 						headers: {
-							"Content-Disposition": 'attachment; filename="ban-dich.md"',
+							"Content-Disposition": `attachment; filename="ban-dich.${format}"`,
 						},
-						body: "# Bản dịch (giả lập)\n",
+						body: "Bản dịch (giả lập)\n",
 					});
+				}
 				case "GET /api/transcripts": {
 					const ids = new Set(
 						(url.searchParams.get("ids") ?? "").split(",").filter(Boolean),

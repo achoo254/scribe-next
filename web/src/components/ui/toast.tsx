@@ -176,7 +176,10 @@ export function ToastProvider({
 						);
 					},
 				)}
-				<RadixToast.Viewport className="-translate-x-1/2 fixed bottom-6 left-1/2 z-200 m-0 grid w-[min(440px,calc(100vw-2*var(--gutter)))] list-none gap-2 p-0 outline-none" />
+				<RadixToast.Viewport
+					data-id="toast-viewport"
+					className="-translate-x-1/2 fixed bottom-6 left-1/2 z-200 m-0 grid w-[min(440px,calc(100vw-2*var(--gutter)))] list-none gap-2 p-0 outline-none"
+				/>
 			</RadixToast.Provider>
 		</ToastContext.Provider>
 	);

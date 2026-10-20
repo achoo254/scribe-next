@@ -121,7 +121,9 @@ test("“Xoá tất cả” states the count and size, then empties the history"
 	await expect(dialog).toContainText("Xoá 3 tệp, tổng 15.9 MB?");
 	await dialog.getByRole("button", { name: "Xoá tất cả" }).click();
 
-	await expect(page.getByText("Đã xoá 3 tệp").first()).toBeVisible();
+	await expect(
+		page.getByTestId("toast-viewport").getByText("Đã xoá 3 tệp"),
+	).toBeVisible();
 	await expect(page.getByTestId("history-empty")).toBeVisible();
 	expect(api.deletes).toEqual(["/api/files"]);
 	expect(api.unexpected).toEqual([]);

@@ -99,11 +99,14 @@ for (const scheme of COLOR_SCHEMES) {
 		const exported = page.waitForRequest((request) =>
 			request.url().includes("/api/transcripts/export"),
 		);
-		await menu.getByRole("menuitem", { name: "Markdown" }).click();
+		// Word, not a text format: Playwright's WebKit on Linux decides by
+		// Content-Type alone and shows any text/* attachment as a page instead
+		// of saving it, which Safari and Chromium never do.
+		await menu.getByRole("menuitem", { name: "Word (.docx)" }).click();
 		const query = new URL((await exported).url()).searchParams;
 		expect(Object.fromEntries(query)).toEqual({
 			session: "a1b2c3d4-e5f6",
-			format: "md",
+			format: "docx",
 			name: "Phỏng vấn khách hàng",
 			lang: "en",
 		});

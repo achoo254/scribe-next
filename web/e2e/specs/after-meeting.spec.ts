@@ -134,7 +134,11 @@ test("links chat.hoandat.com from the account menu, then sends the minutes", asy
 
 	await expect(page.getByTestId("minutes-send")).toHaveText("Gửi sang chat");
 	await page.getByTestId("minutes-send").click();
-	await expect(page.getByText("Đã gửi biên bản sang chat")).toBeVisible();
+	// In the toast itself: Radix also reads the text out from a hidden live
+	// region ("Thông báo …") outside the viewport for a moment.
+	await expect(
+		page.getByTestId("toast-viewport").getByText("Đã gửi biên bản sang chat"),
+	).toBeVisible();
 	expect(countOf(api, SHARE)).toBe(1);
 
 	// Unlinking turns the button back into "Liên kết chat".
