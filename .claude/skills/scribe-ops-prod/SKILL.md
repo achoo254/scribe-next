@@ -1,6 +1,6 @@
 ---
 name: scribe-ops-prod
-description: Tra cứu thông tin và vận hành Scribe (one-scribe) trên PRODUCTION (scribe.hoandat.com, server dùng chung 103.72.98.65 cổng SSH 24700, systemd scribe-be cổng 127.0.0.1:8787, binary /opt/scribe-be, FE /var/www/scribe/dist, database scribe trên mongod chung 27017). Chỉ đường đọc docs/deploy-web-production.md — credential ở $ALL_IN_ONE_STAGING_DEV entry SSH_SERVER_STAGING, cấu hình prod ở .env.production (không commit), SSH/mongosh qua scripts/ của skill, deploy bằng cargo zigbuild + pnpm run build theo §6. Kích hoạt khi user nhắc "prod", "production", "scribe.hoandat.com", "server .65", "SSH prod", "mongosh prod", "log prod", "journal prod", "deploy prod", "rollback", "scribe-be", "đăng nhập prod", "backup Scribe", "audit_events", "hàng đợi chép lời prod". KHÔNG dùng cho dev local (localhost:5173/8787, Mongo dev lab 176, cargo run, pnpm run dev) và không dùng cho app iPhone cài qua cáp (docs/ios-app.md).
+description: Tra cứu thông tin và vận hành Scribe (repo scribe-next, tên cũ one-scribe) trên PRODUCTION (scribe.hoandat.com, server dùng chung 103.72.98.65 cổng SSH 24700, systemd scribe-be cổng 127.0.0.1:8787, binary /opt/scribe-be, FE /var/www/scribe/dist, database scribe trên mongod chung 27017). Chỉ đường đọc docs/deploy-web-production.md — credential ở $ALL_IN_ONE_STAGING_DEV entry SSH_SERVER_STAGING, cấu hình prod ở .env.production (không commit), SSH/mongosh qua scripts/ của skill, deploy bằng cargo zigbuild + pnpm run build theo §6. Kích hoạt khi user nhắc "prod", "production", "scribe.hoandat.com", "server .65", "SSH prod", "mongosh prod", "log prod", "journal prod", "deploy prod", "rollback", "scribe-be", "đăng nhập prod", "backup Scribe", "audit_events", "hàng đợi chép lời prod". KHÔNG dùng cho dev local (localhost:5173/8787, Mongo dev lab 176, cargo run, pnpm run dev) và không dùng cho app iPhone cài qua cáp (docs/ios-app.md).
 ---
 
 # Scribe Ops — Production
@@ -55,7 +55,7 @@ của máy edge iNET, không phải môi trường của Scribe).
 | `scribe.hoandat.com`, `103.72.98.65`, `scribe-be`, `/opt/scribe-be`, `/var/www/scribe`, db `scribe` trên `.65` (tên cũ `onescribe*` từ trước 16/10/2026) | **Scribe prod** | skill này |
 | `localhost:5173` / `:8787`, `.env.development`, Mongo `192.168.122.176` (lab 176), `cargo run`, `pnpm run dev` | Dev local | `README.md` §Chạy dev, skill `inet-lab-ops` cho box lab |
 | App iPhone cài qua cáp (`pnpm run ios:device`) | Bản build trên máy người dùng, nói chuyện với prod | `docs/ios-app.md` |
-| `localman.hoandat.com`, `auth.hoandat.com`, pm2 `localman-api`/`hoandat-auth`, `tunelo`, mongod `27018` | Repo khác trên cùng máy | skill của repo đó; không đụng |
+| `localman.hoandat.com`, `auth.hoandat.com`, pm2 `localman-api`/`hoandat-auth` (IdP, repo auth-next), `tunelo`, mongod `27018` | Repo khác trên cùng máy | skill của repo đó; không đụng |
 
 Máy .65 là **máy dùng chung** (CentOS Stream 9, ~15 vhost nginx, mongod chung): một thao tác sai ở đó ảnh hưởng mọi
 app trên máy, không chỉ Scribe.
@@ -95,7 +95,7 @@ Tìm nhanh tiêu đề: `grep -n '^#' docs/deploy-web-production.md`.
 | Cần biết | Đọc ở đâu | Ghi chú |
 |---|---|---|
 | Tên thật trên prod (domain, service, thư mục, db) | `docs/deploy-web-production.md` **§Tên trên prod** | khớp `.env.production` (`DEPLOY_*`) |
-| Tệp bí mật trên server, đăng nhập hoandat-auth | **§Tệp bí mật trên server**, **§Đăng nhập hoandat-auth** | |
+| Tệp bí mật trên server, đăng nhập auth-next | **§Tệp bí mật trên server**, **§Đăng nhập auth-next** | |
 | Máy, cổng SSH, credential | **§Server**, **§SSH source-IP allowlist** | |
 | nginx, thư mục, luồng request | **§Deploy topology** | |
 | Biến build, vì sao cấu hình nằm trong binary | **§Ràng buộc then chốt — cấu hình bake compile-time** | |
@@ -137,7 +137,7 @@ Tìm nhanh tiêu đề: `grep -n '^#' docs/deploy-web-production.md`.
 ## 4. Sự thật dễ nhầm
 
 - **Định danh user:** `userId` trong mọi collection là `_id` hex của `users`, không phải email, `idpSub` (tài
-  khoản hoandat-auth) hay `firebaseUid` (chỉ còn ở user cũ). Tra theo email ⟹ tìm `users` trước.
+  khoản auth-next) hay `firebaseUid` (chỉ còn ở user cũ). Tra theo email ⟹ tìm `users` trước.
 - **Collection:** `files` (`kind` upload|output|recording, hạn 14 ngày theo `expiresAt`, sweep mỗi giờ xoá đĩa trước
   rồi doc), `transcripts` (kết quả máy + hàng đợi chép lời, `_id` = id file), `transcript_docs` (tiêu đề + câu sửa theo
   phiên, `{userId, key}` unique), `jobs`, `upload_sessions`/`recording_sessions`, `audit_events` (TTL 180 ngày).
@@ -158,10 +158,12 @@ Tìm nhanh tiêu đề: `grep -n '^#' docs/deploy-web-production.md`.
   `onescribe-be` → `scribe-be` (user hệ thống `scribe`). Bản cũ (service, db `onescribe`, user Mongo/hệ thống
   `onescribe`, thư mục) đã xoá 16/10/2026 theo yêu cầu user; chỉ còn dump `/root/onescribe-backup-20261016-124301/`. Tạo user/db Mongo mới cần
   tài khoản quản trị `mongo_admin_*` của entry `SSH_SERVER_STAGING` (mật khẩu qua stdin vào tệp 600, không argv).
-- **Đổi đăng nhập + domain 16/10/2026 13:27:** đăng nhập qua hoandat-auth (client `scribe-web` confidential, secret ở
+- **Đổi đăng nhập + domain 16/10/2026 13:27:** đăng nhập qua auth-next (client `scribe-web` confidential, secret ở
   `/opt/scribe-be/.oidc-web-secret` và `SCRIBE_WEB_CLIENT_SECRET` trong `/var/www/hoandat-auth/.env`; `scribe-mobile` cho
   iPhone), vhost `/etc/nginx/conf.d/scribe.conf` (443 với chứng chỉ chung `/etc/pki/nginx/server.{crt,key}`). Domain
   cũ `scribe.inetdev.io.vn` đã bỏ (vhost và DNS xoá, không 301). Firebase không còn.
+- **Kiểm lại trên prod 20/10/2026:** systemd `scribe-be` active + enabled; unit `onescribe-be` không còn; nginx chỉ
+  còn vhost `scribe.hoandat.com` cho Scribe; `scribe.inetdev.io.vn` không còn phân giải DNS.
 - **Máy dev:** hook của Claude chặn lệnh có chữ `target` (đường dẫn build) ⟹ build prod với
   `CARGO_TARGET_DIR=<thư mục scratch>`. `tar` trên macOS kèm xattr (cảnh báo `LIBARCHIVE.xattr` ở server, vô hại) ⟹
   nén bằng `COPYFILE_DISABLE=1 tar --no-xattrs …`, giải nén bằng `tar --no-same-owner` và `rsync --chown=root:root`

@@ -17,7 +17,7 @@ Prod chạy đúng theo hai file mẫu trong `deploy/` (`scribe-be.service`, `ng
 
 Database: `scribe` trên mongod chung `27017`, user Mongo riêng `scribe` (chỉ `readWrite` + `dbAdmin` trên db `scribe`). `.env.production` ở gốc repo (không có trong git, mỗi máy deploy tự giữ) chứa các biến `DEPLOY_*` trên cùng biến build của BE (xem bên dưới). Các lệnh dưới đây giả định đã nạp: `set -a; . ./.env.production; set +a`.
 
-> **Đổi tên và đăng nhập ngày 2026-10-16 (đã xong):** bản cũ `onescribe-be` / `/opt/onescribe-be` / db `onescribe` / domain `scribe.inetdev.io.vn` đã xoá hẳn (service, user, thư mục, db, vhost, DNS); đăng nhập Firebase đã bỏ, thay bằng hoandat-auth. Dữ liệu trước đổi tên chỉ còn ở bản dump `/root/onescribe-backup-20261016-124301/`.
+> **Đổi tên và đăng nhập ngày 2026-10-16 (đã xong):** bản cũ `onescribe-be` / `/opt/onescribe-be` / db `onescribe` / domain `scribe.inetdev.io.vn` đã xoá hẳn (service, user, thư mục, db, vhost, DNS); đăng nhập Firebase đã bỏ, thay bằng auth-next. Dữ liệu trước đổi tên chỉ còn ở bản dump `/root/onescribe-backup-20261016-124301/`.
 
 ## Môi trường
 
@@ -40,7 +40,7 @@ Không dựng thêm môi trường xem trước (tunnel, preview) trên `.65`.
   cargo run -p scribe-be             # → 127.0.0.1:8787, kiểm: curl 127.0.0.1:8787/api/health
   cd web && pnpm run dev              # → http://localhost:5173
   ```
-- **Đăng nhập ở dev:** qua hoandat-auth với client confidential riêng `scribe-web-dev` (IdP bật bằng `SCRIBE_WEB_DEV_URL` + `SCRIBE_WEB_DEV_CLIENT_SECRET` trong `.env` của hoandat-auth). Redirect loopback phải khớp **đúng cổng**, nên `PUBLIC_URL` trong `.env.development` phải bằng origin đã khai ở IdP. Secret dev nằm trong tệp `OIDC_WEB_CLIENT_SECRET_PATH` trên máy dev (600).
+- **Đăng nhập ở dev:** qua auth-next với client confidential riêng `scribe-web-dev` (IdP bật bằng `SCRIBE_WEB_DEV_URL` + `SCRIBE_WEB_DEV_CLIENT_SECRET` trong `.env` của auth-next). Redirect loopback phải khớp **đúng cổng**, nên `PUBLIC_URL` trong `.env.development` phải bằng origin đã khai ở IdP. Secret dev nằm trong tệp `OIDC_WEB_CLIENT_SECRET_PATH` trên máy dev (600).
 
 ## Server
 
@@ -69,7 +69,7 @@ Cloudflare (DNS proxied, SSL "Full")
    BE ─ /opt/scribe-be/scribe-be  (static musl, user scribe, chmod 700)
         ├─ tệp bí mật trong /opt/scribe-be (§Tệp bí mật trên server)
         └─ /opt/scribe-be/data/{userId}/   (upload/recording/output)
-   MongoDB chung 27017 (database scribe)        IdP: https://auth.hoandat.com (hoandat-auth, cùng máy)
+   MongoDB chung 27017 (database scribe)        IdP: https://auth.hoandat.com (auth-next, pm2 `hoandat-auth`, cùng máy)
 ```
 
 | Thành phần | Path trên .65 | Nguồn (repo) |
@@ -92,7 +92,7 @@ Tất cả trong `/opt/scribe-be`, chủ `scribe`, quyền 600, ghi bằng stdin
 | `.user-keys-secret` | `USER_KEYS_SECRET_PATH` | 32 byte ngẫu nhiên mã hoá "Key riêng" (key API người dùng tự nhập), §Key riêng. Thiếu tệp hoặc quyền khác 600 ⟹ tính năng tắt, giao diện báo |
 | `.gemini-key`, `.anthropic-key` | `GEMINI_KEY_PATH`, `ANTHROPIC_KEY_PATH` | Chỉ cần khi `LLM_PROVIDER` là `gemini` / `anthropic` (model chữ của server) |
 | `.notify-bot-token` | `NOTIFY_BOT_TOKEN_PATH` | Token bot `@bot_scribe_bot`: báo động, liên kết chat và gửi biên bản (§Deploy) |
-| `.idp-internal-secret` | `IDP_INTERNAL_API_SECRET_PATH` | Mật khẩu Basic của tài khoản `scribe` ở API nội bộ của hoandat-auth (một dòng, ≥ 32 ký tự); phía IdP là mục `scribe:<secret>` của `INTERNAL_API_CREDENTIALS` trong `/var/www/hoandat-auth/.env` — đổi thì đổi cả hai. Thiếu hoặc sai dạng ⟹ dùng tên `IDP_DISPLAY_NAME` |
+| `.idp-internal-secret` | `IDP_INTERNAL_API_SECRET_PATH` | Mật khẩu Basic của tài khoản `scribe` ở API nội bộ của auth-next (một dòng, ≥ 32 ký tự); phía IdP là mục `scribe:<secret>` của `INTERNAL_API_CREDENTIALS` trong `/var/www/hoandat-auth/.env` — đổi thì đổi cả hai. Thiếu hoặc sai dạng ⟹ dùng tên `IDP_DISPLAY_NAME` |
 
 ## ⚠️ Ràng buộc then chốt — cấu hình bake **compile-time**
 
@@ -123,7 +123,7 @@ Tất cả trong `/opt/scribe-be`, chủ `scribe`, quyền 600, ghi bằng stdin
 | `ELEVENLABS_MONTHLY_HOURS` | Trần giờ audio ElevenLabs mỗi tháng (giờ VN), mặc định `25` (gói Starter có khoảng 27 giờ Scribe v2). Độc lập với trần USD |
 | `TRANSCRIBE_EMAILS` | Email được dùng "Chép lời" (cách nhau dấu phẩy) khi chưa bật `TRANSCRIBE_OPEN` |
 | `REALTIME_EMAILS` | Email được dùng "Chép trực tiếp" trên iPhone (cách nhau dấu phẩy). Rỗng = **không ai**, không theo `TRANSCRIBE_OPEN`. Phút tính chung hạn mức chép lời. **Trước lần build prod có tính năng này, chủ sản phẩm thêm email của mình vào `.env.production`** (chưa thêm thì app nhận 403, ghi âm vẫn chạy) |
-| `UNVERIFIED_EMAIL_SUBS` | Tài khoản hoandat-auth (`sub`, ví dụ `acc_…`, cách nhau dấu phẩy) được đăng nhập dù email chưa xác minh. Chỉ dùng cho tài khoản duyệt App Store (`app_review`, ADR 0010 của hoandat-auth): theo `sub` vì email chưa xác minh thì ai cũng khai được. Rỗng = mọi email phải được Google/GitHub/Apple xác minh. Gỡ khi tắt đăng nhập duyệt |
+| `UNVERIFIED_EMAIL_SUBS` | Tài khoản auth-next (`sub`, ví dụ `acc_…`, cách nhau dấu phẩy) được đăng nhập dù email chưa xác minh. Chỉ dùng cho tài khoản duyệt App Store (`app_review`, ADR 0010 của auth-next): theo `sub` vì email chưa xác minh thì ai cũng khai được. Rỗng = mọi email phải được Google/GitHub/Apple xác minh. Gỡ khi tắt đăng nhập duyệt |
 | `TRANSCRIBE_OPEN` | `1`/`true` = mọi user đăng nhập được chép lời trong hạn mức gói. **Bật trên prod từ 2026-10-16 14:19** |
 | `TRANSCRIBE_FREE_MINUTES`, `TRANSCRIBE_PLUS_MINUTES`, `TRANSCRIBE_FREE_POOL_USD`, `TRANSCRIBE_MONTHLY_CAP_USD`, `TRANSCRIBE_FREE_DAILY_MINUTES`, `TRANSCRIBE_FREE_DELAY_HOURS` | Hạn mức chép lời (§Deploy); prod dùng mặc định |
 | `NOTIFY_BOT_API`, `NOTIFY_BOT_TOKEN_PATH`, `NOTIFY_CHAT_ID` | Báo động qua bot (§Deploy) |
@@ -137,20 +137,20 @@ Tất cả trong `/opt/scribe-be`, chủ `scribe`, quyền 600, ghi bằng stdin
 | `TRANSLATE_FREE_DAILY`, `TRANSLATE_PAID_DAILY` | Số lượt dịch mỗi ngày, mặc định 3 / 20 (§Deploy); prod dùng mặc định. Dịch dùng model `SUMMARY_MODEL` và trần chi phí tháng của tóm tắt, không có biến trần riêng |
 | `CHAT_LINK_POLL` | `1`/`true` = chạy task long-poll của bot để liên kết chat. **Chỉ bật trên prod**, không bao giờ ở dev (§Deploy) |
 | `CHAT_BOT_USERNAME` | Tên bot trong deep link; prod để trống, BE hỏi `/bot/v1/me` |
-| `IDP_INTERNAL_API_URL` | API nội bộ của hoandat-auth trên cùng máy, ví dụ `http://127.0.0.1:4501`. Cùng `IDP_INTERNAL_API_SECRET_PATH` (`/opt/scribe-be/.idp-internal-secret`): lúc khởi động rồi mỗi giờ BE gọi `GET {url}/internal/tenants/lookup?host=<host của PUBLIC_URL>` (Basic `scribe`, quá giờ 5 giây; lỗi thì thử lại sau 5 phút) để lấy tên hiển thị của tenant (`TENANT_DISPLAY_NAME` của IdP) và trả công khai ở `GET /api/idp`; giao diện gọi tài khoản đăng nhập bằng tên này ("Đăng nhập bằng …", "Tài khoản …", trang pháp lý). Lỗi thì giữ tên đúng gần nhất, journal ghi cảnh báo (không chứa bí mật). Thiếu một trong hai biến = tắt |
-| `IDP_DISPLAY_NAME` | Tên dùng tới khi hỏi được IdP (hoặc khi tính năng tắt), mặc định `Auth Next` (mặc định của hoandat-auth); web cũng hiện `Auth Next` tới khi `/api/idp` trả lời |
+| `IDP_INTERNAL_API_URL` | API nội bộ của auth-next trên cùng máy, ví dụ `http://127.0.0.1:4501`. Cùng `IDP_INTERNAL_API_SECRET_PATH` (`/opt/scribe-be/.idp-internal-secret`): lúc khởi động rồi mỗi giờ BE gọi `GET {url}/internal/tenants/lookup?host=<host của PUBLIC_URL>` (Basic `scribe`, quá giờ 5 giây; lỗi thì thử lại sau 5 phút) để lấy tên hiển thị của tenant (`TENANT_DISPLAY_NAME` của IdP) và trả công khai ở `GET /api/idp`; giao diện gọi tài khoản đăng nhập bằng tên này ("Đăng nhập bằng …", "Tài khoản …", trang pháp lý). Lỗi thì giữ tên đúng gần nhất, journal ghi cảnh báo (không chứa bí mật). Thiếu một trong hai biến = tắt |
+| `IDP_DISPLAY_NAME` | Tên dùng tới khi hỏi được IdP (hoặc khi tính năng tắt), mặc định `Auth Next` (mặc định của auth-next); web cũng hiện `Auth Next` tới khi `/api/idp` trả lời |
 
-- `ALLOWED_DOMAINS` / `ALLOWED_EMAILS`: **KHÔNG set** → fallback rỗng = mở cho mọi tài khoản hoandat-auth có email đã xác minh (quyết định hiện tại). Muốn siết → thêm `ALLOWED_DOMAINS=<domain>` rồi build lại.
+- `ALLOWED_DOMAINS` / `ALLOWED_EMAILS`: **KHÔNG set** → fallback rỗng = mở cho mọi tài khoản auth-next có email đã xác minh (quyết định hiện tại). Muốn siết → thêm `ALLOWED_DOMAINS=<domain>` rồi build lại.
 - `TRANSCRIBE_EMAILS`: rỗng (và chưa bật `TRANSCRIBE_OPEN`) nghĩa là **không ai** được chép lời (ngược với allowlist đăng nhập).
 - Mốc gửi nguyên bản ghi cho hỏi đáp **không phải biến build**: hằng trong `full_context_chars` (`server/scribe-be/src/search/ask.rs`), gói free dưới 30.000 ký tự, gói trả phí dưới 120.000 ký tự; dài hơn thì chỉ gửi các câu liên quan. Đổi mốc là sửa code; lý do chọn mốc ghi ngay trên hàm.
 
-### Đăng nhập hoandat-auth
+### Đăng nhập auth-next
 
 Hai client trên IdP `https://auth.hoandat.com` (chỉ tenant chính):
 
 - **Web — `scribe-web` (confidential):** BE là BFF, chạy Code + PKCE phía server (`/api/auth/login` → IdP → `/api/auth/callback`), không token IdP nào tới JavaScript. Secret ở `OIDC_WEB_CLIENT_SECRET_PATH` trên server và `SCRIBE_WEB_CLIENT_SECRET` trong `/var/www/hoandat-auth/.env`. IdP gọi back-channel logout tới `/api/auth/backchannel-logout`.
 - **iPhone — `scribe-mobile` (public):** xem [ios-app.md](./ios-app.md); BE đổi code ở `/api/auth/native/exchange`, làm mới ở `/api/auth/native/refresh`.
-- **Hồ sơ lấy từ `userinfo`:** với code flow, ID token của hoandat-auth chỉ có `sub`; email, `email_verified`, tên lấy từ userinfo endpoint và `sub` của userinfo phải khớp ID token (`server/scribe-be/src/oidc.rs`). Email chưa xác minh thì từ chối.
+- **Hồ sơ lấy từ `userinfo`:** với code flow, ID token của auth-next chỉ có `sub`; email, `email_verified`, tên lấy từ userinfo endpoint và `sub` của userinfo phải khớp ID token (`server/scribe-be/src/oidc.rs`). Email chưa xác minh thì từ chối.
 - **User cũ thời Firebase** được ghép theo email đã xác minh ở lần đăng nhập IdP đầu tiên (gắn `idpSub` vào user có `firebaseUid`), sau đó khoá theo `idpSub` (`server/scribe-be/src/models/user.rs`).
 - **Phiên** lưu trong Mongo, thu hồi được (`sessions`, `devices`, `auth_states`, `logout_jtis` — `server/scribe-be/src/models/session.rs`); cookie `__Host-scribe` trên https.
 
@@ -160,7 +160,7 @@ FE đọc **lúc build** từ `web/.env` (không có trong git, mẫu ở `web/.
 
 Tuỳ chọn: `VITE_SUPPORT_EMAIL` — email hỗ trợ ở mục "Liên hệ" của `/privacy` và `/terms` (App Store cần một cách liên hệ thật); bỏ trống thì trang ghi "người vận hành Scribe qua tài khoản hoandat". Có giá trị mà không phải email thì build dừng.
 
-Tuỳ chọn: `VITE_IDP_ORIGIN` — origin hoandat-auth cho link "Tài khoản hoandat" và "Ứng dụng" ở account menu và footer; bỏ trống thì dùng `https://auth.hoandat.com` (`web/src/lib/idp.ts`). Có giá trị mà không phải origin http(s) thì build dừng (`web/vite.config.ts`).
+Tuỳ chọn: `VITE_IDP_ORIGIN` — origin auth-next cho link "Tài khoản hoandat" và "Ứng dụng" ở account menu và footer; bỏ trống thì dùng `https://auth.hoandat.com` (`web/src/lib/idp.ts`). Có giá trị mà không phải origin http(s) thì build dừng (`web/vite.config.ts`).
 
 ## CI và repo
 
@@ -293,7 +293,7 @@ curl -s  "https://$DEPLOY_DOMAIN/api/health"   # liveness
 
 - [ ] Service active, không restart-loop (`systemctl status` restart count).
 - [ ] `/api/health` trả OK. Thiếu biến build bắt buộc → BE dừng ngay, journal ghi "thiếu biến build bắt buộc: …".
-- [ ] FE load, đăng nhập qua hoandat-auth được (`/api/auth/login` → 303 sang `auth.hoandat.com` với `client_id=scribe-web`; allowlist mở → mọi email đã xác minh).
+- [ ] FE load, đăng nhập qua auth-next được (`/api/auth/login` → 303 sang `auth.hoandat.com` với `client_id=scribe-web`; allowlist mở → mọi email đã xác minh).
 - [ ] `/api/auth/native/config` trả client `scribe-mobile` (app iPhone đăng nhập được).
 - [ ] Ghi/cắt file → upload + phát lại (Range) hoạt động.
 - [ ] Index tìm kiếm: lần khởi động đầu của bản có index, journal có dòng `đã dựng index tìm kiếm cho dữ liệu cũ` kèm `sessions`, `sentences`, `failed`; `db.kv.findOne({_id: "search.backfill"})` có `doneAt`. Các lần khởi động sau không có dòng này (đã có cờ). `failed` lớn hơn 0 thì xem dòng `dựng index lỗi` cùng lúc; retention dựng lại các phiên đó ở lượt quét kế.
@@ -302,7 +302,7 @@ curl -s  "https://$DEPLOY_DOMAIN/api/health"   # liveness
 
 - **Bootstrap `.65`: XONG** — user `scribe`, unit `scribe-be`, vhost `/etc/nginx/conf.d/scribe.conf`, db `scribe` + user Mongo `scribe` đều có sẵn. Deploy = redeploy (idempotent).
 - **Cloudflare:** `scribe.hoandat.com` proxied, SSL "Full" (CF↔origin là HTTPS, chứng chỉ tự ký chung của box); `http://` → 301 `https://`. Domain cũ `scribe.inetdev.io.vn` đã bỏ (vhost và DNS đã xoá, không 301).
-- **IdP:** `scribe-web` và `scribe-mobile` bật trên hoandat-auth; `SCRIBE_WEB_CLIENT_SECRET` nằm trong `/var/www/hoandat-auth/.env`.
+- **IdP:** `scribe-web` và `scribe-mobile` bật trên auth-next; `SCRIBE_WEB_CLIENT_SECRET` nằm trong `/var/www/hoandat-auth/.env`.
 - **MongoDB `.65`:** auth ENABLED; `MONGO_URI` dùng user riêng `scribe` (database + authSource = `scribe`). **mongod dùng chung cho team theo chủ đích** → cổng `27017` mở ra ngoài + mật khẩu chia sẻ là **cố ý**, KHÔNG firewall về localhost / KHÔNG rotate (team cần kết nối trực tiếp).
 - **Sao lưu:** `/root/scribe-backup-<ts>/` (mới nhất `20261019-121148`, trước khi lên xoá tài khoản + trang pháp lý; `20261019-103131` trước Key riêng; `20261017-160739` trước khi chuyển chép lời sang ElevenLabs; `20261017-130838` trước dịch Việt ↔ Anh; `20261017-123216` trước xuất VTT/Markdown/Word; `20261017-111120` trước chép trực tiếp; `20261017-072952` có kèm `files-expiry-before.json` là hạn tệp trước khi đổi sang gói free 7 ngày) và `/root/onescribe-backup-20261016-124301/` (dump db `onescribe` trước đổi tên). Không có cron backup.
 

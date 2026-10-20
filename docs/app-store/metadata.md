@@ -158,12 +158,12 @@ Lời đã chép (Transcripts).
 
 **Tài khoản demo (không bao giờ ghi vào repo):** đề xuất một tài khoản hoandat riêng cho người duyệt, ví dụ email `<review email do chủ dự án tạo>`, đăng nhập được không cần thiết bị thứ hai (không 2FA bằng điện thoại, không bị chặn khi đăng nhập từ máy lạ ở Mỹ). Thông tin đăng nhập chỉ nhập vào ô **Sign-In Information** của App Store Connect. Trước khi gửi duyệt:
 
-1. Tạo tài khoản đó trên hoandat-auth, đăng nhập Scribe một lần.
+1. Tạo tài khoản đó trên auth-next, đăng nhập Scribe một lần.
 2. `scribe-be admin set-plan <email> plus --until <ngày sau đợt duyệt>` để người duyệt không chạm hạn mức free.
 3. Tải lên một bản ghi mẫu (vài phút, tiếng Việt), bấm Chép lời, Tóm tắt, Dịch sang tiếng Anh — để mọi màn hình có dữ liệu như ảnh chụp.
 4. Sau đợt duyệt: đổi mật khẩu hoặc xoá tài khoản đó.
 
-Rủi ro cần chủ dự án quyết: hoandat-auth hiện đăng nhập bằng Google hoặc GitHub. Guideline 4.8 yêu cầu một lựa chọn đăng nhập bảo vệ quyền riêng tư (ví dụ Sign in with Apple) khi app dùng đăng nhập mạng xã hội cho tài khoản chính, trừ khi app chỉ dùng hệ thống tài khoản của chính công ty. Lập luận ở ghi chú trên là "hoandat là hệ thống tài khoản riêng"; nếu bị từ chối theo 4.8 thì cần thêm Sign in with Apple (hoặc đăng nhập bằng email) vào hoandat-auth.
+Rủi ro cần chủ dự án quyết: auth-next hiện đăng nhập bằng Google hoặc GitHub. Guideline 4.8 yêu cầu một lựa chọn đăng nhập bảo vệ quyền riêng tư (ví dụ Sign in with Apple) khi app dùng đăng nhập mạng xã hội cho tài khoản chính, trừ khi app chỉ dùng hệ thống tài khoản của chính công ty. Lập luận ở ghi chú trên là "hoandat là hệ thống tài khoản riêng"; nếu bị từ chối theo 4.8 thì cần thêm Sign in with Apple (hoặc đăng nhập bằng email) vào auth-next.
 
 ## Ảnh chụp màn hình
 
