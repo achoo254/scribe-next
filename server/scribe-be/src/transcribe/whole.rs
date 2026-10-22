@@ -358,7 +358,9 @@ async fn send(state: &AppState, members: &[Member], live: Vec<(usize, f64)>, api
     }
     let durations: Vec<f64> = live.iter().map(|(_, d)| *d).collect();
     let total: f64 = durations.iter().sum();
-    let result = match elevenlabs::transcribe(&state.http, elevenlabs::API_URL, api_key, &audio, total).await {
+    let request = elevenlabs::transcribe(&state.http, elevenlabs::API_URL, api_key, &audio, total);
+    let sent = with_estimated_progress(db, members, &live, total, request).await;
+    let result = match sent {
         Ok(result) => result,
         Err(e) => {
             if elevenlabs::maybe_billed(&e) {
@@ -398,6 +400,45 @@ async fn send(state: &AppState, members: &[Member], live: Vec<(usize, f64)>, api
     let (per_file, speakers) = split_result(result, &durations);
     out.done.extend(live.iter().map(|(i, _)| *i).zip(per_file));
     out.speakers = speakers;
+}
+
+/// Nhịp cập nhật tiến độ ước lượng trong lúc chờ ElevenLabs.
+const PROGRESS_TICK: Duration = Duration::from_secs(5);
+
+/// ElevenLabs chỉ trả lời khi đã chép xong cả bản ghép, không báo tiến độ. Trong lúc chờ, tiến độ của các đoạn tăng
+/// dần theo thời gian đã chờ ([`estimated_progress`]) để người dùng thấy lượt vẫn chạy. Ghi lỗi thì bỏ qua: tiến độ
+/// chỉ để hiển thị.
+async fn with_estimated_progress<T>(
+    db: &mongodb::Database,
+    members: &[Member],
+    live: &[(usize, f64)],
+    audio_s: f64,
+    request: impl std::future::Future<Output = T>,
+) -> T {
+    let started = Instant::now();
+    let mut ticks = tokio::time::interval_at(tokio::time::Instant::now() + PROGRESS_TICK, PROGRESS_TICK);
+    tokio::pin!(request);
+    loop {
+        tokio::select! {
+            result = &mut request => return result,
+            _ = ticks.tick() => {
+                let pct = estimated_progress(started.elapsed().as_secs_f64(), audio_s);
+                for (i, _) in live {
+                    let m = &members[*i];
+                    let _ = transcript::set_progress(db, m.t.id, &m.t.run_id, pct).await;
+                }
+            }
+        }
+    }
+}
+
+/// Tiến độ ước lượng (10–95 %) sau `waited_s` giây chờ cho `audio_s` giây audio. Thời gian chờ dự kiến là 60 giây
+/// cộng 1/20 thời lượng audio (đo trên prod: 31 phút audio mất khoảng 4 phút, 81 phút khoảng 4–5 phút); đường cong
+/// tiệm cận nên lượt chậm hơn dự kiến vẫn tăng chậm dần, không chạm 100 % trước khi có kết quả.
+fn estimated_progress(waited_s: f64, audio_s: f64) -> f64 {
+    let expected_s = 60.0 + audio_s.max(0.0) / 20.0;
+    let share = 1.0 - (-waited_s.max(0.0) / expected_s).exp();
+    (10.0 + 85.0 * share).floor()
 }
 
 /// Ghi giây sắp gửi cho từng đoạn. Đoạn không còn thuộc lượt (vừa bị xoá/chép lại) thì bỏ qua; sổ lỗi thì hoàn các
@@ -518,6 +559,19 @@ fn allocate_billed(billed: f64, durations: &[f64]) -> Vec<i64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn estimated_progress_climbs_but_never_finishes() {
+        let audio = 86.0 * 60.0;
+        assert_eq!(estimated_progress(0.0, audio), 10.0);
+        let mut last = 10.0;
+        for waited in [30.0, 120.0, 300.0, 900.0] {
+            let pct = estimated_progress(waited, audio);
+            assert!(pct > last, "{waited}s → {pct}");
+            last = pct;
+        }
+        assert!(estimated_progress(100_000.0, audio) <= 95.0);
+    }
 
     #[test]
     fn own_key_failures_never_trip_the_server_key() {

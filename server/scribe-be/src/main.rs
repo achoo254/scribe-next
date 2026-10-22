@@ -82,7 +82,13 @@ async fn main() {
         tracing::error!("{e}");
         std::process::exit(1);
     }
+    // Keepalive mặc định của reqwest (15 s + 3 lần thăm dò mỗi 15 s) cắt kết nối sau ~1 phút mạng chập chờn. ElevenLabs
+    // im lặng vài phút khi chép bản ghi dài, và mạng ra ngoài của box prod hay chập buổi tối: lượt chép hỏng với "quá
+    // thời gian chờ" dù chưa tới hạn của request. Nới ra ~5,5 phút; mỗi request vẫn có `timeout` riêng.
     let http = reqwest::Client::builder()
+        .tcp_keepalive(std::time::Duration::from_secs(30))
+        .tcp_keepalive_interval(std::time::Duration::from_secs(30))
+        .tcp_keepalive_retries(10)
         .build()
         .expect("dựng reqwest client");
 
