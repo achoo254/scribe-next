@@ -22,7 +22,9 @@ use crate::models::{file, transcript, transcript_doc, usage, user};
 use crate::state::AppState;
 use mongodb::bson::{doc, oid::ObjectId, DateTime};
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
+use tokio::sync::watch;
 
 /// Phiên còn đoạn đang tải lên: hoãn lượt chừng này giây rồi xét lại.
 const DEFER_S: i64 = 20;
@@ -293,10 +295,32 @@ async fn send(state: &AppState, members: &[Member], live: Vec<(usize, f64)>, api
         }
     }
     let live = kept;
+    if live.is_empty() {
+        return;
+    }
+    let audio_s: f64 = live.iter().map(|(_, d)| d).sum();
+    let runs = live.iter().map(|(i, _)| (members[*i].t.id, members[*i].t.run_id.clone())).collect();
+    let progress = Reporter::start(db.clone(), runs, expected_wait_s(db, audio_s).await);
+    send_kept(state, members, live, api_key, own_key, out, &progress).await;
+    progress.stop().await;
+}
+
+/// Phần của [`send`] sau khi đã lọc đoạn còn thuộc lượt: nén, giữ giờ, gửi, quyết toán; báo tiến độ qua `progress`.
+async fn send_kept(
+    state: &AppState,
+    members: &[Member],
+    live: Vec<(usize, f64)>,
+    api_key: &str,
+    own_key: bool,
+    out: &mut Outcomes,
+    progress: &Reporter,
+) {
+    let db = &state.db;
     let Some(&(lead, _)) = live.first() else { return };
     let run_id = members[lead].t.run_id.as_str();
     let inputs: Vec<(&str, f64)> = live.iter().map(|(i, d)| (members[*i].f.path.as_str(), *d)).collect();
-    let (audio, peak) = match elevenlabs::encode(&state.config.ffmpeg_path, &inputs).await {
+    let encoded = elevenlabs::encode(&state.config.ffmpeg_path, &inputs, |f| progress.set(Phase::Encoding(f))).await;
+    let (audio, peak) = match encoded {
         Ok(encoded) => encoded,
         Err(e) => {
             out.error = Some(e);
@@ -352,16 +376,16 @@ async fn send(state: &AppState, members: &[Member], live: Vec<(usize, f64)>, api
             return;
         }
     };
-    for (i, _) in &live {
-        let m = &members[*i];
-        let _ = transcript::set_progress(db, m.t.id, &m.t.run_id, 10.0).await;
-    }
     let durations: Vec<f64> = live.iter().map(|(_, d)| *d).collect();
     let total: f64 = durations.iter().sum();
-    let request = elevenlabs::transcribe(&state.http, elevenlabs::API_URL, api_key, &audio, total);
-    let sent = with_estimated_progress(db, members, &live, total, request).await;
+    let sent = elevenlabs::transcribe(&state.http, elevenlabs::API_URL, api_key, &audio, total, progress.on_upload()).await;
     let result = match sent {
-        Ok(result) => result,
+        Ok(result) => {
+            if let Some(waited) = progress.waited() {
+                record_wait(db, waited.as_secs_f64(), total).await;
+            }
+            result
+        }
         Err(e) => {
             if elevenlabs::maybe_billed(&e) {
                 usage::release_provider_hold(db, run_id).await;
@@ -402,43 +426,145 @@ async fn send(state: &AppState, members: &[Member], live: Vec<(usize, f64)>, api
     out.speakers = speakers;
 }
 
-/// Nhịp cập nhật tiến độ ước lượng trong lúc chờ ElevenLabs.
-const PROGRESS_TICK: Duration = Duration::from_secs(5);
+/// Giai đoạn của lượt đang gửi, để báo tiến độ.
+#[derive(Clone, Copy, Debug)]
+enum Phase {
+    /// Đã nén được phần này của audio (0–1).
+    Encoding(f64),
+    /// Đã gửi được phần này của audio (0–1).
+    Uploading(f64),
+    /// Đã gửi xong, chờ ElevenLabs chép từ lúc này.
+    Waiting(Instant),
+}
 
-/// ElevenLabs chỉ trả lời khi đã chép xong cả bản ghép, không báo tiến độ. Trong lúc chờ, tiến độ của các đoạn tăng
-/// dần theo thời gian đã chờ ([`estimated_progress`]) để người dùng thấy lượt vẫn chạy. Ghi lỗi thì bỏ qua: tiến độ
-/// chỉ để hiển thị.
-async fn with_estimated_progress<T>(
-    db: &mongodb::Database,
-    members: &[Member],
-    live: &[(usize, f64)],
-    audio_s: f64,
-    request: impl std::future::Future<Output = T>,
-) -> T {
-    let started = Instant::now();
-    let mut ticks = tokio::time::interval_at(tokio::time::Instant::now() + PROGRESS_TICK, PROGRESS_TICK);
-    tokio::pin!(request);
-    loop {
-        tokio::select! {
-            result = &mut request => return result,
-            _ = ticks.tick() => {
-                let pct = estimated_progress(started.elapsed().as_secs_f64(), audio_s);
-                for (i, _) in live {
-                    let m = &members[*i];
-                    let _ = transcript::set_progress(db, m.t.id, &m.t.run_id, pct).await;
+/// Nhịp ghi tiến độ xuống doc của các đoạn.
+const PROGRESS_TICK: Duration = Duration::from_secs(2);
+
+/// Báo tiến độ của một lượt: các bước gọi [`Reporter::set`] (rẻ, không chờ), một task nền mỗi [`PROGRESS_TICK`] đổi
+/// giai đoạn hiện tại ra phần trăm ([`shown_progress`]) và ghi xuống doc của các đoạn khi số tăng. Ghi lỗi thì bỏ qua:
+/// tiến độ chỉ để hiển thị; `set_progress` chỉ ghi lượt còn mở nên không đè lên lượt đã xong.
+struct Reporter {
+    phase: Arc<watch::Sender<Phase>>,
+    task: tokio::task::JoinHandle<()>,
+}
+
+impl Reporter {
+    fn start(db: mongodb::Database, runs: Vec<(ObjectId, String)>, expected_wait_s: f64) -> Self {
+        let (phase, rx) = watch::channel(Phase::Encoding(0.0));
+        let task = tokio::spawn(async move {
+            let mut ticks = tokio::time::interval(PROGRESS_TICK);
+            ticks.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            let mut shown = 0.0;
+            loop {
+                ticks.tick().await;
+                let pct = shown_progress(*rx.borrow(), expected_wait_s);
+                if pct > shown {
+                    for (id, run_id) in &runs {
+                        let _ = transcript::set_progress(&db, *id, run_id, pct).await;
+                    }
+                    shown = pct;
                 }
             }
+        });
+        Reporter { phase: Arc::new(phase), task }
+    }
+
+    fn set(&self, phase: Phase) {
+        self.phase.send_replace(phase);
+    }
+
+    /// Cho [`elevenlabs::transcribe`]: gửi xong (1.0) thì chuyển sang chờ, tính giờ từ lúc đó.
+    fn on_upload(&self) -> elevenlabs::UploadProgress {
+        let phase = self.phase.clone();
+        Arc::new(move |f| {
+            phase.send_replace(if f >= 1.0 { Phase::Waiting(Instant::now()) } else { Phase::Uploading(f) });
+        })
+    }
+
+    /// Thời gian đã chờ ElevenLabs sau khi gửi xong, nếu đang ở giai đoạn chờ.
+    fn waited(&self) -> Option<Duration> {
+        match *self.phase.borrow() {
+            Phase::Waiting(since) => Some(since.elapsed()),
+            _ => None,
         }
+    }
+
+    /// Dừng task nền trước khi người gọi ghi kết quả của lượt.
+    async fn stop(self) {
+        self.task.abort();
+        let _ = self.task.await;
     }
 }
 
-/// Tiến độ ước lượng (10–95 %) sau `waited_s` giây chờ cho `audio_s` giây audio. Thời gian chờ dự kiến là 60 giây
-/// cộng 1/20 thời lượng audio (đo trên prod: 31 phút audio mất khoảng 4 phút, 81 phút khoảng 4–5 phút); đường cong
-/// tiệm cận nên lượt chậm hơn dự kiến vẫn tăng chậm dần, không chạm 100 % trước khi có kết quả.
-fn estimated_progress(waited_s: f64, audio_s: f64) -> f64 {
-    let expected_s = 60.0 + audio_s.max(0.0) / 20.0;
-    let share = 1.0 - (-waited_s.max(0.0) / expected_s).exp();
-    (10.0 + 85.0 * share).floor()
+/// Phần trăm hiển thị: nén 5–15 %, gửi 15–25 % (đều đo thật), chờ ElevenLabs 25–95 % theo đường cong tiệm cận của thời
+/// gian chờ so với `expected_wait_s`: lượt chậm hơn dự kiến vẫn tăng chậm dần, không chạm 100 % trước khi có kết quả.
+fn shown_progress(phase: Phase, expected_wait_s: f64) -> f64 {
+    let pct = match phase {
+        Phase::Encoding(f) => 5.0 + 10.0 * f.clamp(0.0, 1.0),
+        Phase::Uploading(f) => 15.0 + 10.0 * f.clamp(0.0, 1.0),
+        Phase::Waiting(since) => {
+            let share = 1.0 - (-since.elapsed().as_secs_f64() / expected_wait_s.max(1.0)).exp();
+            25.0 + 70.0 * share
+        }
+    };
+    pct.floor()
+}
+
+/// Doc trong `kv` giữ tốc độ chờ ElevenLabs của các lượt gần đây (giây chờ trên mỗi giây audio, sau phần cố định).
+const WAIT_DOC: &str = "elevenlabs.wait";
+const KV: &str = "kv";
+/// Phần chờ cố định của một lượt (giây), không phụ thuộc độ dài audio.
+const WAIT_BASE_S: f64 = 20.0;
+/// Số lượt gần nhất giữ lại để lấy trung vị.
+const WAIT_SAMPLES: i32 = 20;
+/// Cần ít nhất chừng này lượt mới tin trung vị; ít hơn thì dùng ước lượng mặc định.
+const WAIT_MIN_SAMPLES: usize = 3;
+/// Lượt ngắn hơn chừng này (giây audio) không dùng để hiệu chỉnh: phần cố định át phần tỉ lệ.
+const WAIT_MIN_AUDIO_S: f64 = 300.0;
+
+/// Thời gian chờ ElevenLabs dự kiến cho `audio_s` giây audio: phần cố định cộng trung vị tốc độ của các lượt gần đây;
+/// chưa đủ lượt (hoặc đọc lỗi) thì 60 giây cộng 1/20 thời lượng (đo trên prod: 31 phút audio ~4 phút, 81 phút ~4 phút).
+async fn expected_wait_s(db: &mongodb::Database, audio_s: f64) -> f64 {
+    let samples: Vec<f64> = match db.collection::<mongodb::bson::Document>(KV).find_one(doc! { "_id": WAIT_DOC }).await {
+        Ok(Some(d)) => d.get_array("perAudioS").map(|a| a.iter().filter_map(|v| v.as_f64()).collect()).unwrap_or_default(),
+        Ok(None) => Vec::new(),
+        Err(e) => {
+            tracing::warn!("đọc tốc độ chờ ElevenLabs lỗi, dùng ước lượng mặc định: {e:?}");
+            Vec::new()
+        }
+    };
+    wait_estimate(&samples, audio_s)
+}
+
+fn wait_estimate(samples: &[f64], audio_s: f64) -> f64 {
+    let audio_s = audio_s.max(0.0);
+    match median(samples) {
+        Some(per_audio_s) if samples.len() >= WAIT_MIN_SAMPLES => WAIT_BASE_S + per_audio_s * audio_s,
+        _ => 60.0 + audio_s / 20.0,
+    }
+}
+
+fn median(values: &[f64]) -> Option<f64> {
+    let mut sorted: Vec<f64> = values.iter().copied().filter(|v| v.is_finite() && *v >= 0.0).collect();
+    if sorted.is_empty() {
+        return None;
+    }
+    sorted.sort_by(f64::total_cmp);
+    let mid = sorted.len() / 2;
+    Some(if sorted.len().is_multiple_of(2) { (sorted[mid - 1] + sorted[mid]) / 2.0 } else { sorted[mid] })
+}
+
+/// Ghi tốc độ chờ của một lượt thành công để các lượt sau ước lượng sát hơn (giữ [`WAIT_SAMPLES`] lượt gần nhất).
+async fn record_wait(db: &mongodb::Database, waited_s: f64, audio_s: f64) {
+    if audio_s < WAIT_MIN_AUDIO_S || !waited_s.is_finite() {
+        return;
+    }
+    let per_audio_s = (waited_s - WAIT_BASE_S).max(0.0) / audio_s;
+    let update = doc! { "$push": { "perAudioS": { "$each": [per_audio_s], "$slice": -WAIT_SAMPLES } } };
+    let options = mongodb::options::UpdateOptions::builder().upsert(true).build();
+    if let Err(e) = db.collection::<mongodb::bson::Document>(KV).update_one(doc! { "_id": WAIT_DOC }, update).with_options(options).await {
+        tracing::warn!("ghi tốc độ chờ ElevenLabs lỗi: {e:?}");
+    }
 }
 
 /// Ghi giây sắp gửi cho từng đoạn. Đoạn không còn thuộc lượt (vừa bị xoá/chép lại) thì bỏ qua; sổ lỗi thì hoàn các
@@ -561,16 +687,28 @@ mod tests {
     use super::*;
 
     #[test]
-    fn estimated_progress_climbs_but_never_finishes() {
-        let audio = 86.0 * 60.0;
-        assert_eq!(estimated_progress(0.0, audio), 10.0);
-        let mut last = 10.0;
-        for waited in [30.0, 120.0, 300.0, 900.0] {
-            let pct = estimated_progress(waited, audio);
-            assert!(pct > last, "{waited}s → {pct}");
+    fn shown_progress_follows_the_phases_and_never_finishes() {
+        assert_eq!(shown_progress(Phase::Encoding(0.0), 300.0), 5.0);
+        assert_eq!(shown_progress(Phase::Encoding(1.0), 300.0), 15.0);
+        assert_eq!(shown_progress(Phase::Uploading(0.5), 300.0), 20.0);
+        assert_eq!(shown_progress(Phase::Waiting(Instant::now()), 300.0), 25.0);
+        let mut last = 25.0;
+        for waited in [30, 120, 300, 900] {
+            let pct = shown_progress(Phase::Waiting(Instant::now() - Duration::from_secs(waited)), 300.0);
+            assert!(pct > last && pct <= 95.0, "{waited}s → {pct}");
             last = pct;
         }
-        assert!(estimated_progress(100_000.0, audio) <= 95.0);
+        assert!(shown_progress(Phase::Waiting(Instant::now() - Duration::from_secs(100_000)), 300.0) <= 95.0);
+    }
+
+    #[test]
+    fn wait_estimate_uses_the_median_once_there_are_enough_runs() {
+        let audio = 5_000.0;
+        assert_eq!(wait_estimate(&[], audio), 60.0 + audio / 20.0);
+        assert_eq!(wait_estimate(&[0.04, 0.05], audio), 60.0 + audio / 20.0, "chưa đủ lượt");
+        assert_eq!(wait_estimate(&[0.04, 0.5, 0.05], audio), WAIT_BASE_S + 0.05 * audio, "trung vị bỏ lượt bất thường");
+        assert_eq!(median(&[4.0, 1.0, 3.0, 2.0]), Some(2.5));
+        assert_eq!(median(&[f64::NAN]), None);
     }
 
     #[test]
@@ -654,10 +792,10 @@ mod tests {
             durations.push(core_split::probe_file("ffprobe", p).await.expect("ffprobe").duration_s);
         }
         let refs: Vec<(&str, f64)> = paths.iter().map(String::as_str).zip(durations.iter().copied()).collect();
-        let (audio, peak) = elevenlabs::encode("ffmpeg", &refs).await.expect("nén");
+        let (audio, peak) = elevenlabs::encode("ffmpeg", &refs, |_| {}).await.expect("nén");
         let total: f64 = durations.iter().sum();
         let started = Instant::now();
-        let result = elevenlabs::transcribe(&reqwest::Client::new(), elevenlabs::API_URL, key.trim(), &audio, total)
+        let result = elevenlabs::transcribe(&reqwest::Client::new(), elevenlabs::API_URL, key.trim(), &audio, total, Arc::new(|_| {}))
             .await
             .expect("chép lời");
         let billed = result.duration_s;

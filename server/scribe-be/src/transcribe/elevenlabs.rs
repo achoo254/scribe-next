@@ -8,7 +8,9 @@ use super::words::Word;
 use reqwest::multipart::{Form, Part};
 use serde::Deserialize;
 use std::process::Stdio;
+use std::sync::Arc;
 use std::time::Duration;
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
 use tokio::process::Command;
 
 pub const API_URL: &str = "https://api.elevenlabs.io/v1/speech-to-text";
@@ -25,31 +27,78 @@ pub struct Transcript {
 
 /// Một hay nhiều tệp `(đường dẫn, thời lượng đo được)` theo thứ tự, nối liền nhau → Opus mono 16 kHz 32 kbps trong bộ
 /// nhớ (~14 MB mỗi giờ), kèm âm lượng đỉnh (dB) đo trong cùng lần giải mã (`None` khi ffmpeg không báo). Lỗi chỉ ghi
-/// log chi tiết (đường dẫn có id người dùng), người dùng thấy câu chung.
-pub async fn encode(ffmpeg: &str, inputs: &[(&str, f64)]) -> Result<(Vec<u8>, Option<f64>), String> {
+/// log chi tiết (đường dẫn có id người dùng), người dùng thấy câu chung. `on_progress` nhận phần đã nén (0–1), đọc từ
+/// `-progress` của ffmpeg.
+pub async fn encode(
+    ffmpeg: &str,
+    inputs: &[(&str, f64)],
+    mut on_progress: impl FnMut(f64),
+) -> Result<(Vec<u8>, Option<f64>), String> {
     if inputs.is_empty() {
         return Err("không có tệp nào để chép".into());
     }
     let mut cmd = Command::new(ffmpeg);
-    cmd.args(["-hide_banner", "-nostats", "-loglevel", "info"]);
+    cmd.args(["-hide_banner", "-nostats", "-loglevel", "info", "-progress", "pipe:2"]);
     for (path, _) in inputs {
         cmd.args(["-i", path]);
     }
     let durations: Vec<f64> = inputs.iter().map(|(_, d)| *d).collect();
+    let total: f64 = durations.iter().sum::<f64>().max(0.001);
     cmd.args(["-filter_complex", &concat_filter(&durations), "-map", "[a]", "-vn"])
         .args(["-ac", "1", "-ar", "16000", "-c:a", "libopus", "-b:a", "32k", "-f", "ogg", "pipe:1"]);
-    let out = cmd.stdin(Stdio::null()).kill_on_drop(true).output().await.map_err(|e| {
+    let spawn_failed = |e: std::io::Error| {
         tracing::warn!("chạy ffmpeg lỗi: {e}");
         ENCODE_FAILED.to_string()
-    })?;
-    if !out.status.success() || out.stdout.is_empty() {
-        let stderr = String::from_utf8_lossy(&out.stderr);
-        let last = stderr.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or("").trim();
+    };
+    let mut child = cmd
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
+        .map_err(spawn_failed)?;
+    let (Some(mut stdout), Some(stderr)) = (child.stdout.take(), child.stderr.take()) else {
+        return Err(ENCODE_FAILED.into());
+    };
+    // Đọc audio (stdout) song song với log + tiến độ (stderr) để pipe không đầy.
+    let audio_task = tokio::spawn(async move {
+        let mut audio = Vec::new();
+        stdout.read_to_end(&mut audio).await.map(|_| audio)
+    });
+    let mut log = String::new();
+    let mut lines = BufReader::new(stderr).lines();
+    while let Ok(Some(line)) = lines.next_line().await {
+        if let Some(done_s) = progress_seconds(&line) {
+            on_progress((done_s / total).clamp(0.0, 1.0));
+        } else if !is_progress_line(&line) {
+            log.push_str(&line);
+            log.push('\n');
+        }
+    }
+    let status = child.wait().await.map_err(spawn_failed)?;
+    let audio = audio_task.await.ok().and_then(Result::ok).unwrap_or_default();
+    if !status.success() || audio.is_empty() {
+        let last = log.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or("").trim();
         tracing::warn!("ffmpeg không nén được bản ghi: {last}");
         return Err(ENCODE_FAILED.into());
     }
-    let peak = chunking::parse_max_volume(&String::from_utf8_lossy(&out.stderr));
-    Ok((out.stdout, peak))
+    let peak = chunking::parse_max_volume(&log);
+    Ok((audio, peak))
+}
+
+/// Số giây audio đã nén, từ dòng `out_time_us=` của `-progress`; dòng khác trả `None`.
+fn progress_seconds(line: &str) -> Option<f64> {
+    let us: f64 = line.trim().strip_prefix("out_time_us=")?.parse().ok()?;
+    (us.is_finite() && us >= 0.0).then_some(us / 1e6)
+}
+
+/// Dòng `khoá=giá trị` của `-progress` (`speed=1.2x`, `progress=end`…): không có khoảng trắng, khác dòng log thường
+/// của ffmpeg; bỏ khỏi log để câu lỗi và `volumedetect` không lẫn số liệu tiến độ.
+fn is_progress_line(line: &str) -> bool {
+    let line = line.trim();
+    line.split_once('=').is_some_and(|(key, value)| {
+        !key.is_empty() && key.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_') && !value.contains(' ')
+    })
 }
 
 /// Người dùng thấy câu này khi ffmpeg hỏng (không lộ đường dẫn tệp trên server).
@@ -72,16 +121,19 @@ fn concat_filter(durations: &[f64]) -> String {
 /// Gửi audio đã nén. Chỉ thử lại (tối đa [`HTTP_RETRIES`] lần) khi chắc chắn ElevenLabs chưa xử lý: không kết nối được,
 /// hoặc ElevenLabs trả 429 (trừ hết credit) / 5xx. Mất kết nối sau khi đã gửi audio hay hết thời gian chờ thì không gửi
 /// lại (có thể đã bị tính tiền) — xem [`maybe_billed`].
+/// `on_upload` nhận phần audio đã đẩy vào kết nối (0–1) trong lúc gửi; lần thử lại đếm lại từ 0.
 pub async fn transcribe(
     http: &reqwest::Client,
     url: &str,
     api_key: &str,
     audio: &[u8],
     seconds: f64,
+    on_upload: UploadProgress,
 ) -> Result<Transcript, String> {
     let timeout = Duration::from_secs(HTTP_TIMEOUT_BASE_S + seconds.max(0.0) as u64);
+    let audio = bytes::Bytes::copy_from_slice(audio);
     for attempt in 1..=HTTP_RETRIES {
-        let part = Part::bytes(audio.to_vec())
+        let part = Part::stream_with_length(counted_body(audio.clone(), on_upload.clone()), audio.len() as u64)
             .file_name("audio.ogg")
             .mime_str("audio/ogg")
             .map_err(|e| format!("dựng multipart: {e}"))?;
@@ -122,6 +174,28 @@ pub async fn transcribe(
         return Err(api_error(status, &body));
     }
     Err("ElevenLabs: hết số lần thử".into())
+}
+
+/// Báo phần audio đã gửi (0–1).
+pub type UploadProgress = Arc<dyn Fn(f64) + Send + Sync>;
+
+/// Mỗi lần đẩy chừng này byte vào kết nối thì báo tiến độ một lần.
+const UPLOAD_CHUNK: usize = 64 * 1024;
+
+/// Thân audio gửi từng khúc [`UPLOAD_CHUNK`]; mỗi khúc kết nối lấy đi thì báo phần đã gửi. Độ dài biết trước
+/// (`stream_with_length`) nên request vẫn có `Content-Length`, không chuyển sang chunked.
+fn counted_body(audio: bytes::Bytes, on_upload: UploadProgress) -> reqwest::Body {
+    use futures_util::StreamExt;
+    let total = audio.len().max(1) as f64;
+    let chunks: Vec<bytes::Bytes> =
+        (0..audio.len()).step_by(UPLOAD_CHUNK).map(|start| audio.slice(start..(start + UPLOAD_CHUNK).min(audio.len()))).collect();
+    let mut sent = 0;
+    let stream = futures_util::stream::iter(chunks).map(move |chunk| {
+        sent += chunk.len();
+        on_upload(sent as f64 / total);
+        Ok::<_, std::io::Error>(chunk)
+    });
+    reqwest::Body::wrap_stream(stream)
 }
 
 const UNREACHABLE: &str = "ElevenLabs: không kết nối được";
@@ -258,7 +332,10 @@ mod tests {
             return;
         };
         // Đo nói đoạn a dài 2,5 giây (cắt bớt) và b dài 2,6 giây (đệm thêm): bản ghép phải dài 5,1 giây.
-        let (audio, peak) = encode("ffmpeg", &[(&a, 2.5), (&b, 2.6)]).await.expect("nén");
+        let mut done = Vec::new();
+        let (audio, peak) = encode("ffmpeg", &[(&a, 2.5), (&b, 2.6)], |f| done.push(f)).await.expect("nén");
+        assert!(done.windows(2).all(|w| w[0] <= w[1]), "tiến độ nén không lùi: {done:?}");
+        assert!(done.last().is_some_and(|f| *f > 0.95), "nén xong gần 100%: {done:?}");
         assert!(peak.is_some_and(|p| p > -20.0), "{peak:?}");
         let out = dir.join("out.ogg");
         std::fs::write(&out, audio).expect("ghi");
@@ -339,10 +416,27 @@ mod tests {
         let app = Router::new().route("/v1/speech-to-text", post(handler));
         tokio::spawn(async move { axum::serve(listener, app).await });
 
-        let t = transcribe(&reqwest::Client::new(), &url, "k-test", b"ogg!", 2.0).await.expect("chép");
+        let uploaded = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let seen_upload = uploaded.clone();
+        let on_upload: UploadProgress = Arc::new(move |f| seen_upload.lock().expect("khoá").push(f));
+        let t = transcribe(&reqwest::Client::new(), &url, "k-test", b"ogg!", 2.0, on_upload).await.expect("chép");
         assert_eq!(calls.load(Ordering::SeqCst), 2, "429 được thử lại");
+        assert_eq!(*uploaded.lock().expect("khoá"), vec![1.0, 1.0], "mỗi lần gửi báo đủ audio");
         assert_eq!(t.words.len(), 1);
         assert_eq!(t.duration_s, Some(2.0));
+    }
+
+    #[test]
+    fn reads_encode_progress_and_keeps_it_out_of_the_log() {
+        assert_eq!(progress_seconds("out_time_us=90500000"), Some(90.5));
+        assert_eq!(progress_seconds("out_time_us=N/A"), None);
+        assert_eq!(progress_seconds("[Parsed_volumedetect_0 @ 0x1] max_volume: -3.2 dB"), None);
+        for line in ["speed=12.3x", "progress=end", "out_time=00:01:30.500000", "total_size=1024"] {
+            assert!(is_progress_line(line), "{line}");
+        }
+        for line in ["[Parsed_volumedetect_0 @ 0x1] max_volume: -3.2 dB", "Error opening input file a.m4a.", ""] {
+            assert!(!is_progress_line(line), "{line}");
+        }
     }
 
     /// Key hỏng: không thử lại, trả lỗi "dừng hẳn".
@@ -360,7 +454,7 @@ mod tests {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("bind");
         let url = format!("http://{}/v1/speech-to-text", listener.local_addr().expect("addr"));
         tokio::spawn(async move { axum::serve(listener, Router::new().route("/v1/speech-to-text", post(handler))).await });
-        let e = transcribe(&reqwest::Client::new(), &url, "k-bad", b"ogg!", 1.0).await.expect_err("phải lỗi");
+        let e = transcribe(&reqwest::Client::new(), &url, "k-bad", b"ogg!", 1.0, Arc::new(|_| {})).await.expect_err("phải lỗi");
         assert_eq!(e, KEY_INVALID);
         assert_eq!(calls.load(Ordering::SeqCst), 1);
     }

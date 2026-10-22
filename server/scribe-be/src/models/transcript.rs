@@ -407,18 +407,18 @@ async fn settle_run(db: &Database, file_id: ObjectId, run_id: &str) -> Result<()
     Ok(())
 }
 
-/// Trả `false` khi lượt `run_id` không còn (đã xếp lại, hoặc file đã bị xoá): người gọi nên dừng.
-async fn update_run(db: &Database, file_id: ObjectId, run_id: &str, set: bson::Document) -> Result<bool, AppError> {
+/// Chỉ ghi lượt còn mở: tiến độ ghi muộn không đè lên lượt đã xong hay đã lỗi. Trả `false` khi lượt `run_id` không
+/// còn mở (đã xếp lại, đã đóng, hoặc file đã bị xoá): người gọi nên dừng.
+pub async fn set_progress(db: &Database, file_id: ObjectId, run_id: &str, progress: f64) -> Result<bool, AppError> {
     let res = db
         .collection::<TranscriptDoc>(COLL)
-        .update_one(doc! { "_id": file_id, "runId": run_id }, doc! { "$set": set })
+        .update_one(
+            doc! { "_id": file_id, "runId": run_id, "open": true },
+            doc! { "$set": { "progress": progress, "updatedAt": DateTime::now() } },
+        )
         .await
         .map_err(|e| AppError::Internal(format!("cập nhật chép lời: {e}")))?;
     Ok(res.matched_count > 0)
-}
-
-pub async fn set_progress(db: &Database, file_id: ObjectId, run_id: &str, progress: f64) -> Result<bool, AppError> {
-    update_run(db, file_id, run_id, doc! { "progress": progress, "updatedAt": DateTime::now() }).await
 }
 
 pub async fn finish_done(
