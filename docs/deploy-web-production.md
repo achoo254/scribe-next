@@ -323,6 +323,8 @@ nginx gắn bộ header bảo mật cho mọi response của Scribe (FE, `/asset
 
 **Lưu ý Cloudflare:** CSP chặn mọi script mà Cloudflare tự chèn (Web Analytics, Rocket Loader). Bật tính năng nào như vậy cho `scribe.hoandat.com` thì phải thêm origin của nó vào CSP trước.
 
+**Trạng thái prod (22/10/2026 23:30):** header đã áp dụng (vhost cũ sao lưu ở `/root/scribe.conf.bak-20261022-233008`). Cloudflare Web Analytics đang tự chèn `static.cloudflareinsights.com/beacon.min.js` và bị CSP chặn có chủ đích: chính sách quyền riêng tư ghi Scribe không dùng công cụ phân tích. Để hết dòng lỗi CSP trong console, tắt Web Analytics cho `scribe.hoandat.com` trên dashboard Cloudflare; token `token-full-access-cloudflare` không có quyền Web Analytics (API `rum/site_info` trả 10000).
+
 **Deploy lên `.65` — CẦN USER DUYỆT trước khi chạy** (đổi cấu hình nginx shared của prod). Từ máy deploy, `KEY` như §Deploy:
 
 ```bash
