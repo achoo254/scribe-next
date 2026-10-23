@@ -15,7 +15,9 @@ Prod chạy đúng theo hai file mẫu trong `deploy/` (`scribe-be.service`, `ng
 | `DEPLOY_WEB_ROOT` | `/var/www/scribe/dist` |
 | `DEPLOY_NGINX_CONF` | `/etc/nginx/conf.d/scribe.conf` |
 
-Database: `scribe` trên mongod chung `27017`, user Mongo riêng `scribe` (chỉ `readWrite` + `dbAdmin` trên db `scribe`). `.env.production` ở gốc repo (không có trong git, mỗi máy deploy tự giữ) chứa các biến `DEPLOY_*` trên cùng biến build của BE (xem bên dưới). Các lệnh dưới đây giả định đã nạp: `set -a; . ./.env.production; set +a`.
+Database: `scribe` trên mongod chung `27017`, user Mongo riêng `scribe` (chỉ `readWrite` + `dbAdmin` trên db `scribe`). `.env.production` chứa các biến `DEPLOY_*` trên cùng biến build của BE (xem bên dưới). Các lệnh dưới đây giả định đã nạp: `set -a; . "$(scripts/env-dir.sh)/.env.production"; set +a`.
+
+> **Env nằm trên iCloud, không trong repo** (quy tắc bắt buộc, từ 23/10/2026). Env của Scribe nằm trên iCloud (`…/ENV production/one-scribe/`: `.env.production`, `.env.development`, `web/.env`), không bao giờ để trong repo; máy Mac và máy Windows đọc chung bản đó. `scripts/env-dir.sh` in ra thư mục này (đặt `SCRIBE_ENV_DIR` nếu để chỗ khác); Vite tìm cùng chỗ (`web/vite.config.ts`). Trên Mac, tệp iCloud bị dọn khỏi đĩa thì đọc qua SSH báo `Resource deadlock avoided`: chạy `brctl download <tệp>` rồi đọc lại.
 
 > **Đổi tên và đăng nhập ngày 2026-10-16 (đã xong):** bản cũ `onescribe-be` / `/opt/onescribe-be` / db `onescribe` / domain `scribe.inetdev.io.vn` đã xoá hẳn (service, user, thư mục, db, vhost, DNS); đăng nhập Firebase đã bỏ, thay bằng auth-next. Dữ liệu trước đổi tên chỉ còn ở bản dump `/root/onescribe-backup-20261016-124301/`.
 
@@ -33,10 +35,10 @@ Không dựng thêm môi trường xem trước (tunnel, preview) trên `.65`.
 ### Chạy dev local
 
 - **Mongo dev:** database dev trên mongod lab **176** (`192.168.122.176:27017`, cần VPN lab), user dev chỉ có `readWrite` trên đúng database đó. 176 là máy khác với prod nên không đụng dữ liệu thật. Tạo ngày 2026-10-15; đã kiểm cách ly: user này không thấy database nào khác.
-- **Biến BE dev** nằm trong `.env.development` ở gốc repo (không có trong git): `MONGO_URI`, `PORT`, `DB_NAME`, `SESSION_KEY_PATH`, `DATA_DIR`, `PUBLIC_URL`, `OIDC_ISSUER`, `OIDC_WEB_CLIENT_ID`, `OIDC_WEB_CLIENT_SECRET_PATH`, `OPENAI_KEY_PATH`, `ELEVENLABS_KEY_PATH` (máy dev không có key ElevenLabs thì đặt `TRANSCRIBE_PROVIDER=openai` để vẫn chép lời được), `TRANSCRIBE_EMAILS` (các đường dẫn tệp trỏ vào thư mục dev trong home, vì thư mục prod không ghi được trên macOS). BE đọc biến **lúc build** (`option_env!`), nên nạp env rồi mới build/chạy:
+- **Biến BE dev** nằm trong `.env.development` ở thư mục env trên iCloud (`scripts/env-dir.sh`): `MONGO_URI`, `PORT`, `DB_NAME`, `SESSION_KEY_PATH`, `DATA_DIR`, `PUBLIC_URL`, `OIDC_ISSUER`, `OIDC_WEB_CLIENT_ID`, `OIDC_WEB_CLIENT_SECRET_PATH`, `OPENAI_KEY_PATH`, `ELEVENLABS_KEY_PATH` (máy dev không có key ElevenLabs thì đặt `TRANSCRIBE_PROVIDER=openai` để vẫn chép lời được), `TRANSCRIBE_EMAILS` (các đường dẫn tệp trỏ vào thư mục dev trong home, vì thư mục prod không ghi được trên macOS). BE đọc biến **lúc build** (`option_env!`), nên nạp env rồi mới build/chạy:
 
   ```bash
-  set -a; . ./.env.development; set +a
+  set -a; . "$(scripts/env-dir.sh)/.env.development"; set +a
   cargo run -p scribe-be             # → 127.0.0.1:8787, kiểm: curl 127.0.0.1:8787/api/health
   cd web && pnpm run dev              # → http://localhost:5173
   ```
@@ -157,7 +159,7 @@ Hai client trên IdP `https://auth.hoandat.com` (chỉ tenant chính):
 
 ### FE build env
 
-FE đọc **lúc build** từ `web/.env` (không có trong git, mẫu ở `web/.env.example`): chỉ `VITE_NATIVE_API_ORIGIN=https://scribe.hoandat.com` (origin backend mà app iPhone gọi, `web/src/lib/api.ts`; trang web dùng cùng origin nên không cần). `pnpm run ios:device` cũng nhúng giá trị này vào Info.plist của app. Thiếu biến thì `vite build` dừng và báo tên biến (`web/vite.config.ts`).
+FE đọc **lúc build** từ `web/.env` trong thư mục env trên iCloud (mẫu ở `web/.env.example`): chỉ `VITE_NATIVE_API_ORIGIN=https://scribe.hoandat.com` (origin backend mà app iPhone gọi, `web/src/lib/api.ts`; trang web dùng cùng origin nên không cần). `pnpm run ios:device` cũng nhúng giá trị này vào Info.plist của app. Thiếu biến thì `vite build` dừng và báo tên biến (`web/vite.config.ts`).
 
 Tuỳ chọn: `VITE_SUPPORT_EMAIL` — email hỗ trợ ở mục "Liên hệ" của `/privacy` và `/terms` (App Store cần một cách liên hệ thật); bỏ trống thì trang ghi "người vận hành Scribe qua tài khoản hoandat". Có giá trị mà không phải email thì build dừng.
 
@@ -249,7 +251,7 @@ Cần `cargo-zigbuild` (build chéo musl trên macOS: `brew install zig`, `rustu
 > Build backend bằng `cargo zigbuild` (script Docker `scripts/build-musl.sh` cũ đã bỏ ngày 2026-10-16: còn đòi biến Firebase và không chuyển biến OIDC/hạn mức vào container).
 
 ```bash
-set -a; . ./.env.production; set +a
+set -a; . "$(scripts/env-dir.sh)/.env.production"; set +a
 
 # 1) Build BE musl (cấu hình lấy từ .env.production, KHÔNG hardcode)
 cargo zigbuild --release --target x86_64-unknown-linux-musl -p scribe-be
@@ -328,8 +330,8 @@ nginx gắn bộ header bảo mật cho mọi response của Scribe (FE, `/asset
 **Deploy 23/10/2026 19:11 (`74c132f`):** BE + web (lịch sử ghi chia theo ngày, đổi tên bản ghi), sao lưu `/root/scribe-backup-20261023-191120`; iOS TestFlight build `20261023.1211`. Khi đóng gói `web/dist` bằng `tar` trên macOS, đặt `COPYFILE_DISABLE=1` để không mang theo tệp `._*` (lần này đã xoá 42 tệp như vậy khỏi web root).
 
 **Deploy 23/10/2026 21:58 (`7d9cc58`):** chỉ web (Lời đã chép chia theo ngày), không restart BE; sao lưu `/root/scribe-backup-20261023-215805-web`; trước deploy đếm `recording_sessions`, `upload_sessions` và hàng đợi chép lời đều bằng 0. Lần đầu deploy từ máy Windows `hoandat-pc`, khác với máy Mac ở mấy điểm:
-- Máy này không có `.env.production`, cả trong iCloud (thư mục `ENV production/one-scribe/` chỉ còn `web/.env` Firebase cũ). Deploy chỉ web thì không cần tệp này; `web/.env` dựng lại từ `web/.env.example` với các giá trị public mà bản prod đang nhúng, rồi lưu lên iCloud ở `ENV production/one-scribe/web/.env` (bản Firebase cũ giữ ở `.env.bak-20261023-2205` cùng thư mục). `.env.production` chỉ còn trên máy Mac; chép lên iCloud cùng thư mục `one-scribe/` (ví dụ `.env.production_scribe`) để deploy BE được từ Windows.
-- `scripts/prod-ssh.sh` của skill `scribe-ops-prod` bị từ chối khoá (`Permission denied (publickey…)`); `lab-ssh.sh 65` của skill `inet-lab-ops` vào được. Không có `.env.production` thì `prod-mongosh.sh` cũng không chạy: lần này đếm bằng tài khoản `mongo_admin_*` của entry `SSH_SERVER_STAGING`, chỉ đọc, mật khẩu đi qua stdin.
+- Lúc deploy máy này chưa có `.env.production` (khi đó env còn nằm trong repo trên Mac), nên đếm phiên bằng tài khoản `mongo_admin_*` của entry `SSH_SERVER_STAGING`, chỉ đọc, mật khẩu qua stdin. Ngay sau đó env chuyển lên iCloud (khung ở §Tên trên prod), `web/.env` Firebase cũ của iCloud giữ ở `one-scribe/web/.env.bak-20261023-2205`.
+- `prod-ssh.sh` từng bị từ chối khoá trên Windows: `jq` bản Windows xuất CRLF nên tên đăng nhập đọc ra thành `root`. Script đã bỏ ``; `prod-ssh.sh` và `prod-mongosh.sh` chạy được từ Windows.
 - Hook của Claude chặn lệnh Bash có chữ `dist`: đặt các bước đẩy và thay web root vào một script rồi chạy script đó.
 
 **Deploy lên `.65` — CẦN USER DUYỆT trước khi chạy** (đổi cấu hình nginx shared của prod). Từ máy deploy, `KEY` như §Deploy:

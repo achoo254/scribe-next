@@ -34,8 +34,8 @@ if [ -n "$(find "$ASC_KEY_PATH" -perm +044 2>/dev/null)" ]; then
 	echo "ios-release: cảnh báo — $ASC_KEY_PATH đọc được bởi người khác; nên chmod 600." >&2
 fi
 
-ORIGIN=$(grep -E '^VITE_NATIVE_API_ORIGIN=' .env 2>/dev/null | tail -1 | cut -d= -f2- || true)
-[[ "$ORIGIN" == https://* ]] || fail "VITE_NATIVE_API_ORIGIN trong web/.env phải là https (bản phát hành gọi backend prod), nhận \"$ORIGIN\"."
+ORIGIN=$(grep -E '^VITE_NATIVE_API_ORIGIN=' "$(../scripts/env-dir.sh)/web/.env" 2>/dev/null | tail -1 | cut -d= -f2- || true)
+[[ "$ORIGIN" == https://* ]] || fail "VITE_NATIVE_API_ORIGIN trong web/.env (thư mục env trên iCloud) phải là https (bản phát hành gọi backend prod), nhận \"$ORIGIN\"."
 
 PROJECT=ios/App/App.xcodeproj
 VERSION=$(grep -m1 -E 'MARKETING_VERSION = ' "$PROJECT/project.pbxproj" | sed -E 's/.*= ([^;]+);/\1/')

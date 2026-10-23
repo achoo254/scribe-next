@@ -32,7 +32,7 @@ dist-ssr
 **/.session-key
 
 # Secrets — dotenv (KHÔNG commit; chỉ .env.example là template an toàn). .env.production (biến
-# build BE cho prod .65) và web/.env cũng không commit: mỗi máy tự giữ bản của mình.
+# build BE cho prod .65), .env.development và web/.env nằm trên iCloud (scripts/env-dir.sh), không để trong repo.
 .env
 .env.*
 !.env.example

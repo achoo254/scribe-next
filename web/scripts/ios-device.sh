@@ -31,9 +31,9 @@ echo "→ iPhone $DEVICE"
 pnpm run build
 pnpm exec cap sync ios
 
-# Backend origin của app (nhúng vào Info.plist), lấy cùng nguồn với bản web: web/.env.
-ORIGIN=$(grep -E '^VITE_NATIVE_API_ORIGIN=' .env | tail -1 | cut -d= -f2-)
-[ -n "$ORIGIN" ] || { echo "Thiếu VITE_NATIVE_API_ORIGIN trong web/.env (xem web/.env.example)." >&2; exit 1; }
+# Backend origin của app (nhúng vào Info.plist), lấy cùng nguồn với bản web: web/.env trong thư mục env trên iCloud.
+ORIGIN=$(grep -E '^VITE_NATIVE_API_ORIGIN=' "$(../scripts/env-dir.sh)/web/.env" | tail -1 | cut -d= -f2-)
+[ -n "$ORIGIN" ] || { echo "Thiếu VITE_NATIVE_API_ORIGIN trong web/.env ở thư mục env trên iCloud (scripts/env-dir.sh; mẫu web/.env.example)." >&2; exit 1; }
 
 xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Release \
 	-destination "id=$DEVICE" -derivedDataPath "$DERIVED" \

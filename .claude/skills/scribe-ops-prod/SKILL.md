@@ -1,6 +1,6 @@
 ---
 name: scribe-ops-prod
-description: Tra cứu thông tin và vận hành Scribe (repo scribe-next, tên cũ one-scribe) trên PRODUCTION (scribe.hoandat.com, server dùng chung 103.72.98.65 cổng SSH 24700, systemd scribe-be cổng 127.0.0.1:8787, binary /opt/scribe-be, FE /var/www/scribe/dist, database scribe trên mongod chung 27017). Chỉ đường đọc docs/deploy-web-production.md — credential ở $ALL_IN_ONE_STAGING_DEV entry SSH_SERVER_STAGING, cấu hình prod ở .env.production (không commit), SSH/mongosh qua scripts/ của skill, deploy bằng cargo zigbuild + pnpm run build theo §6. Kích hoạt khi user nhắc "prod", "production", "scribe.hoandat.com", "server .65", "SSH prod", "mongosh prod", "log prod", "journal prod", "deploy prod", "rollback", "scribe-be", "đăng nhập prod", "backup Scribe", "audit_events", "hàng đợi chép lời prod". KHÔNG dùng cho dev local (localhost:5173/8787, Mongo dev lab 176, cargo run, pnpm run dev) và không dùng cho app iPhone cài qua cáp (docs/ios-app.md).
+description: Tra cứu thông tin và vận hành Scribe (repo scribe-next, tên cũ one-scribe) trên PRODUCTION (scribe.hoandat.com, server dùng chung 103.72.98.65 cổng SSH 24700, systemd scribe-be cổng 127.0.0.1:8787, binary /opt/scribe-be, FE /var/www/scribe/dist, database scribe trên mongod chung 27017). Chỉ đường đọc docs/deploy-web-production.md — credential ở $ALL_IN_ONE_STAGING_DEV entry SSH_SERVER_STAGING, cấu hình prod ở .env.production trên iCloud (scripts/env-dir.sh, không bao giờ trong repo), SSH/mongosh qua scripts/ của skill, deploy bằng cargo zigbuild + pnpm run build theo §6. Kích hoạt khi user nhắc "prod", "production", "scribe.hoandat.com", "server .65", "SSH prod", "mongosh prod", "log prod", "journal prod", "deploy prod", "rollback", "scribe-be", "đăng nhập prod", "backup Scribe", "audit_events", "hàng đợi chép lời prod". KHÔNG dùng cho dev local (localhost:5173/8787, Mongo dev lab 176, cargo run, pnpm run dev) và không dùng cho app iPhone cài qua cáp (docs/ios-app.md).
 ---
 
 # Scribe Ops — Production
@@ -83,7 +83,7 @@ app trên máy, không chỉ Scribe.
 8. **Không in bí mật** (`MONGO_URI`, private key SSH, các tệp 600 trong `/opt/scribe-be`: `.session-key`,
    `.oidc-web-secret`, `.openai-key` — chủ sở hữu giữ bản gốc ở `$ACCESS_TOKENS_JSON` mục `api.openai.com` —,
    `.notify-bot-token`; `SCRIBE_WEB_CLIENT_SECRET` trong `/var/www/hoandat-auth/.env`): đọc vào biến, truyền qua env/stdin chứ không qua argv; `.env.production` chỉ liệt kê tên biến
-   (`sed 's/=.*//' .env.production`).
+   (`sed 's/=.*//' "$(scripts/env-dir.sh)/.env.production"`). Env nằm trên iCloud (`…/ENV production/one-scribe/`), không trong repo — máy Mac và Windows đọc chung.
 9. **Chọn đúng tệp credential:** máy .65 nằm trong `$ALL_IN_ONE_STAGING_DEV`, entry `SSH_SERVER_STAGING`; **không** có
    trong `$ALL_IN_ONE_PROD`. Cổng 24700 có allowlist IP (`CP_SSH_ACL`) — SSH bị chặn thì báo user, không gỡ chain.
 10. Bí mật đã lộ: báo một câu (thứ gì, lộ ở đâu) rồi dừng, chờ user.
@@ -187,7 +187,7 @@ Báo phép đo đã làm trước, rồi mới tới kết quả. Còn mắt xí
 - **Build** (từ gốc repo):
 
   ```bash
-  set -a; . ./.env.production; set +a
+  set -a; . "$(scripts/env-dir.sh)/.env.production"; set +a
   B="$(mktemp -d)"   # thư mục build riêng
   CARGO_TARGET_DIR="$B" cargo zigbuild --release --target x86_64-unknown-linux-musl -p scribe-be
   (cd web && pnpm run build)

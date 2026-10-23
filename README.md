@@ -20,11 +20,11 @@ Các ứng dụng dùng chung một backend:
 ## Chạy dev
 
 ```bash
-# Backend (cần .env.development ở gốc repo, xem docs/deploy-web-production.md)
-set -a; . ./.env.development; set +a
+# Env nằm trên iCloud, không trong repo: scripts/env-dir.sh (xem docs/deploy-web-production.md)
+set -a; . "$(scripts/env-dir.sh)/.env.development"; set +a
 cargo run -p scribe-be                 # → 127.0.0.1:8787
 
-# Web (cần web/.env, mẫu ở web/.env.example)
+# Web (đọc web/.env trong thư mục env trên iCloud, mẫu ở web/.env.example)
 cd web && pnpm install && pnpm run dev   # → http://localhost:5173, proxy /api → backend
 ```
 

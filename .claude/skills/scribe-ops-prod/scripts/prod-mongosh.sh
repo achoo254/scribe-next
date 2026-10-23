@@ -2,7 +2,8 @@
 # Runs a local mongosh script against the production Scribe database (shared
 # mongod 127.0.0.1:27017 on server .65, database $DB_NAME). The backend has no
 # .env on the server (MONGO_URI is baked into the binary at build time), so
-# the URI comes from the repo's .env.production. It travels inside the script
+# the URI comes from .env.production in the iCloud env folder
+# (scripts/env-dir.sh; env files are never kept in the repo). It travels inside the script
 # over stdin into a temp file (mode 600, deleted on exit) — never argv — and
 # `db` is connected before the script runs, so the script starts directly
 # with queries:
@@ -16,8 +17,8 @@ QUERY="${1:?usage: prod-mongosh.sh <query.js>}"
 [ -f "$QUERY" ] || { echo "no such file: $QUERY" >&2; exit 2; }
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(git -C "$HERE" rev-parse --show-toplevel)"
-ENV_FILE="$ROOT/.env.production"
-[ -f "$ENV_FILE" ] || { echo "missing $ENV_FILE (prod config, not committed)" >&2; exit 2; }
+ENV_FILE="$(bash "$ROOT/scripts/env-dir.sh")/.env.production"
+[ -f "$ENV_FILE" ] || { echo "missing $ENV_FILE (prod config on iCloud, see scripts/env-dir.sh)" >&2; exit 2; }
 URI="$(sed -n 's/^MONGO_URI=//p' "$ENV_FILE" | tail -n 1)"; URI="${URI#\"}"; URI="${URI%\"}"
 [ -n "$URI" ] || { echo "MONGO_URI not set in .env.production" >&2; exit 2; }
 

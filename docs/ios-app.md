@@ -15,7 +15,7 @@ Script `web/scripts/ios-device.sh` build web → `cap sync ios` → `xcodebuild`
 
 Cần trên máy build:
 - Xcode ở `/Applications/Xcode.app` (script tự đặt `DEVELOPER_DIR`, không cần `sudo xcode-select`), Apple ID của team đã đăng nhập trong Xcode.
-- `web/.env` có `VITE_NATIVE_API_ORIGIN` (chép từ `web/.env.example`).
+- `web/.env` trong thư mục env trên iCloud (`scripts/env-dir.sh`) có `VITE_NATIVE_API_ORIGIN` (mẫu `web/.env.example`).
 - Lần đầu cài: trên iPhone vào *Cài đặt → Cài đặt chung → Quản lý VPN & thiết bị* để tin cậy nhà phát triển.
 - Sau mỗi lần Xcode cập nhật: nếu `xcodebuild -checkFirstLaunchStatus` trả khác 0 (17/10/2026, Xcode 27.1 trả 69), chạy `sudo xcodebuild -runFirstLaunch` một lần; nếu không, `devicectl`/`simctl` treo chờ bước này.
 
@@ -36,7 +36,7 @@ Chuẩn bị sẵn trong repo (19/10/2026, plan `plans/dattqh/261019-1105-app-st
 2. **Tạo app** ở App Store Connect → Apps → "+" → New App: Platform iOS, Name `Scribe – Ghi âm & chép lời`, Primary language Vietnamese, Bundle ID `com.hoandat.scribe` (đăng ký trước ở developer.apple.com → Identifiers nếu danh sách chưa có; Xcode tự đăng ký ở lần archive đầu khi dùng ký tự động), SKU `scribe-ios`, User Access Full Access.
 3. **Tạo key API**: App Store Connect → Users and Access → Integrations → App Store Connect API → Team Keys → "+". Role: **Admin** — ký phân phối tự động bằng key (cloud signing) cần quyền này theo báo cáo trên Apple Developer Forums; key **App Manager** tải lên được nhưng có thể lỗi "Cloud signing permission error" ở bước ký. Tải tệp `AuthKey_<KEY_ID>.p8` (chỉ tải được một lần), ghi Key ID và Issuer ID.
 4. **Cất key**: tệp `.p8` để ngoài repo, quyền 600 (ví dụ `~/.appstoreconnect/private_keys/AuthKey_<KEY_ID>.p8`, thư mục mặc định Xcode cũng tìm); Key ID, Issuer ID và bản sao tệp `.p8` lưu vào tệp access-tokens trên iCloud với service `appstoreconnect.apple.com`. Không commit, không gửi qua chat.
-5. **Chạy script** (từ `web/`, `web/.env` có `VITE_NATIVE_API_ORIGIN=https://scribe.hoandat.com` và nên có `VITE_SUPPORT_EMAIL`):
+5. **Chạy script** (từ `web/`, `web/.env` trên iCloud có `VITE_NATIVE_API_ORIGIN=https://scribe.hoandat.com` và nên có `VITE_SUPPORT_EMAIL`):
 
    ```bash
    cd web

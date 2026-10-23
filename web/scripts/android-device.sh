@@ -16,9 +16,9 @@ DEVICE="${ANDROID_SERIAL:-$(adb devices | awk 'NR > 1 && $2 == "device" { print 
 [ -n "$DEVICE" ] || { echo "Không thấy máy Android nào (adb devices): cắm máy và cho phép gỡ lỗi USB." >&2; exit 1; }
 echo "→ Android $DEVICE"
 
-# Backend origin of the app (BuildConfig.SCRIBE_BACKEND_ORIGIN), from the same source as the web build: web/.env.
-ORIGIN=$(grep -E '^VITE_NATIVE_API_ORIGIN=' .env | tail -1 | cut -d= -f2-)
-[ -n "$ORIGIN" ] || { echo "Thiếu VITE_NATIVE_API_ORIGIN trong web/.env (xem web/.env.example)." >&2; exit 1; }
+# Backend origin of the app (BuildConfig.SCRIBE_BACKEND_ORIGIN), from the same source as the web build: web/.env in the iCloud env folder.
+ORIGIN=$(grep -E '^VITE_NATIVE_API_ORIGIN=' "$(../scripts/env-dir.sh)/web/.env" | tail -1 | cut -d= -f2-)
+[ -n "$ORIGIN" ] || { echo "Thiếu VITE_NATIVE_API_ORIGIN trong web/.env ở thư mục env trên iCloud (scripts/env-dir.sh; mẫu web/.env.example)." >&2; exit 1; }
 
 pnpm run build
 pnpm exec cap sync android

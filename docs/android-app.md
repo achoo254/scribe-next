@@ -23,7 +23,7 @@ Kotlin và giữ **đúng contract JS** của plugin Swift (`HoandatAuth`, `Nati
 
 ## Build và cài thử
 
-Cần JDK 21, Android SDK (`ANDROID_HOME` hoặc `sdk.dir` trong `web/android/local.properties`), `adb`, `web/.env`.
+Cần JDK 21, Android SDK (`ANDROID_HOME` hoặc `sdk.dir` trong `web/android/local.properties`), `adb`, `web/.env` trong thư mục env trên iCloud (`scripts/env-dir.sh`).
 
 ```bash
 cd web

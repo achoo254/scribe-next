@@ -1,7 +1,41 @@
+import { existsSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig, loadEnv } from "vite";
 import { brandAssets } from "./vite-brand";
+
+const ENV_SUBDIR = join(
+	"cong-viec",
+	"Cong viec",
+	"ENV production",
+	"one-scribe",
+);
+
+/**
+ * Folder of web/.env. Env files live on iCloud, never in the repo, so the Mac
+ * and the Windows machine read the same copy; same lookup as
+ * scripts/env-dir.sh. Undefined when absent, as in CI, which passes the
+ * VITE_ values as environment variables instead.
+ */
+function webEnvDir(): string | undefined {
+	const roots = [
+		process.env.SCRIBE_ENV_DIR,
+		join(
+			homedir(),
+			"Library",
+			"Mobile Documents",
+			"com~apple~CloudDocs",
+			ENV_SUBDIR,
+		),
+		process.env.USERPROFILE
+			? join(process.env.USERPROFILE, "iCloudDrive", ENV_SUBDIR)
+			: undefined,
+	];
+	const root = roots.find((dir) => dir && existsSync(dir));
+	return root ? join(root, "web") : undefined;
+}
 
 /** Build-time config: the backend origin the native shell calls. */
 const REQUIRED_ENV = ["VITE_NATIVE_API_ORIGIN"] as const;
@@ -50,15 +84,16 @@ function isSupportEmail(value: string): boolean {
 }
 
 export default defineConfig(({ command, mode }) => {
+	const envDir = webEnvDir();
 	// Without VITE_NATIVE_API_ORIGIN the iPhone app has no backend; fail the build
-	// instead. Read from web/.env (not in git, copy web/.env.example; see
-	// docs/deploy-web-production.md).
+	// instead. Read from web/.env in the iCloud env folder (template:
+	// web/.env.example; see docs/deploy-web-production.md).
 	if (command === "build") {
-		const env = loadEnv(mode, process.cwd(), "VITE_");
+		const env = loadEnv(mode, envDir ?? process.cwd(), "VITE_");
 		const missing = REQUIRED_ENV.filter((name) => !env[name]);
 		if (missing.length > 0) {
 			throw new Error(
-				`Missing ${missing.join(", ")} for mode "${mode}": create web/.env from web/.env.example.`,
+				`Missing ${missing.join(", ")} for mode "${mode}": put web/.env (from web/.env.example) in the iCloud env folder "…/ENV production/one-scribe/web", or set SCRIBE_ENV_DIR.`,
 			);
 		}
 		// Optional (src/lib/idp.ts has the default), but a typo must not ship
@@ -78,6 +113,7 @@ export default defineConfig(({ command, mode }) => {
 		}
 	}
 	return {
+		envDir,
 		plugins: [react(), tailwindcss(), brandAssets()],
 		server: {
 			port: 5173,
