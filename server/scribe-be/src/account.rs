@@ -500,6 +500,8 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn purge_user_on_real_mongo() {
+        // Câu giả của transcript "running" bị đối soát index coi là thừa và xoá nếu chạy cùng lúc.
+        let _sweep = crate::db::WHOLE_DB_SWEEP.lock().await;
         let uri = std::env::var("TRANSCRIPT_TEST_MONGO_URI").expect("TRANSCRIPT_TEST_MONGO_URI");
         let db_name = std::env::var("TRANSCRIPT_TEST_DB_NAME").expect("TRANSCRIPT_TEST_DB_NAME");
         let db = crate::db::connect(&uri, &db_name).await.expect("kết nối Mongo");

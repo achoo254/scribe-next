@@ -37,6 +37,13 @@ cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace
 
 CI GitHub Actions (`.github/workflows/ci.yml`) chạy đúng các lệnh này cho mỗi push `main` và pull request. Deploy prod làm tay.
 
+Test trên Mongo dev (`#[ignore]`, cần VPN lab tới 176) đọc URI từ `.env.development` trên iCloud; `--skip live_` bỏ các test gọi API trả tiền thật (OpenAI, ElevenLabs):
+
+```bash
+( set -a; . "$(scripts/env-dir.sh)/.env.development"; set +a
+  TRANSCRIPT_TEST_MONGO_URI="$MONGO_URI" TRANSCRIPT_TEST_DB_NAME="$DB_NAME" cargo test -p scribe-be -- --ignored --skip live_ )
+```
+
 Ngoài CI, chạy thêm trước khi deploy web:
 
 ```bash
