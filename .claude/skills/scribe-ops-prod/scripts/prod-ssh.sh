@@ -20,8 +20,9 @@ fi
 FILE="${ALL_IN_ONE_STAGING_DEV:?set ALL_IN_ONE_STAGING_DEV to the staging/dev credential file}"
 command -v jq >/dev/null || { echo "jq is required" >&2; exit 2; }
 
+# jq on Windows ends lines with CRLF; a stray \r would make the login "root\r".
 read -r HOST PORT LOGIN < <(jq -r --arg n "$ENTRY" \
-	'.servers[] | select(.name == $n) | "\(.host) \(.port) \(.user)"' "$FILE")
+	'.servers[] | select(.name == $n) | "\(.host) \(.port) \(.user)"' "$FILE" | tr -d '\r')
 [ -n "${HOST:-}" ] || { echo "entry $ENTRY not found in \$ALL_IN_ONE_STAGING_DEV" >&2; exit 2; }
 
 if [ "${1:-}" = "--print-target" ]; then
