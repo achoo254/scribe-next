@@ -216,16 +216,25 @@ export function overallProgress(
 	return Math.floor(sum / sent.length);
 }
 
+/** An unnamed iPhone session: its shown name carries the start time. */
+export function hasDefaultSessionTitle(
+	doc: Pick<TranscriptSummary, "key" | "title">,
+): boolean {
+	return !doc.title && doc.key.startsWith("s:");
+}
+
 /**
  * Name to show: the user's title, else "Bản ghi trên iPhone 09:41 16/10/2026"
- * for a session or the file name of a browser recording.
+ * for a session (no date with `withDate: false`, where a day heading already
+ * says it) or the file name of a browser recording.
  */
 export function transcriptTitle(
 	doc: Pick<TranscriptSummary, "key" | "title" | "name" | "createdAt">,
+	{ withDate = true }: { withDate?: boolean } = {},
 ): string {
+	if (hasDefaultSessionTitle(doc))
+		return sessionTitle(doc.createdAt, { withDate });
 	if (doc.title) return doc.title;
-	if (doc.key.startsWith("s:"))
-		return sessionTitle(doc.createdAt, { withDate: true });
 	return doc.name || activeTranslator().t("transcript.defaultName");
 }
 

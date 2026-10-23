@@ -93,6 +93,7 @@ export const transcript = {
 			"Bấm “Chép lời” trên một bản ghi ở trang Ghi âm; bản chép lời sẽ hiện ở đây.",
 		emptyAction: "Mở trang Ghi âm",
 		segments: { other: "{count} đoạn" },
+		dayMeta: { other: "{count} bản chép lời · {duration}" },
 	},
 	quota: {
 		paused: "Chép lời đang tạm ngưng, quản trị đã được báo. Thử lại sau.",

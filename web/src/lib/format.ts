@@ -66,6 +66,19 @@ export function formatDate(iso?: string | null): string {
 			});
 }
 
+/** Local time of day, "09:41"; empty for a missing or invalid timestamp. */
+export function formatTimeOfDay(iso?: string | null): string {
+	if (!iso) return "";
+	const date = new Date(iso);
+	return Number.isNaN(date.getTime())
+		? ""
+		: date.toLocaleTimeString("vi-VN", {
+				hour: "2-digit",
+				minute: "2-digit",
+				hourCycle: "h23",
+			});
+}
+
 /** Local date and time; empty for a missing or invalid timestamp. */
 export function formatDateTime(iso?: string): string {
 	if (!iso) return "";

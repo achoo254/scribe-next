@@ -1,10 +1,17 @@
 import { activeTranslator } from "../../i18n/active-translator";
+import { formatTimeOfDay } from "../../lib/format";
 import { transcriptKey } from "../transcript-docs/transcript-docs-api";
 import type { ManagedFile, RecordingItem } from "./files-api";
 
 const DAY_MS = 86_400_000;
 
-export interface DayGroup {
+/** What `groupByDay` needs from an item: a recordings row or a transcript summary. */
+export interface DatedItem {
+	createdAt?: string | null;
+	durationS?: number | null;
+}
+
+export interface DayGroup<T extends DatedItem = RecordingItem> {
 	key: string;
 	/** "Hôm nay", "Hôm qua", else the weekday ("Thứ Sáu"). */
 	label: string;
@@ -15,7 +22,7 @@ export interface DayGroup {
 	to: number;
 	/** Sum of the items' durations, seconds. */
 	durationS: number;
-	items: RecordingItem[];
+	items: T[];
 }
 
 function capitalize(text: string): string {
@@ -42,14 +49,14 @@ function dayLabel(from: number, date: Date, now: number): string {
 }
 
 /**
- * Groups recordings by local day. The backend sorts newest first, so the
+ * Groups items by local day. The backend sorts newest first, so the
  * groups come out in that order too. A missing date falls into 1970.
  */
-export function groupByDay(
-	items: readonly RecordingItem[],
+export function groupByDay<T extends DatedItem>(
+	items: readonly T[],
 	now: number = Date.now(),
-): DayGroup[] {
-	const groups = new Map<string, DayGroup>();
+): DayGroup<T>[] {
+	const groups = new Map<string, DayGroup<T>>();
 	for (const item of items) {
 		const parsed = item.createdAt ? new Date(item.createdAt) : null;
 		const date =
@@ -256,10 +263,7 @@ export function sessionTitle(
 	if (!createdAt) return iphoneSession;
 	const date = new Date(createdAt);
 	if (Number.isNaN(date.getTime())) return iphoneSession;
-	const time = date.toLocaleTimeString("vi-VN", {
-		hour: "2-digit",
-		minute: "2-digit",
-	});
+	const time = formatTimeOfDay(createdAt);
 	if (!withDate) return `${iphoneSession} ${time}`;
 	const day = date.toLocaleDateString("vi-VN", {
 		day: "2-digit",

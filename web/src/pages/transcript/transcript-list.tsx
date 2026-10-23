@@ -1,37 +1,21 @@
-import {
-	IconChevronRight,
-	IconFileText,
-	IconMicrophone,
-} from "@tabler/icons-react";
+import { IconFileText, IconMicrophone } from "@tabler/icons-react";
+import { useMemo } from "react";
 import { Link } from "react-router";
-import { Badge } from "../../components/ui/badge";
 import { buttonClassName } from "../../components/ui/button";
-import { cardClassName } from "../../components/ui/card";
 import { EmptyState } from "../../components/ui/empty-state";
 import { LoadError } from "../../components/ui/load-error";
 import { PanelProgress } from "../../components/ui/panel-progress";
 import { Skeleton, SkeletonRegion } from "../../components/ui/skeleton";
-import {
-	summaryStatus,
-	transcriptTitle,
-} from "../../features/transcript-docs/reader-model";
+import { groupByDay } from "../../features/files/recording-groups";
 import { useTranscriptDocsQuery } from "../../features/transcript-docs/transcript-docs-queries";
 import { useT } from "../../i18n/i18n-context";
 import { PATHS } from "../../layout/app-paths";
 import { PageHeader } from "../../layout/page-header";
 import { cn } from "../../lib/cn";
-import { formatDateTime, formatDuration } from "../../lib/format";
+import { formatDuration } from "../../lib/format";
 import { useDelayedFlag } from "../../lib/use-delayed-flag";
 import { SearchEntry } from "../search/search-entry";
-
-/**
- * Hover and focus share one highlighted look, as localman-next's project
- * rows (literal classes so Tailwind sees them).
- */
-const ROW_ACTIVE =
-	"transition-[border-color,box-shadow] " +
-	"hover:border-[color-mix(in_srgb,var(--c-primary)_45%,var(--c-border))] hover:shadow-md " +
-	"has-[:focus-visible]:border-[color-mix(in_srgb,var(--c-primary)_45%,var(--c-border))]";
+import { TranscriptListRow } from "./transcript-list-row";
 
 const SKELETON_ROWS = [0, 1, 2];
 
@@ -39,12 +23,16 @@ export interface TranscriptListProps {
 	onOpen: (key: string) => void;
 }
 
-/** Every transcript of the user, newest first; a tap opens the reader. */
+/**
+ * Every transcript of the user, newest first, in day blocks like "Lịch sử
+ * ghi"; a tap opens the reader.
+ */
 export function TranscriptList({ onOpen }: TranscriptListProps) {
 	const t = useT();
 	const query = useTranscriptDocsQuery();
 	const skeleton = useDelayedFlag(query.isPending);
-	const items = query.data ?? [];
+	const items = query.data;
+	const groups = useMemo(() => groupByDay(items ?? []), [items]);
 
 	return (
 		<section data-id="transcripts" className="grid gap-5">
@@ -57,15 +45,25 @@ export function TranscriptList({ onOpen }: TranscriptListProps) {
 				<SkeletonRegion
 					data-id="transcripts-loading"
 					label={t("transcript.list.loading")}
-					className="grid gap-3"
+					className="grid"
 				>
-					{SKELETON_ROWS.map((row) => (
-						<div key={row} className={cn(cardClassName, "grid gap-2 p-4")}>
-							<Skeleton className="h-4 w-64 max-w-full" />
-							<Skeleton className="h-3 w-48 max-w-full" />
-							<Skeleton variant="text" lines={1} />
+					{/* The shape of one day block: header, then rows. */}
+					<div className="rounded-lg border border-border-subtle">
+						<div className="grid gap-1 border-border-subtle border-b px-3 py-2 sm:px-4">
+							<Skeleton className="h-4 w-40" />
+							<Skeleton className="h-3 w-32" />
 						</div>
-					))}
+						{SKELETON_ROWS.map((row) => (
+							<div
+								key={row}
+								className="grid gap-2 border-border-subtle border-t px-3 py-3 first:border-t-0 sm:px-4"
+							>
+								<Skeleton className="h-4 w-64 max-w-full" />
+								<Skeleton className="h-3 w-48 max-w-full" />
+								<Skeleton variant="text" lines={1} />
+							</div>
+						))}
+					</div>
 				</SkeletonRegion>
 			) : query.isPending ? null : query.isError ? (
 				<LoadError
@@ -75,7 +73,7 @@ export function TranscriptList({ onOpen }: TranscriptListProps) {
 					retrying={query.isFetching}
 					onRetry={() => void query.refetch()}
 				/>
-			) : items.length === 0 ? (
+			) : groups.length === 0 ? (
 				<EmptyState
 					data-id="transcripts-empty"
 					icon={<IconFileText size={28} aria-hidden="true" />}
@@ -98,56 +96,54 @@ export function TranscriptList({ onOpen }: TranscriptListProps) {
 				</EmptyState>
 			) : (
 				<PanelProgress active={query.isFetching} aria-busy={query.isFetching}>
-					<ul className="m-0 grid list-none gap-3 p-0">
-						{items.map((item) => {
-							const status = summaryStatus(item);
-							const title = transcriptTitle(item);
+					<div className="grid gap-4">
+						{groups.map((group) => {
+							const dayId = `transcripts-day-${group.key}`;
 							return (
-								<li key={item.key} className={cn(cardClassName, ROW_ACTIVE)}>
-									<button
-										type="button"
-										data-id={`transcripts-item-${item.key}`}
-										onClick={() => onOpen(item.key)}
-										className="flex min-h-11 w-full cursor-pointer items-center gap-3 rounded-xl bg-transparent px-4 py-3 text-left text-fg focus-visible:shadow-focus-primary focus-visible:outline-none"
+								<section
+									key={group.key}
+									data-id={dayId}
+									aria-labelledby={`${dayId}-heading`}
+									className="rounded-lg border border-border-subtle bg-surface"
+								>
+									{/* Stays under the top bar while the day's rows scroll by,
+									    then the next day's header pushes it away. */}
+									<div
+										data-id={`${dayId}-header`}
+										className="sticky top-[calc(var(--topbar-h)+env(safe-area-inset-top))] z-10 grid rounded-t-lg border-border-subtle border-b bg-surface-subtle px-3 py-2 sm:px-4"
 									>
-										<div className="grid min-w-0 flex-1 gap-1">
-											<div
-												className="line-clamp-2 break-words font-semibold"
-												title={title}
-											>
-												{title}
-											</div>
-											<div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-muted text-sm">
-												<span>
-													{formatDateTime(item.createdAt ?? undefined)}
-												</span>
-												<span>· {formatDuration(item.durationS)}</span>
-												{item.segments > 1 ? (
-													<span>
-														·{" "}
-														{t("transcript.list.segments", {
-															count: item.segments,
-														})}
-													</span>
-												) : null}
-												<Badge tone={status.tone}>{status.label}</Badge>
-											</div>
-											{item.preview ? (
-												<p className="m-0 line-clamp-2 text-muted text-sm">
-													{item.preview}
-												</p>
-											) : null}
-										</div>
-										<IconChevronRight
-											size={18}
-											aria-hidden="true"
-											className="flex-none text-icon-muted"
-										/>
-									</button>
-								</li>
+										<h2
+											id={`${dayId}-heading`}
+											className="m-0 flex flex-wrap items-baseline gap-x-2 font-semibold text-base text-fg"
+										>
+											<span>{group.label}</span>
+											<span className="font-mono font-normal text-muted text-sm">
+												{group.dateLabel}
+											</span>
+										</h2>
+										<p
+											data-id={`${dayId}-meta`}
+											className="m-0 text-muted text-xs"
+										>
+											{t("transcript.list.dayMeta", {
+												count: group.items.length,
+												duration: formatDuration(group.durationS),
+											})}
+										</p>
+									</div>
+									<ul className="m-0 grid list-none p-0">
+										{group.items.map((item) => (
+											<TranscriptListRow
+												key={item.key}
+												item={item}
+												onOpen={onOpen}
+											/>
+										))}
+									</ul>
+								</section>
 							);
 						})}
-					</ul>
+					</div>
 				</PanelProgress>
 			)}
 		</section>

@@ -55,7 +55,39 @@ describe("TranscriptList", () => {
 			await screen.findByRole("button", { name: /Phỏng vấn khách hàng/ }),
 		);
 		expect(onOpen).toHaveBeenCalledWith(DOC.key);
-		expect(screen.getByText("· 2 đoạn")).toBeInTheDocument();
+		expect(
+			screen.getByText("2:00 · 2 đoạn", { exact: false }),
+		).toBeInTheDocument();
+	});
+
+	it("puts transcripts of the same day under one day heading", async () => {
+		const SESSION: TranscriptSummary = {
+			...DOC,
+			key: "s:bbbbbbbb-2222",
+			title: null,
+			// Local times: the list groups by the device's day.
+			createdAt: new Date(2026, 9, 16, 9, 30).toISOString(),
+		};
+		const OLDER: TranscriptSummary = {
+			...DOC,
+			key: "s:cccccccc-3333",
+			title: "Họp tuần",
+			createdAt: new Date(2026, 9, 14, 10, 0).toISOString(),
+		};
+		const named = {
+			...DOC,
+			createdAt: new Date(2026, 9, 16, 8, 0).toISOString(),
+		};
+		renderList([jsonResponse({ items: [SESSION, named, OLDER] })]);
+		const days = await screen.findAllByRole("heading", { level: 2 });
+		expect(days).toHaveLength(2);
+		expect(days[0]).toHaveTextContent("16/10/2026");
+		expect(days[1]).toHaveTextContent("14/10/2026");
+		expect(screen.getByText("2 bản chép lời · 4:00")).toBeInTheDocument();
+		// The day heading carries the date, so the default name drops it.
+		expect(
+			screen.getByRole("button", { name: /^Bản ghi trên iPhone \d\d:\d\d / }),
+		).not.toHaveAccessibleName(/16\/10\/2026/);
 	});
 
 	it("offers a retry when the list fails to load", async () => {
