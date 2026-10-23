@@ -7,6 +7,7 @@ import {
 	groupByDay,
 	groupOutputsByJob,
 	groupSessions,
+	itemTranscriptKey,
 	parseSegmentName,
 	sessionTitle,
 } from "./recording-groups";
@@ -33,6 +34,33 @@ describe("groupByDay", () => {
 	it("puts recordings without a valid date together", () => {
 		const groups = groupByDay([recording("a"), recording("b", "not a date")]);
 		expect(groups).toHaveLength(1);
+	});
+
+	it("names the two latest days “Hôm nay” / “Hôm qua”, older ones by weekday, with the date apart", () => {
+		const now = new Date(2026, 9, 23, 13, 0).getTime();
+		const groups = groupByDay(
+			[
+				recording("today", new Date(2026, 9, 23, 0, 5).toISOString()),
+				recording("yesterday", new Date(2026, 9, 22, 23, 59).toISOString()),
+				recording("tuesday", new Date(2026, 9, 20, 9, 0).toISOString()),
+			],
+			now,
+		);
+		expect(groups.map((group) => [group.label, group.dateLabel])).toEqual([
+			["Hôm nay", "23/10/2026"],
+			["Hôm qua", "22/10/2026"],
+			["Thứ Ba", "20/10/2026"],
+		]);
+	});
+
+	it("adds up the day's duration, missing durations count as zero", () => {
+		const at = new Date(2026, 9, 23, 9, 0).toISOString();
+		const [day] = groupByDay([
+			{ ...recording("a", at), durationS: 65 },
+			{ ...recording("b", at), durationS: 120.5 },
+			recording("c", at),
+		]);
+		expect(day?.durationS).toBe(185.5);
 	});
 });
 
@@ -127,6 +155,33 @@ describe("groupSessions", () => {
 		expect(session.durationS).toBe(150);
 		expect(session.size).toBe(300);
 		expect(session.createdAt).toBe("2026-10-15T10:01:00Z");
+	});
+
+	it("takes the session's title from its parts; none set means the default name", () => {
+		const titled = groupSessions([
+			{ ...seg("aaaaaaaa-1111", 1, "2026-10-15T10:02:00Z"), title: "Họp tuần" },
+			{ ...seg("aaaaaaaa-1111", 0, "2026-10-15T10:01:00Z"), title: null },
+		]);
+		expect(titled[0]?.kind === "session" && titled[0].title).toBe("Họp tuần");
+		const untitled = groupSessions([
+			seg("bbbbbbbb-2222", 0, "2026-10-15T10:01:00Z"),
+		]);
+		expect(untitled[0]?.kind === "session" && untitled[0].title).toBeNull();
+	});
+
+	it("keys a file by its session: iOS segments share one, others are their own", () => {
+		expect(
+			itemTranscriptKey(seg("aaaaaaaa-1111", 3, "2026-10-15T10:01:00Z")),
+		).toBe("s:aaaaaaaa-1111");
+		expect(itemTranscriptKey(recording("f1"))).toBe("f:f1");
+		// An uploaded file is never a segment, whatever its name.
+		expect(
+			itemTranscriptKey({
+				...recording("u1"),
+				kind: "upload",
+				name: "aaaaaaaa-1111#3",
+			}),
+		).toBe("f:u1");
 	});
 
 	it("keeps names that only look similar as single recordings", () => {

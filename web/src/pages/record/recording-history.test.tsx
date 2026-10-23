@@ -255,6 +255,71 @@ describe("RecordingHistory", () => {
 		expect(deletes(fake.calls)).toEqual([]);
 	});
 
+	it("shows each day as its own titled section with its count, duration and download", async () => {
+		const now = new Date();
+		const at = (daysAgo: number, hour: number) =>
+			new Date(
+				now.getFullYear(),
+				now.getMonth(),
+				now.getDate() - daysAgo,
+				hour,
+			).toISOString();
+		const day = (daysAgo: number) =>
+			new Date(
+				now.getFullYear(),
+				now.getMonth(),
+				now.getDate() - daysAgo,
+			).toLocaleDateString("vi-VN", {
+				day: "2-digit",
+				month: "2-digit",
+				year: "numeric",
+			});
+		const item = (id: string, createdAt: string, durationS: number) => ({
+			id,
+			name: id,
+			durationS,
+			hasVideo: false,
+			size: 1,
+			createdAt,
+		});
+		renderHistory({
+			"GET /api/files": jsonResponse({
+				retentionDays: 14,
+				items: [
+					// One iPhone session (two segments) and one recording today.
+					item("aaaaaaaa-1111#1", at(0, 10), 60),
+					item("aaaaaaaa-1111#0", at(0, 10), 60),
+					item("today-web", at(0, 9), 65),
+					item("yesterday-web", at(1, 9), 30),
+				],
+			}),
+		});
+		const today = await screen.findByRole("region", {
+			name: `Hôm nay ${day(0)}`,
+		});
+		expect(
+			within(today).getByRole("heading", {
+				level: 3,
+				name: `Hôm nay ${day(0)}`,
+			}),
+		).toBeVisible();
+		// Rows, not files: the session counts once.
+		expect(today).toHaveTextContent("2 bản ghi · 3:05");
+		expect(
+			within(today).getByRole("button", { name: `Tải ngày ${day(0)}` }),
+		).toBeVisible();
+		expect(within(today).getByText("today-web")).toBeVisible();
+		expect(within(today).queryByText("yesterday-web")).toBeNull();
+
+		const yesterday = screen.getByRole("region", {
+			name: `Hôm qua ${day(1)}`,
+		});
+		expect(yesterday).toHaveTextContent("1 bản ghi · 0:30");
+		expect(within(yesterday).getByText("yesterday-web")).toBeVisible();
+		// The retention notice stays above the days.
+		expect(screen.getByText(/tự động xoá sau 14 ngày/)).toBeVisible();
+	});
+
 	it("offers a retry when the list fails to load", async () => {
 		renderHistory({
 			"GET /api/files": [

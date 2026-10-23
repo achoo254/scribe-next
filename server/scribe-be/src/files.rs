@@ -4,7 +4,7 @@ use crate::audit;
 use crate::auth::UserId;
 use crate::error::AppError;
 use crate::models::file::FileDoc;
-use crate::models::{file, job, transcript, user};
+use crate::models::{file, job, transcript, transcript_doc, user};
 use crate::recordings;
 use crate::state::AppState;
 use axum::body::Body;
@@ -36,6 +36,7 @@ pub async fn list(
     let recs = file::list_history(&state.db, &user.0).await?;
     let retention_days = user::effective_plan(&state.db, &user.0).await?.storage().retention_days;
     let transcripts: HashMap<String, String> = transcript::statuses(&state.db, &user.0).await?.into_iter().collect();
+    let titles = session_titles(&state, &user.0, &recs).await?;
     let items: Vec<Value> = recs
         .iter()
         .map(|f| {
@@ -44,6 +45,8 @@ pub async fn list(
             json!({
                 "id": id,
                 "name": f.name,
+                // Tên người dùng đặt cho cả phiên (mọi đoạn của một phiên iPhone cùng một tên); null = tên mặc định.
+                "title": title_of(&titles, f),
                 "kind": f.kind,
                 "size": f.size,
                 "durationS": f.duration_s,
@@ -265,10 +268,9 @@ pub async fn stream(
         .header(header::ACCEPT_RANGES, "bytes")
         .header(header::CONTENT_LENGTH, total);
     if want_download {
-        builder = builder.header(
-            header::CONTENT_DISPOSITION,
-            content_disposition_attachment(&file_download_name(&f.name, &f.path)),
-        );
+        let titles = session_titles(&state, &user.0, std::slice::from_ref(&f)).await?;
+        let name = file_download_name(&display_name(&f, title_of(&titles, &f)), &f.path);
+        builder = builder.header(header::CONTENT_DISPOSITION, content_disposition_attachment(&name));
     }
     builder
         .body(body)
@@ -305,12 +307,13 @@ pub async fn archive(
     audit::record(&state, Some(&user.0), "recordings.archive", details);
 
     // Tên trong zip: "<tên hiển thị>.<ext>", dedupe khi trùng (bản ghi có thể trùng tên).
+    let titles = session_titles(&state, &user.0, &selected).await?;
     let mut used: HashSet<String> = HashSet::new();
     let entries: Vec<(String, String)> = selected
         .iter()
         .map(|f| {
             let ext = f.path.rsplit('.').next().unwrap_or("bin");
-            let base = sanitize_filename(&f.name);
+            let base = sanitize_filename(&display_name(f, title_of(&titles, f)));
             let mut name = format!("{base}.{ext}");
             let mut i = 1;
             while !used.insert(name.clone()) {
@@ -363,6 +366,31 @@ fn build_zip(zip_path: &str, files: &[(String, String)]) -> std::io::Result<()> 
     Ok(())
 }
 
+/// Tên người dùng đặt cho phiên của các file (khoá phiên → tên), đọc một lần cho cả danh sách.
+async fn session_titles(state: &AppState, user_id: &str, files: &[FileDoc]) -> Result<HashMap<String, String>, AppError> {
+    let keys: Vec<String> = files.iter().filter_map(FileDoc::session_key).collect::<HashSet<_>>().into_iter().collect();
+    if keys.is_empty() {
+        return Ok(HashMap::new());
+    }
+    transcript_doc::titles(&state.db, user_id, &keys).await
+}
+
+fn title_of<'a>(titles: &'a HashMap<String, String>, f: &FileDoc) -> Option<&'a str> {
+    f.session_key().and_then(|key| titles.get(&key)).map(String::as_str)
+}
+
+/// Tên của file khi tải về: tên người dùng đặt cho phiên (đoạn iPhone thêm "Phần NN" như ở "Lịch sử ghi"),
+/// chưa đặt thì tên lưu của file.
+fn display_name(f: &FileDoc, title: Option<&str>) -> String {
+    match title {
+        Some(title) if file::parse_segment_name(&f.name).is_some() && f.kind == "recording" => {
+            format!("{title} - Phần {:02}", f.segment_index() + 1)
+        }
+        Some(title) => title.to_string(),
+        None => f.name.clone(),
+    }
+}
+
 /// Tên file tải về = "<tên hiển thị an toàn>.<ext lấy từ path>".
 fn file_download_name(name: &str, path: &str) -> String {
     let ext = path.rsplit('.').next().unwrap_or("bin");
@@ -375,6 +403,7 @@ pub(crate) fn sanitize_filename(name: &str) -> String {
         .chars()
         .map(|c| match c {
             '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => '-',
+            c if c.is_control() => ' ',
             c => c,
         })
         .collect();
@@ -458,11 +487,26 @@ fn content_type_for(path: &str) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use super::{live_iphone_sessions, parse_range, split_for_delete_all, LIVE_IPHONE_SESSION_MS};
+    use super::{display_name, file_download_name, live_iphone_sessions, parse_range, split_for_delete_all, LIVE_IPHONE_SESSION_MS};
     use crate::models::file::{FileDoc, Owner};
     use crate::models::plan::Plan;
     use mongodb::bson::{oid::ObjectId, DateTime};
     use std::collections::HashSet;
+
+    #[test]
+    fn downloads_are_named_after_the_title_the_user_set() {
+        let owner = Owner { user_id: "u", plan: Plan::Free };
+        let segment = FileDoc::new_recording(owner, "aaaaaaaa-1111#3", "/r/x.m4a", 1, 1.0, false, ObjectId::new());
+        let single = FileDoc::new_recording(owner, "Ghi âm 11:50", "/r/y.webm", 1, 1.0, false, ObjectId::new());
+        let upload = FileDoc::new_upload(owner, "aaaaaaaa-1111#3", "/r/z.mp3", 1, 1.0, false, ObjectId::new());
+        assert_eq!(display_name(&segment, Some("Họp tuần")), "Họp tuần - Phần 04");
+        assert_eq!(display_name(&single, Some("Họp tuần")), "Họp tuần");
+        // Tên tệp tải lên do người dùng đặt, không bao giờ là đoạn iPhone.
+        assert_eq!(display_name(&upload, Some("Phỏng vấn")), "Phỏng vấn");
+        assert_eq!(display_name(&single, None), "Ghi âm 11:50");
+        // Ký tự cấm trong tên tệp và ký tự điều khiển không lọt vào tên tải về.
+        assert_eq!(file_download_name("Họp: A/B\tC", "/r/y.webm"), "Họp- A-B C.webm");
+    }
 
     #[test]
     fn delete_all_spares_open_recording_sessions_and_busy_split_inputs() {

@@ -442,25 +442,33 @@ pub struct RenameReq {
     title: Option<String>,
 }
 
-/// Tiêu đề sau khi chuẩn hoá: cắt khoảng trắng, rỗng = về tên mặc định.
+/// Tiêu đề sau khi chuẩn hoá: một dòng (gộp khoảng trắng, xuống dòng), rỗng = về tên mặc định.
 fn normalize_title(raw: Option<&str>) -> Result<Option<String>, AppError> {
-    let title = raw.map(str::trim).filter(|t| !t.is_empty());
-    if title.is_some_and(|t| t.chars().count() > MAX_TITLE_CHARS) {
+    let title = raw.map(|t| t.split_whitespace().collect::<Vec<_>>().join(" ")).filter(|t| !t.is_empty());
+    if title.as_ref().is_some_and(|t| t.chars().count() > MAX_TITLE_CHARS) {
         return Err(AppError::BadRequest(format!("tên tối đa {MAX_TITLE_CHARS} ký tự")));
     }
-    Ok(title.map(str::to_string))
+    Ok(title)
 }
 
-/// `PATCH /api/transcript-docs/{key}` — đổi tên; `null` hoặc chuỗi rỗng = về tên mặc định.
+/// Đặt tên cho phiên `key` của user: tên phải hợp lệ và phiên phải có file của chính user (không thì 404,
+/// không lộ phiên của người khác). Phiên chưa chép lời cũng đặt tên được: tên là của bản ghi.
+async fn set_session_title(db: &Database, user_id: &str, key: &str, raw: Option<&str>) -> Result<Option<String>, AppError> {
+    let title = normalize_title(raw)?;
+    session_files(db, user_id, key).await?;
+    transcript_doc::set_title(db, user_id, key, title.as_deref()).await?;
+    Ok(title)
+}
+
+/// `PATCH /api/transcript-docs/{key}` — đổi tên bản ghi (ở "Lịch sử ghi" và bản chép lời); `null` hoặc chuỗi
+/// rỗng = về tên mặc định.
 pub async fn rename(
     State(state): State<AppState>,
     Extension(user): Extension<UserId>,
     Path(key): Path<String>,
     Json(req): Json<RenameReq>,
 ) -> Result<Json<Value>, AppError> {
-    let title = normalize_title(req.title.as_deref())?;
-    session_files(&state.db, &user.0, &key).await?;
-    transcript_doc::set_title(&state.db, &user.0, &key, title.as_deref()).await?;
+    let title = set_session_title(&state.db, &user.0, &key, req.title.as_deref()).await?;
     let title_len = title.as_ref().map_or(0, |t| t.chars().count() as i64);
     audit::record(&state, Some(&user.0), "transcript.rename", doc! { "key": &key, "titleLen": title_len });
     Ok(Json(json!({ "title": title })))
@@ -566,7 +574,7 @@ pub async fn save_segment(
 }
 
 /// `DELETE /api/transcript-docs/{key}` — xoá kết quả chép lời của mọi đoạn, phần người dùng sửa và bản dịch;
-/// audio giữ nguyên.
+/// audio và tên người dùng đặt cho bản ghi giữ nguyên.
 pub async fn delete(
     State(state): State<AppState>,
     Extension(user): Extension<UserId>,
@@ -760,5 +768,67 @@ mod tests {
         assert!(check_texts(&["a".repeat(2001)]).is_err());
         assert!(check_texts(&vec![String::new(); 5001]).is_err());
         assert!(check_key("s:../etc").is_err());
+    }
+
+    #[test]
+    fn a_title_is_one_line() {
+        assert_eq!(normalize_title(Some(" Họp\n\tkhách   hàng \r\n")).expect("ok").as_deref(), Some("Họp khách hàng"));
+        // Khoảng trắng gộp trước khi đếm: 120 chữ cách nhau nhiều dấu cách vẫn hợp lệ.
+        assert!(normalize_title(Some(&"ữ    ".repeat(60))).is_ok());
+    }
+
+    /// Đặt tên trên Mongo thật (DB dev): `TRANSCRIPT_TEST_MONGO_URI=… TRANSCRIPT_TEST_DB_NAME=… cargo test
+    /// session_title_on_real_mongo -- --ignored`. User giả riêng, tự dọn.
+    #[tokio::test]
+    #[ignore]
+    async fn session_title_on_real_mongo() {
+        let uri = std::env::var("TRANSCRIPT_TEST_MONGO_URI").expect("TRANSCRIPT_TEST_MONGO_URI");
+        let db_name = std::env::var("TRANSCRIPT_TEST_DB_NAME").expect("TRANSCRIPT_TEST_DB_NAME");
+        let db = crate::db::connect(&uri, &db_name).await.expect("kết nối Mongo");
+        transcript_doc::ensure_indexes(&db).await.expect("index");
+        let owner = format!("selftest-{}", uuid::Uuid::new_v4());
+        let other = format!("selftest-{}", uuid::Uuid::new_v4());
+        let session = format!("selftest-{}", &uuid::Uuid::new_v4().simple().to_string()[..12]);
+        let key = format!("s:{session}");
+        let segment = ObjectId::new();
+        let single = ObjectId::new();
+        let plan = crate::models::plan::Plan::Free;
+        let f = FileDoc::new_recording(file::Owner { user_id: &owner, plan }, &format!("{session}#0"), "/nonexistent", 1, 60.0, false, segment);
+        file::create(&db, f).await.expect("tạo đoạn");
+        let f = FileDoc::new_recording(file::Owner { user_id: &owner, plan }, "Ghi âm", "/nonexistent", 1, 60.0, false, single);
+        file::create(&db, f).await.expect("tạo bản ghi");
+        let single_key = format!("f:{}", single.to_hex());
+
+        // Chưa chép lời vẫn đặt tên được, cho cả phiên iPhone lẫn bản ghi một file.
+        let set = set_session_title(&db, &owner, &key, Some("  Họp   tuần ")).await.expect("đặt tên phiên");
+        assert_eq!(set.as_deref(), Some("Họp tuần"));
+        set_session_title(&db, &owner, &single_key, Some("Phỏng vấn")).await.expect("đặt tên bản ghi");
+        let titles = transcript_doc::titles(&db, &owner, &[key.clone(), single_key.clone()]).await.expect("đọc tên");
+        assert_eq!(titles.get(&key).map(String::as_str), Some("Họp tuần"));
+        assert_eq!(titles.get(&single_key).map(String::as_str), Some("Phỏng vấn"));
+
+        // Người khác: 404 như phiên không tồn tại, tên của chủ giữ nguyên, không tạo doc cho người lạ.
+        let denied = set_session_title(&db, &other, &key, Some("Chiếm")).await;
+        assert!(matches!(denied, Err(AppError::NotFound(_))));
+        assert!(transcript_doc::get(&db, &other, &key).await.expect("get").is_none());
+        assert_eq!(transcript_doc::get(&db, &owner, &key).await.expect("get").and_then(|d| d.title).as_deref(), Some("Họp tuần"));
+
+        // Tên quá dài, khoá sai dạng: 400 và không đổi gì.
+        let long = "a".repeat(MAX_TITLE_CHARS + 1);
+        assert!(matches!(set_session_title(&db, &owner, &key, Some(&long)).await, Err(AppError::BadRequest(_))));
+        assert!(matches!(set_session_title(&db, &owner, "s:../x", Some("A")).await, Err(AppError::BadRequest(_))));
+        assert_eq!(transcript_doc::get(&db, &owner, &key).await.expect("get").and_then(|d| d.title).as_deref(), Some("Họp tuần"));
+
+        // Xoá bản chép lời giữ tên của bản ghi; chuỗi rỗng = về tên mặc định.
+        transcript_doc::delete(&db, &owner, &key).await.expect("xoá chép lời");
+        assert_eq!(transcript_doc::get(&db, &owner, &key).await.expect("get").and_then(|d| d.title).as_deref(), Some("Họp tuần"));
+        assert_eq!(set_session_title(&db, &owner, &key, Some("   ")).await.expect("về mặc định"), None);
+        assert!(transcript_doc::titles(&db, &owner, std::slice::from_ref(&key)).await.expect("đọc tên").is_empty());
+
+        for k in [&key, &single_key] {
+            transcript_doc::delete(&db, &owner, k).await.expect("dọn");
+        }
+        db.collection::<mongodb::bson::Document>("transcript_docs").delete_many(doc! { "userId": &owner }).await.expect("dọn doc");
+        db.collection::<mongodb::bson::Document>("files").delete_many(doc! { "userId": &owner }).await.expect("dọn file");
     }
 }

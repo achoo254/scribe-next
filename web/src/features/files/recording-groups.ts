@@ -1,22 +1,54 @@
 import { activeTranslator } from "../../i18n/active-translator";
+import { transcriptKey } from "../transcript-docs/transcript-docs-api";
 import type { ManagedFile, RecordingItem } from "./files-api";
 
 const DAY_MS = 86_400_000;
 
 export interface DayGroup {
 	key: string;
+	/** "Hôm nay", "Hôm qua", else the weekday ("Thứ Sáu"). */
 	label: string;
+	/** "23/10/2026". */
+	dateLabel: string;
 	/** Local midnight of the day; the archive range is [from, to). */
 	from: number;
 	to: number;
+	/** Sum of the items' durations, seconds. */
+	durationS: number;
 	items: RecordingItem[];
+}
+
+function capitalize(text: string): string {
+	return text.charAt(0).toLocaleUpperCase("vi-VN") + text.slice(1);
+}
+
+/** "Hôm nay" / "Hôm qua" for the two latest days, the weekday before that. */
+function dayLabel(from: number, date: Date, now: number): string {
+	const { t } = activeTranslator();
+	const today = new Date(now);
+	const todayFrom = new Date(
+		today.getFullYear(),
+		today.getMonth(),
+		today.getDate(),
+	).getTime();
+	const yesterdayFrom = new Date(
+		today.getFullYear(),
+		today.getMonth(),
+		today.getDate() - 1,
+	).getTime();
+	if (from === todayFrom) return t("record.groups.today");
+	if (from === yesterdayFrom) return t("record.groups.yesterday");
+	return capitalize(date.toLocaleDateString("vi-VN", { weekday: "long" }));
 }
 
 /**
  * Groups recordings by local day. The backend sorts newest first, so the
  * groups come out in that order too. A missing date falls into 1970.
  */
-export function groupByDay(items: readonly RecordingItem[]): DayGroup[] {
+export function groupByDay(
+	items: readonly RecordingItem[],
+	now: number = Date.now(),
+): DayGroup[] {
 	const groups = new Map<string, DayGroup>();
 	for (const item of items) {
 		const parsed = item.createdAt ? new Date(item.createdAt) : null;
@@ -31,8 +63,8 @@ export function groupByDay(items: readonly RecordingItem[]): DayGroup[] {
 			const from = new Date(y, m, d).getTime();
 			group = {
 				key,
-				label: date.toLocaleDateString("vi-VN", {
-					weekday: "long",
+				label: dayLabel(from, date, now),
+				dateLabel: date.toLocaleDateString("vi-VN", {
 					day: "2-digit",
 					month: "2-digit",
 					year: "numeric",
@@ -40,11 +72,13 @@ export function groupByDay(items: readonly RecordingItem[]): DayGroup[] {
 				from,
 				// Next local midnight (not +24h: DST days are 23 or 25 hours).
 				to: new Date(y, m, d + 1).getTime(),
+				durationS: 0,
 				items: [],
 			};
 			groups.set(key, group);
 		}
 		group.items.push(item);
+		group.durationS += item.durationS ?? 0;
 	}
 	return [...groups.values()];
 }
@@ -122,6 +156,8 @@ const SEGMENT_NAME = /^([0-9a-z-]{8,64})#(\d{1,9})$/;
 export interface SessionRow {
 	kind: "session";
 	sessionId: string;
+	/** Name the user gave the session; null = the default "Bản ghi trên iPhone 09:41". */
+	title: string | null;
 	/** Segments of one iOS recording session, in recording order. */
 	parts: Array<{ index: number; item: RecordingItem }>;
 	durationS: number;
@@ -146,6 +182,24 @@ export function parseSegmentName(
 	return { sessionId: match[1], index: Number(match[2]) };
 }
 
+/** iOS segment of a recording session; an uploaded file never is, whatever its name. */
+function segmentOf(
+	item: RecordingItem,
+): { sessionId: string; index: number } | null {
+	return item.kind === "upload" ? null : parseSegmentName(item.name);
+}
+
+/**
+ * Key of the session a file belongs to (`s:<session>` for iOS segments,
+ * `f:<id>` otherwise): the title and the transcript are stored per session.
+ */
+export function itemTranscriptKey(item: RecordingItem): string {
+	const segment = segmentOf(item);
+	return segment
+		? transcriptKey({ session: segment.sessionId })
+		: transcriptKey({ fileId: item.id });
+}
+
 /**
  * Collapses the segments of one iOS session into one row (a two-hour
  * meeting is 120 one-minute segments). Other recordings and uploaded files
@@ -157,8 +211,7 @@ export function groupSessions(items: readonly RecordingItem[]): HistoryRow[] {
 	const rows: HistoryRow[] = [];
 	const sessions = new Map<string, SessionRow>();
 	for (const item of items) {
-		// An uploaded file keeps its own row whatever its name.
-		const segment = item.kind === "upload" ? null : parseSegmentName(item.name);
+		const segment = segmentOf(item);
 		if (!segment) {
 			rows.push({ kind: "single", item });
 			continue;
@@ -168,6 +221,7 @@ export function groupSessions(items: readonly RecordingItem[]): HistoryRow[] {
 			row = {
 				kind: "session",
 				sessionId: segment.sessionId,
+				title: null,
 				parts: [],
 				durationS: 0,
 				size: 0,
@@ -178,6 +232,8 @@ export function groupSessions(items: readonly RecordingItem[]): HistoryRow[] {
 		row.parts.push({ index: segment.index, item });
 		row.durationS += item.durationS ?? 0;
 		row.size += item.size;
+		// Every part carries the session's title; take the first one set.
+		row.title ??= item.title || null;
 		if (item.createdAt && (!row.createdAt || item.createdAt < row.createdAt)) {
 			row.createdAt = item.createdAt;
 		}

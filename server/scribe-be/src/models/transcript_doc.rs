@@ -1,4 +1,4 @@
-//! `transcript_docs` collection: phần người dùng tạo ra cho một transcript (tiêu đề, câu đã sửa),
+//! `transcript_docs` collection: phần người dùng tạo ra cho một phiên ghi (tiêu đề của bản ghi, câu đã sửa),
 //! một doc cho mỗi phiên ghi. Kết quả máy vẫn ở `transcripts` (mỗi file một doc).
 //!
 //! `key` là khoá phiên (`file::session_key`): `s:<sessionId>` cho phiên iPhone nhiều đoạn,
@@ -411,12 +411,27 @@ pub async fn unset_edits_of_run(
         .map_err(|e| AppError::Internal(format!("bỏ câu sửa: {e}")))
 }
 
+/// Xoá phần người dùng tạo ra cho bản chép lời của phiên (câu sửa, biên bản, dấu mốc, tên người nói). Tên người
+/// dùng đặt là tên của bản ghi ("Lịch sử ghi", tệp tải về) nên ở lại: doc có tên chỉ còn tên, doc không tên bị xoá.
+/// Mỗi bước nguyên tử trên một doc (pipeline `$replaceWith`), không đọc rồi ghi lại.
 pub async fn delete(db: &Database, user_id: &str, key: &str) -> Result<(), AppError> {
-    db.collection::<Document>(COLL)
-        .delete_one(doc! { "userId": user_id, "key": key })
+    let coll = db.collection::<Document>(COLL);
+    let err = |e: mongodb::error::Error| AppError::Internal(format!("xoá transcript_docs: {e}"));
+    let keep_title = doc! { "$replaceWith": {
+        "_id": "$_id",
+        "userId": "$userId",
+        "key": "$key",
+        "title": "$title",
+        "createdAt": "$createdAt",
+        "updatedAt": DateTime::now(),
+    } };
+    coll.update_one(doc! { "userId": user_id, "key": key, "title": { "$type": "string" } }, vec![keep_title])
+        .await
+        .map_err(err)?;
+    coll.delete_one(doc! { "userId": user_id, "key": key, "title": { "$not": { "$type": "string" } } })
         .await
         .map(|_| ())
-        .map_err(|e| AppError::Internal(format!("xoá transcript_docs: {e}")))
+        .map_err(err)
 }
 
 /// Xoá doc không còn file bản ghi nào của phiên (audio đã bị xoá tay, hết hạn, hay bị cắt). Doc chưa có

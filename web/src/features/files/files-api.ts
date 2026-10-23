@@ -20,6 +20,11 @@ export interface RecordingItem {
 	expiresAt?: string;
 	/** Set once the recording was sent for transcription. */
 	transcript?: { status: TranscriptStatus } | null;
+	/**
+	 * Name the user gave the recording (every segment of an iOS session
+	 * carries the session's); null or missing = the default name.
+	 */
+	title?: string | null;
 }
 
 export interface RecordingList {

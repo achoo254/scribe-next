@@ -12,9 +12,11 @@ import {
 	type SessionRow as SessionRowData,
 	sessionTitle,
 } from "../../features/files/recording-groups";
+import { transcriptKey } from "../../features/transcript-docs/transcript-docs-api";
 import { useT } from "../../i18n/i18n-context";
 import { formatDuration, formatSize } from "../../lib/format";
 import { RecordingRow } from "./recording-row";
+import { RecordingTitle } from "./recording-title";
 import { TranscriptPanel } from "./transcript-panel";
 
 export interface SessionRowProps {
@@ -59,7 +61,8 @@ export function SessionRow({
 		if (seek && row.parts.some(({ item }) => item.id === seek.fileId))
 			setOpen(true);
 	}, [seek, row.parts]);
-	const title = sessionTitle(row.createdAt);
+	const defaultTitle = sessionTitle(row.createdAt);
+	const title = row.title ?? defaultTitle;
 	const id = `history-session-${row.sessionId.slice(0, 8)}`;
 
 	return (
@@ -71,11 +74,17 @@ export function SessionRow({
 				{/* Inline-size containment: a long title truncates instead of
 				    widening the row past the screen. */}
 				<div className="min-w-0 flex-1 contain-inline-size">
-					<div className="flex min-w-0 items-center gap-2">
-						<Badge tone="primary">{t("record.session.badge")}</Badge>
-						<span className="truncate font-semibold" title={title}>
-							{title}
+					{/* Phones: the badge sits above the name, which keeps the width. */}
+					<div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+						<span className="flex max-sm:basis-full">
+							<Badge tone="primary">{t("record.session.badge")}</Badge>
 						</span>
+						<RecordingTitle
+							title={row.title}
+							defaultName={defaultTitle}
+							transcriptKey={transcriptKey({ session: row.sessionId })}
+							data-id={`${id}-title`}
+						/>
 					</div>
 					<div className="text-muted text-sm">
 						{t("record.session.meta", {

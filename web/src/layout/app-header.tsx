@@ -21,9 +21,12 @@ import { PATHS } from "./app-paths";
 import { useSessionActivity } from "./session-activity";
 
 /** `NavLink` sets `aria-current="page"` on the page shown (and its children). */
+// The current page's pill is opaque (the 10% tint mixed into the page
+// background): the bar is translucent, and a coloured button scrolling under
+// a see-through pill dropped its text below 4.5:1.
 const NAV_ITEM_CLASS = cn(
 	buttonClassName({ variant: "ghost", size: "sm" }),
-	"no-underline aria-[current=page]:bg-primary/10 aria-[current=page]:text-primary",
+	"no-underline aria-[current=page]:bg-[color-mix(in_srgb,var(--color-primary)_10%,var(--color-bg))] aria-[current=page]:text-primary",
 );
 
 export interface AppHeaderProps {

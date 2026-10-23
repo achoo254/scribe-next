@@ -79,6 +79,8 @@ export const record = {
 		expiresSoon: "sắp tự xoá",
 		expiresIn: "tự xoá sau {days} ngày",
 		iphoneSession: "Bản ghi trên iPhone",
+		today: "Hôm nay",
+		yesterday: "Hôm qua",
 	},
 	history: {
 		title: "Lịch sử ghi",
@@ -91,7 +93,9 @@ export const record = {
 			other:
 				"Bản ghi được <b>tự động xoá sau {count} ngày</b> kể từ khi tạo. Hãy tải về nếu muốn lưu giữ lâu dài.",
 		},
-		downloadDay: { other: "Tải ngày ({count})" },
+		dayMeta: { other: "{count} bản ghi · {duration}" },
+		downloadDay: "Tải ngày",
+		downloadDayLabel: "Tải ngày {date}",
 		deleted: "Đã xoá “{name}”",
 		undo: "Hoàn tác",
 		deleteAll: "Xoá tất cả",
@@ -114,6 +118,11 @@ export const record = {
 		menu: "Thao tác với {name}",
 		download: "Tải về",
 		saveToFiles: "Lưu vào Tệp",
+	},
+	rename: {
+		edit: "Đổi tên {name}",
+		field: "Tên bản ghi",
+		hint: "Enter để lưu, Esc để huỷ. Để trống để dùng tên mặc định.",
 	},
 	session: {
 		badge: "iPhone",

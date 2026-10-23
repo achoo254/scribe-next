@@ -30,12 +30,13 @@ import {
 	transcriptTitle,
 	untranscribed,
 } from "../../features/transcript-docs/reader-model";
-import type {
-	Bookmark,
-	TranscriptDetail,
-	TranscriptSegment,
-	TranslationLang,
-	TranslationState,
+import {
+	type Bookmark,
+	MAX_TITLE_CHARS,
+	type TranscriptDetail,
+	type TranscriptSegment,
+	type TranslationLang,
+	type TranslationState,
 } from "../../features/transcript-docs/transcript-docs-api";
 import {
 	transcriptDocKeys,
@@ -424,7 +425,7 @@ export function TranscriptReader({
 							aria-label={t("transcript.reader.titleField")}
 							placeholder={transcriptTitle({ ...doc, title: null })}
 							value={titleDraft}
-							maxLength={120}
+							maxLength={MAX_TITLE_CHARS}
 							autoFocus
 							onChange={(event) => setTitleDraft(event.target.value)}
 						/>

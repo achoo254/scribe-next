@@ -15,12 +15,14 @@ import {
 	daysUntilExpiry,
 	expiresSoon,
 	expiryLabel,
+	itemTranscriptKey,
 } from "../../features/files/recording-groups";
 import { useT } from "../../i18n/i18n-context";
 import { isNativeShell } from "../../lib/api";
 import { cn } from "../../lib/cn";
 import { downloadPaths, useDownload } from "../../lib/download";
 import { formatDateTime, formatDuration, formatSize } from "../../lib/format";
+import { RecordingTitle } from "./recording-title";
 import { TranscriptPanel } from "./transcript-panel";
 
 function badgeTone(item: RecordingItem): "info" | "accent" | "neutral" {
@@ -37,7 +39,10 @@ function badgeLabel(
 
 export interface RecordingRowProps {
 	item: RecordingItem;
-	/** Shown instead of the stored name (iOS segments: "Phần 01"). */
+	/**
+	 * Shown instead of the recording's name, and not renamable (iOS
+	 * segments: "Phần 01"; the session row carries the name).
+	 */
 	displayName?: string;
 	retentionDays: number;
 	playing: boolean;
@@ -68,7 +73,7 @@ export function RecordingRow({
 }: RecordingRowProps) {
 	const t = useT();
 	const download = useDownload();
-	const name = displayName ?? item.name;
+	const name = displayName ?? (item.title || item.name);
 	const days = daysUntilExpiry(item, retentionDays);
 	const expiry = expiryLabel(days);
 	const id = `history-item-${item.id}`;
@@ -82,11 +87,23 @@ export function RecordingRow({
 				{/* Inline-size containment: the long name must not widen the row
 				    (and the grids around it) past the screen; it truncates. */}
 				<div className="min-w-0 flex-1 contain-inline-size">
-					<div className="flex min-w-0 items-center gap-2">
-						<Badge tone={badgeTone(item)}>{t(badgeLabel(item))}</Badge>
-						<span className="truncate font-semibold" title={name}>
-							{name}
+					{/* Phones: the badge sits above the name, which keeps the width. */}
+					<div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+						<span className="flex max-sm:basis-full">
+							<Badge tone={badgeTone(item)}>{t(badgeLabel(item))}</Badge>
 						</span>
+						{displayName === undefined ? (
+							<RecordingTitle
+								title={item.title || null}
+								defaultName={item.name}
+								transcriptKey={itemTranscriptKey(item)}
+								data-id={`${id}-title`}
+							/>
+						) : (
+							<span className="truncate font-semibold" title={name}>
+								{name}
+							</span>
+						)}
 					</div>
 					<div className="text-muted text-sm">
 						{formatDuration(item.durationS)} · {formatSize(item.size)}
@@ -158,7 +175,7 @@ export function RecordingRow({
 				<TranscriptPanel
 					parts={[{ fileId: item.id, durationS: item.durationS }]}
 					requested={Boolean(item.transcript)}
-					name={item.name}
+					name={name}
 					onSeek={onSeek}
 					data-id={`${id}-transcript`}
 				/>

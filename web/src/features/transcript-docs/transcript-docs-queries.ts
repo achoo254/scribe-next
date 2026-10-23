@@ -7,6 +7,8 @@ import {
 import { useEffect } from "react";
 import { ApiError } from "../../lib/api";
 import { fileKeys } from "../files/file-queries";
+import type { RecordingList } from "../files/files-api";
+import { itemTranscriptKey } from "../files/recording-groups";
 import { transcriptKeys } from "../transcript/transcript-queries";
 import { isPending, needsReload } from "./reader-model";
 import {
@@ -23,6 +25,7 @@ import {
 	fetchTranslation,
 	fetchTranslationStatus,
 	listTranscriptDocs,
+	normalizeTitle,
 	renameSpeakers,
 	renameTranscript,
 	saveSegmentTexts,
@@ -106,12 +109,46 @@ function useInvalidateDocs() {
 		queryClient.invalidateQueries({ queryKey: transcriptDocKeys.all });
 }
 
+/**
+ * Renames a recording (its whole session); an empty title goes back to the
+ * default name. "Lịch sử ghi" shows the new name at once and goes back to
+ * the old one if the backend refuses; transcripts and the history re-read
+ * afterwards.
+ */
 export function useRenameTranscript() {
-	const invalidate = useInvalidateDocs();
+	const queryClient = useQueryClient();
 	return useMutation({
 		mutationFn: ({ key, title }: { key: string; title: string }) =>
 			renameTranscript(key, title),
-		onSettled: invalidate,
+		onMutate: async ({ key, title }) => {
+			await queryClient.cancelQueries({ queryKey: fileKeys.recordings });
+			const previous = queryClient.getQueryData<RecordingList>(
+				fileKeys.recordings,
+			);
+			const next = normalizeTitle(title);
+			queryClient.setQueryData<RecordingList>(fileKeys.recordings, (list) =>
+				list
+					? {
+							...list,
+							items: list.items.map((item) =>
+								itemTranscriptKey(item) === key
+									? { ...item, title: next }
+									: item,
+							),
+						}
+					: list,
+			);
+			return { previous };
+		},
+		onError: (_error, _input, context) => {
+			if (context?.previous)
+				queryClient.setQueryData(fileKeys.recordings, context.previous);
+		},
+		onSettled: () =>
+			Promise.all([
+				queryClient.invalidateQueries({ queryKey: transcriptDocKeys.all }),
+				queryClient.invalidateQueries({ queryKey: fileKeys.recordings }),
+			]),
 	});
 }
 

@@ -198,6 +198,14 @@ export async function fetchTranscriptStatus(
 	return body.items ?? [];
 }
 
+/** Longest title the backend accepts, in characters. */
+export const MAX_TITLE_CHARS = 120;
+
+/** What the backend stores for a title: one line, spaces collapsed; null = the default name. */
+export function normalizeTitle(title: string): string | null {
+	return title.split(/\s+/).filter(Boolean).join(" ") || null;
+}
+
 /** Renames; an empty title goes back to the default name. */
 export async function renameTranscript(
 	key: string,
@@ -208,7 +216,7 @@ export async function renameTranscript(
 		docPath(key),
 		{
 			method: "PATCH",
-			json: { title: title.trim() || null },
+			json: { title: normalizeTitle(title) },
 			fallbackError: activeTranslator().t("errors.transcripts.rename"),
 		},
 		fetcher,
