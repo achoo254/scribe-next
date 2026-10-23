@@ -325,6 +325,8 @@ nginx gắn bộ header bảo mật cho mọi response của Scribe (FE, `/asset
 
 **Trạng thái prod (22/10/2026 23:30):** header đã áp dụng (vhost cũ sao lưu ở `/root/scribe.conf.bak-20261022-233008`). Cloudflare Web Analytics đang tự chèn `static.cloudflareinsights.com/beacon.min.js` và bị CSP chặn có chủ đích: chính sách quyền riêng tư ghi Scribe không dùng công cụ phân tích. Để hết dòng lỗi CSP trong console, tắt Web Analytics cho `scribe.hoandat.com` trên dashboard Cloudflare; token `token-full-access-cloudflare` không có quyền Web Analytics (API `rum/site_info` trả 10000).
 
+**Deploy 23/10/2026 19:11 (`74c132f`):** BE + web (lịch sử ghi chia theo ngày, đổi tên bản ghi), sao lưu `/root/scribe-backup-20261023-191120`; iOS TestFlight build `20261023.1211`. Khi đóng gói `web/dist` bằng `tar` trên macOS, đặt `COPYFILE_DISABLE=1` để không mang theo tệp `._*` (lần này đã xoá 42 tệp như vậy khỏi web root).
+
 **Deploy lên `.65` — CẦN USER DUYỆT trước khi chạy** (đổi cấu hình nginx shared của prod). Từ máy deploy, `KEY` như §Deploy:
 
 ```bash
