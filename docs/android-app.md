@@ -5,9 +5,9 @@ Kotlin và giữ **đúng contract JS** của plugin Swift (`HoandatAuth`, `Nati
 `web/src/lib/native.ts`, `web/src/features/recorder/native-recorder.ts`), nên mã web không đổi. Plan:
 `hoandat-app/plans/dattqh/261020-1610-android-capacitor-apps/` (phase 01–05, 08).
 
-> **Trạng thái (23/10/2026):** mã đã viết đủ, **chưa biên dịch lần nào** (máy dev không có JDK/Android SDK) và
-> **chưa chạy trên máy Android thật**. Lần build đầu là job `android` của CI; mọi hạng mục trên máy ở bảng cuối
-> trang đều đang chờ.
+> **Trạng thái (23/10/2026):** mã đã viết đủ; job `android` của CI build xanh lần đầu ở commit `c32dceb`
+> (lint, 48 test JVM, APK debug và APK androidTest). Máy dev vẫn không có JDK/Android SDK, nên CI là nơi biên dịch.
+> **Chưa chạy trên máy Android thật**: mọi hạng mục trên máy ở bảng cuối trang đều đang chờ.
 
 ## Số liệu nền
 
