@@ -698,7 +698,9 @@ mod tests {
             assert!(pct > last && pct <= 95.0, "{waited}s → {pct}");
             last = pct;
         }
-        assert!(shown_progress(Phase::Waiting(Instant::now() - Duration::from_secs(100_000)), 300.0) <= 95.0);
+        // Chờ gấp ~1000 lần ước tính vẫn không vượt 95%. Giữ khoảng lùi nhỏ: trên Windows `Instant` đếm từ lúc
+        // bật máy, lùi ~1 ngày sẽ tràn số khi máy mới khởi động.
+        assert!(shown_progress(Phase::Waiting(Instant::now() - Duration::from_secs(900)), 1.0) <= 95.0);
     }
 
     #[test]
