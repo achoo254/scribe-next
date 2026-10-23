@@ -15,7 +15,7 @@ class AuthRequestTest {
         redirectUri = "com.hoandat.scribe:/auth/callback",
         scope = "openid email offline_access",
     )
-    private val request = AuthRequest(config, verifier = "dBjftJeZ4CVP-mJ92K9X0RjG8n7x0fqzZDm2gsNcjXo", state = "st4te", nonce = "n0nce")
+    private val request = AuthRequest(config, verifier = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk", state = "st4te", nonce = "n0nce")
 
     @Test
     fun `challenge is S256 of the verifier (RFC 7636 appendix B)`() {
