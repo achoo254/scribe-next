@@ -1,4 +1,7 @@
 {
   "appId": "com.hoandat.scribe",
-  "appName": "Scribe"
+  "appName": "Scribe",
+  "android": {
+    "applicationId": "com.hoandat.scribe"
+  }
 }

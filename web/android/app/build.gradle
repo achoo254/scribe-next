@@ -1,0 +1,138 @@
+apply plugin: 'com.android.application'
+apply plugin: 'kotlin-android'
+
+/*
+ * Backend origin of the app (the iOS shell's Info.plist ScribeBackendOrigin): BuildConfig.SCRIBE_BACKEND_ORIGIN.
+ * From SCRIBE_BACKEND_ORIGIN, else VITE_NATIVE_API_ORIGIN (CI sets it for the web build; scripts/android-device.sh
+ * reads it from web/.env). Without it every build fails, like the iOS app that stops at launch.
+ */
+def backendOrigin = (System.getenv('SCRIBE_BACKEND_ORIGIN') ?: System.getenv('VITE_NATIVE_API_ORIGIN') ?: '').trim()
+if (!backendOrigin.isEmpty() && !(backendOrigin ==~ /^https:\/\/[A-Za-z0-9.-]+(:[0-9]+)?$/)) {
+    throw new GradleException("SCRIBE_BACKEND_ORIGIN must be an https origin without a path, got '${backendOrigin}'")
+}
+
+/*
+ * Play versionCode: ANDROID_VERSION_CODE (CI: UTC yyMMddHH, or the workflow input), else 1 for local builds.
+ * versionName follows the iOS MARKETING_VERSION.
+ */
+def versionCodeEnv = (System.getenv('ANDROID_VERSION_CODE') ?: '').trim()
+if (!versionCodeEnv.isEmpty() && !(versionCodeEnv ==~ /^[1-9][0-9]{0,9}$/ && versionCodeEnv.toLong() <= 2100000000L)) {
+    throw new GradleException("ANDROID_VERSION_CODE must be a positive integer up to 2100000000, got '${versionCodeEnv}'")
+}
+
+/*
+ * Upload key for release builds, only from the environment (GitHub secrets in .github/workflows/android-release.yml).
+ * No keystore or password lives in the repo. A release bundle without them fails instead of coming out unsigned.
+ */
+def uploadKeystore = System.getenv('ANDROID_UPLOAD_KEYSTORE_FILE')
+def uploadKeystorePassword = System.getenv('ANDROID_UPLOAD_KEYSTORE_PASSWORD')
+def uploadKeyAlias = System.getenv('ANDROID_UPLOAD_KEY_ALIAS')
+def uploadKeyPassword = System.getenv('ANDROID_UPLOAD_KEY_PASSWORD')
+def hasUploadKey = [uploadKeystore, uploadKeystorePassword, uploadKeyAlias, uploadKeyPassword].every { it != null && !it.isEmpty() }
+
+android {
+    namespace = "com.hoandat.scribe"
+    compileSdk = rootProject.ext.compileSdkVersion
+    defaultConfig {
+        applicationId "com.hoandat.scribe"
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.targetSdkVersion
+        versionCode versionCodeEnv.isEmpty() ? 1 : versionCodeEnv.toInteger()
+        versionName "1.0"
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField "String", "SCRIBE_BACKEND_ORIGIN", "\"${backendOrigin}\""
+        aaptOptions {
+             // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
+             // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
+            ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+        }
+    }
+    buildFeatures {
+        buildConfig = true
+    }
+    signingConfigs {
+        if (hasUploadKey) {
+            upload {
+                storeFile file(uploadKeystore)
+                storePassword uploadKeystorePassword
+                keyAlias uploadKeyAlias
+                keyPassword uploadKeyPassword
+            }
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            if (hasUploadKey) {
+                signingConfig signingConfigs.upload
+            }
+        }
+    }
+    testOptions {
+        // android.util.Log in the plugin classes returns 0 in JVM unit tests instead of throwing.
+        unitTests.returnDefaultValues = true
+    }
+    lint {
+        abortOnError = true
+        // Dependency and SDK update notices are not build failures; the versions live in variables.gradle.
+        disable 'GradleDependency', 'NewerVersionAvailable', 'AndroidGradlePluginVersion'
+    }
+}
+
+kotlin {
+    jvmToolchain(21)
+}
+
+// Fail early and clearly instead of shipping an app that cannot reach its backend or a release without a signature.
+tasks.matching { it.name ==~ /^pre.*Build$/ }.configureEach { task ->
+    task.doFirst {
+        if (backendOrigin.isEmpty()) {
+            throw new GradleException('SCRIBE_BACKEND_ORIGIN is not set (or VITE_NATIVE_API_ORIGIN): see docs/android-app.md')
+        }
+    }
+}
+tasks.matching { it.name ==~ /^(bundle|assemble|package)Release$/ }.configureEach { task ->
+    task.doFirst {
+        if (!hasUploadKey) {
+            throw new GradleException('Release builds need ANDROID_UPLOAD_KEYSTORE_FILE, ANDROID_UPLOAD_KEYSTORE_PASSWORD, ANDROID_UPLOAD_KEY_ALIAS and ANDROID_UPLOAD_KEY_PASSWORD (docs/android-app.md)')
+        }
+    }
+}
+
+repositories {
+    flatDir{
+        dirs '../capacitor-cordova-android-plugins/src/main/libs', 'libs'
+    }
+}
+
+dependencies {
+    implementation fileTree(include: ['*.jar'], dir: 'libs')
+    implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
+    implementation "androidx.activity:activity:$androidxActivityVersion"
+    implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
+    implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
+    implementation "androidx.core:core-ktx:$androidxCoreVersion"
+    implementation "androidx.browser:browser:$androidxBrowserVersion"
+    implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:$kotlinxCoroutinesVersion"
+    implementation "com.squareup.okhttp3:okhttp:$okhttpVersion"
+    implementation project(':capacitor-android')
+    testImplementation "junit:junit:$junitVersion"
+    testImplementation "org.json:json:$orgJsonVersion"
+    testImplementation "com.squareup.okhttp3:mockwebserver:$okhttpVersion"
+    testImplementation "org.jetbrains.kotlinx:kotlinx-coroutines-test:$kotlinxCoroutinesVersion"
+    androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
+    androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
+    implementation project(':capacitor-cordova-android-plugins')
+}
+
+apply from: 'capacitor.build.gradle'
+
+try {
+    def servicesJSON = file('google-services.json')
+    if (servicesJSON.text) {
+        apply plugin: 'com.google.gms.google-services'
+    }
+} catch(Exception e) {
+    logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
+}

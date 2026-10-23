@@ -1,0 +1,139 @@
+# AAB của app Android ký bằng upload key để tải lên Google Play (Play App Signing ký lại bằng khoá ký app do Google
+# giữ). Upload key và mật khẩu chỉ nằm trong GitHub secrets của Environment `android-release`; repo không có keystore.
+# Chưa có đủ secret thì job không build AAB, chỉ ghi cảnh báo. Tải AAB lên Play Console bằng tay
+# (docs/android-app.md, mục "Phát hành").
+name: Android release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_code:
+        description: "versionCode (bỏ trống = giờ UTC yyMMddHH)"
+        required: false
+        type: string
+  push:
+    tags: ["android-v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-release-${{ github.ref }}
+  cancel-in-progress: false
+
+# Origin backend của app (công khai, như web/.env của prod).
+env:
+  VITE_NATIVE_API_ORIGIN: https://scribe.hoandat.com
+
+jobs:
+  bundle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: android-release
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - name: Kiểm secret ký
+        id: signing
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}
+        working-directory: .
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ] && [ -n "$KEYSTORE_PASSWORD" ] && [ -n "$KEY_ALIAS" ] && [ -n "$KEY_PASSWORD" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Chưa có đủ 4 secret ANDROID_UPLOAD_* trong Environment android-release: không build AAB."
+            echo "Chưa có secret ký: bỏ qua AAB (xem docs/android-app.md)." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: versionCode
+        if: steps.signing.outputs.present == 'true'
+        id: version
+        env:
+          INPUT: ${{ inputs.version_code }}
+        working-directory: .
+        run: |
+          code="${INPUT:-$(date -u +%y%m%d%H)}"
+          if ! [[ "$code" =~ ^[1-9][0-9]{0,9}$ ]] || [ "$code" -gt 2100000000 ]; then
+            echo "::error::version_code phải là số nguyên dương ≤ 2100000000, nhận '$code'"
+            exit 1
+          fi
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+
+      - if: steps.signing.outputs.present == 'true'
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - if: steps.signing.outputs.present == 'true'
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+        with:
+          package_json_file: web/package.json
+      - if: steps.signing.outputs.present == 'true'
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - if: steps.signing.outputs.present == 'true'
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - if: steps.signing.outputs.present == 'true'
+        run: pnpm install --frozen-lockfile
+      # Build prod đầy đủ (tsc + vite + check:dist), như bản iOS.
+      - if: steps.signing.outputs.present == 'true'
+        run: pnpm run build
+      - if: steps.signing.outputs.present == 'true'
+        run: pnpm exec cap sync android
+
+      # Keystore giải mã vào $RUNNER_TEMP (quyền 600), không in ra log, xoá ở bước cuối.
+      - name: Giải mã upload key
+        if: steps.signing.outputs.present == 'true'
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_BASE64 }}
+        working-directory: .
+        run: |
+          umask 077
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/upload.jks"
+
+      - name: Build AAB
+        if: steps.signing.outputs.present == 'true'
+        env:
+          ANDROID_VERSION_CODE: ${{ steps.version.outputs.code }}
+          ANDROID_UPLOAD_KEYSTORE_FILE: ${{ runner.temp }}/upload.jks
+          ANDROID_UPLOAD_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_PASSWORD }}
+          ANDROID_UPLOAD_KEY_ALIAS: ${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}
+          ANDROID_UPLOAD_KEY_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}
+        working-directory: web/android
+        run: ./gradlew --no-daemon lintRelease testDebugUnitTest bundleRelease
+
+      - name: Kiểm AAB
+        if: steps.signing.outputs.present == 'true'
+        working-directory: web/android
+        run: |
+          aab=app/build/outputs/bundle/release/app-release.aab
+          jarsigner -verify "$aab" | grep -q "jar verified." || { echo "::error::AAB chưa được ký"; exit 1; }
+          # Vân tay SHA-256 của upload cert (công khai): đối chiếu với Play Console và assetlinks.
+          keytool -printcert -jarfile "$aab" | grep -E 'SHA256:' | head -1
+          python3 ../scripts/android-check-manifest.py release
+          {
+            echo "versionCode ${{ steps.version.outputs.code }}"
+            keytool -printcert -jarfile "$aab" | grep -E 'SHA256:' | head -1
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - if: steps.signing.outputs.present == 'true'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: scribe-release-aab-${{ steps.version.outputs.code }}
+          path: web/android/app/build/outputs/bundle/release/app-release.aab
+          retention-days: 30
+
+      - name: Xoá upload key
+        if: always()
+        working-directory: .
+        run: rm -f "$RUNNER_TEMP/upload.jks"

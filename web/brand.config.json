@@ -2,7 +2,7 @@
 	"$schema": "./node_modules/@shared-next/brand/brand.config.schema.json",
 	"appName": "Scribe",
 	"shortName": "Scribe",
-	"description": "Ghi âm, cắt tệp và chép lời tiếng Việt trên web và iPhone.",
+	"description": "Ghi âm, cắt tệp và chép lời tiếng Việt trên web và điện thoại.",
 	"colors": {
 		"primary": "#6e56cf",
 		"background": "#f9f9fb",
@@ -11,7 +11,8 @@
 	"icon": "brand/icon.svg",
 	"iconMaskable": "brand/icon-maskable.svg",
 	"appIds": {
-		"ios": "com.hoandat.scribe"
+		"ios": "com.hoandat.scribe",
+		"android": "com.hoandat.scribe"
 	},
 	"urlScheme": "com.hoandat.scribe",
 	"primaryTenant": {

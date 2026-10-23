@@ -1,11 +1,12 @@
 /*
  * What Scribe derives from brand.config.json (the rules and the generator
  * are tested in @shared-next/brand): the committed generated files are
- * current, the iPhone app's effective Capacitor config is pinned, the brand
+ * current, the iPhone app's effective Capacitor config is pinned, the
+ * Android app's id and launcher resources follow the brand, the brand
  * colours are the tokens, and web/vite-brand.ts links and serves the
  * manifest and icons.
  */
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import {
 	formatGenerated,
 	generateManifests,
@@ -22,6 +23,12 @@ import {
 	loadScribeBrand,
 	renderIndexHtml,
 } from "../vite-brand.js";
+import {
+	ANDROID_RES_DIR,
+	LEGACY_DENSITIES,
+	PLAY_DIR,
+	androidResourceFiles,
+} from "./brand-android.js";
 import { resolveThemes } from "./check-tokens/parse-tokens.js";
 
 const brand = loadScribeBrand();
@@ -56,6 +63,90 @@ describe("generated files", () => {
 	it("are icons drawn from the current brand SVGs (run pnpm brand:gen after editing them)", () => {
 		const recorded: unknown = JSON.parse(generated("icons/icons-source.json"));
 		expect(recorded).toEqual(iconSourceHashes(brand, BRAND_ROOT));
+	});
+});
+
+/** Width and height of a PNG (IHDR) or a baseline/progressive JPEG (SOF0/SOF2), plus JPEG components. */
+function imageSize(bytes: Buffer): {
+	width: number;
+	height: number;
+	components?: number;
+} {
+	if (bytes.subarray(1, 4).toString("ascii") === "PNG") {
+		return { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) };
+	}
+	let offset = 2;
+	while (offset + 9 < bytes.length) {
+		const marker = bytes[offset + 1];
+		const length = bytes.readUInt16BE(offset + 2);
+		if (marker === 0xc0 || marker === 0xc2) {
+			return {
+				height: bytes.readUInt16BE(offset + 5),
+				width: bytes.readUInt16BE(offset + 7),
+				components: bytes[offset + 9],
+			};
+		}
+		offset += 2 + length;
+	}
+	throw new Error("not a PNG or JPEG");
+}
+
+const androidDir = new URL("android/", BRAND_ROOT);
+const hasAndroid = existsSync(androidDir);
+
+describe("Android app", () => {
+	it("uses one application id with iOS (Capacitor has a single appId)", () => {
+		expect(brand.appIds.android).toBe(brand.appIds.ios);
+	});
+
+	it.runIf(hasAndroid)("builds with the brand's application id", () => {
+		const gradle = readFileSync(
+			new URL("app/build.gradle", androidDir),
+			"utf8",
+		);
+		expect(gradle).toContain(`applicationId "${brand.appIds.android}"`);
+		expect(gradle).toContain(`namespace = "${brand.appIds.android}"`);
+	});
+
+	it.runIf(hasAndroid)(
+		"has the launcher icon and splash colours of the current brand (run pnpm brand:gen)",
+		() => {
+			const maskable = readFileSync(
+				new URL(brand.iconMaskable, BRAND_ROOT),
+				"utf8",
+			);
+			const resDir = new URL(ANDROID_RES_DIR, BRAND_ROOT);
+			for (const [path, content] of Object.entries(
+				androidResourceFiles(maskable, brand.colors),
+			)) {
+				expect(readFileSync(new URL(path, resDir), "utf8"), path).toBe(content);
+			}
+			for (const { dir, size } of LEGACY_DENSITIES) {
+				for (const name of ["ic_launcher.png", "ic_launcher_round.png"]) {
+					const png = readFileSync(new URL(`${dir}/${name}`, resDir));
+					expect(imageSize(png), `${dir}/${name}`).toEqual({
+						width: size,
+						height: size,
+					});
+				}
+			}
+		},
+	);
+
+	it("has the Play listing icon and feature graphic", () => {
+		const icon = readFileSync(
+			new URL(`${PLAY_DIR}icon-512.png`, BRAND_GENERATED_DIR),
+		);
+		expect(imageSize(icon)).toEqual({ width: 512, height: 512 });
+		// JPEG: no alpha channel, as Play requires for the feature graphic.
+		const feature = readFileSync(
+			new URL(`${PLAY_DIR}feature-graphic.jpg`, BRAND_GENERATED_DIR),
+		);
+		expect(imageSize(feature)).toEqual({
+			width: 1024,
+			height: 500,
+			components: 3,
+		});
 	});
 });
 

@@ -25,9 +25,12 @@
 		"check:dist": "tsx e2e/check-dist.ts",
 		"ios:device": "scripts/ios-device.sh",
 		"ios:release": "scripts/ios-release.sh",
-		"ios:sync": "pnpm run build && cap sync ios"
+		"ios:sync": "pnpm run build && cap sync ios",
+		"android:device": "scripts/android-device.sh",
+		"android:sync": "pnpm run build && cap sync android"
 	},
 	"dependencies": {
+		"@capacitor/android": "8.5.3",
 		"@capacitor/core": "8.5.3",
 		"@capacitor/ios": "8.5.3",
 		"@fontsource/inter": "^5.2.0",

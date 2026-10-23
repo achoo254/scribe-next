@@ -1,0 +1,15 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Scribe</string>
+    <string name="title_activity_main">Scribe</string>
+    <string name="package_name">com.hoandat.scribe</string>
+    <string name="custom_url_scheme">com.hoandat.scribe</string>
+
+    <!-- Recording notification (the app speaks Vietnamese only, like the web app). -->
+    <string name="recording_channel">Ghi âm</string>
+    <string name="recording_channel_description">Thông báo khi Scribe đang ghi âm, kể cả lúc khoá màn hình.</string>
+    <string name="recording_title">Scribe đang ghi</string>
+    <string name="recording_text">Bấm Đánh dấu để ghi lại khoảnh khắc quan trọng</string>
+    <string name="recording_bookmark">Đánh dấu</string>
+    <string name="recording_stop">Dừng</string>
+</resources>

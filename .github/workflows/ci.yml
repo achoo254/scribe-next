@@ -95,3 +95,54 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
+
+  # App Android (web/android): bản build web trong vỏ Capacitor, lint Android, test JVM của plugin Kotlin,
+  # APK debug để cài thử (artifact). Không cần secret; AAB ký để lên Play ở android-release.yml.
+  # Action ghim theo SHA như workflow mobile của localman-next.
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+        with:
+          package_json_file: web/package.json
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+          cache-dependency-path: |
+            web/android/*.gradle
+            web/android/app/*.gradle
+            web/android/gradle/wrapper/gradle-wrapper.properties
+      - run: pnpm install --frozen-lockfile
+      # tsc đã chạy ở job web; ở đây chỉ cần dist cho cap sync.
+      - run: pnpm exec vite build
+      - run: pnpm exec cap sync android
+      # Origin backend của app (BuildConfig.SCRIBE_BACKEND_ORIGIN) lấy từ VITE_NATIVE_API_ORIGIN ở env trên.
+      - run: ./gradlew --no-daemon lintDebug testDebugUnitTest assembleDebug assembleDebugAndroidTest
+        working-directory: web/android
+      - run: python3 ../scripts/android-check-manifest.py debug
+        working-directory: web/android
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: scribe-android-debug-apk
+          path: web/android/app/build/outputs/apk/debug/*.apk
+          retention-days: 14
+      - if: failure()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: scribe-android-reports
+          path: |
+            web/android/app/build/reports/
+            web/android/app/build/test-results/
+          retention-days: 7
