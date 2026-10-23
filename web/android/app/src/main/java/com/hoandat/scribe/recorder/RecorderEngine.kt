@@ -55,7 +55,7 @@ class RecorderEngine private constructor(private val app: Context) {
         main.post { handle(event) }
     }
     private val recorder = AudioRecorder(app) { handle(it) }
-    private val mediaButtons = MediaButtonBookmarks(app) { addNativeBookmark() }
+    private val mediaButtons = MediaButtonControls(app, onBookmark = { addNativeBookmark() }, onTogglePause = { togglePause() })
 
     /** Signed-in account. */
     private var userKey: String? = null
@@ -65,6 +65,7 @@ class RecorderEngine private constructor(private val app: Context) {
     private var waiting = 0
     private var failed = 0
     private var lastNotice = ""
+    /** Origin of the notification's clock: moved on resume so it shows the recorded time, not the wall time. */
     private var startedAtWallMs = 0L
     private var realtime: RealtimeTranscriber? = null
     private var transcriptSession: Pair<String, File>? = null
@@ -124,8 +125,25 @@ class RecorderEngine private constructor(private val app: Context) {
         return status()
     }
 
+    fun pause(): JSObject {
+        recorder.pause()
+        return status()
+    }
+
+    fun resume(): JSObject {
+        recorder.resume()
+        return status()
+    }
+
+    /** The notification's "Tạm dừng"/"Ghi tiếp" or a headset play/pause press. */
+    fun togglePause() {
+        if (recorder.isPaused) recorder.resume() else recorder.pause()
+    }
+
     fun status(): JSObject = JSObject()
         .put("state", recorder.state.js)
+        // Also tells the web layer this build can pause.
+        .put("paused", recorder.isPaused)
         .put("elapsedS", elapsed)
         // Session position of the audio kept so far (bookmarks).
         .put("positionS", recorder.recordedSeconds)
@@ -210,7 +228,7 @@ class RecorderEngine private constructor(private val app: Context) {
     // MARK: Bookmarks
 
     /**
-     * A press on the notification or a headset button: saved to disk at once at the recorder clock.
+     * A press on the notification or a headset next/previous button: saved to disk at once at the recorder clock.
      * Presses closer than a second count once.
      */
     fun addNativeBookmark() {
@@ -235,7 +253,7 @@ class RecorderEngine private constructor(private val app: Context) {
         main.postDelayed(clearFeedback, FEEDBACK_MS)
     }
 
-    fun notificationState() = RecordingService.NotificationState(startedAtWallMs, feedback)
+    fun notificationState() = RecordingService.NotificationState(startedAtWallMs, recorder.isPaused, feedback)
 
     private fun refreshNotification() {
         val running = service ?: return
@@ -292,6 +310,15 @@ class RecorderEngine private constructor(private val app: Context) {
                     service = null
                 }
                 listener?.emit("state", JSObject().put("state", event.state.js))
+            }
+            is RecorderEvent.Paused -> {
+                if (!event.paused) {
+                    // The clock counts recorded seconds only: start it again where it stood.
+                    startedAtWallMs = System.currentTimeMillis() - (recorder.recordedSeconds * 1000).toLong()
+                }
+                mediaButtons.update(event.paused)
+                refreshNotification()
+                listener?.emit("paused", JSObject().put("paused", event.paused))
             }
             is RecorderEvent.Elapsed -> {
                 elapsed = event.seconds

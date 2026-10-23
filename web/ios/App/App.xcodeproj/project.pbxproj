@@ -14,7 +14,7 @@
 		A1B2C3D40000000000000017 /* UploadQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D40000000000000007 /* UploadQueue.swift */; };
 		A1B2C3D40000000000000016 /* AudioRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D40000000000000006 /* AudioRecorder.swift */; };
 		A1B2C3D40000000000000015 /* SegmentStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D40000000000000005 /* SegmentStore.swift */; };
-		A1B2C3D4000000000000001B /* NowPlayingBookmarks.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4000000000000000B /* NowPlayingBookmarks.swift */; };
+		A1B2C3D4000000000000001B /* NowPlayingControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4000000000000000B /* NowPlayingControls.swift */; };
 		A1B2C3D4000000000000001C /* RealtimeTranscriber.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4000000000000000C /* RealtimeTranscriber.swift */; };
 		A1B2C3D4000000000000001D /* TranscriptStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4000000000000000D /* TranscriptStore.swift */; };
 		A1B2C3D40000000000000014 /* NativeFilesPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D40000000000000004 /* NativeFilesPlugin.swift */; };
@@ -39,7 +39,7 @@
 		A1B2C3D40000000000000007 /* UploadQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Recorder/UploadQueue.swift; sourceTree = "<group>"; };
 		A1B2C3D40000000000000006 /* AudioRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Recorder/AudioRecorder.swift; sourceTree = "<group>"; };
 		A1B2C3D40000000000000005 /* SegmentStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Recorder/SegmentStore.swift; sourceTree = "<group>"; };
-		A1B2C3D4000000000000000B /* NowPlayingBookmarks.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Recorder/NowPlayingBookmarks.swift; sourceTree = "<group>"; };
+		A1B2C3D4000000000000000B /* NowPlayingControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Recorder/NowPlayingControls.swift; sourceTree = "<group>"; };
 		A1B2C3D4000000000000000C /* RealtimeTranscriber.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Recorder/RealtimeTranscriber.swift; sourceTree = "<group>"; };
 		A1B2C3D4000000000000000D /* TranscriptStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Recorder/TranscriptStore.swift; sourceTree = "<group>"; };
 		A1B2C3D40000000000000004 /* NativeFilesPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeFilesPlugin.swift; sourceTree = "<group>"; };
@@ -99,7 +99,7 @@
 				A1B2C3D40000000000000007 /* UploadQueue.swift */,
 				A1B2C3D40000000000000006 /* AudioRecorder.swift */,
 				A1B2C3D40000000000000005 /* SegmentStore.swift */,
-				A1B2C3D4000000000000000B /* NowPlayingBookmarks.swift */,
+				A1B2C3D4000000000000000B /* NowPlayingControls.swift */,
 				A1B2C3D4000000000000000C /* RealtimeTranscriber.swift */,
 				A1B2C3D4000000000000000D /* TranscriptStore.swift */,
 				A1B2C3D40000000000000004 /* NativeFilesPlugin.swift */,
@@ -205,7 +205,7 @@
 				A1B2C3D40000000000000017 /* UploadQueue.swift in Sources */,
 				A1B2C3D40000000000000016 /* AudioRecorder.swift in Sources */,
 				A1B2C3D40000000000000015 /* SegmentStore.swift in Sources */,
-				A1B2C3D4000000000000001B /* NowPlayingBookmarks.swift in Sources */,
+				A1B2C3D4000000000000001B /* NowPlayingControls.swift in Sources */,
 				A1B2C3D4000000000000001C /* RealtimeTranscriber.swift in Sources */,
 				A1B2C3D4000000000000001D /* TranscriptStore.swift in Sources */,
 				A1B2C3D40000000000000014 /* NativeFilesPlugin.swift in Sources */,

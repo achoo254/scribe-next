@@ -17,8 +17,10 @@ final class AudioRecorder {
 
     enum Event {
         case state(State)
-        /// Seconds recorded, excluding interruptions; about once a second.
+        /// Seconds recorded, excluding interruptions and pauses; about once a second.
         case elapsed(Double)
+        /// The user paused (true) or resumed (false) the recording.
+        case paused(Bool)
         /// RMS level 0…1 of the input, about ten times a second.
         case level(Float)
         /// A finished, readable segment of `sessionId`.
@@ -34,6 +36,10 @@ final class AudioRecorder {
     private(set) var state: State = .idle
     /// Session being recorded (main thread).
     private(set) var sessionId: String?
+    /// Paused by the user (lock screen, AirPods, the app); main thread. The
+    /// engine keeps running so the app stays alive and the Now Playing entry
+    /// can resume it, but nothing is written until `resume()`.
+    private(set) var isPaused = false
 
     /// Recreated after a media services reset (Apple: every audio object
     /// must be rebuilt then).
@@ -53,7 +59,11 @@ final class AudioRecorder {
     private var segmentDir: URL?
     private var checkedBrand = false
     private var writeErrors = 0
-    private var totalFrames: AVAudioFramePosition = 0
+    /// Frames the input tap delivered, written or not: the watchdog's sign of
+    /// a live engine, also while paused.
+    private var receivedFrames: AVAudioFramePosition = 0
+    /// Mirror of `isPaused` for the audio thread: no segment opens while set.
+    private var writingPaused = false
     /// Length of the session's kept (closed, ≥ 0.5 s) segments: with the open
     /// segment's frames, the session position the transcript counts.
     private var closedSeconds: Double = 0
@@ -72,7 +82,12 @@ final class AudioRecorder {
     private var timer: Timer?
     private var startedAt: Date?
     private var pausedTotal: TimeInterval = 0
+    /// Start of the current interruption (call, another app took the mic).
     private var pausedAt: Date?
+    /// Since when the clock stands still (interruption or user pause).
+    private var clockPausedAt: Date?
+    /// Input format of the installed tap, for the segment opened on resume.
+    private var tapFormat: AVAudioFormat?
     private var lastFrameCheck: AVAudioFramePosition = -1
     private var stalledTicks = 0
     private var levelTick = 0
@@ -102,9 +117,11 @@ final class AudioRecorder {
         currentIndex = -1
         checkedBrand = false
         writeErrors = 0
-        totalFrames = 0
+        receivedFrames = 0
         closedSeconds = 0
+        writingPaused = false
         fileLock.unlock()
+        isPaused = false
         setState(.starting)
         requestPermission { [weak self] granted in
             guard let self, self.state == .starting else { return }
@@ -135,10 +152,46 @@ final class AudioRecorder {
             }
             onEvent?(.level(0))
             sessionId = nil
+            isPaused = false
             setState(.idle)
         case .idle, .stopping:
             break
         }
+    }
+
+    /// Stops writing without ending the session: the open segment closes (and
+    /// uploads), the clock stands still, and the audio until `resume()` is
+    /// never kept. Bookmarks and the transcript continue at the same position.
+    func pause() {
+        guard state == .recording, !isPaused else { return }
+        isPaused = true
+        fileLock.lock()
+        writingPaused = true
+        fileLock.unlock()
+        closeSegment(reason: "pause")
+        updateClock()
+        onEvent?(.level(0))
+        onEvent?(.paused(true))
+    }
+
+    /// Writes again, into a new segment. During an interruption the segment
+    /// opens when the engine restarts at its end.
+    func resume() {
+        guard state == .recording, isPaused else { return }
+        isPaused = false
+        fileLock.lock()
+        writingPaused = false
+        fileLock.unlock()
+        updateClock()
+        if pausedAt == nil, let tapFormat {
+            do {
+                try openSegment(format: tapFormat)
+            } catch {
+                fail("Không ghi tiếp được sau khi tạm dừng: \(error.localizedDescription)")
+                return
+            }
+        }
+        onEvent?(.paused(false))
     }
 
     private func requestPermission(_ done: @escaping (Bool) -> Void) {
@@ -177,6 +230,7 @@ final class AudioRecorder {
         startedAt = Date()
         pausedTotal = 0
         pausedAt = nil
+        clockPausedAt = nil
         lastFrameCheck = -1
         stalledTicks = 0
         setState(.recording)
@@ -212,6 +266,7 @@ final class AudioRecorder {
             self?.process(buffer)
         }
         tapInstalled = true
+        tapFormat = format
         attachSilence()
         engine.prepare()
         try engine.start()
@@ -228,6 +283,7 @@ final class AudioRecorder {
         if tapInstalled {
             engine.inputNode.removeTap(onBus: 0)
             tapInstalled = false
+            tapFormat = nil
         }
         if engine.isRunning { engine.stop() }
         if let player = silencePlayer {
@@ -303,15 +359,25 @@ final class AudioRecorder {
         return closedSeconds + open
     }
 
+    /// Does nothing while paused: `resume()` opens the next segment.
     private func openSegment(format: AVAudioFormat) throws {
         fileLock.lock()
         let dir = segmentDir
         let index = currentIndex + 1
+        let paused = writingPaused
         fileLock.unlock()
+        guard !paused else { return }
         guard let dir else { throw RecorderError("Chưa có thư mục phiên ghi.") }
         let url = dir.appendingPathComponent(String(format: "seg-%03d.m4a", index))
         let newFile = try makeAACFile(url: url, format: format)
         fileLock.lock()
+        // Paused while the file was being created (a rotation on the audio
+        // thread): drop it, the index is used again on resume.
+        if writingPaused {
+            fileLock.unlock()
+            try? FileManager.default.removeItem(at: url)
+            return
+        }
         file = newFile
         currentFrames = 0
         currentRate = format.sampleRate
@@ -420,6 +486,7 @@ final class AudioRecorder {
     private func process(_ buffer: AVAudioPCMBuffer) {
         updateLevel(buffer)
         fileLock.lock()
+        receivedFrames += AVAudioFramePosition(buffer.frameLength)
         let sink = pcmSink
         let position = closedSeconds + (currentRate > 0 ? Double(currentFrames) / currentRate : 0)
         fileLock.unlock()
@@ -448,7 +515,6 @@ final class AudioRecorder {
         do {
             try target.write(from: buffer)
             currentFrames += AVAudioFramePosition(buffer.frameLength)
-            totalFrames += AVAudioFramePosition(buffer.frameLength)
             writeErrors = 0
             let full = currentRate > 0 && Double(currentFrames) / currentRate >= segmentLimitSeconds
             return full ? .rotate : .ok
@@ -463,7 +529,10 @@ final class AudioRecorder {
     }
 
     private func updateLevel(_ buffer: AVAudioPCMBuffer) {
-        guard let data = buffer.floatChannelData, buffer.frameLength > 0 else { return }
+        fileLock.lock()
+        let paused = writingPaused
+        fileLock.unlock()
+        guard !paused, let data = buffer.floatChannelData, buffer.frameLength > 0 else { return }
         levelTick += 1
         guard levelTick % 6 == 0 else { return }
         let n = Int(buffer.frameLength)
@@ -530,6 +599,7 @@ final class AudioRecorder {
         case .began:
             guard pausedAt == nil else { return }
             pausedAt = Date()
+            updateClock()
             stopEngineChain()
             closeSegment(reason: "interrupt")
             onEvent?(.notice("Tạm dừng: cuộc gọi hoặc ứng dụng khác đang dùng micro."))
@@ -541,9 +611,9 @@ final class AudioRecorder {
     }
 
     private func endInterruption() {
-        guard let pausedAt else { return }
-        pausedTotal += Date().timeIntervalSince(pausedAt)
-        self.pausedAt = nil
+        guard pausedAt != nil else { return }
+        pausedAt = nil
+        updateClock()
         // Try to rebuild even without .shouldResume; fail clearly if impossible.
         restartEngineChain(reason: "hết cuộc gọi/gián đoạn")
     }
@@ -566,16 +636,28 @@ final class AudioRecorder {
 
     // MARK: - Helpers
 
-    /// Clock + watchdog: if frames stop growing while not interrupted, the
-    /// engine died silently — rebuild it.
+    /// The clock stands still while interrupted or paused by the user; an
+    /// overlap of both counts once.
+    private func updateClock() {
+        let halted = pausedAt != nil || isPaused
+        if halted, clockPausedAt == nil {
+            clockPausedAt = Date()
+        } else if !halted, let since = clockPausedAt {
+            pausedTotal += Date().timeIntervalSince(since)
+            clockPausedAt = nil
+        }
+    }
+
+    /// Clock + watchdog: if the input stops delivering frames while not
+    /// interrupted (paused or not), the engine died silently — rebuild it.
     private func tick() {
         guard let startedAt else { return }
-        let paused = pausedTotal + (pausedAt.map { Date().timeIntervalSince($0) } ?? 0)
+        let paused = pausedTotal + (clockPausedAt.map { Date().timeIntervalSince($0) } ?? 0)
         emit(.elapsed(max(0, Date().timeIntervalSince(startedAt) - paused)))
 
         guard state == .recording, pausedAt == nil else { return }
         fileLock.lock()
-        let frames = totalFrames
+        let frames = receivedFrames
         fileLock.unlock()
         if !engine.isRunning || frames == lastFrameCheck {
             stalledTicks += 1
@@ -608,6 +690,7 @@ final class AudioRecorder {
         timer?.invalidate()
         timer = nil
         sessionId = nil
+        isPaused = false
         setState(.idle)
         onEvent?(.failure(message))
     }

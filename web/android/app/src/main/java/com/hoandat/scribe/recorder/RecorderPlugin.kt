@@ -21,9 +21,9 @@ import java.io.IOException
 /**
  * Bridge between the WebView and the native recording stack ([RecorderEngine]), same JS contract as
  * RecorderPlugin.swift (web/src/features/recorder/native-recorder.ts):
- * `start({userKey, segmentMinutes?, realtime?}) → {sessionId}`, `stop`, `getStatus`,
+ * `start({userKey, segmentMinutes?, realtime?}) → {sessionId}`, `stop`, `pause`, `resume`, `getStatus`,
  * `syncUploads({userKey})`, `signOut({discardUserKey?})`, `takePendingBookmarks`, `ackBookmarks`,
- * `getTranscript`; events `state`, `elapsed`, `level`, `segment`, `notice`, `failure`, `uploads`,
+ * `getTranscript`; events `state`, `paused`, `elapsed`, `level`, `segment`, `notice`, `failure`, `uploads`,
  * `uploaded`, `needsSignIn`, `quotaFull`, `bookmarkAdded`, `transcript`.
  *
  * Android-only step: `start` asks for the microphone (and, on Android 13+, notifications, so the
@@ -115,6 +115,16 @@ class RecorderPlugin : Plugin(), RecorderEngine.Listener {
     @PluginMethod
     fun stop(call: PluginCall) {
         scope.launch { call.resolve(engine.stop()) }
+    }
+
+    @PluginMethod
+    fun pause(call: PluginCall) {
+        scope.launch { call.resolve(engine.pause()) }
+    }
+
+    @PluginMethod
+    fun resume(call: PluginCall) {
+        scope.launch { call.resolve(engine.resume()) }
     }
 
     @PluginMethod

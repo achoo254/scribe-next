@@ -22,6 +22,7 @@ const native = vi.hoisted(() => {
 	const handlers = new Map<string, Set<Handler>>();
 	interface Status {
 		state: "idle" | "starting" | "recording" | "stopping";
+		paused?: boolean;
 		elapsedS: number;
 		positionS?: number;
 		sessionId?: string | null;
@@ -39,6 +40,8 @@ const native = vi.hoisted(() => {
 	const plugin = {
 		start: vi.fn(async () => ({ sessionId: "s1" })),
 		stop: vi.fn(async () => idle),
+		pause: vi.fn(async (): Promise<Status> => idle),
+		resume: vi.fn(async (): Promise<Status> => idle),
 		getStatus: vi.fn(async (): Promise<Status> => idle),
 		syncUploads: vi.fn(async () => ({ lostSegments: 0, lostSecondsMax: 0 })),
 		signOut: vi.fn(async () => undefined),
@@ -224,7 +227,7 @@ describe("RecordStateProvider (iOS app)", () => {
 		// Every plugin event the page uses is listened to (state … quotaFull, the
 		// native bookmark pull's bookmarkAdded and state, and transcript), once.
 		await waitFor(() =>
-			expect(native.plugin.addListener).toHaveBeenCalledTimes(12),
+			expect(native.plugin.addListener).toHaveBeenCalledTimes(13),
 		);
 		await userEvent.click(screen.getByRole("button", { name: "5 phút" }));
 
@@ -248,7 +251,52 @@ describe("RecordStateProvider (iOS app)", () => {
 		expect(screen.getByText("Đang ghi — 2:05")).toBeInTheDocument();
 		expect(native.plugin.syncUploads).toHaveBeenCalledTimes(1);
 		// Listeners were attached once, not again per visit.
-		expect(native.plugin.addListener).toHaveBeenCalledTimes(12);
+		expect(native.plugin.addListener).toHaveBeenCalledTimes(13);
+	});
+
+	it("pauses and resumes without stopping, when the app build can pause", async () => {
+		const idleStatus: Awaited<ReturnType<typeof native.plugin.getStatus>> = {
+			state: "idle",
+			paused: false,
+			elapsedS: 0,
+			uploadsWaiting: 0,
+			uploadsFailed: 0,
+			notice: "",
+		};
+		const recording = {
+			...idleStatus,
+			state: "recording" as const,
+			elapsedS: 42,
+		};
+		native.plugin.getStatus.mockResolvedValueOnce(idleStatus);
+		native.plugin.pause.mockResolvedValueOnce({ ...recording, paused: true });
+		native.plugin.resume.mockResolvedValueOnce(recording);
+		renderRoutes(NativeRecordProvider, <NativeRecordCard />);
+		await waitFor(() =>
+			expect(native.plugin.addListener).toHaveBeenCalledTimes(13),
+		);
+		expect(screen.queryByRole("button", { name: "Tạm dừng" })).toBeNull();
+		await userEvent.click(screen.getByRole("button", { name: "Bắt đầu ghi" }));
+		act(() => {
+			native.emit("state", { state: "recording" });
+			native.emit("elapsed", { elapsedS: 42 });
+		});
+
+		await userEvent.click(
+			await screen.findByRole("button", { name: "Tạm dừng" }),
+		);
+		expect(native.plugin.pause).toHaveBeenCalledTimes(1);
+		expect(await screen.findByText("Đã tạm dừng — 0:42")).toBeInTheDocument();
+		await userEvent.click(screen.getByRole("button", { name: "Ghi tiếp" }));
+		expect(native.plugin.resume).toHaveBeenCalledTimes(1);
+		expect(await screen.findByText("Đang ghi — 0:42")).toBeInTheDocument();
+
+		// From the lock screen while the page is on screen.
+		act(() => native.emit("paused", { paused: true }));
+		expect(
+			await screen.findByRole("button", { name: "Ghi tiếp" }),
+		).toBeInTheDocument();
+		expect(native.plugin.stop).not.toHaveBeenCalled();
 	});
 
 	it("bookmarks at the session position Swift reports, without stopping", async () => {
@@ -261,7 +309,7 @@ describe("RecordStateProvider (iOS app)", () => {
 		vi.stubGlobal("fetch", fake.fetcher);
 		renderRoutes(NativeRecordProvider, <NativeRecordCard />);
 		await waitFor(() =>
-			expect(native.plugin.addListener).toHaveBeenCalledTimes(12),
+			expect(native.plugin.addListener).toHaveBeenCalledTimes(13),
 		);
 		await userEvent.click(screen.getByRole("button", { name: "Bắt đầu ghi" }));
 		act(() => {
@@ -330,7 +378,7 @@ describe("RecordStateProvider (iOS app)", () => {
 	it("streams a live transcript only when switched on, and shows it without stopping", async () => {
 		renderRoutes(NativeRecordProvider, <NativeRecordCard />);
 		await waitFor(() =>
-			expect(native.plugin.addListener).toHaveBeenCalledTimes(12),
+			expect(native.plugin.addListener).toHaveBeenCalledTimes(13),
 		);
 		const toggle = screen.getByRole("switch", { name: "Chép trực tiếp" });
 		expect(toggle).not.toBeChecked();

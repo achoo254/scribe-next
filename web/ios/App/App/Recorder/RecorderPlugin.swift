@@ -8,7 +8,7 @@ import UIKit
 /// locked, so it re-reads `getStatus()` when it comes back instead of
 /// merging its own state.
 ///
-/// Events: `state`, `elapsed`, `level`, `segment`, `notice`, `failure`,
+/// Events: `state`, `paused`, `elapsed`, `level`, `segment`, `notice`, `failure`,
 /// `uploads`, `needsSignIn`, `quotaFull`, `bookmarkAdded`, `transcript`.
 ///
 /// Live transcript (`start({ realtime: true })`, `RealtimeTranscriber`):
@@ -16,8 +16,8 @@ import UIKit
 /// only while it is on screen; when it comes back it replaces its state
 /// with `getTranscript()`.
 ///
-/// Bookmarks pressed on the lock screen or AirPods (`NowPlayingBookmarks`)
-/// are saved here first; the web layer pulls them (`takePendingBookmarks`),
+/// The lock screen and AirPods (`NowPlayingControls`) pause and resume the
+/// recording, and add bookmarks. Those bookmarks are saved here first; the web layer pulls them (`takePendingBookmarks`),
 /// sends them through its own queue, then `ackBookmarks` forgets them.
 @objc(RecorderPlugin)
 public class RecorderPlugin: CAPPlugin, CAPBridgedPlugin {
@@ -26,6 +26,8 @@ public class RecorderPlugin: CAPPlugin, CAPBridgedPlugin {
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "start", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "stop", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "pause", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "resume", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getStatus", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "syncUploads", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "signOut", returnType: CAPPluginReturnPromise),
@@ -38,7 +40,7 @@ public class RecorderPlugin: CAPPlugin, CAPBridgedPlugin {
     private let store = SegmentStore.shared
     private let queue = UploadQueue.shared
     private let bookmarks = NativeBookmarkStore()
-    private let nowPlaying = NowPlayingBookmarks()
+    private let nowPlaying = NowPlayingControls()
     /// Signed-in account (main thread).
     private var userKey: String?
     /// Account the current recording belongs to: its segments go there even
@@ -191,6 +193,20 @@ public class RecorderPlugin: CAPPlugin, CAPBridgedPlugin {
     @objc func stop(_ call: CAPPluginCall) {
         DispatchQueue.main.async {
             self.recorder.stop()
+            call.resolve(self.status())
+        }
+    }
+
+    @objc func pause(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            self.recorder.pause()
+            call.resolve(self.status())
+        }
+    }
+
+    @objc func resume(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            self.recorder.resume()
             call.resolve(self.status())
         }
     }
@@ -354,11 +370,18 @@ public class RecorderPlugin: CAPPlugin, CAPBridgedPlugin {
         return bookmark.positionS
     }
 
+    /// The lock screen's middle button or an AirPods press.
+    private func togglePause() {
+        if recorder.isPaused { recorder.resume() } else { recorder.pause() }
+    }
+
     // MARK: Events
 
     private func status() -> [String: Any] {
         [
             "state": recorder.state.rawValue,
+            // Also tells the web layer this build can pause.
+            "paused": recorder.isPaused,
             "elapsedS": elapsed,
             // Session position of the audio kept so far (bookmarks).
             "positionS": recorder.recordedSeconds,
@@ -373,12 +396,18 @@ public class RecorderPlugin: CAPPlugin, CAPBridgedPlugin {
         switch event {
         case .state(let state):
             if state == .recording {
-                nowPlaying.start { [weak self] in self?.addNativeBookmark() }
+                nowPlaying.start(NowPlayingControls.Actions(
+                    bookmark: { [weak self] in self?.addNativeBookmark() },
+                    togglePause: { [weak self] in self?.togglePause() }
+                ))
             } else if state == .idle {
                 nowPlaying.stop()
                 stopRealtime()
             }
             notifyListeners("state", data: ["state": state.rawValue])
+        case .paused(let paused):
+            nowPlaying.update(paused: paused)
+            notifyListeners("paused", data: ["paused": paused])
         case .elapsed(let seconds):
             elapsed = seconds
             nowPlaying.update(elapsed: seconds)

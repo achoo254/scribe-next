@@ -37,7 +37,10 @@ export const record = {
 	},
 	start: "Bắt đầu ghi",
 	stop: "Dừng ghi",
+	pause: "Tạm dừng",
+	resume: "Ghi tiếp",
 	timer: "Đang ghi — {clock}",
+	timerPaused: "Đã tạm dừng — {clock}",
 	saving: "Đang lưu bản ghi…",
 	splitting: "Đang cắt bản ghi thành các đoạn…",
 	splitDone: {

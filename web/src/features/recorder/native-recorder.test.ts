@@ -20,6 +20,22 @@ function fakePlugin(
 			uploadsFailed: 0,
 			notice: "",
 		})),
+		pause: vi.fn(async () => ({
+			state: "recording" as const,
+			paused: true,
+			elapsedS: 40,
+			uploadsWaiting: 0,
+			uploadsFailed: 0,
+			notice: "",
+		})),
+		resume: vi.fn(async () => ({
+			state: "recording" as const,
+			paused: false,
+			elapsedS: 40,
+			uploadsWaiting: 0,
+			uploadsFailed: 0,
+			notice: "",
+		})),
 		getStatus: vi.fn(async () => ({
 			state: "idle" as const,
 			elapsedS: 0,
@@ -126,6 +142,69 @@ describe("NativeRecorder", () => {
 		});
 		expect(recorder.getState().elapsedS).toBe(30);
 		expect(await recorder.position()).toBe(330.2);
+	});
+
+	it("pauses and resumes from the page and follows a pause from the lock screen", async () => {
+		const { plugin, emit } = fakePlugin({ state: "recording", paused: false });
+		const recorder = new NativeRecorder(plugin);
+		await recorder.attach();
+		expect(recorder.getState()).toMatchObject({
+			canPause: true,
+			paused: false,
+		});
+
+		await recorder.togglePause();
+		expect(plugin.pause).toHaveBeenCalledTimes(1);
+		expect(recorder.getState().paused).toBe(true);
+		await recorder.togglePause();
+		expect(plugin.resume).toHaveBeenCalledTimes(1);
+		expect(recorder.getState().paused).toBe(false);
+
+		// Lock screen or AirPods: Swift says so while the page is on screen.
+		emit("paused", { paused: true });
+		expect(recorder.getState().paused).toBe(true);
+		// The session ended: never shown as paused afterwards.
+		emit("state", { state: "idle" });
+		expect(recorder.getState()).toMatchObject({
+			recording: false,
+			paused: false,
+		});
+	});
+
+	it("reads a pause made while the page was suspended", async () => {
+		const { plugin } = fakePlugin({
+			state: "recording",
+			paused: true,
+			elapsedS: 80,
+		});
+		const recorder = new NativeRecorder(plugin);
+		await recorder.attach();
+		expect(recorder.getState()).toMatchObject({
+			recording: true,
+			paused: true,
+		});
+	});
+
+	it("offers no pause to app builds that cannot pause", async () => {
+		const { plugin } = fakePlugin({ state: "recording" });
+		const recorder = new NativeRecorder(plugin);
+		await recorder.attach();
+		expect(recorder.getState().canPause).toBe(false);
+		await recorder.togglePause();
+		expect(plugin.pause).not.toHaveBeenCalled();
+	});
+
+	it("shows why a pause failed and keeps recording", async () => {
+		const { plugin } = fakePlugin({ state: "recording", paused: false });
+		vi.mocked(plugin.pause).mockRejectedValueOnce(new Error("bridge"));
+		const recorder = new NativeRecorder(plugin);
+		await recorder.attach();
+		await recorder.togglePause();
+		expect(recorder.getState()).toMatchObject({
+			recording: true,
+			paused: false,
+		});
+		expect(recorder.getState().error).not.toBe("");
 	});
 
 	it("falls back to Swift's clock, then the page's, for older app builds", async () => {

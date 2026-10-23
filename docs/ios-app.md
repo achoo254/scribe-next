@@ -62,7 +62,7 @@ Việc cần Apple duyệt tài khoản trước: tạo app, key API, chạy scr
 | Tải / lưu / phát file | `NativeFilesPlugin.swift` | Tải kèm cookie; share sheet (Lưu vào Tệp); bản cache để phát và tua |
 | Ghi âm | `Recorder/AudioRecorder.swift` | AVAudioEngine → m4a AAC, đoạn 1/5/10 phút, chạy nền (`UIBackgroundModes: audio`) |
 | Lưu bền | `Recorder/SegmentStore.swift` | `Documents/recordings/<userKey>/<sessionId>/session.json` + `seg-NNN.m4a`; đối soát khi mở app, báo đoạn cụt nếu app bị kill |
-| Đánh dấu từ màn hình khoá / AirPods | `Recorder/NowPlayingBookmarks.swift` | Xem mục "Đánh dấu khi khoá màn hình" bên dưới |
+| Tạm dừng / đánh dấu từ màn hình khoá, AirPods | `Recorder/NowPlayingControls.swift` | Xem mục "Tạm dừng và đánh dấu khi khoá màn hình" bên dưới |
 | Tải lên | `Recorder/UploadQueue.swift` | Mỗi đoạn một bản ghi tên `<sessionId>#<index>`; Lịch sử ghi gom thành một dòng "Bản ghi trên iPhone". Mất phản hồi finalize thì tra theo tên trước khi tạo lại (không sinh bản trùng) |
 | Xoá tài khoản | `RecorderPlugin.signOut({discardUserKey})`, `SessionAuth.swift` | Menu tài khoản → "Xoá tài khoản" gọi `POST /api/me/delete`; xong thì app dừng ghi, xoá cache audio và token thiết bị như đăng xuất, và xoá đoạn chưa tải, chữ chép trực tiếp, dấu mốc của tài khoản đó trên máy (`forgetDeletedAccount` ở `auth-context.tsx`); không kết thúc phiên ở auth-next. Tài khoản bị xoá từ máy khác: lần làm mới phiên sau nhận 410 `ACCOUNT_DELETED`, hàng đợi xoá đoạn của tài khoản đó thay vì chờ đăng nhập lại (thu hồi máy thường vẫn giữ đoạn để tải nốt khi đăng nhập lại) |
 | Làm mới phiên | `SessionAuth.swift` | Token thiết bị của Scribe giữ trong Keychain của app (`AfterFirstUnlockThisDeviceOnly`). Phiên mobile 12 giờ; gặp 401 khi đang tải, hàng đợi đổi token thiết bị lấy cookie mới ở `POST /api/auth/native/refresh` (chỉ được khi auth-next còn công nhận máy; thu hồi máy ở `/account` của IdP thì lần làm mới sau thất bại), rồi mới báo "cần đăng nhập lại". Đăng xuất thì xoá token và thiết bị trên server |
@@ -71,12 +71,13 @@ Việc cần Apple duyệt tài khoản trước: tạo app, key API, chạy scr
 
 > **Đổi bundle id và đăng nhập (2026-10-16):** app id là `com.hoandat.scribe`, đăng nhập qua auth-next; Firebase đã bỏ hẳn. Bản cài mới là một app khác trên máy: dữ liệu cục bộ của app cũ (đoạn chưa tải, Keychain) không chuyển sang. Refresh token Firebase của bản cũ (nếu có) bị xoá ở lần đăng nhập hoặc đăng xuất kế tiếp.
 
-## Đánh dấu khi khoá màn hình
+## Tạm dừng và đánh dấu khi khoá màn hình
 
-Khi khoá màn hình, JS của WKWebView bị treo nên nút "Đánh dấu" trên trang không bấm được. Vì vậy trong lúc ghi, Swift tự đăng ký mục **Now Playing** (màn hình khoá, Control Center):
+Khi khoá màn hình, JS của WKWebView bị treo nên các nút trên trang không bấm được. Vì vậy trong lúc ghi, Swift tự đăng ký mục **Now Playing** (màn hình khoá, Control Center):
 
-- Tiêu đề "Scribe đang ghi", thời gian trôi theo đồng hồ ghi. Mọi lệnh phát/tạm dừng/bài kế/bài trước — nút trên màn hình khoá, AirPods bấm 1, 2 hay 3 lần — đều **thêm một dấu mốc**; từ đó không dừng hay tạm dừng được bản ghi. Tua, nhảy 15 giây, dừng bị tắt. Hai lần bấm cách nhau dưới 1 giây chỉ tính một.
-- Bấm xong, tiêu đề đổi thành "Đã đánh dấu 12:34" khoảng 3 giây. Không phát âm báo (âm sẽ lọt vào bản ghi).
+- **Nút giữa (⏸/▶) và AirPods bấm 1 lần: tạm dừng hoặc ghi tiếp** (`AudioRecorder.pause()`/`resume()`). Cả ba lệnh phát, tạm dừng, phát/tạm dừng đều đảo trạng thái, vì iOS tự chọn lệnh theo âm im lặng vẫn đang phát. Hai lần bấm cách nhau dưới 0,4 giây chỉ tính một. Khi tạm dừng: đoạn đang mở đóng lại và tải lên; không ghi gì cho tới lúc ghi tiếp (ghi tiếp mở đoạn mới); đồng hồ và `positionS` đứng yên nên dấu mốc và chép trực tiếp nối liền; tiêu đề "Scribe đã tạm dừng", nút đổi thành ▶ (`PlaybackRate` 0). Engine và âm im lặng vẫn chạy để app không bị iOS treo và mục Now Playing còn đó, nên chấm cam micro vẫn sáng khi tạm dừng. Trong app có nút "Tạm dừng"/"Ghi tiếp" cạnh "Dừng ghi"; nút chỉ hiện khi `getStatus()` có trường `paused` (bản app cũ và Android không có).
+- **⏩/⏪ và AirPods bấm 2, 3 lần: thêm một dấu mốc.** Tua, nhảy 15 giây, dừng bị tắt. Hai lần bấm cách nhau dưới 1 giây chỉ tính một.
+- Đánh dấu xong, tiêu đề đổi thành "Đã đánh dấu 12:34" khoảng 3 giây. Không phát âm báo (âm sẽ lọt vào bản ghi).
 - Mốc lưu ngay xuống `Documents/bookmarks/<userKey>.json` (id 24 hex, `sessionId`, `positionS` lấy từ `recordedSeconds` như nút trên trang). Trang kéo về qua `takePendingBookmarks()` khi mở lại app (`visibilitychange`), khi Swift báo `bookmarkAdded` lúc đang mở, khi dừng ghi và khi khởi động, rồi gửi qua cùng hàng đợi `BookmarkQueue` tới `s:<sessionId>` (`web/src/features/recorder/native-bookmarks.ts`). Swift chỉ xoá mốc khi trang báo `ackBookmarks` — sau khi server đã lưu, từ chối hẳn, hoặc bản ghi không còn — nên tắt app giữa chừng không mất mốc; gửi lại cùng id thì server chỉ lưu một lần.
 - iOS chỉ giao mục Now Playing và lệnh AirPods cho app đang phát âm thanh, nên trong lúc ghi `AudioRecorder` phát lặp một giây im lặng vào bộ trộn của engine (`playsSilenceWhileRecording`, đặt `false` để tắt nếu gây lỗi trên máy). Âm này không vào nhánh thu.
 - Dừng ghi thì gỡ lệnh, dừng phát im lặng và xoá mục Now Playing. Cấu hình phiên âm thanh (`.playAndRecord`, ưu tiên micro trong máy, cho phép HFP/A2DP) giữ nguyên.

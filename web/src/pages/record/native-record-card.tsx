@@ -1,4 +1,9 @@
-import { IconMicrophone, IconPlayerStopFilled } from "@tabler/icons-react";
+import {
+	IconMicrophone,
+	IconPlayerPauseFilled,
+	IconPlayerPlayFilled,
+	IconPlayerStopFilled,
+} from "@tabler/icons-react";
 import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
 import { Card } from "../../components/ui/card";
@@ -30,6 +35,7 @@ export function NativeRecordCard() {
 		setRealtime,
 		live,
 		toggle,
+		togglePause,
 		bookmarks,
 		mark,
 	} = useNativeRecordState();
@@ -91,10 +97,28 @@ export function NativeRecordCard() {
 					>
 						{rec.recording ? t("record.stop") : t("record.start")}
 					</Button>
+					{togglePause ? (
+						<Button
+							variant="secondary"
+							size="lg"
+							data-id="native-record-pause"
+							leadingIcon={
+								rec.paused ? (
+									<IconPlayerPlayFilled size={20} aria-hidden="true" />
+								) : (
+									<IconPlayerPauseFilled size={20} aria-hidden="true" />
+								)
+							}
+							onClick={togglePause}
+						>
+							{rec.paused ? t("record.resume") : t("record.pause")}
+						</Button>
+					) : null}
 					{rec.recording ? (
 						<RecordTimer
 							data-id="native-record-timer"
 							elapsedS={rec.elapsedS}
+							paused={rec.paused}
 						/>
 					) : null}
 					{rec.recording ? (
@@ -105,7 +129,9 @@ export function NativeRecordCard() {
 						/>
 					) : null}
 				</div>
-				{rec.recording ? <LevelMeter recorder={rec.recorder} /> : null}
+				{rec.recording && !rec.paused ? (
+					<LevelMeter recorder={rec.recorder} />
+				) : null}
 
 				{rec.notice ? <Alert tone="info">{rec.notice}</Alert> : null}
 				{rec.error ? (

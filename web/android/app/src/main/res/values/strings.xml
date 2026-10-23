@@ -10,6 +10,10 @@
     <string name="recording_channel_description">Thông báo khi Scribe đang ghi âm, kể cả lúc khoá màn hình.</string>
     <string name="recording_title">Scribe đang ghi</string>
     <string name="recording_text">Bấm Đánh dấu để ghi lại khoảnh khắc quan trọng</string>
+    <string name="recording_paused_title">Scribe đã tạm dừng</string>
+    <string name="recording_paused_text">Bấm Ghi tiếp để ghi tiếp</string>
+    <string name="recording_pause">Tạm dừng</string>
+    <string name="recording_resume">Ghi tiếp</string>
     <string name="recording_bookmark">Đánh dấu</string>
     <string name="recording_stop">Dừng</string>
 </resources>

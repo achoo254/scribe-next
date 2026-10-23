@@ -49,7 +49,7 @@ data class NativeBookmark(
 
 /**
  * `filesDir/bookmarks/<userKey>.json`, one small file per account, written atomically (Android twin
- * of NativeBookmarkStore in NowPlayingBookmarks.swift). Every call is serialized.
+ * of NativeBookmarkStore in NowPlayingControls.swift). Every call is serialized.
  */
 class BookmarkStore(private val root: File) {
 

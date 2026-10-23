@@ -16,6 +16,11 @@ type NativeState = "idle" | "starting" | "recording" | "stopping";
 
 interface NativeStatus {
 	state: NativeState;
+	/**
+	 * Paused by the user (lock screen, AirPods, the app). Absent from app
+	 * builds that cannot pause: the page then shows no pause button.
+	 */
+	paused?: boolean;
 	elapsedS: number;
 	/**
 	 * Seconds of audio kept in the session (closed segments plus the open
@@ -53,6 +58,10 @@ export interface RecorderNativePlugin {
 		sessionId: string;
 	}>;
 	stop(): Promise<NativeStatus>;
+	/** Stops writing without ending the session (only when `paused` is reported). */
+	pause(): Promise<NativeStatus>;
+	/** Writes again, into a new segment. */
+	resume(): Promise<NativeStatus>;
 	getStatus(): Promise<NativeStatus>;
 	syncUploads(options: { userKey: string }): Promise<{
 		lostSegments: number;
@@ -82,6 +91,7 @@ export interface RecorderNativePlugin {
 	addListener(
 		event:
 			| "state"
+			| "paused"
 			| "elapsed"
 			| "level"
 			| "segment"
@@ -104,6 +114,10 @@ export interface NativeRecorderState {
 	recording: boolean;
 	starting: boolean;
 	finalizing: boolean;
+	/** Recording paused by the user; the clock stands still. */
+	paused: boolean;
+	/** This app build can pause (it reports `paused` in its status). */
+	canPause: boolean;
 	elapsedS: number;
 	/** Session being recorded (its transcript is `s:<sessionId>`); null when idle. */
 	sessionId: string | null;
@@ -120,6 +134,8 @@ const IDLE: NativeRecorderState = {
 	recording: false,
 	starting: false,
 	finalizing: false,
+	paused: false,
+	canPause: false,
 	elapsedS: 0,
 	sessionId: null,
 	uploadsWaiting: 0,
@@ -149,6 +165,14 @@ function flagsOf(
 		starting: state === "starting",
 		finalizing: state === "stopping",
 	};
+}
+
+/** `paused` and whether the build can pause, from a status of Swift. */
+function pauseOf(
+	status: NativeStatus,
+): Pick<NativeRecorderState, "paused" | "canPause"> {
+	const canPause = typeof status.paused === "boolean";
+	return { paused: canPause && status.paused === true, canPause };
 }
 
 /** Stable per-account folder name on the phone: SHA-256 of the email. */
@@ -208,8 +232,14 @@ export class NativeRecorder {
 			if (generation === this.generation) this.removers.push(handle.remove);
 			else void handle.remove();
 		};
-		await on("state", (data) =>
-			this.set({ ...this.state, ...flagsOf(textOf(data.state)) }),
+		await on("state", (data) => {
+			const flags = flagsOf(textOf(data.state));
+			// A session that ended (or has not begun) is never paused.
+			const paused = flags.recording && this.state.paused;
+			this.set({ ...this.state, ...flags, paused });
+		});
+		await on("paused", (data) =>
+			this.set({ ...this.state, paused: data.paused === true }),
 		);
 		await on("elapsed", (data) =>
 			this.set({ ...this.state, elapsedS: numberOf(data.elapsedS) }),
@@ -223,6 +253,7 @@ export class NativeRecorder {
 				...this.state,
 				recording: false,
 				starting: false,
+				paused: false,
 				error: textOf(data.message),
 			}),
 		);
@@ -247,6 +278,7 @@ export class NativeRecorder {
 		this.set({
 			...this.state,
 			...flagsOf(status.state),
+			...pauseOf(status),
 			elapsedS: numberOf(status.elapsedS),
 			sessionId: sessionOf(status.sessionId),
 			uploadsWaiting: numberOf(status.uploadsWaiting),
@@ -308,6 +340,22 @@ export class NativeRecorder {
 		}
 	};
 
+	/** Pauses when recording, resumes when paused (builds that can pause). */
+	togglePause = async (): Promise<void> => {
+		if (!this.state.recording || !this.state.canPause) return;
+		try {
+			const status = this.state.paused
+				? await this.plugin.resume()
+				: await this.plugin.pause();
+			this.set({ ...this.state, ...flagsOf(status.state), ...pauseOf(status) });
+		} catch (cause) {
+			this.set({
+				...this.state,
+				error: errorMessage(cause, activeTranslator().t("recorder.pauseError")),
+			});
+		}
+	};
+
 	stop = async (): Promise<void> => {
 		if (!this.state.recording) return;
 		const status = await this.plugin.stop();
@@ -315,6 +363,7 @@ export class NativeRecorder {
 			...this.state,
 			recording: false,
 			finalizing: false,
+			paused: false,
 			uploadsWaiting: numberOf(status.uploadsWaiting),
 		});
 		this.setLevel(0);

@@ -26,6 +26,7 @@ export const recorder = {
 		failed: "Không bắt đầu ghi được.",
 		denied: "Không bắt đầu ghi được (quyền truy cập bị từ chối?)",
 	},
+	pauseError: "Không tạm dừng hoặc ghi tiếp được.",
 	interrupt: {
 		micEnded:
 			"Bản ghi đã dừng (mất micro — có thể do màn hình bị khóa) — đã lưu phần ghi được.",

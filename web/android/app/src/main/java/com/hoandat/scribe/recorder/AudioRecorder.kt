@@ -30,6 +30,8 @@ sealed interface RecorderEvent {
     data class State(val state: RecorderState) : RecorderEvent
     /** Seconds recorded so far, about once a second. */
     data class Elapsed(val seconds: Double) : RecorderEvent
+    /** The user paused (true) or resumed (false) the recording. */
+    data class Paused(val paused: Boolean) : RecorderEvent
     /** RMS level 0…1 of the input, a few times a second. */
     data class Level(val level: Float) : RecorderEvent
     /** A finished, readable segment of [sessionId]. */
@@ -57,7 +59,13 @@ fun interface PcmSink {
  * as a notice and keeps going. A dead input (read error, or no samples for 3 seconds) is reopened into
  * a new segment.
  *
- * Main thread: [start], [stop], [state], [sessionId]; [onEvent] is always called on the main thread.
+ * Paused by the user ([pause]), the microphone keeps being read (the foreground service and the
+ * watchdog stay as they are) but nothing is written: the open segment closes and uploads, and the next
+ * one opens on [resume]. [recordedSeconds] stands still meanwhile, so the clock, bookmarks and the live
+ * transcript continue at the same position.
+ *
+ * Main thread: [start], [stop], [pause], [resume], [state], [sessionId]; [onEvent] is always called on
+ * the main thread.
  * The capture thread owns the AudioRecord loop and the segment writer.
  */
 class AudioRecorder(private val context: Context, private val onEvent: (RecorderEvent) -> Unit) {
@@ -68,13 +76,17 @@ class AudioRecorder(private val context: Context, private val onEvent: (Recorder
     /** Session being recorded (main thread). */
     var sessionId: String? = null
         private set
+    /** Paused by the user; read by the capture thread, which then writes nothing. */
+    @Volatile var isPaused = false
+        private set
 
     private val lock = Any()
     // Guarded by [lock]: shared by the capture thread and readers of [recordedSeconds].
     private var closedSeconds = 0.0
     private var openFrames = 0L
     private var openRate = 0
-    private var totalFrames = 0L
+    /** Frames read from the microphone, written or not: the watchdog's sign of a live input, also while paused. */
+    private var receivedFrames = 0L
     private var sink: PcmSink? = null
 
     // Capture thread (set before it starts).
@@ -114,11 +126,12 @@ class AudioRecorder(private val context: Context, private val onEvent: (Recorder
         checkedBrand = false
         writeFailures = 0
         restartReason = null
+        isPaused = false
         synchronized(lock) {
             closedSeconds = 0.0
             openFrames = 0
             openRate = 0
-            totalFrames = 0
+            receivedFrames = 0
         }
         setState(RecorderState.STARTING)
         val opened = openRecord()
@@ -160,10 +173,26 @@ class AudioRecorder(private val context: Context, private val onEvent: (Recorder
                 shutdownCapture()
                 onEvent(RecorderEvent.Level(0f))
                 sessionId = null
+                isPaused = false
                 setState(RecorderState.IDLE)
             }
             RecorderState.IDLE, RecorderState.STOPPING -> Unit
         }
+    }
+
+    /** Stops writing without ending the session; the capture thread closes the open segment. */
+    fun pause() {
+        if (state != RecorderState.RECORDING || isPaused) return
+        isPaused = true
+        onEvent(RecorderEvent.Level(0f))
+        onEvent(RecorderEvent.Paused(true))
+    }
+
+    /** Writes again, into a new segment (opened by the capture thread on its next read). */
+    fun resume() {
+        if (state != RecorderState.RECORDING || !isPaused) return
+        isPaused = false
+        onEvent(RecorderEvent.Paused(false))
     }
 
     private fun fail(message: String) {
@@ -173,6 +202,7 @@ class AudioRecorder(private val context: Context, private val onEvent: (Recorder
         }
         shutdownCapture()
         sessionId = null
+        isPaused = false
         setState(RecorderState.IDLE)
         onEvent(RecorderEvent.Failure(message))
     }
@@ -221,6 +251,12 @@ class AudioRecorder(private val context: Context, private val onEvent: (Recorder
                     continue
                 }
                 if (read == 0) continue
+                synchronized(lock) { receivedFrames += read }
+                if (isPaused) {
+                    // `write` opens the next segment once resumed.
+                    closeSegment("pause")
+                    continue
+                }
                 updateLevel(buffer, read)
                 write(buffer, read, rate)
             }
@@ -256,10 +292,7 @@ class AudioRecorder(private val context: Context, private val onEvent: (Recorder
                 openSegment(rate)
                 return
             }
-            synchronized(lock) {
-                openFrames += take
-                totalFrames += take
-            }
+            synchronized(lock) { openFrames += take }
             receiver?.accept(buffer, offset, take, rate, position)
             offset += take
             if (frames + take >= limit) {
@@ -345,7 +378,8 @@ class AudioRecorder(private val context: Context, private val onEvent: (Recorder
             return null
         }
         return try {
-            openSegment(next.sampleRate)
+            // Paused: the segment opens on resume.
+            if (!isPaused) openSegment(next.sampleRate)
             post {
                 watchSilence(next)
                 onEvent(RecorderEvent.Notice("Ghi tiếp sau gián đoạn ($reason)."))
@@ -382,7 +416,7 @@ class AudioRecorder(private val context: Context, private val onEvent: (Recorder
         override fun run() {
             if (state != RecorderState.RECORDING) return
             onEvent(RecorderEvent.Elapsed(recordedSeconds))
-            val frames = synchronized(lock) { totalFrames }
+            val frames = synchronized(lock) { receivedFrames }
             stalledTicks = if (frames == lastFrameCheck) stalledTicks + 1 else 0
             lastFrameCheck = frames
             if (stalledTicks >= 3) {

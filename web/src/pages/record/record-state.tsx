@@ -120,6 +120,8 @@ export interface NativeRecordState {
 	/** Live transcript of the current or last recording that asked for it. */
 	live: LiveTranscriptApi;
 	toggle: () => Promise<void>;
+	/** Pauses or resumes; null when not recording or the app build cannot pause. */
+	togglePause: (() => void) | null;
 	bookmarks: BookmarkQueueState;
 	/** Null while no session is known yet. */
 	mark: (() => void) | null;
@@ -291,6 +293,10 @@ export function NativeRecordProvider({ children }: { children: ReactNode }) {
 		await rec.recorder.start(key, Number(minutes), realtime);
 	}
 
+	const togglePause =
+		rec.recording && rec.canPause
+			? () => void rec.recorder.togglePause()
+			: null;
 	const { sessionId } = rec;
 	const mark =
 		rec.recording && sessionId
@@ -307,6 +313,7 @@ export function NativeRecordProvider({ children }: { children: ReactNode }) {
 				setRealtime,
 				live,
 				toggle,
+				togglePause,
 				bookmarks,
 				mark,
 			}}

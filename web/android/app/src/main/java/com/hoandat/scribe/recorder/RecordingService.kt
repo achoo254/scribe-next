@@ -21,9 +21,9 @@ import com.hoandat.scribe.R
 /**
  * Foreground service of type `microphone` while a recording runs (iOS: UIBackgroundModes audio). It
  * keeps the process and the microphone when the screen is locked or the app is in the background, and
- * shows the required notification: "Scribe đang ghi" with a running clock, an "Đánh dấu" button that
- * adds a bookmark (also on the lock screen) and a "Dừng" button that opens the app — a recording is
- * never stopped silently from the shade.
+ * shows the required notification: "Scribe đang ghi" with a running clock, a "Tạm dừng"/"Ghi tiếp"
+ * button, an "Đánh dấu" button that adds a bookmark (both also on the lock screen) and a "Dừng" button
+ * that opens the app — a recording is never stopped silently from the shade.
  *
  * Started only by [RecorderEngine] when the user taps Record, i.e. while the app is on screen (Android
  * 14+ forbids starting a microphone service from the background). Not sticky: if Android kills the
@@ -38,6 +38,10 @@ class RecordingService : Service() {
         when (intent?.action) {
             ACTION_BOOKMARK -> {
                 engine.addNativeBookmark()
+                return START_NOT_STICKY
+            }
+            ACTION_TOGGLE_PAUSE -> {
+                engine.togglePause()
                 return START_NOT_STICKY
             }
             ACTION_START -> Unit
@@ -101,10 +105,17 @@ class RecordingService : Service() {
             Intent(this, RecordingService::class.java).setAction(ACTION_BOOKMARK),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
+        val togglePause = PendingIntent.getService(
+            this, 2,
+            Intent(this, RecordingService::class.java).setAction(ACTION_TOGGLE_PAUSE),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        val text = state.feedback
+            ?: getString(if (state.paused) R.string.recording_paused_text else R.string.recording_text)
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_recording)
-            .setContentTitle(getString(R.string.recording_title))
-            .setContentText(state.feedback ?: getString(R.string.recording_text))
+            .setContentTitle(getString(if (state.paused) R.string.recording_paused_title else R.string.recording_title))
+            .setContentText(text)
             .setContentIntent(open)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
@@ -112,16 +123,18 @@ class RecordingService : Service() {
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
-            .setUsesChronometer(true)
-            .setShowWhen(true)
+            // Paused, the clock would keep running: hidden until resumed.
+            .setUsesChronometer(!state.paused)
+            .setShowWhen(!state.paused)
             .setWhen(state.startedAtWallMs)
+            .addAction(0, getString(if (state.paused) R.string.recording_resume else R.string.recording_pause), togglePause)
             .addAction(0, getString(R.string.recording_bookmark), bookmark)
             .addAction(0, getString(R.string.recording_stop), open)
             .build()
     }
 
-    /** What the notification shows: the clock's origin and an optional "Đã đánh dấu 12:34". */
-    data class NotificationState(val startedAtWallMs: Long, val feedback: String?)
+    /** What the notification shows: the clock's origin, whether paused, and an optional "Đã đánh dấu 12:34". */
+    data class NotificationState(val startedAtWallMs: Long, val paused: Boolean, val feedback: String?)
 
     companion object {
         private const val TAG = "ScribeRecordingService"
@@ -129,6 +142,7 @@ class RecordingService : Service() {
         private const val NOTIFICATION_ID = 1
         private const val ACTION_START = "com.hoandat.scribe.recorder.START"
         private const val ACTION_BOOKMARK = "com.hoandat.scribe.recorder.BOOKMARK"
+        private const val ACTION_TOGGLE_PAUSE = "com.hoandat.scribe.recorder.TOGGLE_PAUSE"
 
         fun start(context: Context) {
             val intent = Intent(context, RecordingService::class.java).setAction(ACTION_START)
