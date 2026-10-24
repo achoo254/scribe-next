@@ -16,7 +16,6 @@ import {
 } from "../features/chat-link/chat-link-queries";
 import { useT } from "../i18n/i18n-context";
 import { errorMessage } from "../lib/api";
-import { useTenantInfo } from "../lib/tenant-info";
 import { AccountMenu } from "./account-menu";
 import {
 	IDLE_ACTIVITY,
@@ -46,10 +45,8 @@ export function AccountControls({
 	const toast = useToast();
 	const session = useSignOut();
 	const [confirming, setConfirming] = useState(false);
-	// Minutes are made only by accounts that may transcribe; others have nothing to send. The chat
-	// link (bot of chat.hoandat.com) exists on the primary tenant only.
-	const tenant = useTenantInfo();
-	const canSend = user.canTranscribe === true && tenant.primary;
+	// Minutes are made only by accounts that may transcribe; others have nothing to send.
+	const canSend = user.canTranscribe === true;
 	const chatLink = useChatLinkQuery(canSend);
 	const unlink = useUnlinkChat();
 	const [linking, setLinking] = useState(false);

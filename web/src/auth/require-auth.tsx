@@ -4,8 +4,8 @@ import { BrandMark } from "../components/brand/wordmark";
 import { useT } from "../i18n/i18n-context";
 import { useAuth } from "./auth-context";
 
-/** Full-page wait while `/api/me` (or `/api/idp`) answers, so no route flashes. */
-export function SessionCheck() {
+/** Full-page wait while `/api/me` answers, so no route flashes. */
+function SessionCheck() {
 	const t = useT();
 	return (
 		<output

@@ -7,8 +7,8 @@
 import { IconExternalLink } from "@tabler/icons-react";
 import { ThemeCycleButton, ThemeToggle } from "../components/theme-toggle";
 import { useT } from "../i18n/i18n-context";
-import { idpAccountUrlOf, idpAppsUrlOf } from "../lib/idp";
-import { useTenantInfo } from "../lib/tenant-info";
+import { IDP_ACCOUNT_URL, IDP_APPS_URL } from "../lib/idp";
+import { useIdpName } from "../lib/idp-name";
 import { LegalLinks } from "./legal-links";
 
 const FOOTER_LINK =
@@ -17,15 +17,14 @@ const FOOTER_LINK =
 /** Page footer: IdP account pages, privacy and terms, the theme switch. */
 export function AppFooter() {
 	const t = useT();
-	const tenant = useTenantInfo();
-	const idpName = tenant.displayName;
+	const idpName = useIdpName();
 	const links = [
 		{
 			id: "account",
 			label: t("layout.idpMenu.account", { idpName }),
-			href: idpAccountUrlOf(tenant),
+			href: IDP_ACCOUNT_URL,
 		},
-		{ id: "apps", label: t("layout.idpMenu.apps"), href: idpAppsUrlOf(tenant) },
+		{ id: "apps", label: t("layout.idpMenu.apps"), href: IDP_APPS_URL },
 	];
 	return (
 		<footer

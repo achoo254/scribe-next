@@ -46,10 +46,6 @@ export const legal = {
 			title: "Trẻ em",
 			body: "Scribe không dành cho trẻ em dưới 13 tuổi và không cố ý thu thập dữ liệu của trẻ dưới 13 tuổi. Người từ 13 tới dưới 16 tuổi chỉ dùng khi có sự đồng ý của cha mẹ hoặc người giám hộ. Nếu bạn biết một trẻ em đã dùng Scribe, hãy liên hệ để chúng tôi xoá dữ liệu.",
 		},
-		tenant: {
-			title: "Scribe trên {domain}",
-			body: "Trên {domain}, âm thanh và chữ của bạn được gửi tới nhà cung cấp AI (ElevenLabs, OpenAI, Google Gemini hoặc Anthropic Claude) bằng key AI do chủ domain {domain} cung cấp, theo điều khoản giữa chủ domain và nhà cung cấp đó. Tệp và lời chép lưu trên máy chủ của Scribe (hoandat) theo hạn của gói miễn phí: 200 MB, tự xoá sau 7 ngày.",
-		},
 		changes: {
 			title: "Thay đổi chính sách",
 			body: "Khi chính sách thay đổi, ngày hiệu lực ở đầu trang đổi theo; thay đổi quan trọng được báo trong ứng dụng trước khi áp dụng.",

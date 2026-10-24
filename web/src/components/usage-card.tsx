@@ -1,11 +1,10 @@
-import type { OwnKeys, PlanInfo, TenantTranscription } from "../auth/auth-api";
+import type { PlanInfo } from "../auth/auth-api";
 import { useAuth } from "../auth/auth-context";
 import { useUsageQuery } from "../features/files/file-queries";
 import { useT } from "../i18n/i18n-context";
 import type { MessageKey } from "../i18n/message-types";
 import { cn } from "../lib/cn";
 import { formatDate, formatDayMonth, formatStorage } from "../lib/format";
-import { useTenantInfo } from "../lib/tenant-info";
 import { PROVIDER_INFO } from "./key-providers";
 import { Badge } from "./ui/badge";
 import { cardClassName } from "./ui/card";
@@ -78,22 +77,27 @@ function useProviderName(): (code: string) => string {
 	};
 }
 
-interface KeyRowProps {
+interface OwnKeyRowProps {
 	label: string;
-	/** Whose key ("Dùng key của bạn (OpenAI)", "Dùng key AI của acme.vn"). */
-	value: string;
+	provider: string;
 	detail?: string;
 	"data-id": string;
 }
 
-/** A use that runs on someone's own key (the user's, the domain owner's): no Scribe allowance to show. */
-function KeyRow({ label, value, detail, "data-id": dataId }: KeyRowProps) {
+/** A use that runs on the user's own key: no Scribe allowance to show. */
+function OwnKeyRow({
+	label,
+	provider,
+	detail,
+	"data-id": dataId,
+}: OwnKeyRowProps) {
+	const t = useT();
 	return (
 		<div data-id={dataId} className="grid min-w-0 gap-1">
 			<div className="flex items-baseline justify-between gap-2 text-xs">
 				<span className="truncate text-muted">{label}</span>
 				<span data-id={`${dataId}-value`} className="shrink-0 text-fg">
-					{value}
+					{t("ui.usage.ownKey.value", { provider })}
 				</span>
 			</div>
 			{detail ? <span className="text-muted text-xs">{detail}</span> : null}
@@ -101,85 +105,25 @@ function KeyRow({ label, value, detail, "data-id": dataId }: KeyRowProps) {
 	);
 }
 
-interface TenantKeyRow {
-	id: string;
-	label:
-		| "ui.usage.tenantKey.label"
-		| "ui.usage.ownKey.transcribe"
-		| "ui.usage.ownKey.text";
-	/** The owner has not added a key for this use. */
-	missing: boolean;
-}
-
-/**
- * Uses that run on the domain owner's keys, one row each (a use on the
- * user's own key has its own row). One combined row when the backend could
- * not say which keys the owner has.
- */
-export function tenantKeyRows(
-	onTenant: TenantTranscription | null,
-	own: OwnKeys | null,
-): TenantKeyRow[] {
-	if (!onTenant) return [];
-	const keys = onTenant.tenantKeys;
-	if (!keys) {
-		return own?.transcribe && own?.text
-			? []
-			: [
-					{
-						id: "usage-tenant-key",
-						label: "ui.usage.tenantKey.label",
-						missing: false,
-					},
-				];
-	}
-	const rows: TenantKeyRow[] = [];
-	if (!own?.transcribe) {
-		rows.push({
-			id: "usage-tenant-transcribe",
-			label: "ui.usage.ownKey.transcribe",
-			missing: keys.transcribe === null,
-		});
-	}
-	if (!own?.text) {
-		rows.push({
-			id: "usage-tenant-text",
-			label: "ui.usage.ownKey.text",
-			missing: keys.text === null,
-		});
-	}
-	return rows;
-}
-
 /**
  * The plan and what of it is used, in one compact card above every page:
  * plan badge (with its end date) and how long files are kept, then storage,
  * this month's transcription minutes and, on the free plan, today's. Shows
  * once `/api/me/usage` answers; the minutes only for accounts that may
- * transcribe. On a tenant's domain the runs use the owner's AI keys
- * (`transcription.keySource: "tenant"`): no minutes, one line per use saying
- * whose key (or that the owner has not added one); the storage of the plan
- * still applies.
+ * transcribe.
  */
 export function UsageCard() {
 	const t = useT();
 	const { user } = useAuth();
 	const { data: storage } = useUsageQuery();
 	const providerName = useProviderName();
-	const tenant = useTenantInfo();
 	if (!storage) return null;
 	const own = user?.ownKeys ?? null;
-	const transcription = user?.transcription ?? null;
-	const onTenant = transcription?.keySource === "tenant" ? transcription : null;
-	const metered =
-		transcription && transcription.keySource !== "tenant"
-			? transcription
-			: null;
 	const plan: PlanInfo["name"] = user?.plan?.name ?? storage.plan ?? "free";
 	const until = user?.plan?.until ?? null;
 	const retentionDays = user?.plan?.retentionDays ?? storage.retentionDays ?? 0;
-	// Transcription on the user's own key or the domain owner's: Scribe's minutes do not apply.
-	const minutes = own?.transcribe ? null : metered;
+	// Transcription on the user's own key: Scribe's minutes do not apply.
+	const minutes = own?.transcribe ? null : (user?.transcription ?? null);
 	const reset = formatDayMonth(minutes?.resetsAt);
 	const storageFull =
 		storage.quotaBytes > 0 && storage.usageBytes >= storage.quotaBytes;
@@ -234,25 +178,11 @@ export function UsageCard() {
 						limit={minutes.limitMinutes}
 					/>
 				) : null}
-				{tenantKeyRows(onTenant, own).map((row) => (
-					<KeyRow
-						key={row.id}
-						data-id={row.id}
-						label={t(row.label)}
-						value={
-							row.missing
-								? t("ui.usage.tenantKey.missing")
-								: t("ui.usage.tenantKey.value", { domain: tenant.domain })
-						}
-					/>
-				))}
 				{own?.transcribe ? (
-					<KeyRow
+					<OwnKeyRow
 						data-id="usage-own-transcribe"
 						label={t("ui.usage.ownKey.transcribe")}
-						value={t("ui.usage.ownKey.value", {
-							provider: providerName(own.transcribe),
-						})}
+						provider={providerName(own.transcribe)}
 						detail={
 							own.minutes > 0
 								? t("ui.usage.ownKey.minutes", { count: own.minutes })
@@ -261,12 +191,10 @@ export function UsageCard() {
 					/>
 				) : null}
 				{own?.text ? (
-					<KeyRow
+					<OwnKeyRow
 						data-id="usage-own-text"
 						label={t("ui.usage.ownKey.text")}
-						value={t("ui.usage.ownKey.value", {
-							provider: providerName(own.text),
-						})}
+						provider={providerName(own.text)}
 					/>
 				) : null}
 				{minutes?.daily ? (

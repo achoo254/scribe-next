@@ -40,9 +40,7 @@ export function useTranscribe(onSent?: () => void): Transcribe {
 		fileIds: readonly string[];
 		minutes: number;
 	} | null>(null);
-	// On a tenant's domain runs use the owner's key: no Scribe minutes to count.
-	const quota =
-		user?.transcription?.keySource === "tenant" ? null : user?.transcription;
+	const quota = user?.transcription;
 	const left = quota
 		? Math.max(0, quota.limitMinutes - quota.usedMinutes)
 		: null;

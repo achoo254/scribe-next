@@ -14,9 +14,5 @@ export const APP_NAME = brand.appName;
 /** Issuer of the primary tenant: the default IdP origin. */
 export const PRIMARY_ISSUER = brand.primaryTenant.issuer;
 
-/**
- * Root domain of the primary tenant (`hoandat.com`): the native shell's only
- * tenant, and the web's until `GET /api/idp` names this host's tenant
- * (lib/tenant-info.ts).
- */
+/** Root domain of the primary tenant (`hoandat.com`), the only one Scribe runs on. */
 export const PRIMARY_TENANT_DOMAIN = brand.primaryTenant.domain;

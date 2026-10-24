@@ -1,14 +1,12 @@
 /* Copied from localman-next apps/web/src/components/layout/ecosystem-app-switcher.tsx.
-   Scribe changes: the tenant comes from `GET /api/idp` (lib/tenant-info.ts),
-   the native shell is detected at run time (`isNativeShell`) and always
-   lists the primary tenant's apps (the app talks to it only). */
+   Scribe changes: no tenant lookup (Scribe runs on the primary tenant
+   only) and the native shell is detected at run time (`isNativeShell`). */
 import "@shared-next/app-switcher/app-switcher.css";
 import { AppSwitcher } from "@shared-next/app-switcher";
 import { useI18n } from "../i18n/i18n-context";
 import { isNativeShell } from "../lib/api";
 import { PRIMARY_TENANT_DOMAIN } from "../lib/brand";
 import { openExternal } from "../lib/external-link";
-import { useTenantInfo } from "../lib/tenant-info";
 
 function openInSystemBrowser(url: string): void {
 	openExternal(url);
@@ -20,18 +18,16 @@ function openInSystemBrowser(url: string): void {
  */
 export function EcosystemAppSwitcher() {
 	const { locale } = useI18n();
-	const tenant = useTenantInfo();
-	const native = isNativeShell();
 	return (
 		<AppSwitcher
 			current="scribe"
-			// The apps of this host's tenant; apps of the primary tenant only
-			// (the switcher's `primaryTenantOnly`) are left out elsewhere.
-			tenantDomain={native ? PRIMARY_TENANT_DOMAIN : tenant.domain}
-			isPrimaryTenant={native || tenant.primary}
+			// Scribe is served on the primary tenant (hoandat.com) only, so the
+			// tenant is always the primary one and every app is listed.
+			tenantDomain={PRIMARY_TENANT_DOMAIN}
+			isPrimaryTenant
 			locale={locale}
 			// The shell's WebView must not load another app: system browser.
-			onOpen={native ? openInSystemBrowser : undefined}
+			onOpen={isNativeShell() ? openInSystemBrowser : undefined}
 			className="app-header-switcher"
 		/>
 	);

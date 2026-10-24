@@ -630,10 +630,16 @@ export async function stubApi(
 						complete: true,
 					});
 				}
-				// The IdP's default tenant name, as the app shows before the reply,
-				// so screenshots do not depend on when it lands.
+				// The production reply: the IdP's default account name, as the app
+				// shows before the reply, so screenshots do not depend on when it lands.
 				case "GET /api/idp":
-					return json(route, 200, { displayName: "Auth Next" });
+					return json(route, 200, {
+						displayName: "Auth Next",
+						domain: "hoandat.com",
+						issuer: "https://auth.hoandat.com",
+						primary: true,
+						scribe: "enabled",
+					});
 				case "GET /api/me":
 					return user
 						? json(route, 200, {
