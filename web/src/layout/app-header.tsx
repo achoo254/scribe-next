@@ -18,6 +18,7 @@ import { isNativeShell } from "../lib/api";
 import { cn } from "../lib/cn";
 import { AccountControls } from "./account-controls";
 import { PATHS } from "./app-paths";
+import { EcosystemAppSwitcher } from "./ecosystem-app-switcher";
 import { useSessionActivity } from "./session-activity";
 
 /** `NavLink` sets `aria-current="page"` on the page shown (and its children). */
@@ -35,7 +36,7 @@ export interface AppHeaderProps {
 
 /**
  * Signed-in top bar: wordmark (home: Ghi âm) and the nav on the left,
- * the account menu on the right. Sticky, so the nav stays in reach.
+ * the switcher to the other apps and the account menu on the right. Sticky, so the nav stays in reach.
  */
 export function AppHeader({ user }: AppHeaderProps) {
 	const t = useT();
@@ -89,7 +90,8 @@ export function AppHeader({ user }: AppHeaderProps) {
 			data-id="topbar"
 			className="sticky top-0 z-30 border-border-subtle border-b bg-bg/82 pt-[env(safe-area-inset-top)] backdrop-blur-md"
 		>
-			<div className="mx-auto flex min-h-(--topbar-h) w-full max-w-page items-center gap-3 px-gutter">
+			{/* Relative below 640px: the app switcher's panel hangs from this row. */}
+			<div className="mx-auto flex min-h-(--topbar-h) w-full max-w-page items-center gap-3 px-gutter max-sm:relative">
 				<Link
 					to={PATHS.record}
 					data-id="topbar-home"
@@ -107,6 +109,7 @@ export function AppHeader({ user }: AppHeaderProps) {
 					{navItems("topbar-nav", "")}
 				</nav>
 				<div className="ml-auto flex items-center gap-2">
+					<EcosystemAppSwitcher />
 					<AccountControls
 						user={user}
 						activity={session.activity}

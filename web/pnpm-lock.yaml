@@ -38,6 +38,9 @@ importers:
       '@radix-ui/react-tooltip':
         specifier: ^1.2.7
         version: 1.4.1(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      '@shared-next/app-switcher':
+        specifier: github:achoo254/shared-next#v0.4.1&path:/packages/app-switcher
+        version: https://codeload.github.com/achoo254/shared-next/tar.gz/a3ba878a9edd6a99e16ba5d8daa54154c92b6dbf#path:/packages/app-switcher(@shared-next/brand@https://codeload.github.com/achoo254/shared-next/tar.gz/2dfb78942308f36f459ef861fbb57489402c3eb5#path:/packages/brand)(react@19.3.1)
       '@shared-next/brand':
         specifier: github:achoo254/shared-next#v0.2.0&path:/packages/brand
         version: https://codeload.github.com/achoo254/shared-next/tar.gz/2dfb78942308f36f459ef861fbb57489402c3eb5#path:/packages/brand
@@ -1118,6 +1121,14 @@ packages:
     resolution: {integrity: sha512-EhX6N3XPMEnVU5cRfNgzPOKcSucsbu3nNNWuoAaEuKIqmddBKHN5b9d4rPe65T1I+FaOT176JKiZNsUBp3rqbA==}
     cpu: [x64]
     os: [win32]
+
+  '@shared-next/app-switcher@https://codeload.github.com/achoo254/shared-next/tar.gz/a3ba878a9edd6a99e16ba5d8daa54154c92b6dbf#path:/packages/app-switcher':
+    resolution: {gitHosted: true, path: /packages/app-switcher, tarball: https://codeload.github.com/achoo254/shared-next/tar.gz/a3ba878a9edd6a99e16ba5d8daa54154c92b6dbf}
+    version: 0.1.0
+    engines: {node: '>=22.12'}
+    peerDependencies:
+      '@shared-next/brand': '>=0.2.0 <1'
+      react: ^19.0.0
 
   '@shared-next/brand@https://codeload.github.com/achoo254/shared-next/tar.gz/2dfb78942308f36f459ef861fbb57489402c3eb5#path:/packages/brand':
     resolution: {gitHosted: true, path: /packages/brand, tarball: https://codeload.github.com/achoo254/shared-next/tar.gz/2dfb78942308f36f459ef861fbb57489402c3eb5}
@@ -3254,6 +3265,11 @@ snapshots:
 
   '@rollup/rollup-win32-x64-msvc@4.64.7':
     optional: true
+
+  '@shared-next/app-switcher@https://codeload.github.com/achoo254/shared-next/tar.gz/a3ba878a9edd6a99e16ba5d8daa54154c92b6dbf#path:/packages/app-switcher(@shared-next/brand@https://codeload.github.com/achoo254/shared-next/tar.gz/2dfb78942308f36f459ef861fbb57489402c3eb5#path:/packages/brand)(react@19.3.1)':
+    dependencies:
+      '@shared-next/brand': https://codeload.github.com/achoo254/shared-next/tar.gz/2dfb78942308f36f459ef861fbb57489402c3eb5#path:/packages/brand
+      react: 19.3.1
 
   '@shared-next/brand@https://codeload.github.com/achoo254/shared-next/tar.gz/2dfb78942308f36f459ef861fbb57489402c3eb5#path:/packages/brand':
     dependencies:

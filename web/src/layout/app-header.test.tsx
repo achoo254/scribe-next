@@ -53,6 +53,18 @@ afterEach(() => {
 });
 
 describe("AppHeader", () => {
+	it("puts the app switcher right before the account menu", () => {
+		renderHeader();
+		const switcher = screen.getByRole("button", { name: "Chuyển ứng dụng" });
+		const account = screen.getByRole("button", {
+			name: "minh.anh@example.com · Tài khoản",
+		});
+		expect(
+			switcher.compareDocumentPosition(account) &
+				Node.DOCUMENT_POSITION_FOLLOWING,
+		).toBeTruthy();
+	});
+
 	it("links the wordmark to Ghi âm", async () => {
 		renderHeader(true, "/split");
 		const home = screen.getByRole("link", { name: "Scribe, về trang Ghi âm" });

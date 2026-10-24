@@ -276,6 +276,46 @@
 	}
 }
 
+/* App switcher of the *-next apps (@shared-next/app-switcher, top bar):
+   its variables mapped to the tokens, sized like the ghost icon buttons
+   (size-9, size-11 for touch on small screens). */
+.sn-app-switcher {
+	--app-switcher-button-size: calc(var(--space-1) * 9);
+	--app-switcher-button-radius: var(--radius-sm);
+	--app-switcher-button-text: var(--c-text-muted);
+	--app-switcher-hover: color-mix(in srgb, var(--c-text) 6%, transparent);
+	--app-switcher-focus-ring: var(--c-primary);
+	--app-switcher-surface: var(--c-surface);
+	--app-switcher-text: var(--c-text);
+	--app-switcher-muted: var(--c-text-muted);
+	--app-switcher-border: var(--c-border-subtle);
+	--app-switcher-shadow: var(--shadow-md);
+	--app-switcher-radius: var(--radius-md);
+	--app-switcher-item-radius: var(--radius-sm);
+	--app-switcher-font: var(--font-sans);
+	--app-switcher-icon: var(--c-primary);
+	--app-switcher-icon-stroke: var(--icon-stroke);
+}
+
+@media (pointer: coarse) and (width < 40rem) {
+	.sn-app-switcher {
+		--app-switcher-button-size: calc(var(--space-1) * 11);
+	}
+}
+
+/* Under 640px the account menu sits right of the button, so a panel aligned
+   to the button would run off the left edge: hang it from the top bar's row
+   (relative there) at the screen's right edge instead. */
+@media (width < 40rem) {
+	.sn-app-switcher.app-header-switcher {
+		position: static;
+	}
+
+	.sn-app-switcher.app-header-switcher[data-placement] .sn-app-switcher__panel {
+		right: var(--space-2);
+	}
+}
+
 /* Reduced motion: tokens.css already collapses --dur-* to 1ms; this also
    catches animations/transitions that do not read the tokens. */
 @media (prefers-reduced-motion: reduce) {
