@@ -119,6 +119,16 @@ test("links chat.hoandat.com from the account menu, then sends the minutes", asy
 	expect(
 		await seriousA11yViolations(page, '[data-id="chat-link-dialog"]'),
 	).toEqual([]);
+	// The popup reports only once its first navigation commits: answer it here
+	// instead of the real chat.hoandat.com, which the CI runner may not reach
+	// within the test timeout.
+	await page.context().route("https://chat.hoandat.com/**", (route) =>
+		route.fulfill({
+			status: 200,
+			contentType: "text/html",
+			body: "<p>chat</p>",
+		}),
+	);
 	const popup = page.waitForEvent("popup");
 	await dialog.getByTestId("chat-link-open").click();
 	expect((await popup).url()).toBe(
