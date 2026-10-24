@@ -32,6 +32,9 @@ aes-gcm = "0.10"
 zeroize = "1"
 # Secret client `scribe-web` của tenant sổ: HMAC-SHA256 của id tenant dưới khoá app (cùng cách IdP suy ra), thuần Rust.
 hmac = "0.12"
+# Mở key AI mà chủ domain niêm phong cho Scribe ở IdP: RSA-OAEP SHA-256 bọc khoá AES-256-GCM (thuần Rust, musl sạch).
+# RUSTSEC-2023-0071 (Marvin): chấp nhận, Scribe không phải oracle giải mã — xem docs/decisions/0001-tenants-by-domain.md §6.
+rsa = "0.9"
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
 rand = "0.8"
 time = "0.3"

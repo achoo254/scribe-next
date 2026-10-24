@@ -42,6 +42,11 @@ impl InternalApi {
     pub fn get(&self, path: &str, timeout: Duration) -> reqwest::RequestBuilder {
         self.http.get(format!("{}{path}", self.url)).basic_auth(ROLE, Some(&self.secret)).timeout(timeout)
     }
+
+    /// `POST {url}{path}` có Basic `scribe` và hạn chờ `timeout`.
+    pub fn post(&self, path: &str, timeout: Duration) -> reqwest::RequestBuilder {
+        self.http.post(format!("{}{path}", self.url)).basic_auth(ROLE, Some(&self.secret)).timeout(timeout)
+    }
 }
 
 /// Mô tả lỗi gửi request không chứa URL hay header (bí mật nằm ở header).

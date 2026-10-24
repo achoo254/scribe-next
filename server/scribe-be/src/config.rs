@@ -378,6 +378,10 @@ pub struct Config {
     /// auth-next): secret client của mỗi tenant sổ = HMAC-SHA256 của id tenant dưới khoá này. Thiếu tệp này, loopback hay
     /// API nội bộ ⟹ không đăng nhập được ở tenant sổ (chế độ tenant tắt), tenant chính vẫn chạy.
     pub scribe_web_client_key_path: Option<String>,
+    /// Thư mục khoá niêm phong key AI của tenant (`TENANT_SEALING_KEYS_DIR`, 700): mỗi tệp `<recipient>.pem` (600) là
+    /// private key RSA ≥ 3072 bit PKCS#8, public key tương ứng nằm ở IdP (`SCRIBE_SEALING_PUBLIC_KEY_PATH`). Nhiều khoá
+    /// khi đang xoay; chọn theo `recipient` của bản niêm phong. Thiếu ⟹ không tenant sổ nào chạy (`tenant_keys`).
+    pub tenant_sealing_keys_dir: Option<String>,
     /// `CHAT_LINK_POLL=1`: chạy task long-poll của bot để liên kết chat. Mặc định tắt: dev và prod dùng
     /// chung token bot, backend dev bật poll sẽ lấy mất update của prod.
     pub chat_link_poll: bool,
@@ -476,6 +480,7 @@ impl Config {
                 .filter(|u| !u.is_empty())
                 .map(str::to_string),
             scribe_web_client_key_path: option_env!("SCRIBE_WEB_CLIENT_KEY_PATH").filter(|p| !p.is_empty()).map(str::to_string),
+            tenant_sealing_keys_dir: option_env!("TENANT_SEALING_KEYS_DIR").filter(|p| !p.is_empty()).map(str::to_string),
             chat_link_poll: matches!(option_env!("CHAT_LINK_POLL"), Some("1" | "true")),
             chat_bot_username: option_env!("CHAT_BOT_USERNAME")
                 .map(|u| u.trim().trim_start_matches('@'))
@@ -593,6 +598,7 @@ impl Config {
             idp_display_name: crate::idp_brand::DEFAULT_DISPLAY_NAME.into(),
             idp_loopback_url: None,
             scribe_web_client_key_path: None,
+            tenant_sealing_keys_dir: None,
             chat_link_poll: false,
             chat_bot_username: None,
             session_key_path: String::new(),

@@ -572,7 +572,19 @@ pub async fn me(
             Value::Null
         }
     };
-    let transcription = if can_transcribe {
+    let transcription = if can_transcribe && !tenant.primary {
+        // Tenant sổ: chạy bằng key của chủ domain (hay key riêng), không phút, quỹ hay giới hạn ngày.
+        let tenant_keys = crate::tenant_keys::me_summary(&state, &tenant).await;
+        let vendor = own_keys["transcribe"].as_str().or_else(|| tenant_keys["transcribe"].as_str());
+        json!({
+            "keySource": "tenant",
+            "plan": plan.name(),
+            "planUntil": plan_until,
+            "wholeSession": vendor == Some(crate::config::Vendor::ElevenLabs.code()),
+            // Nhà cung cấp key của chủ domain cho chép lời và cho model chữ (`null`: chưa có key cho việc đó).
+            "tenantKeys": tenant_keys,
+        })
+    } else if can_transcribe {
         let now = chrono::Utc::now();
         let month = usage::month_key(now);
         let used = usage::month_usage(&state.db, &user.0, &month).await?;

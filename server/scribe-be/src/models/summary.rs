@@ -183,8 +183,11 @@ pub struct Run<'a> {
     pub month: &'a str,
     pub day: &'a str,
     pub reserved_s: i64,
-    /// Lượt chạy bằng key riêng của người dùng (mã nhà cung cấp): không tính vào sổ nào, lệnh đối soát bỏ qua.
+    /// Lượt chạy bằng key riêng của người dùng hay key của chủ domain (mã nhà cung cấp): không tính vào sổ nào, lệnh đối
+    /// soát bỏ qua.
     pub byok: Option<&'a str>,
+    /// `tenant` khi `byok` là key của chủ domain.
+    pub key_source: Option<&'a str>,
 }
 
 /// Kết quả quyết toán của một lượt.
@@ -199,7 +202,7 @@ pub struct Closing {
 /// Mở lượt trước khi gọi model. Lỗi thì không gọi (lệnh đối soát phải thấy mọi lượt đang chạy).
 pub async fn open_run(db: &Database, feature: Feature, run: &Run<'_>) -> Result<ObjectId, AppError> {
     let id = ObjectId::new();
-    let d = doc! {
+    let mut d = doc! {
         "_id": id,
         "userId": run.user_id,
         "key": run.key,
@@ -211,6 +214,9 @@ pub async fn open_run(db: &Database, feature: Feature, run: &Run<'_>) -> Result<
         "byok": run.byok,
         "startedAt": DateTime::now(),
     };
+    if let Some(source) = run.key_source {
+        d.insert("keySource", source);
+    }
     db.collection::<Document>(feature.runs_coll())
         .insert_one(d)
         .await
@@ -310,7 +316,7 @@ mod tests {
 
         // Lượt bằng key riêng không tính vào trần tổng của lệnh đối soát, cũng không chặn `--apply` khi còn mở.
         let month = format!("test-{}", uuid::Uuid::new_v4().simple());
-        let server = Run { user_id: &user, key: None, model: "m", month: &month, day, reserved_s: 40, byok: None };
+        let server = Run { user_id: &user, key: None, model: "m", month: &month, day, reserved_s: 40, byok: None, key_source: None };
         let own = Run { byok: Some("anthropic"), reserved_s: 0, ..server };
         let server_run = open_run(&db, Feature::Ask, &server).await.expect("mở");
         let own_run = open_run(&db, Feature::Ask, &own).await.expect("mở");

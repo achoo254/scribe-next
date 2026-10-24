@@ -10,9 +10,9 @@
 //! [`DEFER_S`] giây. Tiền: giây của từng đoạn cộng vào doc của đoạn đó TRƯỚC khi
 //! gửi; ElevenLabs trả `audio_duration_secs` thì chỉnh lại theo đúng số đó ([`allocate_billed`]).
 //!
-//! Lượt bằng key ElevenLabs riêng của người dùng (`byok`): key đọc và giải mã lúc chạy, không giữ phút, không đụng sổ
-//! giờ ElevenLabs của Scribe; key lỗi thì chỉ key đó bị đánh dấu (`user_keys::report`), không ngắt chép lời của server
-//! hay đặt dấu hết quota tháng.
+//! Lượt bằng key ElevenLabs riêng của người dùng hay của chủ domain (`byok`): key mở lúc chạy, không giữ phút, không
+//! đụng sổ giờ ElevenLabs của Scribe; key lỗi thì chỉ key đó bị đánh dấu (`ByokKey::explain`), không ngắt chép lời của
+//! server hay đặt dấu hết quota tháng.
 
 use super::chunking::{Sentence, SILENT_PEAK_DB};
 use super::{elevenlabs, is_key_broken, record, report_key_broken, reserve_shortfall, words, Outcome, CANCELLED};
@@ -184,8 +184,8 @@ async fn add_late_segments(
     session_ids: &[ObjectId],
 ) -> Result<usize, crate::error::AppError> {
     let charge = first.charge();
-    let billing = match (first.own_provider(), &charge) {
-        (Some(provider), _) => transcript::Billing::Own(provider),
+    let billing = match (first.byok_billing(), &charge) {
+        (Some(billing), _) => billing,
         (None, Some(charge)) => transcript::Billing::Server(charge),
         (None, None) => return Ok(0),
     };
@@ -225,21 +225,18 @@ async fn transcribe_unit(state: &AppState, members: &[Member]) -> Outcomes {
         out.error = Some("tài khoản đã bị khoá".into());
         return out;
     }
-    let own = match first.t.own_provider() {
-        Some(provider) => match crate::user_keys::open(state, &first.t.user_id, provider).await {
-            Ok(key) => Some(key),
-            Err(message) => {
-                out.error = Some(message);
-                return out;
-            }
-        },
-        None => None,
+    let own = match super::open_byok(state, &first.t).await {
+        Ok(key) => key,
+        Err(message) => {
+            out.error = Some(message);
+            return out;
+        }
     };
-    let api_key = match (&own, state.transcriber.transcribe_key()) {
+    let api_key = match (&own, super::server_key_for(state, &first.t)) {
         (Some(key), _) => key.value(),
-        (None, Some(key)) => key.0.as_str(),
-        (None, None) => {
-            out.error = Some(PAUSED.into());
+        (None, Ok(key)) => key.0.as_str(),
+        (None, Err(e)) => {
+            out.error = Some(e.into());
             return out;
         }
     };
@@ -270,10 +267,11 @@ async fn transcribe_unit(state: &AppState, members: &[Member]) -> Outcomes {
         usage::release_provider_hold(&state.db, &run_id).await;
         out.error.get_or_insert_with(|| TOO_LONG.to_string());
     }
-    // Key riêng bị ElevenLabs từ chối hoặc hết credit: đánh dấu key đó, người dùng thấy câu chỉ cách sửa.
-    if let (Some(key), Some(e)) = (&own, &out.error) {
-        if let Some(problem) = crate::user_keys::problem_of(e) {
-            out.error = Some(crate::user_keys::report(state, key, problem).await);
+    // Key riêng hay key chủ domain bị ElevenLabs từ chối hoặc hết credit: đánh dấu key đó, người dùng thấy câu chỉ cách
+    // sửa.
+    if let Some(key) = &own {
+        if let Some(e) = out.error.take() {
+            out.error = Some(key.explain(state, e).await);
         }
     }
     out

@@ -8,6 +8,9 @@
 //!
 //! Hàng đợi riêng (collection `transcripts`, mỗi file một doc), chạy tuần tự từng lượt — không chặn hàng đợi Cắt
 //! file. Backend khởi động lại thì lượt dở chạy lại.
+//!
+//! Key của mỗi lượt chọn ở `tenant_keys::choose`: key riêng của người dùng → key của chủ domain (tenant sổ) → key server
+//! (chỉ tenant chính). Lượt bằng key riêng hay key chủ domain không giữ phút; worker mở key lúc chạy ([`ByokKey`]).
 
 pub mod bookmarks;
 pub mod chunking;
@@ -31,6 +34,7 @@ use crate::notify;
 use crate::models::translation::{self, Lang, TranslationDoc};
 use crate::models::{file, plan, transcript, transcript_doc, user};
 use crate::state::AppState;
+use crate::tenant_keys::{self, Choice};
 use axum::extract::{Query, State};
 use axum::http::header;
 use axum::response::{IntoResponse, Response};
@@ -312,14 +316,12 @@ pub async fn create(
     if !state.config.transcribe_allowed(&tenant, &profile.email) {
         return Err(AppError::Forbidden("tài khoản này chưa được dùng chép lời".into()));
     }
-    // Key riêng của người dùng cho chép lời (nếu có): không giữ phút, không giới hạn ngày hay chờ tài khoản mới, không
-    // đụng sổ giờ ElevenLabs; chạy được cả khi key server đang tạm ngưng.
-    let own = crate::user_keys::active(&state, &user.0).await?.transcribe;
-    // Key server (phút, quỹ, trần USD) chỉ dành cho tenant chính.
-    if own.is_none() && !tenant.primary {
-        return Err(crate::tenant::key_missing());
-    }
-    if own.is_none() && !state.transcriber.ready() {
+    // Key riêng của người dùng, rồi key của chủ domain (tenant sổ): không giữ phút, không giới hạn ngày hay chờ tài khoản
+    // mới, không đụng sổ giờ ElevenLabs; chạy được cả khi key server đang tạm ngưng. Key server (phút, quỹ, trần USD)
+    // chỉ dành cho tenant chính.
+    let choice = tenant_keys::choose(&state, &tenant, &user.0, crate::user_keys::Use::Transcribe).await?;
+    let byok = choice.vendor();
+    if choice == Choice::Server && !state.transcriber.ready() {
         return Err(AppError::Unavailable(PAUSED.into()));
     }
     if req.file_ids.is_empty() || req.file_ids.len() > MAX_FILES {
@@ -335,7 +337,7 @@ pub async fn create(
         return Err(AppError::BadRequest("chỉ chép lời được bản ghi hoặc tệp tải lên ở trang Ghi âm".into()));
     }
     // Cả phiên trong một request chỉ khi chép bằng ElevenLabs (có người nói); OpenAI và Gemini chép từng tệp.
-    let whole_sessions = own.map_or(state.transcriber.provider(), provider_of) == Provider::ElevenLabs;
+    let whole_sessions = byok.map_or(state.transcriber.provider(), provider_of) == Provider::ElevenLabs;
     let units = queue_units(&state, &user.0, owned, whole_sessions).await?;
     let files: Vec<ObjectId> = units.iter().flat_map(|u| u.files.iter().copied()).collect();
     let mut needs = HashMap::new();
@@ -350,13 +352,13 @@ pub async fn create(
 
     let now = chrono::Utc::now();
     let plan = plan::effective(profile.plan.as_deref(), profile.plan_until, mongodb::bson::DateTime::now());
-    let charge = match own {
-        Some(_) => None,
-        None => Some(reserve_for_create(&state, &user.0, &profile, plan, total, now).await?),
+    let charge = match choice {
+        Choice::Server => Some(reserve_for_create(&state, &user.0, &profile, plan, total, now).await?),
+        Choice::Own(_) | Choice::Tenant(_) => None,
     };
 
     // Từ đây không có `?`: file nào không vào được hàng thì trả lại phần đã giữ cho file đó.
-    let model = match own {
+    let model = match byok {
         Some(v) => own_model(v),
         None => state.transcriber.provider().model(),
     };
@@ -367,10 +369,11 @@ pub async fn create(
         let run_id = uuid::Uuid::new_v4().to_string();
         for &oid in &unit.files {
             let need = needs.get(&oid).copied().unwrap_or(0);
-            let billing = match (&charge, own) {
+            let billing = match (&charge, choice) {
                 (Some(c), _) => transcript::Billing::Server(c),
-                (None, Some(v)) => transcript::Billing::Own(v),
-                (None, None) => continue,
+                (None, Choice::Own(v)) => transcript::Billing::Own(v),
+                (None, Choice::Tenant(v)) => transcript::Billing::Tenant(v),
+                (None, Choice::Server) => continue,
             };
             let ok = match transcript::enqueue_held(&state.db, oid, &tenant.id, &user.0, &run_id, model, billing, need).await {
                 Ok(ok) => ok,
@@ -398,8 +401,11 @@ pub async fn create(
     }
     state.transcriber.wake.notify_one();
     let mut details = doc! { "files": queued as i64, "seconds": total, "plan": plan.name() };
-    if let Some(v) = own {
+    if let Some(v) = byok {
         details.insert("byok", v.code());
+    }
+    if let Choice::Tenant(_) = choice {
+        details.insert("keySource", transcript::TENANT_KEY_SOURCE);
     }
     audit::record(&state, Some(&user.0), "transcript.create", details);
     if rerun > 0 {
@@ -409,7 +415,8 @@ pub async fn create(
     Ok(Json(json!({ "queued": queued, "files": queued, "skipped": requested.len().saturating_sub(queued) })))
 }
 
-/// Nhà cung cấp chép lời của key riêng (Claude không chép lời; `Use::Transcribe` không bao giờ chọn nó).
+/// Nhà cung cấp chép lời của key riêng hay key chủ domain (Claude không chép lời; `Use::Transcribe` không bao giờ chọn
+/// nó).
 fn provider_of(own: Vendor) -> Provider {
     match own {
         Vendor::ElevenLabs => Provider::ElevenLabs,
@@ -417,7 +424,7 @@ fn provider_of(own: Vendor) -> Provider {
     }
 }
 
-/// Model ghi vào lượt chép bằng key riêng.
+/// Model ghi vào lượt chép bằng key riêng hay key chủ domain.
 fn own_model(own: Vendor) -> &'static str {
     match own {
         Vendor::ElevenLabs => Provider::ElevenLabs.model(),
@@ -833,8 +840,64 @@ pub(crate) fn report_key_broken(state: &AppState, e: &str) {
     }
 }
 
+/// Key đã mở của một lượt không chạy bằng key server: key riêng của người dùng hoặc key của chủ domain. Không `Debug`.
+pub(crate) enum ByokKey {
+    Own(crate::user_keys::UserKey),
+    Tenant(tenant_keys::TenantKey),
+}
+
+impl ByokKey {
+    pub(crate) fn value(&self) -> &str {
+        match self {
+            ByokKey::Own(k) => k.value(),
+            ByokKey::Tenant(k) => k.value(),
+        }
+    }
+
+    pub(crate) fn provider(&self) -> Vendor {
+        match self {
+            ByokKey::Own(k) => k.provider,
+            ByokKey::Tenant(k) => k.vendor,
+        }
+    }
+
+    /// Lỗi `e` của nhà cung cấp là lỗi của key: đánh dấu đúng key đó (key riêng ở Mongo, key chủ domain ở IdP) và trả câu
+    /// cho người dùng. Lỗi khác trả nguyên. Không bao giờ đụng cờ tạm ngưng hay báo động của key server.
+    pub(crate) async fn explain(&self, state: &AppState, e: String) -> String {
+        let Some(problem) = crate::user_keys::problem_of(&e) else { return e };
+        match self {
+            ByokKey::Own(k) => crate::user_keys::report(state, k, problem).await,
+            ByokKey::Tenant(k) => tenant_keys::report(state, k, problem).await,
+        }
+    }
+}
+
+/// Mở key của lượt `t` khi lượt không chạy bằng key server (`Ok(None)`): key riêng của chủ file, hay key của chủ domain
+/// theo `tenantId` của lượt. `Err` là câu cho người dùng.
+pub(crate) async fn open_byok(state: &AppState, t: &transcript::TranscriptDoc) -> Result<Option<ByokKey>, String> {
+    let Some(provider) = t.byok_provider() else { return Ok(None) };
+    if t.on_tenant_key() {
+        tenant_keys::open(state, &t.tenant_id, provider).await.map(|k| Some(ByokKey::Tenant(k)))
+    } else {
+        crate::user_keys::open(state, &t.user_id, provider).await.map(|k| Some(ByokKey::Own(k)))
+    }
+}
+
+/// Lượt của tenant sổ không có `byok` (không bao giờ xếp như vậy): dừng thay vì dùng key server.
+const NO_TENANT_KEY: &str = "Chủ domain chưa thêm key cho việc này.";
+
+/// Key chép lời của server cho lượt `t`, chỉ khi lượt thuộc tenant chính: lượt của tenant sổ không bao giờ chạy bằng
+/// key server, kể cả khi doc thiếu `byok`. `Err` là câu cho người dùng.
+fn server_key_for<'a>(state: &'a AppState, t: &transcript::TranscriptDoc) -> Result<&'a ApiKey, &'static str> {
+    if t.tenant_id != crate::tenant::PRIMARY_ID {
+        tracing::error!(file = %t.file_id(), tenant = %t.tenant_id, "lượt của tenant sổ không có key của domain — không dùng key server");
+        return Err(NO_TENANT_KEY);
+    }
+    state.transcriber.transcribe_key().ok_or(PAUSED)
+}
+
 async fn run(state: &AppState, t: &transcript::TranscriptDoc) {
-    match t.own_provider() {
+    match t.byok_provider() {
         Some(Vendor::ElevenLabs) => whole::run(state, t).await,
         Some(_) => run_chunked(state, t).await,
         None => match state.transcriber.provider() {
@@ -849,37 +912,32 @@ async fn run(state: &AppState, t: &transcript::TranscriptDoc) {
 enum Engine<'a> {
     /// Key server: `gpt-4o-mini-transcribe`, thử lại với temperature khác khi chữ có dấu hiệu lặp.
     Server(&'a str),
-    /// Key riêng OpenAI: `gpt-transcribe`.
+    /// Key riêng hay key chủ domain, OpenAI: `gpt-transcribe`.
     OwnOpenAi(&'a str),
-    /// Key riêng Gemini: câu kèm mốc ước lượng.
+    /// Key riêng hay key chủ domain, Gemini: câu kèm mốc ước lượng.
     OwnGemini(&'a str),
 }
 
-/// Lượt chép theo mảnh (OpenAI hoặc Gemini). Key riêng đọc và giải mã lúc chạy; lỗi key riêng chỉ đánh dấu key đó.
+/// Lượt chép theo mảnh (OpenAI hoặc Gemini). Key riêng hay key chủ domain mở lúc chạy; lỗi của key đó chỉ đánh dấu key
+/// đó.
 async fn run_chunked(state: &AppState, t: &transcript::TranscriptDoc) {
     let started = Instant::now();
-    let own = match t.own_provider() {
-        Some(provider) => match crate::user_keys::open(state, &t.user_id, provider).await {
-            Ok(key) => Some(key),
-            Err(message) => {
-                record(&state.db, t.id, &t.run_id, Outcome::Failed(&message)).await;
-                crate::search::index::schedule_file(&state.db, &t.user_id, t.id);
-                return;
-            }
-        },
-        None => None,
+    let own = match open_byok(state, t).await {
+        Ok(key) => key,
+        Err(message) => {
+            record(&state.db, t.id, &t.run_id, Outcome::Failed(&message)).await;
+            crate::search::index::schedule_file(&state.db, &t.user_id, t.id);
+            return;
+        }
     };
-    let result = match (&own, state.transcriber.transcribe_key()) {
-        (Some(key), _) if key.provider == Vendor::Gemini => transcribe_file(state, t, Engine::OwnGemini(key.value())).await,
+    let result = match (&own, server_key_for(state, t)) {
+        (Some(key), _) if key.provider() == Vendor::Gemini => transcribe_file(state, t, Engine::OwnGemini(key.value())).await,
         (Some(key), _) => transcribe_file(state, t, Engine::OwnOpenAi(key.value())).await,
-        (None, Some(key)) => transcribe_file(state, t, Engine::Server(&key.0)).await,
-        (None, None) => Err(PAUSED.to_string()),
+        (None, Ok(key)) => transcribe_file(state, t, Engine::Server(&key.0)).await,
+        (None, Err(e)) => Err(e.to_string()),
     };
     let result = match (&own, result) {
-        (Some(key), Err(e)) => match crate::user_keys::problem_of(&e) {
-            Some(problem) => Err(crate::user_keys::report(state, key, problem).await),
-            None => Err(e),
-        },
+        (Some(key), Err(e)) => Err(key.explain(state, e).await),
         (_, result) => result,
     };
     drop(own);
@@ -1107,6 +1165,29 @@ mod tests {
         );
         // Đoạn khác chưa dịch: giữ chữ gốc.
         assert_eq!(translate_sentences(vec![s(0.0, "Một.")], &doc, "other")[0].text, "Một.");
+    }
+
+    #[tokio::test]
+    async fn a_tenant_run_never_reaches_the_server_key() {
+        let key_file = std::env::temp_dir().join(format!("scribe-el-{}", uuid::Uuid::new_v4()));
+        std::fs::write(&key_file, "sk_test_server_elevenlabs_key_0001").expect("ghi");
+        let mut config = Config::for_tests();
+        config.elevenlabs_key_path = Some(key_file.to_string_lossy().into_owned());
+        let db = crate::db::connect("mongodb://127.0.0.1:1", "unused").await.expect("client");
+        let dir = crate::tenant::directory::tests::directory(None, crate::tenant::Readiness::default());
+        let oidc = crate::oidc_registry::OidcRegistry::new(crate::oidc::Oidc::new(&config.oidc_issuer), "scribe-web", "s".into(), None);
+        let state = AppState::for_tests_with(config, db, dir, oidc);
+        assert!(state.transcriber.ready(), "state có key server");
+        let run = |tenant: &str| {
+            mongodb::bson::from_document::<transcript::TranscriptDoc>(doc! {
+                "_id": ObjectId::new(), "userId": "u", "tenantId": tenant, "status": "running", "progress": 0.0,
+                "runId": "r", "model": "scribe_v2", "updatedAt": mongodb::bson::DateTime::now(), "month": "2026-10", "open": true,
+            })
+            .expect("doc")
+        };
+        assert!(server_key_for(&state, &run(crate::tenant::PRIMARY_ID)).is_ok());
+        assert_eq!(server_key_for(&state, &run("ten_a")).err(), Some(NO_TENANT_KEY));
+        let _ = std::fs::remove_file(&key_file);
     }
 
     #[test]

@@ -31,6 +31,9 @@ pub struct AppState {
     pub user_keys: Option<Arc<crate::user_keys::crypto::Secret>>,
     /// Host → tenant (tenant chính tĩnh, tenant sổ tra IdP có cache) và tên tài khoản đăng nhập của tenant chính.
     pub tenants: Arc<crate::tenant::directory::TenantDirectory>,
+    /// Key AI do chủ domain niêm phong cho Scribe (vòng khoá niêm phong + bản niêm phong theo tenant); `None` = không
+    /// tenant sổ nào chạy.
+    pub tenant_keys: Option<Arc<crate::tenant_keys::TenantKeys>>,
 }
 
 #[cfg(test)]
@@ -63,6 +66,7 @@ impl AppState {
             chat_bot: Arc::default(),
             user_keys: None,
             tenants: Arc::new(tenants),
+            tenant_keys: None,
         }
     }
 }

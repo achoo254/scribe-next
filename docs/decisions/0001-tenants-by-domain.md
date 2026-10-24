@@ -56,9 +56,14 @@ Discovery và JWKS của tenant sổ đọc qua API nội bộ (không tin DNS c
 
 ### 6. Key AI của tenant
 
-Thứ tự key cho mỗi việc: key riêng của user → key của tenant (chủ domain nhập ở `/admin`, niêm phong cho Scribe) → key server, chỉ ở tenant chính. Lượt bằng key tenant không trừ phút, quỹ hay trần USD; lỗi key tenant báo về IdP để `/admin` hiện cho chủ domain, không bao giờ chạm cờ tạm ngưng hay báo động của key server.
+Thứ tự key cho mỗi việc: key riêng của user → key của tenant (chủ domain nhập ở `/admin`, niêm phong cho Scribe) → key server, chỉ ở tenant chính. Một hàm chọn (`tenant_keys::choose`) cho chép lời và model chữ (biên bản, hỏi đáp, dịch); tenant chính không bao giờ đọc key tenant, tenant sổ không bao giờ ra key server (test ma trận). Lượt bằng key tenant ghi như key riêng (`byok`) kèm `keySource: "tenant"`: không trừ phút, quỹ, lượt ngày hay trần USD, không vào sổ phút key riêng của user; hạn mức dung lượng gói free vẫn áp. Worker mở key theo `tenantId` của lượt.
 
-Scribe mở bản niêm phong bằng crate `rsa` (thuần Rust, giữ binary musl tĩnh). Crate có cảnh báo RUSTSEC-2023-0071 (Marvin): giải mã RSA không hằng thời gian, đo thời gian rất nhiều lượt giải mã bản mã do kẻ tấn công chọn có thể lộ bản rõ. Chấp nhận vì Scribe không phải oracle giải mã: chỉ mở blob do IdP tạo, nhận qua loopback có Basic; lỗi giải mã không trả ra mạng và không phân biệt loại lỗi.
+- **Vòng khoá niêm phong:** `TENANT_SEALING_KEYS_DIR` (700), mỗi tệp `<recipient>.pem` (600) là private key RSA ≥ 3072 bit PKCS#8; `recipient` = 16 hex đầu SHA-256 của SPKI DER. Tệp lệch vân tay, quyền rộng hay khoá nhỏ bị bỏ (log lỗi); không còn khoá nào ⟹ tắt (`Readiness::sealed_keys`). Nhiều khoá cùng lúc khi xoay, chọn theo `recipient` của bản niêm phong.
+- **Mở:** RSA-OAEP SHA-256 (MGF1 SHA-256) mở khoá AES, AES-256-GCM với AAD `<tenantId>\nscribe-<vendor>`; vector chéo ngôn ngữ của auth-next nằm ở `server/scribe-be/tests/fixtures/scribe-sealed-vector.json`, test mở đúng và từ chối sai AAD, sai `recipient`, một byte bị sửa. Bản rõ trong `Zeroizing`, không kiểu nào có `Debug` in nội dung.
+- **Cache:** bản niêm phong theo tenant 60 giây, một lần hỏi IdP mỗi tenant cùng lúc; IdP lỗi ⟹ dùng bản cũ tối đa 10 phút (hỏi lại sau 10 giây), quá hạn ⟹ 503 "chưa đọc được key của domain". Không giữ bản rõ.
+- **Key lỗi:** `invalid | quota | unreadable` ⟹ đánh dấu tại chỗ theo `(tenant, nhà cung cấp, tag)` (lượt sau không dùng lại bản đó, bản owner nhập lại có tag mới), báo IdP kèm `recipient` và `tag`, audit `tenant_key.failed`. Không đổi cờ tạm ngưng của key server, không báo bot, không chuyển sang key server.
+
+Scribe mở bản niêm phong bằng crate `rsa` 0.9 (thuần Rust, giữ binary musl tĩnh). Crate có cảnh báo RUSTSEC-2023-0071 (Marvin): giải mã RSA không hằng thời gian, đo thời gian rất nhiều lượt giải mã bản mã do kẻ tấn công chọn có thể lộ bản rõ. Chấp nhận vì Scribe không phải oracle giải mã: chỉ mở blob do IdP tạo, nhận qua loopback có Basic; lỗi giải mã không trả ra mạng và không phân biệt loại lỗi.
 
 ### 7. Không chọn
 

@@ -622,6 +622,7 @@ mod tests {
             settled: true,
             attempts: 0,
             byok: None,
+            key_source: None,
         }
     }
 

@@ -27,6 +27,7 @@ mod session;
 mod state;
 mod summary;
 mod tenant;
+mod tenant_keys;
 mod transcribe;
 mod translate;
 mod upload;
@@ -200,8 +201,14 @@ async fn main() {
         oidc_web_secret,
         tenant_access,
     );
+    // Key AI của tenant sổ: vòng khoá niêm phong + API nội bộ. Thiếu hay hỏng ⟹ không tenant sổ nào chạy (không bao giờ
+    // rơi vào key server).
+    let tenant_keys = tenant_keys::TenantKeys::load(&config, internal.clone()).unwrap_or_else(|e| {
+        tracing::error!("key AI của tenant tắt: {e}");
+        None
+    });
     // Điều kiện phía Scribe để tenant sổ được bật; chưa đủ thì mọi tenant sổ hiện trang "chưa bật".
-    let readiness = tenant::Readiness { oidc: oidc.tenant_mode(), ..tenant::Readiness::default() };
+    let readiness = tenant::Readiness { oidc: oidc.tenant_mode(), sealed_keys: tenant_keys.is_some() };
     let tenants = match tenant::directory::TenantDirectory::new(&config, Some(db.clone()), internal, readiness) {
         Ok(directory) => Arc::new(directory),
         Err(e) => {
@@ -222,6 +229,7 @@ async fn main() {
         chat_bot: Arc::default(),
         user_keys: user_keys_secret,
         tenants,
+        tenant_keys: tenant_keys.map(Arc::new),
     };
 
     // Hồi phục job kẹt "running" sau crash/restart (red-team) + khởi worker queue nền.

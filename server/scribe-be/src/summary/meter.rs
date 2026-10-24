@@ -13,7 +13,7 @@
 //! [`reserve`] lẫn [`settle`] bên trong task riêng (`tokio::spawn`): client ngắt kết nối không được để
 //! phần giữ chỗ treo.
 //!
-//! Lượt chạy bằng key riêng của người dùng ([`reserve_own`]) không qua bước 1–3 và không quyết toán sổ nào: chỉ mở và
+//! Lượt chạy bằng key riêng của người dùng hay key của chủ domain ([`reserve_own`]) không qua bước 1–3 và không quyết toán sổ nào: chỉ mở và
 //! đóng lượt trong nhật ký (đánh dấu `byok`) để người dùng và quản trị biết token đã dùng. Lệnh đối soát bỏ qua các lượt
 //! này.
 
@@ -213,7 +213,7 @@ pub(crate) async fn reserve(
         }
     }
     let model = state.config.summary_model.as_str();
-    let opened = ledger::Run { user_id, key, model, month: &month, day: &day, reserved_s: estimate, byok: None };
+    let opened = ledger::Run { user_id, key, model, month: &month, day: &day, reserved_s: estimate, byok: None, key_source: None };
     match ledger::open_run(db, feature, &opened).await {
         Ok(run_id) => Ok(Reservation { feature, byok: None, user_id: user_id.to_string(), day, month, estimate, run_id }),
         Err(e) => {
@@ -230,14 +230,31 @@ pub(crate) async fn reserve_own(
     feature: Feature,
     user_id: &str,
     key: Option<&str>,
-    vendor: Vendor,
+    byok: Byok,
     model: &str,
 ) -> Result<Reservation, AppError> {
     let now = chrono::Utc::now();
     let (day, month) = (usage::day_key(now), usage::month_key(now));
-    let opened = ledger::Run { user_id, key, model, month: &month, day: &day, reserved_s: 0, byok: Some(vendor.code()) };
+    let opened = ledger::Run {
+        user_id,
+        key,
+        model,
+        month: &month,
+        day: &day,
+        reserved_s: 0,
+        byok: Some(byok.vendor.code()),
+        key_source: byok.key_source,
+    };
     let run_id = ledger::open_run(&state.db, feature, &opened).await?;
-    Ok(Reservation { feature, byok: Some(vendor), user_id: user_id.to_string(), day, month, estimate: 0, run_id })
+    Ok(Reservation { feature, byok: Some(byok.vendor), user_id: user_id.to_string(), day, month, estimate: 0, run_id })
+}
+
+/// Key không phải của server cho một lượt: nhà cung cấp và nguồn (`Some("tenant")` = key của chủ domain, `None` = key
+/// riêng của người dùng).
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Byok {
+    pub vendor: Vendor,
+    pub key_source: Option<&'static str>,
 }
 
 /// Kết quả ghi sổ của một lượt (một hay nhiều lần gọi model).
