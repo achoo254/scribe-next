@@ -30,6 +30,30 @@ pub struct AppState {
     pub chat_bot: Arc<crate::chat_link::BotProfile>,
     /// Bí mật mã hoá key riêng của người dùng (`USER_KEYS_SECRET_PATH`); `None` = tính năng Key riêng tắt.
     pub user_keys: Option<Arc<crate::user_keys::crypto::Secret>>,
-    /// Tên hiển thị của tài khoản đăng nhập (tenant của IdP), làm mới nền mỗi giờ.
-    pub idp_brand: Arc<crate::idp_brand::IdpBrand>,
+    /// Host → tenant (tenant chính tĩnh, tenant sổ tra IdP có cache) và tên tài khoản đăng nhập của tenant chính.
+    pub tenants: Arc<crate::tenant::directory::TenantDirectory>,
+}
+
+#[cfg(test)]
+impl AppState {
+    /// State cho test router: cấu hình `Config::for_tests`, không key nào, Mongo `db` (lazy, chỉ nối khi route đụng
+    /// tới), danh bạ tenant `tenants`.
+    pub fn for_tests(db: Database, tenants: crate::tenant::directory::TenantDirectory) -> AppState {
+        let config = Config::for_tests();
+        AppState {
+            transcriber: Arc::new(Transcriber::load(&config)),
+            oidc: Arc::new(Oidc::new(&config.oidc_issuer)),
+            config: Arc::new(config),
+            db,
+            http: reqwest::Client::new(),
+            oidc_web_secret: Arc::new("test-secret-test-secret-test-secret".into()),
+            session_cache: Arc::default(),
+            session_key: Arc::new(vec![7; 32]),
+            rate: Arc::new(RateLimiter::new()),
+            summaries: Arc::default(),
+            chat_bot: Arc::default(),
+            user_keys: None,
+            tenants: Arc::new(tenants),
+        }
+    }
 }

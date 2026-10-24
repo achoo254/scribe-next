@@ -22,6 +22,7 @@ pub(crate) mod words;
 
 use crate::audit;
 use crate::auth::UserId;
+use crate::tenant::Tenant;
 use crate::config::{Config, Provider, Vendor};
 use crate::error::AppError;
 use crate::files::{content_disposition_attachment, sanitize_filename};
@@ -299,6 +300,7 @@ pub(crate) async fn note_repeated_block(state: &AppState, charge: &Charge, block
 pub async fn create(
     State(state): State<AppState>,
     Extension(user): Extension<UserId>,
+    Extension(tenant): Extension<Tenant>,
     Json(req): Json<CreateReq>,
 ) -> Result<Json<Value>, AppError> {
     let profile = user::find_profile(&state.db, &user.0)
@@ -307,7 +309,7 @@ pub async fn create(
     if profile.blocked {
         return Err(AppError::Forbidden("tài khoản đã bị khoá".into()));
     }
-    if !state.config.transcribe_allowed(&profile.email) {
+    if !state.config.transcribe_allowed(&tenant, &profile.email) {
         return Err(AppError::Forbidden("tài khoản này chưa được dùng chép lời".into()));
     }
     // Key riêng của người dùng cho chép lời (nếu có): không giữ phút, không giới hạn ngày hay chờ tài khoản mới, không
@@ -366,7 +368,7 @@ pub async fn create(
                 (None, Some(v)) => transcript::Billing::Own(v),
                 (None, None) => continue,
             };
-            let ok = match transcript::enqueue_held(&state.db, oid, &user.0, &run_id, model, billing, need).await {
+            let ok = match transcript::enqueue_held(&state.db, oid, &tenant.id, &user.0, &run_id, model, billing, need).await {
                 Ok(ok) => ok,
                 // Mongo standalone có thể báo lỗi dù đã ghi: đọc lại theo `runId` trước khi hoàn.
                 Err(e) => {
@@ -752,10 +754,13 @@ pub async fn start_worker(state: AppState) {
         Err(e) => tracing::warn!("xếp lại chép lời dở lỗi: {e:?}"),
     }
     tokio::spawn(async move {
+        // Tenant của lượt vừa nhận: lượt sau ưu tiên tenant khác (một worker cho mọi tenant).
+        let mut last_tenant: Option<String> = None;
         loop {
-            match transcript::claim_next(&state.db).await {
+            match transcript::claim_next(&state.db, last_tenant.as_deref()).await {
                 Ok(Some(t)) => {
                     let (file_id, run_id, user_id) = (t.id, t.run_id.clone(), t.user_id.clone());
+                    last_tenant = Some(t.tenant_id.clone());
                     let st = state.clone();
                     // Panic trong một lượt không được giết vòng hàng đợi. Lượt cả phiên có nhiều file: đóng hết, không
                     // chỉ file worker đã nhận (các file khác sẽ kẹt `running` tới lần khởi động sau).

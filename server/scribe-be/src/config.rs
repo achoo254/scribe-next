@@ -3,6 +3,8 @@
 //! [Red-team #13] Dùng `option_env!` (KHÔNG `env!`) → máy dev thiếu secret vẫn `cargo check`/build
 //! được (fallback về localhost). Production: `build.rs` bake giá trị thật lúc build.
 
+use crate::tenant::TenantCtx;
+
 const MIB: u64 = 1024 * 1024;
 /// Dung lượng theo gói (chủ dự án chốt 17/10/2026). Gói free: tổng 200 MB, mỗi tệp tối đa 200 MB, tệp tự
 /// xoá sau 7 ngày. Gói plus giữ mức cũ: tổng 5 GB, mỗi tệp tối đa 2 GB, 14 ngày. Áp qua `plan::Plan::storage`.
@@ -363,8 +365,8 @@ pub struct Config {
     /// Tệp 32 byte bí mật mã hoá key riêng của người dùng (`USER_KEYS_SECRET_PATH`, 600). Thiếu thì tính năng tắt.
     pub user_keys_secret_path: Option<String>,
     /// API nội bộ của hoandat-auth (`IDP_INTERNAL_API_URL`, vd `http://127.0.0.1:4501`) và tệp bí mật Basic của
-    /// tài khoản `scribe` (`IDP_INTERNAL_API_SECRET_PATH`, 600): hỏi tên hiển thị của tenant. Thiếu một trong hai
-    /// thì tắt, dùng `idp_display_name`.
+    /// tài khoản `scribe` (`IDP_INTERNAL_API_SECRET_PATH`, 600): tra tenant theo Host (tên hiển thị, tenant sổ). Thiếu
+    /// một trong hai thì tắt: tên là `idp_display_name`, không phục vụ tenant sổ nào.
     pub idp_internal_api_url: Option<String>,
     pub idp_internal_api_secret_path: Option<String>,
     /// Tên tài khoản đăng nhập hiện cho người dùng tới khi hỏi được IdP (`IDP_DISPLAY_NAME`, mặc định "Auth Next").
@@ -474,15 +476,17 @@ impl Config {
         })
     }
 
-    /// Email của tài khoản này dùng được dù IdP chưa xác minh (chỉ `sub` có tên trong danh sách).
-    pub fn accepts_unverified_email(&self, sub: &str) -> bool {
-        sub_listed(&self.unverified_email_subs, sub)
+    /// Email của tài khoản này dùng được dù IdP chưa xác minh (chỉ `sub` có tên trong danh sách, chỉ ở tenant chính:
+    /// danh sách là tài khoản của IdP tenant chính).
+    pub fn accepts_unverified_email(&self, tenant: &TenantCtx, sub: &str) -> bool {
+        tenant.primary && sub_listed(&self.unverified_email_subs, sub)
     }
 
     /// Email có được phép không: chỉ gọi SAU khi đã xác nhận `email_verified`.
-    /// Rỗng cả hai list = cho phép mọi email verified (chế độ mở user chốt).
-    pub fn email_allowed(&self, email: &str) -> bool {
-        if self.allowed_domains.is_empty() && self.allowed_emails.is_empty() {
+    /// Rỗng cả hai list = cho phép mọi email verified (chế độ mở user chốt). Allowlist là của tenant chính; tenant sổ
+    /// mở cho mọi tài khoản đã xác minh email ở IdP của domain đó.
+    pub fn email_allowed(&self, tenant: &TenantCtx, email: &str) -> bool {
+        if !tenant.primary || (self.allowed_domains.is_empty() && self.allowed_emails.is_empty()) {
             return true;
         }
         let email_lc = email.to_ascii_lowercase();
@@ -500,17 +504,19 @@ impl Config {
 
 impl Config {
     /// Email có được chép lời không. Khác `email_allowed`: danh sách rỗng nghĩa là KHÔNG ai được, trừ
-    /// khi bật `TRANSCRIBE_OPEN` (mọi user đăng nhập, hạn mức gói vẫn áp).
-    pub fn transcribe_allowed(&self, email: &str) -> bool {
+    /// khi bật `TRANSCRIBE_OPEN` (mọi user đăng nhập, hạn mức gói vẫn áp). Tenant sổ: mọi user (chạy bằng key của chủ
+    /// domain).
+    pub fn transcribe_allowed(&self, tenant: &TenantCtx, email: &str) -> bool {
         !email.is_empty()
-            && (self.transcribe_open || self.transcribe_emails.iter().any(|e| e.eq_ignore_ascii_case(email)))
+            && (!tenant.primary || self.transcribe_open || self.transcribe_emails.iter().any(|e| e.eq_ignore_ascii_case(email)))
     }
 }
 
 impl Config {
-    /// Email có được chép trực tiếp không: chỉ email có tên trong `REALTIME_EMAILS`.
-    pub fn realtime_allowed(&self, email: &str) -> bool {
-        listed(&self.realtime_emails, email)
+    /// Email có được chép trực tiếp không: chỉ email có tên trong `REALTIME_EMAILS`, chỉ ở tenant chính (chép trực
+    /// tiếp chỉ có trên app iPhone, app chỉ nói với tenant chính).
+    pub fn realtime_allowed(&self, tenant: &TenantCtx, email: &str) -> bool {
+        tenant.primary && listed(&self.realtime_emails, email)
     }
 }
 
@@ -533,8 +539,78 @@ fn parse_csv(v: Option<&str>) -> Vec<String> {
 }
 
 #[cfg(test)]
+impl Config {
+    /// Cấu hình cho test: tenant chính ở `https://scribe.hoandat.com`, không key, không allowlist.
+    pub fn for_tests() -> Config {
+        let free = TranscribeLimits::from_parts(None, None, None, None, Provider::ElevenLabs.usd_per_minute());
+        Config {
+            port: 8787,
+            mongo_uri: "mongodb://127.0.0.1:27017".into(),
+            db_name: "scribe_test".into(),
+            public_url: "https://scribe.hoandat.com".into(),
+            oidc_issuer: "https://auth.hoandat.com".into(),
+            oidc_web_client_id: "scribe-web".into(),
+            oidc_web_client_secret_path: String::new(),
+            oidc_mobile_client_id: "scribe-mobile".into(),
+            oidc_mobile_redirect_uri: "com.hoandat.scribe:/auth/callback".into(),
+            allowed_domains: Vec::new(),
+            allowed_emails: Vec::new(),
+            unverified_email_subs: Vec::new(),
+            transcribe_emails: Vec::new(),
+            realtime_emails: Vec::new(),
+            openai_key_path: None,
+            transcribe_provider: Provider::ElevenLabs,
+            elevenlabs_key_path: None,
+            elevenlabs_monthly_seconds: elevenlabs_monthly_seconds(None),
+            realtime_provider: Provider::ElevenLabs,
+            transcribe_open: false,
+            transcribe_limits: free,
+            notify_bot_api: "http://127.0.0.1:1".into(),
+            notify_bot_token_path: None,
+            notify_chat_id: None,
+            summary_limits: SummaryLimits::from_parts([None; 4]),
+            ask_limits: DailyLimits::from_parts(None, None, DEFAULT_ASK_DAILY),
+            translate_limits: DailyLimits::from_parts(None, None, DEFAULT_TRANSLATE_DAILY),
+            llm_provider: Vendor::OpenAi,
+            summary_model: llm_model(Vendor::OpenAi, None, None),
+            gemini_key_path: None,
+            anthropic_key_path: None,
+            user_keys_secret_path: None,
+            idp_internal_api_url: None,
+            idp_internal_api_secret_path: None,
+            idp_display_name: crate::idp_brand::DEFAULT_DISPLAY_NAME.into(),
+            chat_link_poll: false,
+            chat_bot_username: None,
+            session_key_path: String::new(),
+            data_dir: std::env::temp_dir().to_string_lossy().into_owned(),
+            ffmpeg_path: "ffmpeg".into(),
+            ffprobe_path: "ffprobe".into(),
+        }
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tenant::{test_tenant, PRIMARY_ID};
+
+    #[test]
+    fn allowlists_belong_to_the_primary_tenant() {
+        let mut c = Config::for_tests();
+        c.allowed_domains = vec!["hoandat.com".into()];
+        c.transcribe_emails = vec!["a@hoandat.com".into()];
+        c.realtime_emails = vec!["a@hoandat.com".into()];
+        c.unverified_email_subs = vec!["acc_review".into()];
+        let (primary, other) = (test_tenant(PRIMARY_ID, true), test_tenant("ten_a", true));
+        assert!(c.email_allowed(&primary, "a@hoandat.com") && !c.email_allowed(&primary, "b@gmail.com"));
+        assert!(c.email_allowed(&other, "b@gmail.com"), "tenant sổ mở cho mọi email đã xác minh");
+        assert!(c.transcribe_allowed(&primary, "a@hoandat.com") && !c.transcribe_allowed(&primary, "c@hoandat.com"));
+        assert!(c.transcribe_allowed(&other, "c@hoandat.com") && !c.transcribe_allowed(&other, ""));
+        assert!(c.realtime_allowed(&primary, "a@hoandat.com"));
+        assert!(!c.realtime_allowed(&other, "a@hoandat.com"), "chép trực tiếp chỉ ở tenant chính");
+        assert!(c.accepts_unverified_email(&primary, "acc_review"));
+        assert!(!c.accepts_unverified_email(&other, "acc_review"), "sub là của IdP tenant chính");
+    }
 
     #[test]
     fn limits_default_to_the_approved_numbers_and_ignore_bad_values() {

@@ -14,6 +14,7 @@
 //! có số.
 
 use super::{norm, session_meta, SessionMeta};
+use crate::tenant::Tenant;
 use crate::audit;
 use crate::auth::UserId;
 use crate::error::AppError;
@@ -302,6 +303,7 @@ fn reply(answer: &str, citations: &[usize], lines: &[Row], meta: &HashMap<String
 pub async fn ask(
     State(state): State<AppState>,
     Extension(user): Extension<UserId>,
+    Extension(tenant): Extension<Tenant>,
     Json(req): Json<AskReq>,
 ) -> Result<Json<Value>, AppError> {
     let question = check_question(&req.question)?;
@@ -315,7 +317,7 @@ pub async fn ask(
     if profile.blocked {
         return Err(AppError::Forbidden("tài khoản đã bị khoá".into()));
     }
-    if !state.config.transcribe_allowed(&profile.email) {
+    if !state.config.transcribe_allowed(&tenant, &profile.email) {
         return Err(AppError::Forbidden("tài khoản này chưa được dùng hỏi đáp".into()));
     }
     let text_key = summary::text_key(&state, &user.0, PAUSED).await?;

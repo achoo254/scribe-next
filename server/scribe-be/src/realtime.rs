@@ -20,6 +20,7 @@
 //!   chỗ trên sổ nào, không chặn theo hạn mức hay sổ giờ của Scribe; báo số giây chỉ ghi vào sổ phút riêng của người
 //!   dùng. Key lỗi lúc cấp ⟹ 403 `USER_KEY_FAILED`, key bị đánh dấu, không dùng key server thay.
 
+use crate::tenant::Tenant;
 use crate::audit;
 use crate::auth::UserId;
 use crate::config::{Provider, TranscribeLimits, Vendor};
@@ -267,6 +268,7 @@ async fn report_key_broken(state: &AppState, provider: Provider, month: &str, e:
 pub async fn token(
     State(state): State<AppState>,
     Extension(user): Extension<UserId>,
+    Extension(tenant): Extension<Tenant>,
     Json(req): Json<TokenReq>,
 ) -> Result<Json<Value>, AppError> {
     let session_id = req.session_id.filter(|s| !s.is_empty());
@@ -279,7 +281,7 @@ pub async fn token(
     if profile.blocked {
         return Err(AppError::Forbidden("tài khoản đã bị khoá".into()));
     }
-    if !state.config.realtime_allowed(&profile.email) {
+    if !state.config.realtime_allowed(&tenant, &profile.email) {
         audit::record(&state, Some(&user.0), "realtime.blocked", doc! { "reason": "NotAllowed" });
         return Err(AppError::Coded { status: StatusCode::FORBIDDEN, code: "REALTIME_NOT_ALLOWED", message: NOT_ALLOWED.into() });
     }

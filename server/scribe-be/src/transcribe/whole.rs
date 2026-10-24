@@ -201,7 +201,7 @@ async fn add_late_segments(
         .collect();
     let mut added = 0;
     for id in missing.into_iter().filter(|id| !known.contains(id)) {
-        if transcript::enqueue(db, id, &first.user_id, &first.run_id, &first.model, billing, 0).await? {
+        if transcript::enqueue(db, id, &first.tenant_id, &first.user_id, &first.run_id, &first.model, billing, 0).await? {
             added += 1;
         }
     }
@@ -864,7 +864,7 @@ mod tests {
         let run = format!("run-{}", uuid::Uuid::new_v4());
         usage::reserve(&db, &charge, 10_000, 120, &limits).await.expect("giữ").expect("đủ");
         for id in &ids[..2] {
-            assert!(transcript::enqueue_held(&db, *id, &user, &run, "scribe_v2", transcript::Billing::Server(&charge), 60).await.expect("xếp"));
+            assert!(transcript::enqueue_held(&db, *id, crate::tenant::PRIMARY_ID, &user, &run, "scribe_v2", transcript::Billing::Server(&charge), 60).await.expect("xếp"));
         }
         let coll = db.collection::<mongodb::bson::Document>("transcripts");
         let queued = |coll: mongodb::Collection<mongodb::bson::Document>, user: String| async move {
@@ -877,7 +877,7 @@ mod tests {
         assert_eq!(queued(coll.clone(), user.clone()).await, 2);
 
         // Đoạn 3 tải lên sau lúc bấm (chưa có lượt nào), đoạn 4 đã chép ở lượt khác: chỉ đoạn 3 được thêm vào lượt.
-        assert!(transcript::enqueue(&db, ids[3], &user, "run-cu", "scribe_v2", transcript::Billing::Server(&charge), 0).await.expect("lượt khác"));
+        assert!(transcript::enqueue(&db, ids[3], crate::tenant::PRIMARY_ID, &user, "run-cu", "scribe_v2", transcript::Billing::Server(&charge), 0).await.expect("lượt khác"));
         transcript::finish_failed(&db, ids[3], "run-cu", "lỗi cũ").await.expect("đóng lượt khác");
         coll.update_one(doc! { "_id": ids[0] }, doc! { "$set": { "status": "running" } }).await.expect("nhận đầu");
         let first = docs(vec![ids[0]]).await.remove(0);
@@ -933,7 +933,7 @@ mod tests {
         // Panic giữa lượt: mọi file còn mở của lượt đóng, không file nào kẹt `running`.
         let run2 = format!("run-{}", uuid::Uuid::new_v4());
         for id in [ids[0], ids[2]] {
-            assert!(transcript::enqueue(&db, id, &user, &run2, "scribe_v2", transcript::Billing::Server(&charge), 0).await.expect("xếp lại"));
+            assert!(transcript::enqueue(&db, id, crate::tenant::PRIMARY_ID, &user, &run2, "scribe_v2", transcript::Billing::Server(&charge), 0).await.expect("xếp lại"));
         }
         assert_eq!(transcript::fail_open_run(&db, &user, &run2, "lỗi nội bộ").await.expect("đóng"), 2);
         let open = coll.count_documents(doc! { "userId": &user, "open": true }).await.expect("đếm");

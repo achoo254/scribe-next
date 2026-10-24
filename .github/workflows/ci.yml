@@ -83,8 +83,16 @@ jobs:
           path: web/e2e/test-results
           retention-days: 7
 
+  # Mongo trống cùng major với prod (.65 chạy MongoDB 7.0): test `#[ignore]` trên Mongo thật (danh tính, phiên, cô lập
+  # tenant, migration, hàng đợi, xoá tài khoản) chạy ở đây thay vì chỉ trên Mongo lab qua VPN. `--skip live_` bỏ các
+  # test gọi API trả tiền thật (OpenAI, ElevenLabs).
   rust:
     runs-on: ubuntu-latest
+    services:
+      mongo:
+        image: mongo:7.0
+        ports:
+          - 27017:27017
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -95,6 +103,10 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
+      - run: cargo test -p scribe-be -- --ignored --skip live_
+        env:
+          TRANSCRIPT_TEST_MONGO_URI: mongodb://127.0.0.1:27017
+          TRANSCRIPT_TEST_DB_NAME: scribe_ci
 
   # App Android (web/android): bản build web trong vỏ Capacitor, lint Android, test JVM của plugin Kotlin,
   # APK debug để cài thử (artifact). Không cần secret; AAB ký để lên Play ở android-release.yml.

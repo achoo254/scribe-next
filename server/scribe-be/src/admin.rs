@@ -1,17 +1,22 @@
 //! Lệnh quản trị chạy trên server (cùng binary, cấu hình nhúng lúc build):
 //!
 //! ```text
-//! scribe-be admin set-plan <email> <free|plus> [--until YYYY-MM-DD]
-//! scribe-be admin usage [--email <email>] [--month YYYY-MM] [--recompute [--apply]]
+//! scribe-be admin set-plan <email> <free|plus> [--until YYYY-MM-DD] [--tenant <id>]
+//! scribe-be admin usage [--email <email> [--tenant <id>]] [--month YYYY-MM] [--recompute [--apply]]
 //! scribe-be admin elevenlabs-quota [--month YYYY-MM] [--clear]
-//! scribe-be admin block <email> [--reason <lý do>]
-//! scribe-be admin unblock <email>
+//! scribe-be admin block <email> [--reason <lý do>] [--tenant <id>]
+//! scribe-be admin unblock <email> [--tenant <id>]
 //! scribe-be admin notify-test
 //! scribe-be admin shorten-free-retention [--apply]
+//! scribe-be admin tenants
+//! scribe-be admin tenant-disable <id> | tenant-enable <id>
+//! scribe-be admin purge-tenant <id> [--apply]
 //! ```
 //!
 //! Chạy bằng user của service (`sudo -u <user> <binary> admin …`). Không khởi worker, sweeper hay
-//! session key: chỉ nối Mongo, làm việc, in JSON, ghi `audit_events`.
+//! session key: chỉ nối Mongo, làm việc, in JSON, ghi `audit_events`. Email chỉ duy nhất trong một tenant: lệnh theo
+//! email tìm trong `--tenant` (mặc định tenant chính `primary`) và in `tenantId` trong kết quả. Lệnh theo tenant ở
+//! `tenant::admin`.
 
 use crate::config::{Config, FREE_RETENTION_DAYS};
 use crate::error::AppError;
@@ -36,16 +41,22 @@ pub async fn run(config: &Config, db: &Database, args: &[String]) -> Result<Valu
             crate::notify::deliver(&reqwest::Client::new(), config, "Thử kênh báo động của Scribe.").await?;
             Ok(json!({ "sent": true }))
         }
+        "tenants" => crate::tenant::admin::list(db).await,
+        "tenant-disable" => crate::tenant::admin::set_enabled(db, rest, false).await,
+        "tenant-enable" => crate::tenant::admin::set_enabled(db, rest, true).await,
+        "purge-tenant" => crate::tenant::admin::purge(config, db, rest).await,
         _ => Err(usage_text()),
     }
 }
 
 fn usage_text() -> String {
-    "dùng: scribe-be admin set-plan <email> <free|plus> [--until YYYY-MM-DD] | \
-     scribe-be admin usage [--email <email>] [--month YYYY-MM] [--recompute [--apply]] | \
+    "dùng: scribe-be admin set-plan <email> <free|plus> [--until YYYY-MM-DD] [--tenant <id>] | \
+     scribe-be admin usage [--email <email> [--tenant <id>]] [--month YYYY-MM] [--recompute [--apply]] | \
      scribe-be admin elevenlabs-quota [--month YYYY-MM] [--clear] | \
-     scribe-be admin block <email> [--reason <lý do>] | scribe-be admin unblock <email> | \
-     scribe-be admin notify-test | scribe-be admin shorten-free-retention [--apply]"
+     scribe-be admin block <email> [--reason <lý do>] [--tenant <id>] | scribe-be admin unblock <email> [--tenant <id>] | \
+     scribe-be admin notify-test | scribe-be admin shorten-free-retention [--apply] | \
+     scribe-be admin tenants | scribe-be admin tenant-disable <id> | scribe-be admin tenant-enable <id> | \
+     scribe-be admin purge-tenant <id> [--apply]"
         .into()
 }
 
@@ -57,12 +68,17 @@ fn err(e: AppError) -> String {
     format!("{e:?}")
 }
 
-async fn one_user(db: &Database, email: &str) -> Result<String, String> {
-    let ids = user::find_ids_by_email(db, email).await.map_err(err)?;
+/// Tenant của lệnh theo email: `--tenant <id>`, mặc định tenant chính.
+fn tenant_flag(args: &[String]) -> &str {
+    flag(args, "--tenant").unwrap_or(crate::tenant::PRIMARY_ID)
+}
+
+async fn one_user(db: &Database, tenant_id: &str, email: &str) -> Result<String, String> {
+    let ids = user::find_ids_by_email(db, tenant_id, email).await.map_err(err)?;
     match ids.as_slice() {
         [id] => Ok(id.clone()),
-        [] => Err(format!("không có user nào với email {email}")),
-        _ => Err(format!("{} user trùng email {email}, không đổi gì", ids.len())),
+        [] => Err(format!("không có user nào với email {email} ở tenant {tenant_id}")),
+        _ => Err(format!("{} user trùng email {email} ở tenant {tenant_id}, không đổi gì", ids.len())),
     }
 }
 
@@ -96,23 +112,25 @@ async fn set_plan(db: &Database, args: &[String]) -> Result<Value, String> {
     if until.is_some_and(|u| u < DateTime::now()) {
         return Err("hạn đã qua".into());
     }
-    let user_id = one_user(db, email).await?;
+    let tenant_id = tenant_flag(args);
+    let user_id = one_user(db, tenant_id, email).await?;
     user::set_plan(db, &user_id, chosen.name(), until).await.map_err(err)?;
     let until_text = until.and_then(|u| u.try_to_rfc3339_string().ok());
     audit(db, Some(&user_id), "admin.set_plan", doc! { "plan": chosen.name(), "until": until_text.clone() }).await;
-    Ok(json!({ "userId": user_id, "plan": chosen.name(), "until": until_text }))
+    Ok(json!({ "userId": user_id, "tenantId": tenant_id, "plan": chosen.name(), "until": until_text }))
 }
 
 /// Khoá: chặn đăng nhập và chép lời, gỡ liên kết chat, xoá mọi phiên (server đang chạy còn nhớ phiên tối đa 30 giây; app
 /// iPhone mất thiết bị ở lần làm mới kế tiếp). Mở khoá chỉ xoá dấu khoá.
 async fn block(db: &Database, args: &[String], on: bool) -> Result<Value, String> {
     let email = args.first().ok_or_else(usage_text)?;
-    let user_id = one_user(db, email).await?;
+    let tenant_id = tenant_flag(args);
+    let user_id = one_user(db, tenant_id, email).await?;
     let reason = flag(args, "--reason").unwrap_or("không ghi lý do");
     user::set_blocked(db, &user_id, on.then_some(reason)).await.map_err(err)?;
     if !on {
         audit(db, Some(&user_id), "admin.unblock", doc! {}).await;
-        return Ok(json!({ "userId": user_id, "blocked": false }));
+        return Ok(json!({ "userId": user_id, "tenantId": tenant_id, "blocked": false }));
     }
     let removed = sessions::delete_by_user(db, &user_id, None).await.map_err(err)?;
     // Tài khoản bị khoá không được nhận gì qua chat nữa; mở khoá thì người dùng tự liên kết lại.
@@ -122,7 +140,7 @@ async fn block(db: &Database, args: &[String], on: bool) -> Result<Value, String
     if unlinked {
         audit(db, Some(&user_id), "chat.unlink", doc! { "reason": "blocked" }).await;
     }
-    Ok(json!({ "userId": user_id, "blocked": true, "sessionsRemoved": removed.len(), "chatUnlinked": unlinked }))
+    Ok(json!({ "userId": user_id, "tenantId": tenant_id, "blocked": true, "sessionsRemoved": removed.len(), "chatUnlinked": unlinked }))
 }
 
 /// Tệp của user gói free (mọi user không có gói plus hiệu lực) đã tạo trước khi hạn free còn 7 ngày: rút
@@ -151,7 +169,7 @@ async fn shorten_free_retention(db: &Database, apply: bool) -> Result<Value, Str
 async fn show_usage(config: &Config, db: &Database, args: &[String]) -> Result<Value, String> {
     let month = flag(args, "--month").map(str::to_string).unwrap_or_else(|| usage::month_key(Utc::now()));
     let user_id = match flag(args, "--email") {
-        Some(email) => Some(one_user(db, email).await?),
+        Some(email) => Some(one_user(db, tenant_flag(args), email).await?),
         None => None,
     };
     let limits = config.transcribe_limits;
@@ -163,7 +181,7 @@ async fn show_usage(config: &Config, db: &Database, args: &[String]) -> Result<V
     });
     out["elevenlabs"] = provider_hours(config, db, &month).await?;
     if let Some(id) = &user_id {
-        out["user"] = json!({ "userId": id, "usedMinutes": current.user_seconds / 60 });
+        out["user"] = json!({ "userId": id, "tenantId": tenant_flag(args), "usedMinutes": current.user_seconds / 60 });
     }
     if args.iter().any(|a| a == "--recompute") {
         out["recompute"] = recompute(db, &month, args.iter().any(|a| a == "--apply")).await?;
@@ -295,6 +313,14 @@ async fn recompute(db: &Database, month: &str, apply: bool) -> Result<Value, Str
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tenant_flag_defaults_to_the_primary_tenant() {
+        let args = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert_eq!(tenant_flag(&args(&["a@x.vn", "plus"])), "primary");
+        assert_eq!(tenant_flag(&args(&["a@x.vn", "plus", "--tenant", "ten_a"])), "ten_a");
+        assert_eq!(flag(&args(&["--email", "a@x.vn", "--tenant", "ten_b"]), "--email"), Some("a@x.vn"));
+    }
 
     #[test]
     fn plan_end_dates_are_vietnam_end_of_day() {

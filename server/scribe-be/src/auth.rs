@@ -10,6 +10,9 @@
 //!
 //! Phiên lưu trong Mongo (`models::session`), thu hồi được: đăng xuất, back-channel logout của IdP, máy
 //! bị thu hồi ở `/account` (lần làm mới sau nhận `invalid_grant`).
+//!
+//! Mọi bước theo tenant của Host (`tenant::resolve`): user ghép theo `(tenantId, sub)`, phiên mang `tenantId` và chỉ
+//! có hiệu lực ở đúng tenant đó (cookie host-only, và `require_auth` kiểm lại).
 
 use crate::audit;
 use crate::error::AppError;
@@ -19,6 +22,7 @@ use crate::oidc::{GrantError, SCOPE};
 use crate::rate_limit::IDP_TOKEN_BUDGET;
 use crate::session::{open, random_token, seal};
 use crate::state::AppState;
+use crate::tenant::{Tenant, TenantCtx};
 use axum::extract::{Form, Query, Request, State};
 use axum::http::{header, HeaderValue};
 use axum::middleware::Next;
@@ -51,21 +55,28 @@ const CACHE_TTL: Duration = Duration::from_secs(30);
 #[derive(Clone, Debug)]
 pub struct UserId(pub String);
 
-/// Phiên đã kiểm gần đây: băm token → (user, lúc kiểm).
+/// Phiên đã kiểm gần đây: băm token → (user, tenant, lúc kiểm).
 #[derive(Default)]
 pub struct SessionCache {
-    entries: Mutex<HashMap<String, (String, Instant)>>,
+    entries: Mutex<HashMap<String, (CachedSession, Instant)>>,
+}
+
+/// Chủ của một phiên đã kiểm.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct CachedSession {
+    user_id: String,
+    tenant_id: String,
 }
 
 impl SessionCache {
-    fn get(&self, id: &str) -> Option<String> {
+    fn get(&self, id: &str) -> Option<CachedSession> {
         let entries = self.entries.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-        entries.get(id).filter(|(_, at)| at.elapsed() < CACHE_TTL).map(|(u, _)| u.clone())
+        entries.get(id).filter(|(_, at)| at.elapsed() < CACHE_TTL).map(|(s, _)| s.clone())
     }
-    fn put(&self, id: String, user: String) {
+    fn put(&self, id: String, session: CachedSession) {
         let mut entries = self.entries.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         entries.retain(|_, (_, at)| at.elapsed() < CACHE_TTL);
-        entries.insert(id, (user, Instant::now()));
+        entries.insert(id, (session, Instant::now()));
     }
     pub fn forget(&self, ids: &[String]) {
         let mut entries = self.entries.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -124,20 +135,20 @@ pub(crate) fn login_failed(state: &AppState, code: &str) -> Response {
 /// Lý do từ chối đăng nhập khi tài khoản Scribe đang bị xoá (web đổi thành mã `deleting`).
 const DELETING: &str = "tài khoản Scribe vừa được xoá, đang dọn dữ liệu — thử lại sau vài phút";
 
-/// Kiểm danh tính từ IdP rồi ghép user. Email chưa xác minh (trừ tài khoản trong
+/// Kiểm danh tính từ IdP của tenant rồi ghép user trong tenant đó. Email chưa xác minh (trừ tài khoản trong
 /// `UNVERIFIED_EMAIL_SUBS`) hoặc ngoài allowlist thì từ chối.
-async fn admit(state: &AppState, claims: &crate::oidc::IdClaims) -> Result<String, AppError> {
-    let verified = claims.email_verified || state.config.accepts_unverified_email(&claims.sub);
+async fn admit(state: &AppState, tenant: &TenantCtx, claims: &crate::oidc::IdClaims) -> Result<String, AppError> {
+    let verified = claims.email_verified || state.config.accepts_unverified_email(tenant, &claims.sub);
     let email = claims.email.as_deref().filter(|e| !e.is_empty()).filter(|_| verified);
     let Some(email) = email else {
-        audit::record(state, None, "auth.login_denied", doc! { "reason": "email_unverified" });
+        audit::record(state, None, "auth.login_denied", doc! { "reason": "email_unverified", "tenant": &tenant.id });
         return Err(AppError::Forbidden("email chưa được xác minh".into()));
     };
-    if !state.config.email_allowed(email) {
-        audit::record(state, None, "auth.login_denied", doc! { "email": email });
+    if !state.config.email_allowed(tenant, email) {
+        audit::record(state, None, "auth.login_denied", doc! { "email": email, "tenant": &tenant.id });
         return Err(AppError::Forbidden("email không có quyền truy cập".into()));
     }
-    let (user_id, linked) = user::find_or_link(&state.db, &claims.sub, email, claims.name.as_deref()).await?;
+    let (user_id, linked) = user::find_or_link(&state.db, &tenant.id, &claims.sub, email, claims.name.as_deref()).await?;
     if linked {
         audit::record(state, Some(&user_id), "auth.link", doc! { "email": email });
     }
@@ -158,10 +169,14 @@ async fn admit(state: &AppState, claims: &crate::oidc::IdClaims) -> Result<Strin
 // MARK: Web
 
 /// `GET /api/auth/login` — bắt đầu đăng nhập web: lưu lượt, chuyển tới IdP.
-pub async fn login(State(state): State<AppState>, jar: CookieJar) -> Result<(CookieJar, Redirect), AppError> {
+pub async fn login(
+    State(state): State<AppState>,
+    Extension(tenant): Extension<Tenant>,
+    jar: CookieJar,
+) -> Result<(CookieJar, Redirect), AppError> {
     let discovery = state.oidc.discovery(&state.http).await?;
     let (login_state, verifier, nonce) = (random_token(), random_token(), random_token());
-    sessions::save_state(&state.db, &login_state, &verifier, &nonce).await?;
+    sessions::save_state(&state.db, &tenant.id, &login_state, &verifier, &nonce).await?;
     let mut url = reqwest::Url::parse(&discovery.authorization_endpoint)
         .map_err(|e| AppError::Internal(format!("authorization endpoint: {e}")))?;
     url.query_pairs_mut()
@@ -191,7 +206,12 @@ pub struct CallbackQuery {
 }
 
 /// `GET /api/auth/callback` — IdP trả code: đổi, xác minh, ghép user, tạo phiên.
-pub async fn callback(State(state): State<AppState>, jar: CookieJar, Query(q): Query<CallbackQuery>) -> Response {
+pub async fn callback(
+    State(state): State<AppState>,
+    Extension(tenant): Extension<Tenant>,
+    jar: CookieJar,
+    Query(q): Query<CallbackQuery>,
+) -> Response {
     let name = login_cookie_name(&state);
     let expected = jar.get(name).map(|c| c.value().to_string());
     let jar = jar.remove(Cookie::build(name).path("/").build());
@@ -206,7 +226,7 @@ pub async fn callback(State(state): State<AppState>, jar: CookieJar, Query(q): Q
     if expected.as_deref() != Some(login_state.as_str()) {
         return (jar, login_failed(&state, "expired")).into_response();
     }
-    match finish_web_login(&state, &code, &login_state).await {
+    match finish_web_login(&state, &tenant, &code, &login_state).await {
         Ok((token, max_age)) => {
             let jar = jar.add(session_cookie(&state, token, max_age));
             (jar, Redirect::to(&format!("{}/", state.config.public_url))).into_response()
@@ -229,8 +249,8 @@ pub async fn callback(State(state): State<AppState>, jar: CookieJar, Query(q): Q
     }
 }
 
-async fn finish_web_login(state: &AppState, code: &str, login_state: &str) -> Result<(String, i64), AppError> {
-    let saved = sessions::take_state(&state.db, login_state)
+async fn finish_web_login(state: &AppState, tenant: &TenantCtx, code: &str, login_state: &str) -> Result<(String, i64), AppError> {
+    let saved = sessions::take_state(&state.db, &tenant.id, login_state)
         .await?
         .ok_or_else(|| AppError::Unauthorized("lượt đăng nhập đã hết hạn".into()))?;
     let client_id = &state.config.oidc_web_client_id;
@@ -241,8 +261,8 @@ async fn finish_web_login(state: &AppState, code: &str, login_state: &str) -> Re
         .await
         .map_err(grant_error)?;
     let claims = state.oidc.identify(&state.http, &tokens, client_id, Some(&saved.nonce)).await?;
-    let user_id = admit(state, &claims).await?;
-    let (token, _) = sessions::create(&state.db, &user_id, Client::Web, claims.sid.as_deref(), None).await?;
+    let user_id = admit(state, tenant, &claims).await?;
+    let (token, _) = sessions::create(&state.db, &tenant.id, &user_id, Client::Web, claims.sid.as_deref(), None).await?;
     audit::record(state, Some(&user_id), "auth.login", doc! { "client": "web" });
     // Cookie sống tới trần trượt 7 ngày; hạn thật do server giữ (`sessions.expiresAt`, trượt 12 giờ).
     Ok((token, sessions::WEB_MAX_AGE_S))
@@ -286,6 +306,7 @@ pub struct NativeExchange {
 /// `POST /api/auth/native/exchange` — đổi code của app (client public, redirect cố định trong cấu hình).
 pub async fn native_exchange(
     State(state): State<AppState>,
+    Extension(tenant): Extension<Tenant>,
     jar: CookieJar,
     Json(body): Json<NativeExchange>,
 ) -> Result<(CookieJar, Json<Value>), AppError> {
@@ -303,9 +324,10 @@ pub async fn native_exchange(
     let refresh = tokens
         .refresh_token
         .ok_or_else(|| AppError::Internal("IdP không cấp refresh token cho app".into()))?;
-    let user_id = admit(&state, &claims).await?;
-    let (device_token, device_id) = sessions::create_device(&state.db, &user_id, &seal(&state.session_key, &refresh)).await?;
-    let (token, _) = sessions::create(&state.db, &user_id, Client::Mobile, None, Some(&device_id)).await?;
+    let user_id = admit(&state, &tenant, &claims).await?;
+    let sealed = seal(&state.session_key, &refresh);
+    let (device_token, device_id) = sessions::create_device(&state.db, &tenant.id, &user_id, &sealed).await?;
+    let (token, _) = sessions::create(&state.db, &tenant.id, &user_id, Client::Mobile, None, Some(&device_id)).await?;
     audit::record(&state, Some(&user_id), "auth.login", doc! { "client": "mobile" });
     let email = claims.email.unwrap_or_default();
     Ok((
@@ -325,6 +347,7 @@ pub struct DeviceBody {
 /// nhận 409 và app chờ rồi dùng cookie lần kia cấp; thiết bị không còn thì 401.
 pub async fn native_refresh(
     State(state): State<AppState>,
+    Extension(tenant): Extension<Tenant>,
     jar: CookieJar,
     Json(body): Json<DeviceBody>,
 ) -> Result<(CookieJar, Json<Value>), AppError> {
@@ -379,13 +402,13 @@ pub async fn native_refresh(
 
     // Tài khoản vẫn phải là của máy này và vẫn được phép (allowlist có thể đã đổi).
     let claims = state.oidc.identify(&state.http, &tokens, client_id, None).await?;
-    let owner = user::find_id_by_sub(&state.db, &claims.sub).await?;
-    if owner.as_deref() != Some(device.user_id.as_str()) || admit(&state, &claims).await.is_err() {
+    let owner = user::find_id_by_sub(&state.db, &tenant.id, &claims.sub).await?;
+    if owner.as_deref() != Some(device.user_id.as_str()) || admit(&state, &tenant, &claims).await.is_err() {
         revoke(&state, &device).await?;
         audit::record(&state, Some(&device.user_id), "auth.device_revoked", doc! { "reason": "not_allowed" });
         return Err(AppError::Unauthorized("tài khoản không còn được phép, đăng nhập lại".into()));
     }
-    let (token, _) = sessions::create(&state.db, &device.user_id, Client::Mobile, None, Some(&device.id)).await?;
+    let (token, _) = sessions::create(&state.db, &tenant.id, &device.user_id, Client::Mobile, None, Some(&device.id)).await?;
     Ok((jar.add(session_cookie(&state, token, sessions::MOBILE_TTL_S)), Json(json!({ "ok": true }))))
 }
 
@@ -399,14 +422,19 @@ pub struct LogoutBody {
 }
 
 /// `POST /api/auth/logout` — xoá phiên (và thiết bị nếu app gửi kèm). Web nhận URL đăng xuất ở IdP.
-pub async fn logout(State(state): State<AppState>, jar: CookieJar, body: Option<Json<LogoutBody>>) -> (CookieJar, Json<Value>) {
+pub async fn logout(
+    State(state): State<AppState>,
+    Extension(tenant): Extension<Tenant>,
+    jar: CookieJar,
+    body: Option<Json<LogoutBody>>,
+) -> (CookieJar, Json<Value>) {
     let name = cookie_name(&state);
     let mut user_id = None;
     if let Some(token) = jar.get(name).map(|c| c.value().to_string()) {
-        if let Ok(Some(s)) = sessions::find(&state.db, &token).await {
+        if let Ok(Some(s)) = sessions::find(&state.db, &tenant.id, &token).await {
             user_id = Some(s.user_id);
         }
-        if let Ok(id) = sessions::delete(&state.db, &token).await {
+        if let Ok(id) = sessions::delete(&state.db, &tenant.id, &token).await {
             state.session_cache.forget(&[id]);
         }
     }
@@ -441,14 +469,19 @@ pub struct BackchannelForm {
     logout_token: String,
 }
 
-/// `POST /api/auth/backchannel-logout` — IdP báo phiên ở IdP đã kết thúc: xoá phiên web tương ứng.
-pub async fn backchannel_logout(State(state): State<AppState>, Form(form): Form<BackchannelForm>) -> Response {
+/// `POST /api/auth/backchannel-logout` — IdP của tenant báo phiên ở IdP đã kết thúc: xoá phiên web tương ứng trong
+/// tenant đó (không bao giờ đụng phiên tenant khác, kể cả khi `sid`/`sub` trùng).
+pub async fn backchannel_logout(
+    State(state): State<AppState>,
+    Extension(tenant): Extension<Tenant>,
+    Form(form): Form<BackchannelForm>,
+) -> Response {
     let claims =
         match state.oidc.verify_logout_token(&state.http, &form.logout_token, &state.config.oidc_web_client_id).await {
             Ok(c) => c,
             Err(_) => return (axum::http::StatusCode::BAD_REQUEST, "invalid logout token").into_response(),
         };
-    match sessions::seen_jti(&state.db, &claims.jti).await {
+    match sessions::seen_jti(&state.db, &tenant.id, &claims.jti).await {
         Ok(true) => return no_store_ok(),
         Ok(false) => {}
         Err(e) => {
@@ -457,8 +490,8 @@ pub async fn backchannel_logout(State(state): State<AppState>, Form(form): Form<
         }
     }
     let removed = match (&claims.sid, &claims.sub) {
-        (Some(sid), _) => sessions::delete_web_by_idp_sid(&state.db, sid).await,
-        (None, Some(sub)) => match user::find_id_by_sub(&state.db, sub).await {
+        (Some(sid), _) => sessions::delete_web_by_idp_sid(&state.db, &tenant.id, sid).await,
+        (None, Some(sub)) => match user::find_id_by_sub(&state.db, &tenant.id, sub).await {
             Ok(Some(user_id)) => sessions::delete_by_user(&state.db, &user_id, Some(Client::Web)).await,
             Ok(None) => Ok(Vec::new()),
             Err(e) => Err(e),
@@ -468,10 +501,11 @@ pub async fn backchannel_logout(State(state): State<AppState>, Form(form): Form<
     match removed {
         Ok(ids) => {
             state.session_cache.forget(&ids);
-            if let Err(e) = sessions::record_jti(&state.db, &claims.jti).await {
+            if let Err(e) = sessions::record_jti(&state.db, &tenant.id, &claims.jti).await {
                 tracing::warn!("ghi jti lỗi (phiên đã xoá): {e:?}");
             }
-            audit::record(&state, None, "auth.backchannel_logout", doc! { "sessions": ids.len() as i64 });
+            let details = doc! { "sessions": ids.len() as i64, "tenant": &tenant.id };
+            audit::record(&state, None, "auth.backchannel_logout", details);
             no_store_ok()
         }
         Err(e) => {
@@ -493,11 +527,12 @@ fn no_store_ok() -> Response {
 pub async fn me(
     State(state): State<AppState>,
     Extension(user): Extension<UserId>,
+    Extension(tenant): Extension<Tenant>,
 ) -> Result<Json<Value>, AppError> {
     let profile = user::find_profile(&state.db, &user.0)
         .await?
         .ok_or_else(|| AppError::Unauthorized("user không tồn tại".into()))?;
-    let can_transcribe = state.config.transcribe_allowed(&profile.email);
+    let can_transcribe = state.config.transcribe_allowed(&tenant, &profile.email);
     let plan = plan::effective(profile.plan.as_deref(), profile.plan_until, mongodb::bson::DateTime::now());
     // Hạn chỉ có nghĩa khi gói plus còn hiệu lực (gói đã hết hạn thì là free, không có hạn).
     let plan_until = profile
@@ -558,9 +593,11 @@ pub async fn me(
     })))
 }
 
-/// Middleware: cookie phiên → phiên còn hạn trong Mongo (cache 30 giây) → gắn `UserId`. Thiếu/sai → 401.
+/// Middleware: cookie phiên → phiên còn hạn trong Mongo (cache 30 giây) của đúng tenant của Host → gắn `UserId`.
+/// Thiếu/sai → 401. Phiên của tenant khác ⟹ 401 và không đụng tới phiên đó.
 pub async fn require_auth(
     State(state): State<AppState>,
+    Extension(tenant): Extension<Tenant>,
     jar: CookieJar,
     mut req: Request,
     next: Next,
@@ -570,22 +607,24 @@ pub async fn require_auth(
         .map(|c| c.value().to_string())
         .ok_or_else(|| AppError::Unauthorized("chưa đăng nhập".into()))?;
     let id = crate::session::hash_token(&token);
+    let expired = || AppError::Unauthorized("phiên đã hết hạn, đăng nhập lại".into());
     let user_id = match state.session_cache.get(&id) {
-        Some(user_id) => user_id,
+        Some(cached) if cached.tenant_id == tenant.id => cached.user_id,
+        Some(_) => return Err(expired()),
         None => {
-            let session = sessions::find(&state.db, &token)
-                .await?
-                .ok_or_else(|| AppError::Unauthorized("phiên đã hết hạn, đăng nhập lại".into()))?;
+            let session = sessions::find(&state.db, &tenant.id, &token).await?.ok_or_else(expired)?;
             // Allowlist có thể đã đổi từ lúc đăng nhập (build mới), tài khoản có thể vừa bị khoá: kiểm lại
             // mỗi lần cache hết hạn.
             let profile = user::find_profile(&state.db, &session.user_id).await?;
-            let allowed = profile.is_some_and(|p| !p.blocked && !p.deleting && state.config.email_allowed(&p.email));
+            let allowed =
+                profile.is_some_and(|p| !p.blocked && !p.deleting && state.config.email_allowed(&tenant, &p.email));
             if !allowed {
                 let removed = sessions::delete_by_user(&state.db, &session.user_id, None).await?;
                 state.session_cache.forget(&removed);
                 return Err(AppError::Unauthorized("tài khoản không còn được phép".into()));
             }
-            state.session_cache.put(session.id, session.user_id.clone());
+            let cached = CachedSession { user_id: session.user_id.clone(), tenant_id: tenant.id.clone() };
+            state.session_cache.put(session.id, cached);
             session.user_id
         }
     };

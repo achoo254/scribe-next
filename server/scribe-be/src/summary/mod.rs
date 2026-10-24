@@ -24,6 +24,7 @@ pub(crate) mod llm;
 pub(crate) mod meter;
 pub mod share;
 
+use crate::tenant::Tenant;
 use crate::audit;
 use crate::auth::UserId;
 use crate::error::AppError;
@@ -281,6 +282,7 @@ struct Job {
 pub async fn create(
     State(state): State<AppState>,
     Extension(user): Extension<UserId>,
+    Extension(tenant): Extension<Tenant>,
     Path(key): Path<String>,
 ) -> Result<Json<Value>, AppError> {
     let profile = user::find_profile(&state.db, &user.0)
@@ -289,7 +291,7 @@ pub async fn create(
     if profile.blocked {
         return Err(AppError::Forbidden("tài khoản đã bị khoá".into()));
     }
-    if !state.config.transcribe_allowed(&profile.email) {
+    if !state.config.transcribe_allowed(&tenant, &profile.email) {
         return Err(AppError::Forbidden("tài khoản này chưa được dùng tóm tắt".into()));
     }
     let text_key = text_key(&state, &user.0, PAUSED).await?;

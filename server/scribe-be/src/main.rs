@@ -24,6 +24,7 @@ mod search;
 mod session;
 mod state;
 mod summary;
+mod tenant;
 mod transcribe;
 mod translate;
 mod upload;
@@ -63,6 +64,16 @@ async fn main() {
             }
         }
         return;
+    }
+    // Dữ liệu có trước khi có tenant phải mang `tenantId` trước index unique `(tenantId, idpSub)`, worker và request
+    // đầu tiên; còn sót thì không phục vụ.
+    match tenant::migrate::run(&db).await {
+        Ok(report) if report.changed() > 0 => tracing::info!(?report, "đã gắn tenantId cho dữ liệu cũ"),
+        Ok(_) => {}
+        Err(e) => {
+            tracing::error!("migration tenant: {e}");
+            std::process::exit(1);
+        }
     }
     let session_key = session::load_or_create_key(&config.session_key_path)
         .unwrap_or_else(|e| panic!("không tạo được session key ({}): {e}", config.session_key_path));
@@ -166,7 +177,20 @@ async fn main() {
         tracing::error!("{e}");
         std::process::exit(1);
     }
-    let config_display_name = config.idp_display_name.clone();
+    // API nội bộ của IdP: tra tenant theo Host và tên tài khoản đăng nhập. Thiếu ⟹ chỉ tenant chính, tên mặc định.
+    let internal = match tenant::internal_api::InternalApi::from_config(
+        config.idp_internal_api_url.as_deref(),
+        config.idp_internal_api_secret_path.as_deref(),
+    ) {
+        Ok(api) => api.map(Arc::new),
+        Err(e) => {
+            tracing::error!("API nội bộ của IdP: {e} — chỉ phục vụ tenant chính, dùng tên mặc định");
+            None
+        }
+    };
+    // Điều kiện phía Scribe để tenant sổ được bật; chưa đủ thì mọi tenant sổ hiện trang "chưa bật".
+    let readiness = tenant::Readiness::default();
+    let tenants = Arc::new(tenant::directory::TenantDirectory::new(&config, Some(db.clone()), internal, readiness));
     let state = AppState {
         config: Arc::new(config),
         db,
@@ -180,7 +204,7 @@ async fn main() {
         summaries: Arc::default(),
         chat_bot: Arc::default(),
         user_keys: user_keys_secret,
-        idp_brand: Arc::new(idp_brand::IdpBrand::new(&config_display_name)),
+        tenants,
     };
 
     // Hồi phục job kẹt "running" sau crash/restart (red-team) + khởi worker queue nền.
@@ -195,7 +219,7 @@ async fn main() {
     search::index::start_backfill(state.db.clone()); // đưa dữ liệu cũ vào index tìm kiếm một lần
     chat_link::warm_up(state.clone());
     chat_link::poll::start(state.clone()); // chỉ khi CHAT_LINK_POLL bật và có token bot
-    idp_brand::start(&state); // tên tenant của IdP, chỉ khi cấu hình API nội bộ
+    tenant::directory::start_primary_refresh(state.tenants.clone()); // tên tenant chính, chỉ khi có API nội bộ
 
     let app = routes::build_router(state);
     let addr = SocketAddr::from(([127, 0, 0, 1], port)); // localhost-only; nginx proxy /api.
