@@ -30,6 +30,7 @@ export const ui = {
 		tenantKey: {
 			label: "Chép lời, biên bản, hỏi đáp, dịch",
 			value: "Dùng key AI của {domain}",
+			missing: "Chủ domain chưa thêm key",
 		},
 		storageFull:
 			"Đã đầy dung lượng: xoá bớt bản ghi hoặc tệp để ghi và tải lên tiếp.",

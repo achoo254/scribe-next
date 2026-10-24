@@ -1,7 +1,9 @@
 import { ApiError, apiJson } from "../lib/api";
 
-/** Monthly transcription allowance of the signed-in user. */
-export interface Transcription {
+/** Monthly transcription allowance of the signed-in user, on Scribe's own key. */
+export interface MeteredTranscription {
+	/** Missing from backends older than tenant keys. */
+	keySource?: "server";
 	plan: "free" | "plus";
 	planUntil?: string | null;
 	usedMinutes: number;
@@ -19,13 +21,26 @@ export interface Transcription {
 	wholeSession?: boolean;
 	/** Free plan: minutes of today (Vietnam time); null on plus. */
 	daily?: { usedMinutes: number; limitMinutes: number } | null;
-	/**
-	 * Whose AI key the account's runs use: `tenant` on a domain other than
-	 * the primary one (its owner's keys: no minutes, pool or monthly cap, the
-	 * numbers above are absent); missing means Scribe's own key, metered.
-	 */
-	keySource?: "server" | "tenant";
 }
+
+/**
+ * On a domain other than the primary one, runs use the domain owner's AI
+ * keys (or the user's own): no minutes, pool or monthly cap to count.
+ */
+export interface TenantTranscription {
+	keySource: "tenant";
+	plan: "free" | "plus";
+	planUntil?: string | null;
+	wholeSession?: boolean;
+	/**
+	 * Provider of the owner's key for each use (null: the owner has not added
+	 * one for it); null as a whole when the backend could not read the keys.
+	 */
+	tenantKeys?: { transcribe: string | null; text: string | null } | null;
+}
+
+/** Whose AI key the account's runs use, and what of Scribe's allowance is left. */
+export type Transcription = MeteredTranscription | TenantTranscription;
 
 /** The plan in effect and what it allows. */
 export interface PlanInfo {

@@ -1,4 +1,4 @@
-import type { PlanInfo } from "../auth/auth-api";
+import type { OwnKeys, PlanInfo, TenantTranscription } from "../auth/auth-api";
 import { useAuth } from "../auth/auth-context";
 import { useUsageQuery } from "../features/files/file-queries";
 import { useT } from "../i18n/i18n-context";
@@ -101,14 +101,65 @@ function KeyRow({ label, value, detail, "data-id": dataId }: KeyRowProps) {
 	);
 }
 
+interface TenantKeyRow {
+	id: string;
+	label:
+		| "ui.usage.tenantKey.label"
+		| "ui.usage.ownKey.transcribe"
+		| "ui.usage.ownKey.text";
+	/** The owner has not added a key for this use. */
+	missing: boolean;
+}
+
+/**
+ * Uses that run on the domain owner's keys, one row each (a use on the
+ * user's own key has its own row). One combined row when the backend could
+ * not say which keys the owner has.
+ */
+export function tenantKeyRows(
+	onTenant: TenantTranscription | null,
+	own: OwnKeys | null,
+): TenantKeyRow[] {
+	if (!onTenant) return [];
+	const keys = onTenant.tenantKeys;
+	if (!keys) {
+		return own?.transcribe && own?.text
+			? []
+			: [
+					{
+						id: "usage-tenant-key",
+						label: "ui.usage.tenantKey.label",
+						missing: false,
+					},
+				];
+	}
+	const rows: TenantKeyRow[] = [];
+	if (!own?.transcribe) {
+		rows.push({
+			id: "usage-tenant-transcribe",
+			label: "ui.usage.ownKey.transcribe",
+			missing: keys.transcribe === null,
+		});
+	}
+	if (!own?.text) {
+		rows.push({
+			id: "usage-tenant-text",
+			label: "ui.usage.ownKey.text",
+			missing: keys.text === null,
+		});
+	}
+	return rows;
+}
+
 /**
  * The plan and what of it is used, in one compact card above every page:
  * plan badge (with its end date) and how long files are kept, then storage,
  * this month's transcription minutes and, on the free plan, today's. Shows
  * once `/api/me/usage` answers; the minutes only for accounts that may
- * transcribe. On a tenant's domain the runs use the owner's AI key
- * (`transcription.keySource: "tenant"`): no minutes, one line saying whose
- * key; the storage of the plan still applies.
+ * transcribe. On a tenant's domain the runs use the owner's AI keys
+ * (`transcription.keySource: "tenant"`): no minutes, one line per use saying
+ * whose key (or that the owner has not added one); the storage of the plan
+ * still applies.
  */
 export function UsageCard() {
 	const t = useT();
@@ -118,13 +169,17 @@ export function UsageCard() {
 	const tenant = useTenantInfo();
 	if (!storage) return null;
 	const own = user?.ownKeys ?? null;
-	const tenantKey = user?.transcription?.keySource === "tenant";
+	const transcription = user?.transcription ?? null;
+	const onTenant = transcription?.keySource === "tenant" ? transcription : null;
+	const metered =
+		transcription && transcription.keySource !== "tenant"
+			? transcription
+			: null;
 	const plan: PlanInfo["name"] = user?.plan?.name ?? storage.plan ?? "free";
 	const until = user?.plan?.until ?? null;
 	const retentionDays = user?.plan?.retentionDays ?? storage.retentionDays ?? 0;
 	// Transcription on the user's own key or the domain owner's: Scribe's minutes do not apply.
-	const minutes =
-		own?.transcribe || tenantKey ? null : (user?.transcription ?? null);
+	const minutes = own?.transcribe ? null : metered;
 	const reset = formatDayMonth(minutes?.resetsAt);
 	const storageFull =
 		storage.quotaBytes > 0 && storage.usageBytes >= storage.quotaBytes;
@@ -179,13 +234,18 @@ export function UsageCard() {
 						limit={minutes.limitMinutes}
 					/>
 				) : null}
-				{tenantKey && !(own?.transcribe && own?.text) ? (
+				{tenantKeyRows(onTenant, own).map((row) => (
 					<KeyRow
-						data-id="usage-tenant-key"
-						label={t("ui.usage.tenantKey.label")}
-						value={t("ui.usage.tenantKey.value", { domain: tenant.domain })}
+						key={row.id}
+						data-id={row.id}
+						label={t(row.label)}
+						value={
+							row.missing
+								? t("ui.usage.tenantKey.missing")
+								: t("ui.usage.tenantKey.value", { domain: tenant.domain })
+						}
 					/>
-				) : null}
+				))}
 				{own?.transcribe ? (
 					<KeyRow
 						data-id="usage-own-transcribe"
