@@ -135,8 +135,9 @@ pub async fn claim_next(db: &Database) -> Result<Option<Job>, mongodb::error::Er
 
 /// [`claim_next`] trong phạm vi `scope` (test chỉ nhận job của user giả của nó).
 async fn claim_next_in(db: &Database, scope: Document) -> Result<Option<Job>, mongodb::error::Error> {
-    let mut filter = doc! { "status": "queued", "tenantId": PRIMARY_ID };
-    filter.extend(scope);
+    // Điều kiện của hàng đợi ghi sau cùng: `scope` không đè được trạng thái hay `tenantId`.
+    let mut filter = scope;
+    filter.extend(doc! { "status": "queued", "tenantId": PRIMARY_ID });
     db.collection::<Job>(COLL)
         .find_one_and_update(filter, doc! { "$set": { "status": "running", "heartbeatAt": DateTime::now() } })
         .sort(doc! { "createdAt": 1 })
@@ -207,14 +208,19 @@ mod tests {
             d
         };
         // Job của tenant khác và job thiếu `tenantId` xếp TRƯỚC job của tenant chính.
-        coll.insert_many([queued(Some("ten_other")), queued(None)]).await.expect("job lạ");
+        let inserted = coll.insert_many([queued(Some("ten_other")), queued(None)]).await.expect("job lạ");
+        let foreign_ids: Vec<_> = inserted.inserted_ids.into_values().collect();
         tokio::time::sleep(std::time::Duration::from_millis(5)).await;
         let mine = create_split(&db, &user, "f", SplitCriterion::Minutes, 1.0, false).await.expect("tạo");
         let scope = doc! { "userId": &user };
         let claimed = claim_next_in(&db, scope.clone()).await.expect("nhận").expect("có job tenant chính");
         assert_eq!((claimed.hex_id(), claimed.tenant_id.as_str()), (mine, PRIMARY_ID));
-        assert!(claim_next_in(&db, scope.clone()).await.expect("nhận").is_none(), "job tenant khác không bao giờ được nhận");
-        assert_eq!(coll.count_documents(doc! { "userId": &user, "status": "queued" }).await.expect("đếm"), 2);
+        // Chỉ xét doc lạ: test khác chạy song song có thể xếp lại mọi lượt `running` của collection.
+        let foreign = doc! { "_id": { "$in": foreign_ids } };
+        assert!(claim_next_in(&db, foreign.clone()).await.expect("nhận").is_none(), "job tenant khác không bao giờ được nhận");
+        let mut still_queued = foreign;
+        still_queued.insert("status", "queued");
+        assert_eq!(coll.count_documents(still_queued).await.expect("đếm"), 2);
         coll.delete_many(scope).await.expect("dọn");
     }
 }

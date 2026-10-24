@@ -323,8 +323,9 @@ pub async fn claim_next(db: &Database) -> Result<Option<TranscriptDoc>, mongodb:
 
 /// [`claim_next`] trong phạm vi `scope` (test chỉ nhận lượt của user giả của nó).
 async fn claim_next_in(db: &Database, scope: bson::Document) -> Result<Option<TranscriptDoc>, mongodb::error::Error> {
-    let mut filter = doc! { "status": "queued", "tenantId": PRIMARY_ID, "updatedAt": { "$lte": DateTime::now() } };
-    filter.extend(scope);
+    // Điều kiện của hàng đợi ghi sau cùng: `scope` không đè được trạng thái hay `tenantId`.
+    let mut filter = scope;
+    filter.extend(doc! { "status": "queued", "tenantId": PRIMARY_ID, "updatedAt": { "$lte": DateTime::now() } });
     db.collection::<TranscriptDoc>(COLL)
         .find_one_and_update(filter, doc! { "$set": { "status": "running", "updatedAt": DateTime::now() } })
         .sort(doc! { "updatedAt": 1 })
@@ -753,8 +754,12 @@ mod tests {
         let scope = doc! { "userId": &user };
         let claimed = claim_next_in(&db, scope.clone()).await.expect("nhận").expect("có lượt tenant chính");
         assert_eq!(claimed.id, mine);
-        assert!(claim_next_in(&db, scope.clone()).await.expect("nhận").is_none(), "lượt tenant khác không bao giờ được nhận");
-        assert_eq!(coll.count_documents(doc! { "userId": &user, "status": "queued" }).await.expect("đếm"), 2);
+        // Chỉ xét doc lạ: test khác chạy song song có thể xếp lại mọi lượt `running` của collection.
+        let foreign = doc! { "_id": { "$in": [other, untagged] } };
+        assert!(claim_next_in(&db, foreign.clone()).await.expect("nhận").is_none(), "lượt tenant khác không bao giờ được nhận");
+        let mut still_queued = foreign;
+        still_queued.insert("status", "queued");
+        assert_eq!(coll.count_documents(still_queued).await.expect("đếm"), 2);
         coll.delete_many(scope).await.expect("dọn");
     }
 
