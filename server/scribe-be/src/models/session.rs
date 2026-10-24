@@ -6,13 +6,12 @@
 //!   gia hạn qua làm mới ở IdP.
 //! - `devices`: `_id` = băm token thiết bị của app; refresh token IdP mã hoá; khoá `refreshingAt` để chỉ
 //!   một lần làm mới chạy (refresh token của IdP dùng một lần).
-//! - `logout_jtis`: chống phát lại logout token, TTL 10 phút; `_id` = `<tenantId>:<jti>` (jti chỉ duy nhất trong
-//!   một issuer).
+//! - `logout_jtis`: chống phát lại logout token, TTL 10 phút; `_id` = `primary:<jti>`.
 //!
-//! Mọi doc mang `tenantId`; phiên, lượt đăng nhập và jti chỉ đọc được trong đúng tenant của request (phiên của tenant
-//! này gửi tới host của tenant khác là "không có phiên").
+//! Mọi doc mang `tenantId: "primary"` (tenant duy nhất); phiên, lượt đăng nhập và jti chỉ đọc theo tenant này.
 
 use crate::error::AppError;
+use crate::tenant::PRIMARY_ID;
 use crate::session::{hash_token, random_token};
 use futures_util::StreamExt;
 use mongodb::bson::{doc, DateTime, Document};
@@ -71,19 +70,19 @@ pub struct LoginState {
     pub nonce: String,
 }
 
-pub async fn save_state(db: &Database, tenant_id: &str, state: &str, verifier: &str, nonce: &str) -> Result<(), AppError> {
+pub async fn save_state(db: &Database, state: &str, verifier: &str, nonce: &str) -> Result<(), AppError> {
     db.collection::<Document>(STATES)
-        .insert_one(doc! { "_id": state, "tenantId": tenant_id, "codeVerifier": verifier, "nonce": nonce, "createdAt": DateTime::now() })
+        .insert_one(doc! { "_id": state, "tenantId": PRIMARY_ID, "codeVerifier": verifier, "nonce": nonce, "createdAt": DateTime::now() })
         .await
         .map(|_| ())
         .map_err(internal("lưu lượt đăng nhập"))
 }
 
-/// Lấy và xoá (dùng một lần), chỉ lượt của tenant này. TTL index có thể chậm tới 60 giây nên tự kiểm hạn 10 phút.
-pub async fn take_state(db: &Database, tenant_id: &str, state: &str) -> Result<Option<LoginState>, AppError> {
+/// Lấy và xoá (dùng một lần). TTL index có thể chậm tới 60 giây nên tự kiểm hạn 10 phút.
+pub async fn take_state(db: &Database, state: &str) -> Result<Option<LoginState>, AppError> {
     let d = db
         .collection::<Document>(STATES)
-        .find_one_and_delete(doc! { "_id": state, "tenantId": tenant_id, "createdAt": { "$gt": after(-600) } })
+        .find_one_and_delete(doc! { "_id": state, "tenantId": PRIMARY_ID, "createdAt": { "$gt": after(-600) } })
         .await
         .map_err(internal("đọc lượt đăng nhập"))?;
     Ok(d.and_then(|d| {
@@ -120,7 +119,6 @@ pub struct Session {
 /// Tạo phiên, trả token cookie (chỉ băm của nó được lưu).
 pub async fn create(
     db: &Database,
-    tenant_id: &str,
     user_id: &str,
     client: Client,
     idp_sid: Option<&str>,
@@ -132,7 +130,7 @@ pub async fn create(
     db.collection::<Document>(SESSIONS)
         .insert_one(doc! {
             "_id": hash_token(&token),
-            "tenantId": tenant_id,
+            "tenantId": PRIMARY_ID,
             "userId": user_id,
             "client": client.name(),
             "idpSid": idp_sid,
@@ -145,12 +143,12 @@ pub async fn create(
     Ok((token, expires_at))
 }
 
-/// Phiên còn hạn của token trong tenant này. Phiên web gần hết hạn được trượt thêm (tối đa 7 ngày từ lúc đăng nhập).
-pub async fn find(db: &Database, tenant_id: &str, token: &str) -> Result<Option<Session>, AppError> {
+/// Phiên còn hạn của token. Phiên web gần hết hạn được trượt thêm (tối đa 7 ngày từ lúc đăng nhập).
+pub async fn find(db: &Database, token: &str) -> Result<Option<Session>, AppError> {
     let id = hash_token(token);
     let coll = db.collection::<Document>(SESSIONS);
     let Some(d) = coll
-        .find_one(doc! { "_id": &id, "tenantId": tenant_id, "expiresAt": { "$gt": DateTime::now() } })
+        .find_one(doc! { "_id": &id, "tenantId": PRIMARY_ID, "expiresAt": { "$gt": DateTime::now() } })
         .await
         .map_err(internal("đọc phiên"))?
     else {
@@ -172,11 +170,11 @@ pub async fn find(db: &Database, tenant_id: &str, token: &str) -> Result<Option<
     Ok(Some(Session { id, user_id }))
 }
 
-/// Xoá một phiên của tenant này; trả id (băm) để xoá khỏi cache.
-pub async fn delete(db: &Database, tenant_id: &str, token: &str) -> Result<String, AppError> {
+/// Xoá một phiên; trả id (băm) để xoá khỏi cache.
+pub async fn delete(db: &Database, token: &str) -> Result<String, AppError> {
     let id = hash_token(token);
     db.collection::<Document>(SESSIONS)
-        .delete_one(doc! { "_id": &id, "tenantId": tenant_id })
+        .delete_one(doc! { "_id": &id, "tenantId": PRIMARY_ID })
         .await
         .map_err(internal("xoá phiên"))?;
     Ok(id)
@@ -195,14 +193,9 @@ async fn delete_matching(db: &Database, filter: Document) -> Result<Vec<String>,
     Ok(ids)
 }
 
-/// Back-channel logout: xoá phiên web của tenant gắn phiên IdP `sid` (sid chỉ duy nhất trong một issuer).
-pub async fn delete_web_by_idp_sid(db: &Database, tenant_id: &str, sid: &str) -> Result<Vec<String>, AppError> {
-    delete_matching(db, doc! { "tenantId": tenant_id, "idpSid": sid, "client": "web" }).await
-}
-
-/// Mọi phiên của tenant (CLI `purge-tenant`, phần còn sót sau khi xoá từng user).
-pub async fn delete_by_tenant(db: &Database, tenant_id: &str) -> Result<Vec<String>, AppError> {
-    delete_matching(db, doc! { "tenantId": tenant_id }).await
+/// Back-channel logout: xoá phiên web gắn phiên IdP `sid`.
+pub async fn delete_web_by_idp_sid(db: &Database, sid: &str) -> Result<Vec<String>, AppError> {
+    delete_matching(db, doc! { "tenantId": PRIMARY_ID, "idpSid": sid, "client": "web" }).await
 }
 
 /// Mọi phiên của user (bị chặn, hoặc logout token chỉ có `sub`).
@@ -233,13 +226,13 @@ pub enum DeviceLock {
 }
 
 /// Lưu thiết bị mới, trả token thiết bị cho app (chỉ băm được lưu).
-pub async fn create_device(db: &Database, tenant_id: &str, user_id: &str, refresh_sealed: &str) -> Result<(String, String), AppError> {
+pub async fn create_device(db: &Database, user_id: &str, refresh_sealed: &str) -> Result<(String, String), AppError> {
     let token = random_token();
     let id = hash_token(&token);
     db.collection::<Document>(DEVICES)
         .insert_one(doc! {
             "_id": &id,
-            "tenantId": tenant_id,
+            "tenantId": PRIMARY_ID,
             "userId": user_id,
             "refresh": refresh_sealed,
             "createdAt": DateTime::now(),
@@ -335,22 +328,23 @@ pub async fn delete_device(db: &Database, device_id: &str) -> Result<Vec<String>
 
 // MARK: Logout token
 
-fn jti_key(tenant_id: &str, jti: &str) -> String {
-    format!("{tenant_id}:{jti}")
+/// `_id` của jti: giữ dạng `<tenantId>:<jti>` của các doc đã ghi.
+fn jti_key(jti: &str) -> String {
+    format!("{PRIMARY_ID}:{jti}")
 }
 
-/// `jti` của logout token (của issuer tenant này) đã xử lý xong chưa (phát lại thì bỏ qua).
-pub async fn seen_jti(db: &Database, tenant_id: &str, jti: &str) -> Result<bool, AppError> {
+/// `jti` của logout token đã xử lý xong chưa (phát lại thì bỏ qua).
+pub async fn seen_jti(db: &Database, jti: &str) -> Result<bool, AppError> {
     db.collection::<Document>(JTIS)
-        .count_documents(doc! { "_id": jti_key(tenant_id, jti) })
+        .count_documents(doc! { "_id": jti_key(jti) })
         .await
         .map(|n| n > 0)
         .map_err(internal("đọc jti"))
 }
 
 /// Ghi `jti` SAU khi đã xoá phiên: xoá lỗi thì IdP gửi lại và lần sau vẫn xử lý.
-pub async fn record_jti(db: &Database, tenant_id: &str, jti: &str) -> Result<(), AppError> {
-    let jti_doc = doc! { "_id": jti_key(tenant_id, jti), "tenantId": tenant_id, "at": DateTime::now() };
+pub async fn record_jti(db: &Database, jti: &str) -> Result<(), AppError> {
+    let jti_doc = doc! { "_id": jti_key(jti), "tenantId": PRIMARY_ID, "at": DateTime::now() };
     match db.collection::<Document>(JTIS).insert_one(jti_doc).await {
         Ok(_) => Ok(()),
         Err(e) if crate::models::user::is_duplicate_key(&e) => Ok(()),
@@ -361,7 +355,6 @@ pub async fn record_jti(db: &Database, tenant_id: &str, jti: &str) -> Result<(),
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tenant::PRIMARY_ID as P;
 
     /// Trên Mongo thật (DB dev): `TRANSCRIPT_TEST_MONGO_URI=… TRANSCRIPT_TEST_DB_NAME=… cargo test
     /// sessions_on_real -- --ignored`.
@@ -376,18 +369,18 @@ mod tests {
 
         // Lượt đăng nhập dùng một lần.
         let state = random_token();
-        save_state(&db, P, &state, "verifier", "nonce").await.expect("lưu");
-        assert_eq!(take_state(&db, P, &state).await.expect("lấy").map(|s| s.nonce), Some("nonce".into()));
-        assert!(take_state(&db, P, &state).await.expect("lấy lại").is_none());
+        save_state(&db, &state, "verifier", "nonce").await.expect("lưu");
+        assert_eq!(take_state(&db, &state).await.expect("lấy").map(|s| s.nonce), Some("nonce".into()));
+        assert!(take_state(&db, &state).await.expect("lấy lại").is_none());
 
         // Phiên web: tìm được, back-channel theo sid xoá đúng phiên web.
-        let (web, _) = create(&db, P, &user, Client::Web, Some("sid-1"), None).await.expect("web");
-        let (device_token, device_id) = create_device(&db, P, &user, "sealed").await.expect("thiết bị");
-        let (mobile, _) = create(&db, P, &user, Client::Mobile, Some("sid-1"), Some(&device_id)).await.expect("mobile");
-        assert_eq!(find(&db, P, &web).await.expect("tìm").map(|s| s.user_id), Some(user.clone()));
-        assert_eq!(delete_web_by_idp_sid(&db, P, "sid-1").await.expect("bc").len(), 1);
-        assert!(find(&db, P, &web).await.expect("tìm").is_none());
-        assert!(find(&db, P, &mobile).await.expect("tìm").is_some(), "phiên mobile không theo phiên trình duyệt");
+        let (web, _) = create(&db, &user, Client::Web, Some("sid-1"), None).await.expect("web");
+        let (device_token, device_id) = create_device(&db, &user, "sealed").await.expect("thiết bị");
+        let (mobile, _) = create(&db, &user, Client::Mobile, Some("sid-1"), Some(&device_id)).await.expect("mobile");
+        assert_eq!(find(&db, &web).await.expect("tìm").map(|s| s.user_id), Some(user.clone()));
+        assert_eq!(delete_web_by_idp_sid(&db, "sid-1").await.expect("bc").len(), 1);
+        assert!(find(&db, &web).await.expect("tìm").is_none());
+        assert!(find(&db, &mobile).await.expect("tìm").is_some(), "phiên mobile không theo phiên trình duyệt");
 
         // Hai lần làm mới đồng thời: chỉ một lần giữ được khoá.
         let (a, b) = tokio::join!(lock_device(&db, &device_token), lock_device(&db, &device_token));
@@ -407,48 +400,13 @@ mod tests {
 
         // Thu hồi thiết bị xoá phiên của nó.
         assert_eq!(delete_device(&db, &device_id).await.expect("xoá").len(), 1);
-        assert!(find(&db, P, &mobile).await.expect("tìm").is_none());
+        assert!(find(&db, &mobile).await.expect("tìm").is_none());
         assert!(matches!(lock_device(&db, &device_token).await.expect("khoá"), DeviceLock::Missing));
         let jti = format!("jti-{user}");
-        assert!(!seen_jti(&db, P, &jti).await.expect("đọc"));
-        record_jti(&db, P, &jti).await.expect("ghi");
-        record_jti(&db, P, &jti).await.expect("ghi lại không lỗi");
-        assert!(seen_jti(&db, P, &jti).await.expect("đọc"));
+        assert!(!seen_jti(&db, &jti).await.expect("đọc"));
+        record_jti(&db, &jti).await.expect("ghi");
+        record_jti(&db, &jti).await.expect("ghi lại không lỗi");
+        assert!(seen_jti(&db, &jti).await.expect("đọc"));
         delete_by_user(&db, &user, None).await.expect("dọn");
-    }
-
-    /// Cô lập phiên: lượt đăng nhập, phiên, back-channel theo `sid` và jti của tenant A không đọc hay xoá được từ
-    /// tenant B.
-    #[tokio::test]
-    #[ignore]
-    async fn sessions_are_isolated_by_tenant_on_real_mongo() {
-        let uri = std::env::var("TRANSCRIPT_TEST_MONGO_URI").expect("TRANSCRIPT_TEST_MONGO_URI");
-        let db_name = std::env::var("TRANSCRIPT_TEST_DB_NAME").expect("TRANSCRIPT_TEST_DB_NAME");
-        let db = crate::db::connect(&uri, &db_name).await.expect("kết nối Mongo");
-        ensure_indexes(&db).await.expect("index");
-        let tag = uuid::Uuid::new_v4().simple().to_string();
-        let (a, b) = (format!("ten_a_{tag}"), format!("ten_b_{tag}"));
-        let (user_a, user_b) = (format!("selftest-a-{tag}"), format!("selftest-b-{tag}"));
-
-        let state = random_token();
-        save_state(&db, &a, &state, "verifier", "nonce").await.expect("lưu");
-        assert!(take_state(&db, &b, &state).await.expect("lấy").is_none(), "lượt của A hết hạn ở B");
-        assert!(take_state(&db, &a, &state).await.expect("lấy").is_some(), "B lấy hụt không làm mất lượt của A");
-
-        let (token_a, _) = create(&db, &a, &user_a, Client::Web, Some("sid-same"), None).await.expect("phiên A");
-        let (token_b, _) = create(&db, &b, &user_b, Client::Web, Some("sid-same"), None).await.expect("phiên B");
-        assert!(find(&db, &b, &token_a).await.expect("tìm").is_none(), "phiên A gửi tới host B ⟹ không có phiên");
-        let _ = delete(&db, &b, &token_a).await.expect("xoá hụt");
-        assert!(find(&db, &a, &token_a).await.expect("tìm").is_some(), "B không xoá được phiên của A");
-        // Back-channel của issuer B với cùng `sid` chỉ xoá phiên B.
-        assert_eq!(delete_web_by_idp_sid(&db, &b, "sid-same").await.expect("bc").len(), 1);
-        assert!(find(&db, &a, &token_a).await.expect("tìm").is_some());
-        assert!(find(&db, &b, &token_b).await.expect("tìm").is_none());
-        // jti trùng giữa hai issuer không chặn nhau.
-        let jti = format!("jti-{tag}");
-        record_jti(&db, &a, &jti).await.expect("ghi");
-        assert!(seen_jti(&db, &a, &jti).await.expect("đọc") && !seen_jti(&db, &b, &jti).await.expect("đọc"));
-        assert_eq!(delete_by_tenant(&db, &a).await.expect("dọn").len(), 1);
-        assert!(find(&db, &a, &token_a).await.expect("tìm").is_none());
     }
 }

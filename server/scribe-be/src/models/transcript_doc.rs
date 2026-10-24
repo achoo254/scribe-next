@@ -646,7 +646,7 @@ mod tests {
 
         // Chép lại đoạn a: runId đổi → câu sửa của lượt cũ hết hiệu lực.
         let charge = crate::models::usage::Charge { user_id: user.clone(), month: "test".into(), free_pool: false, day: None };
-        transcript::enqueue(&db, a, crate::tenant::PRIMARY_ID, &user, "run-2", "m", transcript::Billing::Server(&charge), 0).await.expect("enqueue");
+        transcript::enqueue(&db, a, &user, "run-2", "m", transcript::Billing::Server(&charge), 0).await.expect("enqueue");
         let run = transcript::statuses_for_files(&db, &user, &[a]).await.expect("status");
         assert_eq!(effective_texts(d.edits.get(&a.to_hex()), &run[0].run_id, 1), None);
 

@@ -16,16 +16,14 @@
 //! hết, sổ không bị giữ chỗ treo và biên bản vẫn được lưu. Trình tự đo lường ở `meter`, dùng chung với
 //! hỏi đáp (`crate::search::ask`).
 //!
-//! Model chữ chạy bằng key server (`LLM_PROVIDER`/`LLM_MODEL`), key riêng của người dùng hoặc key của chủ domain
-//! ([`TextKey`], chọn ở `tenant_keys::choose`): lượt bằng key riêng hay key chủ domain không có lượt ngày hay trần nào
-//! (`meter::reserve_own`), lỗi của key đó chỉ đánh dấu key đó (`USER_KEY_FAILED`, `TENANT_KEY_FAILED`) và không tạm
-//! ngưng tính năng cho người khác.
+//! Model chữ chạy bằng key server (`LLM_PROVIDER`/`LLM_MODEL`) hoặc key riêng của người dùng ([`TextKey`], chọn ở
+//! `user_keys`): lượt bằng key riêng không có lượt ngày hay trần nào (`meter::reserve_own`), lỗi key riêng chỉ đánh dấu
+//! key đó (`USER_KEY_FAILED`) và không tạm ngưng tính năng cho người khác.
 
 pub(crate) mod llm;
 pub(crate) mod meter;
 pub mod share;
 
-use crate::tenant::Tenant;
 use crate::audit;
 use crate::auth::UserId;
 use crate::error::AppError;
@@ -34,7 +32,6 @@ use crate::models::summary::Feature;
 use crate::config::Vendor;
 use crate::models::{plan, user};
 use crate::state::AppState;
-use crate::tenant_keys::{self, Choice, TenantKey};
 use crate::transcribe::docs;
 use crate::user_keys::{self, UserKey};
 use llm::is_key_broken;
@@ -112,8 +109,6 @@ pub(crate) enum TextKey {
     Server { provider: Vendor, key: String, model: String },
     /// Key riêng của người dùng và model họ chọn.
     Own { key: UserKey, model: String },
-    /// Key của chủ domain và model mặc định của nhà cung cấp.
-    Tenant { key: TenantKey, model: String },
 }
 
 impl TextKey {
@@ -121,54 +116,21 @@ impl TextKey {
         match self {
             TextKey::Server { provider, key, model } => llm::Llm { vendor: *provider, model, api_key: key },
             TextKey::Own { key, model } => llm::Llm { vendor: key.provider, model, api_key: key.value() },
-            TextKey::Tenant { key, model } => llm::Llm { vendor: key.vendor, model, api_key: key.value() },
         }
     }
 
     pub(crate) fn model(&self) -> &str {
         match self {
-            TextKey::Server { model, .. } | TextKey::Own { model, .. } | TextKey::Tenant { model, .. } => model,
+            TextKey::Server { model, .. } | TextKey::Own { model, .. } => model,
         }
-    }
-
-    /// Mã nhà cung cấp khi lượt không chạy bằng key server (`byok` của audit và nhật ký).
-    pub(crate) fn byok(&self) -> Option<Vendor> {
-        match self {
-            TextKey::Server { .. } => None,
-            TextKey::Own { key, .. } => Some(key.provider),
-            TextKey::Tenant { key, .. } => Some(key.vendor),
-        }
-    }
-
-    /// `keySource` của audit và nhật ký: `tenant` khi chạy bằng key của chủ domain.
-    pub(crate) fn key_source(&self) -> Option<&'static str> {
-        matches!(self, TextKey::Tenant { .. }).then_some(crate::models::transcript::TENANT_KEY_SOURCE)
     }
 }
 
-/// Key cho một lượt theo `tenant_keys::choose`: key riêng của người dùng (không mở được ⟹ `USER_KEY_FAILED`), key của
-/// chủ domain (không mở được ⟹ `TENANT_KEY_FAILED`), hay key server — không bao giờ dùng key server thay key khác. Key
-/// server thiếu hoặc đang tạm ngưng ⟹ 503 với câu `paused`; chỉ tenant chính có key server: tenant sổ không có key cho
-/// việc này ⟹ 403 `TENANT_KEY_MISSING`.
-pub(crate) async fn text_key(
-    state: &AppState,
-    tenant: &crate::tenant::TenantCtx,
-    user_id: &str,
-    paused: &str,
-) -> Result<TextKey, AppError> {
-    match tenant_keys::choose(state, tenant, user_id, user_keys::Use::Text).await? {
-        Choice::Own(provider) => {
-            // Key vừa bị xoá giữa hai lần đọc: báo như key riêng không mở được.
-            let (key, model) = user_keys::text_key(state, user_id)
-                .await?
-                .ok_or_else(|| user_keys::user_key_error(user_keys::failure_message(provider, "key đã bị xoá")))?;
-            return Ok(TextKey::Own { key, model });
-        }
-        Choice::Tenant(provider) => {
-            let key = tenant_keys::open(state, &tenant.id, provider).await.map_err(tenant_keys::tenant_key_error)?;
-            return Ok(TextKey::Tenant { key, model: llm::default_model(provider).to_string() });
-        }
-        Choice::Server => {}
+/// Key cho một lượt: key riêng của người dùng nếu có (không mở được ⟹ `USER_KEY_FAILED`, không dùng key server thay),
+/// không thì key server (thiếu hoặc đang tạm ngưng ⟹ 503 với câu `paused`).
+pub(crate) async fn text_key(state: &AppState, user_id: &str, paused: &str) -> Result<TextKey, AppError> {
+    if let Some((key, model)) = user_keys::text_key(state, user_id).await? {
+        return Ok(TextKey::Own { key, model });
     }
     let (provider, key) = state
         .transcriber
@@ -178,8 +140,7 @@ pub(crate) async fn text_key(
     Ok(TextKey::Server { provider, key: key.to_string(), model: state.config.summary_model.clone() })
 }
 
-/// Bước giữ chỗ theo key: key server qua mọi hạn mức (`meter::reserve`), key riêng hay key chủ domain chỉ mở lượt
-/// (`meter::reserve_own`).
+/// Bước giữ chỗ theo key: key server qua mọi hạn mức (`meter::reserve`), key riêng chỉ mở lượt (`meter::reserve_own`).
 pub(crate) async fn reserve_for(
     state: &AppState,
     feature: Feature,
@@ -189,19 +150,16 @@ pub(crate) async fn reserve_for(
     estimate: i64,
     text_key: &TextKey,
 ) -> Result<meter::Reservation, AppError> {
-    match text_key.byok() {
-        None => meter::reserve(state, feature, user_id, key, plan, estimate).await,
-        Some(vendor) => {
-            let byok = meter::Byok { vendor, key_source: text_key.key_source() };
-            meter::reserve_own(state, feature, user_id, key, byok, text_key.model()).await
-        }
+    match text_key {
+        TextKey::Server { .. } => meter::reserve(state, feature, user_id, key, plan, estimate).await,
+        TextKey::Own { key: own, model } => meter::reserve_own(state, feature, user_id, key, own.provider, model).await,
     }
 }
 
 /// Lỗi key/credit của một lượt: key server ⟹ tạm ngưng tính năng (báo quản trị) và 503 `paused`; key riêng ⟹ đánh dấu
-/// key đó và 403 `USER_KEY_FAILED`; key chủ domain ⟹ báo IdP và 403 `TENANT_KEY_FAILED`. Lỗi khác ⟹ `None`.
+/// key đó và 403 `USER_KEY_FAILED`. Lỗi khác ⟹ `None`.
 pub(crate) async fn key_failure(state: &AppState, text_key: &TextKey, e: &str, paused: &str) -> Option<AppError> {
-    match (key_error_action(text_key.byok().is_some(), e), text_key) {
+    match (key_error_action(matches!(text_key, TextKey::Own { .. }), e), text_key) {
         (KeyErrorAction::None, _) => None,
         (KeyErrorAction::PauseServer, _) => {
             report_key_broken(state, e);
@@ -209,9 +167,6 @@ pub(crate) async fn key_failure(state: &AppState, text_key: &TextKey, e: &str, p
         }
         (KeyErrorAction::MarkOwnKey(problem), TextKey::Own { key, .. }) => {
             Some(user_keys::user_key_error(user_keys::report(state, key, problem).await))
-        }
-        (KeyErrorAction::MarkOwnKey(problem), TextKey::Tenant { key, .. }) => {
-            Some(tenant_keys::tenant_key_error(tenant_keys::report(state, key, problem).await))
         }
         (KeyErrorAction::MarkOwnKey(_), TextKey::Server { .. }) => None,
     }
@@ -223,15 +178,15 @@ enum KeyErrorAction {
     None,
     /// Key server hỏng: tạm ngưng tính năng cho mọi người.
     PauseServer,
-    /// Key riêng hay key chủ domain hỏng: chỉ đánh dấu key đó, không bao giờ đụng cờ tạm ngưng của server.
+    /// Key riêng hỏng: chỉ đánh dấu key đó, không bao giờ đụng cờ tạm ngưng của server.
     MarkOwnKey(user_keys::Problem),
 }
 
-fn key_error_action(byok: bool, e: &str) -> KeyErrorAction {
+fn key_error_action(own_key: bool, e: &str) -> KeyErrorAction {
     if !is_key_broken(e) {
         return KeyErrorAction::None;
     }
-    if byok {
+    if own_key {
         KeyErrorAction::MarkOwnKey(user_keys::problem_of(e).unwrap_or(user_keys::Problem::Invalid))
     } else {
         KeyErrorAction::PauseServer
@@ -326,7 +281,6 @@ struct Job {
 pub async fn create(
     State(state): State<AppState>,
     Extension(user): Extension<UserId>,
-    Extension(tenant): Extension<Tenant>,
     Path(key): Path<String>,
 ) -> Result<Json<Value>, AppError> {
     let profile = user::find_profile(&state.db, &user.0)
@@ -335,10 +289,10 @@ pub async fn create(
     if profile.blocked {
         return Err(AppError::Forbidden("tài khoản đã bị khoá".into()));
     }
-    if !state.config.transcribe_allowed(&tenant, &profile.email) {
+    if !state.config.transcribe_allowed(&profile.email) {
         return Err(AppError::Forbidden("tài khoản này chưa được dùng tóm tắt".into()));
     }
-    let text_key = text_key(&state, &tenant, &user.0, PAUSED).await?;
+    let text_key = text_key(&state, &user.0, PAUSED).await?;
     if !state.rate.allow(&format!("summary:{}", user.0), PER_MINUTE) {
         return Err(AppError::TooManyRequests("bấm tóm tắt quá nhanh, thử lại sau một phút".into()));
     }
@@ -439,8 +393,7 @@ async fn run(state: AppState, job: Job, _running: RunningGuard) -> Result<Json<V
         "costS": cost_s,
         "decisions": stored.decisions.len() as i64,
         "actions": stored.actions.len() as i64,
-        "byok": job.text_key.byok().is_some(),
-        "keySource": job.text_key.key_source(),
+        "byok": matches!(job.text_key, TextKey::Own { .. }),
     };
     audit::record(&state, Some(user_id), "summary.create", details);
     Ok(Json(to_json(&stored, &job.hash)))

@@ -604,7 +604,6 @@ mod tests {
         TranscriptDoc {
             id: f.id.expect("id"),
             user_id: "u".into(),
-            tenant_id: crate::tenant::primary_id(),
             status: "done".into(),
             progress: 100.0,
             run_id: run_id.into(),
@@ -622,7 +621,6 @@ mod tests {
             settled: true,
             attempts: 0,
             byok: None,
-            key_source: None,
         }
     }
 

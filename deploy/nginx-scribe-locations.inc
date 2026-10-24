@@ -1,6 +1,5 @@
-# Phần chung của mọi server block Scribe (scribe.hoandat.com ở nginx-scribe.conf, scribe.<domain> của tenant sổ ở
-# nginx-scribe-tenants.conf) — cài: /etc/nginx/scribe/locations.inc trên .65 (ngoài conf.d/: conf.d/*.conf nạp ở mức
-# http). Backend chọn tenant theo Host nên /api/ giữ nguyên Host của request. Cần security-headers.inc cùng thư mục.
+# Location của server block Scribe (scribe.hoandat.com ở nginx-scribe.conf) — cài: /etc/nginx/scribe/locations.inc trên
+# .65 (ngoài conf.d/: conf.d/*.conf nạp ở mức http). Cần security-headers.inc cùng thư mục.
 
 # API → BE axum localhost. Tắt buffering cho upload/stream (chunked + progress).
 location /api/ {
@@ -16,7 +15,7 @@ location /api/ {
     proxy_send_timeout 3600s;
 }
 
-# FE static (React dist) — SPA fallback về index.html. Một bản build cho mọi domain: tenant đọc lúc chạy (/api/idp).
+# FE static (React dist) — SPA fallback về index.html.
 root /var/www/scribe/dist;
 
 # Asset Vite có hash trong tên (index-<hash>.js/css) → nội dung bất biến → cache vĩnh viễn.

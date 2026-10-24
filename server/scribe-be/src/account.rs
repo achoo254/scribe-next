@@ -279,8 +279,7 @@ async fn revoke_all(state: &AppState, sealed: Vec<String>) -> Vec<String> {
     for s in sealed {
         // Không giải mã được (khoá phiên đã đổi): không còn gì để thu hồi.
         let Some(refresh) = open(&state.session_key, &s) else { continue };
-        // Thiết bị (app di động) chỉ có ở tenant chính.
-        if !state.oidc.primary().revoke(&state.http, &state.config.oidc_mobile_client_id, &refresh).await {
+        if !state.oidc.revoke(&state.http, &state.config.oidc_mobile_client_id, &refresh).await {
             left.push(s);
         }
     }
@@ -366,7 +365,6 @@ pub struct DeleteBody {
 pub async fn delete_me(
     State(state): State<AppState>,
     Extension(me): Extension<UserId>,
-    Extension(tenant): Extension<crate::tenant::Tenant>,
     jar: CookieJar,
     Json(body): Json<DeleteBody>,
 ) -> Result<(CookieJar, Json<Value>), AppError> {
@@ -421,7 +419,7 @@ pub async fn delete_me(
     };
     audit::record(&state, Some(&me.0), "account.delete", details);
     let body = json!({ "deleted": true, "files": purged.files, "bytes": purged.bytes, "complete": complete });
-    Ok((without_session_cookie(&tenant, jar), Json(body)))
+    Ok((without_session_cookie(&state, jar), Json(body)))
 }
 
 #[cfg(test)]

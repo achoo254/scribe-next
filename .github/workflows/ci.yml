@@ -83,9 +83,9 @@ jobs:
           path: web/e2e/test-results
           retention-days: 7
 
-  # Mongo trống cùng major với prod (.65 chạy MongoDB 7.0): test `#[ignore]` trên Mongo thật (danh tính, phiên, cô lập
-  # tenant, migration, hàng đợi, xoá tài khoản) chạy ở đây thay vì chỉ trên Mongo lab qua VPN. `--skip live_` bỏ các
-  # test gọi API trả tiền thật (OpenAI, ElevenLabs).
+  # Mongo trống cùng major với prod (.65 chạy MongoDB 7.0): test `#[ignore]` trên Mongo thật (danh tính, index, phiên,
+  # hàng đợi chỉ nhận lượt của tenant duy nhất, xoá tài khoản) chạy ở đây thay vì chỉ trên Mongo lab qua VPN.
+  # `--skip live_` bỏ các test gọi API trả tiền thật (OpenAI, ElevenLabs).
   rust:
     runs-on: ubuntu-latest
     services:

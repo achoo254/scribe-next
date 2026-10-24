@@ -2,7 +2,7 @@
 
 use crate::config::Config;
 use crate::auth::SessionCache;
-use crate::oidc_registry::OidcRegistry;
+use crate::oidc::Oidc;
 use crate::rate_limit::RateLimiter;
 use crate::transcribe::Transcriber;
 use mongodb::Database;
@@ -13,9 +13,10 @@ pub struct AppState {
     pub config: Arc<Config>,
     pub db: Database,
     pub http: reqwest::Client,
-    /// Client OIDC của hoandat-auth theo tenant (discovery + JWKS cache) và secret client web của từng tenant (tenant
-    /// chính: đọc từ tệp lúc khởi động, không nhúng binary).
-    pub oidc: Arc<OidcRegistry>,
+    /// Client OIDC của hoandat-auth (discovery + JWKS cache).
+    pub oidc: Arc<Oidc>,
+    /// Secret client web (đọc từ tệp lúc khởi động, không nhúng binary).
+    pub oidc_web_secret: Arc<String>,
     pub session_cache: Arc<SessionCache>,
     /// Khoá 32 byte sinh lúc chạy (tệp 600): mã hoá refresh token IdP của thiết bị.
     pub session_key: Arc<Vec<u8>>,
@@ -29,44 +30,4 @@ pub struct AppState {
     pub chat_bot: Arc<crate::chat_link::BotProfile>,
     /// Bí mật mã hoá key riêng của người dùng (`USER_KEYS_SECRET_PATH`); `None` = tính năng Key riêng tắt.
     pub user_keys: Option<Arc<crate::user_keys::crypto::Secret>>,
-    /// Host → tenant (tenant chính tĩnh, tenant sổ tra IdP có cache) và tên tài khoản đăng nhập của tenant chính.
-    pub tenants: Arc<crate::tenant::directory::TenantDirectory>,
-    /// Key AI do chủ domain niêm phong cho Scribe (vòng khoá niêm phong + bản niêm phong theo tenant); `None` = không
-    /// tenant sổ nào chạy.
-    pub tenant_keys: Option<Arc<crate::tenant_keys::TenantKeys>>,
-}
-
-#[cfg(test)]
-impl AppState {
-    /// State cho test router: cấu hình `Config::for_tests`, không key nào, Mongo `db` (lazy, chỉ nối khi route đụng
-    /// tới), danh bạ tenant `tenants`.
-    pub fn for_tests(db: Database, tenants: crate::tenant::directory::TenantDirectory) -> AppState {
-        let config = Config::for_tests();
-        let oidc = OidcRegistry::new(crate::oidc::Oidc::new(&config.oidc_issuer), "scribe-web", "test-secret".into(), None);
-        AppState::for_tests_with(config, db, tenants, oidc)
-    }
-
-    /// Như [`AppState::for_tests`] với cấu hình và client OIDC riêng.
-    pub fn for_tests_with(
-        config: Config,
-        db: Database,
-        tenants: crate::tenant::directory::TenantDirectory,
-        oidc: OidcRegistry,
-    ) -> AppState {
-        AppState {
-            transcriber: Arc::new(Transcriber::load(&config)),
-            oidc: Arc::new(oidc),
-            config: Arc::new(config),
-            db,
-            http: reqwest::Client::new(),
-            session_cache: Arc::default(),
-            session_key: Arc::new(vec![7; 32]),
-            rate: Arc::new(RateLimiter::new()),
-            summaries: Arc::default(),
-            chat_bot: Arc::default(),
-            user_keys: None,
-            tenants: Arc::new(tenants),
-            tenant_keys: None,
-        }
-    }
 }

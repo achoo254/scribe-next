@@ -97,8 +97,7 @@ pub async fn auth_limit(
         // login/callback là điều hướng của trình duyệt: trả trang đăng nhập kèm mã thay vì JSON trần.
         let path = req.uri().path();
         if path == "/api/auth/login" || path == "/api/auth/callback" {
-            let tenant = req.extensions().get::<crate::tenant::Tenant>().cloned().unwrap_or_else(|| state.tenants.primary());
-            return Ok(crate::auth::login_failed(&tenant, "busy"));
+            return Ok(crate::auth::login_failed(&state, "busy"));
         }
         return Err(AppError::TooManyRequests("quá nhiều yêu cầu đăng nhập, thử lại sau".into()));
     }

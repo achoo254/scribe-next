@@ -15,7 +15,6 @@
 
 pub mod batch;
 
-use crate::tenant::Tenant;
 use crate::audit;
 use crate::auth::UserId;
 use crate::error::AppError;
@@ -214,7 +213,6 @@ struct Job {
 pub async fn create(
     State(state): State<AppState>,
     Extension(user): Extension<UserId>,
-    Extension(tenant): Extension<Tenant>,
     Path(key): Path<String>,
     Json(req): Json<LangReq>,
 ) -> Result<Response, AppError> {
@@ -226,10 +224,10 @@ pub async fn create(
     if profile.blocked {
         return Err(AppError::Forbidden("tài khoản đã bị khoá".into()));
     }
-    if !state.config.transcribe_allowed(&tenant, &profile.email) {
+    if !state.config.transcribe_allowed(&profile.email) {
         return Err(AppError::Forbidden("tài khoản này chưa được dùng dịch".into()));
     }
-    let text_key = summary::text_key(&state, &tenant, &user.0, PAUSED).await?;
+    let text_key = summary::text_key(&state, &user.0, PAUSED).await?;
     if !state.rate.allow(&format!("translate:{}", user.0), PER_MINUTE) {
         return Err(AppError::TooManyRequests("bấm dịch quá nhanh, thử lại sau một phút".into()));
     }

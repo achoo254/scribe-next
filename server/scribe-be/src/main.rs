@@ -15,8 +15,6 @@ mod jobs;
 mod models;
 mod notify;
 mod oidc;
-mod oidc_registry;
-mod oidc_transport;
 mod rate_limit;
 mod realtime;
 mod recordings;
@@ -27,7 +25,6 @@ mod session;
 mod state;
 mod summary;
 mod tenant;
-mod tenant_keys;
 mod transcribe;
 mod translate;
 mod upload;
@@ -67,16 +64,6 @@ async fn main() {
             }
         }
         return;
-    }
-    // Dữ liệu có trước khi có tenant phải mang `tenantId` trước index unique `(tenantId, idpSub)`, worker và request
-    // đầu tiên; còn sót thì không phục vụ.
-    match tenant::migrate::run(&db).await {
-        Ok(report) if report.changed() > 0 => tracing::info!(?report, "đã gắn tenantId cho dữ liệu cũ"),
-        Ok(_) => {}
-        Err(e) => {
-            tracing::error!("migration tenant: {e}");
-            std::process::exit(1);
-        }
     }
     let session_key = session::load_or_create_key(&config.session_key_path)
         .unwrap_or_else(|e| panic!("không tạo được session key ({}): {e}", config.session_key_path));
@@ -162,6 +149,7 @@ async fn main() {
         tracing::error!("{e}");
         std::process::exit(1);
     }
+    let oidc_issuer = config.oidc_issuer.clone();
     let oidc_web_secret = std::fs::read_to_string(&config.oidc_web_client_secret_path)
         .map(|s| s.trim().to_string())
         .ok()
@@ -179,48 +167,12 @@ async fn main() {
         tracing::error!("{e}");
         std::process::exit(1);
     }
-    // API nội bộ của IdP: tra tenant theo Host và tên tài khoản đăng nhập. Thiếu ⟹ chỉ tenant chính, tên mặc định.
-    let internal = match tenant::internal_api::InternalApi::from_config(
-        config.idp_internal_api_url.as_deref(),
-        config.idp_internal_api_secret_path.as_deref(),
-    ) {
-        Ok(api) => api.map(Arc::new),
-        Err(e) => {
-            tracing::error!("API nội bộ của IdP: {e} — chỉ phục vụ tenant chính, dùng tên mặc định");
-            None
-        }
-    };
-    // Đăng nhập ở tenant sổ: API nội bộ + listener loopback của IdP + khoá app `scribe-web`. Thiếu ⟹ chế độ tenant tắt.
-    let tenant_access = oidc_registry::TenantAccess::load(&config, internal.clone()).unwrap_or_else(|e| {
-        tracing::error!("chế độ tenant tắt: {e}");
-        None
-    });
-    let oidc = oidc_registry::OidcRegistry::new(
-        oidc::Oidc::new(&config.oidc_issuer),
-        &config.oidc_web_client_id,
-        oidc_web_secret,
-        tenant_access,
-    );
-    // Key AI của tenant sổ: vòng khoá niêm phong + API nội bộ. Thiếu hay hỏng ⟹ không tenant sổ nào chạy (không bao giờ
-    // rơi vào key server).
-    let tenant_keys = tenant_keys::TenantKeys::load(&config, internal.clone()).unwrap_or_else(|e| {
-        tracing::error!("key AI của tenant tắt: {e}");
-        None
-    });
-    // Điều kiện phía Scribe để tenant sổ được bật; chưa đủ thì mọi tenant sổ hiện trang "chưa bật".
-    let readiness = tenant::Readiness { oidc: oidc.tenant_mode(), sealed_keys: tenant_keys.is_some() };
-    let tenants = match tenant::directory::TenantDirectory::new(&config, Some(db.clone()), internal, readiness) {
-        Ok(directory) => Arc::new(directory),
-        Err(e) => {
-            tracing::error!("{e}");
-            std::process::exit(1);
-        }
-    };
     let state = AppState {
         config: Arc::new(config),
         db,
         http,
-        oidc: Arc::new(oidc),
+        oidc: Arc::new(oidc::Oidc::new(&oidc_issuer)),
+        oidc_web_secret: Arc::new(oidc_web_secret),
         session_cache: Arc::default(),
         session_key: Arc::new(session_key),
         rate: Arc::new(RateLimiter::new()),
@@ -228,8 +180,6 @@ async fn main() {
         summaries: Arc::default(),
         chat_bot: Arc::default(),
         user_keys: user_keys_secret,
-        tenants,
-        tenant_keys: tenant_keys.map(Arc::new),
     };
 
     // Hồi phục job kẹt "running" sau crash/restart (red-team) + khởi worker queue nền.
@@ -244,7 +194,6 @@ async fn main() {
     search::index::start_backfill(state.db.clone()); // đưa dữ liệu cũ vào index tìm kiếm một lần
     chat_link::warm_up(state.clone());
     chat_link::poll::start(state.clone()); // chỉ khi CHAT_LINK_POLL bật và có token bot
-    tenant::directory::start_primary_refresh(state.tenants.clone()); // tên tenant chính, chỉ khi có API nội bộ
 
     let app = routes::build_router(state);
     let addr = SocketAddr::from(([127, 0, 0, 1], port)); // localhost-only; nginx proxy /api.

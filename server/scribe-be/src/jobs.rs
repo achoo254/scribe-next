@@ -8,7 +8,6 @@ use crate::models::user;
 use crate::models::transcript_doc;
 use crate::models::job::{self, Job, SegRef};
 use crate::state::AppState;
-use crate::tenant::Tenant;
 use crate::worker::{split_worker::SplitWorker, OutputSeg, Worker};
 use axum::body::Body;
 use axum::extract::{Path, State};
@@ -42,7 +41,6 @@ pub struct CreateResp {
 pub async fn create(
     State(state): State<AppState>,
     Extension(user): Extension<UserId>,
-    Extension(tenant): Extension<Tenant>,
     Json(req): Json<CreateReq>,
 ) -> Result<Json<CreateResp>, AppError> {
     let input = file::get_owned(&state.db, &req.input_file_id, &user.0)
@@ -56,7 +54,6 @@ pub async fn create(
     let criterion = format!("{:?}", req.criterion).to_lowercase();
     let job_id = job::create_split(
         &state.db,
-        &tenant.id,
         &user.0,
         &req.input_file_id,
         req.criterion,
@@ -148,15 +145,13 @@ fn build_zip(zip_path: &str, files: &[(String, String)]) -> std::io::Result<()> 
     Ok(())
 }
 
-/// Worker queue nền: claim atomic (concurrency=1, xoay vòng theo tenant) → chạy → cập nhật done/failed.
+/// Worker queue nền: claim atomic (concurrency=1) → chạy → cập nhật done/failed.
 pub fn start_worker(state: AppState) {
     tokio::spawn(async move {
-        let mut last_tenant: Option<String> = None;
         loop {
-            match job::claim_next(&state.db, last_tenant.as_deref()).await {
+            match job::claim_next(&state.db).await {
                 Ok(Some(j)) => {
                     let job_id = j.hex_id();
-                    last_tenant = Some(j.tenant_id.clone());
                     let st = state.clone();
                     // Panic-isolation: chạy job trong task con → panic KHÔNG giết worker loop.
                     let handle = tokio::spawn(async move { run_job(&st, &j).await });

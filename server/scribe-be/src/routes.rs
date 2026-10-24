@@ -1,8 +1,7 @@
-//! Lắp router: public (health/auth) + protected (guard middleware + upload/jobs). Mọi route trừ `/api/health` đi qua
-//! `tenant::resolve` (Host → tenant); route cần đăng nhập và route đăng nhập cần tenant đang bật.
+//! Lắp router: public (health/auth) + protected (guard middleware + upload/jobs).
 
 use crate::state::AppState;
-use crate::{access_log, account, auth, chat_link, files, idp_brand, jobs, rate_limit, realtime, recordings, search, summary, tenant, transcribe, translate, upload, user_keys};
+use crate::{access_log, account, auth, chat_link, files, idp_brand, jobs, rate_limit, realtime, recordings, search, summary, transcribe, translate, upload, user_keys};
 use axum::extract::DefaultBodyLimit;
 use axum::middleware::{from_fn, from_fn_with_state};
 use axum::routing::{delete, get, patch, post, put};
@@ -22,19 +21,12 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/transcript-docs/{key}/segments/{file_id}", put(transcribe::docs::save_segment))
         .route("/api/transcript-docs/{key}/speakers", patch(transcribe::docs::rename_speakers))
         .route("/api/transcript-docs/{key}/summary", post(summary::create))
-        // Bot của chat.hoandat.com chỉ có ở tenant chính.
-        .route("/api/transcript-docs/{key}/share", post(summary::share::share).route_layer(from_fn(tenant::primary_feature)))
+        .route("/api/transcript-docs/{key}/share", post(summary::share::share))
         .route("/api/transcript-docs/{key}/translation", get(translate::get).post(translate::create))
         .route("/api/transcript-docs/{key}/translation/status", get(translate::status))
         .route("/api/transcript-docs/{key}/bookmarks", post(transcribe::bookmarks::add))
         .route("/api/transcript-docs/{key}/bookmarks/{id}", delete(transcribe::bookmarks::remove))
-        .route(
-            "/api/chat/link",
-            get(chat_link::status)
-                .post(chat_link::create)
-                .delete(chat_link::remove)
-                .route_layer(from_fn(tenant::primary_feature)),
-        )
+        .route("/api/chat/link", get(chat_link::status).post(chat_link::create).delete(chat_link::remove))
         .route("/api/search", get(search::search))
         .route("/api/ask", post(search::ask::ask))
         // Key riêng: chỉ ghi (không bao giờ trả key), mọi tài khoản đăng nhập.
@@ -69,62 +61,45 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/transcripts", post(transcribe::create).get(transcribe::get))
         .route("/api/transcripts/export", get(transcribe::export))
         // Chép trực tiếp trên iPhone: token tạm thời của OpenAI Realtime + báo số giây đã stream.
-        // Chép trực tiếp chỉ có trên app iPhone, app chỉ nói với tenant chính.
-        .route("/api/realtime/token", post(realtime::token).route_layer(from_fn(tenant::primary_feature)))
-        .route("/api/realtime/usage", post(realtime::report_usage).route_layer(from_fn(tenant::primary_feature)))
+        .route("/api/realtime/token", post(realtime::token))
+        .route("/api/realtime/usage", post(realtime::report_usage))
         // Chunk upload 5MB/lần → nâng body limit (mặc định axum 2MB). Không buffer cả file (append disk).
         .layer(DefaultBodyLimit::max(8 * 1024 * 1024))
         // Gộp SAU `.layer` ở trên: nhóm này giữ trần 1 MiB của riêng nó.
         .merge(transcript_docs)
         .route_layer(from_fn_with_state(state.clone(), auth::require_auth))
-        // Tenant chưa bật: 403 trước khi đọc phiên.
-        .route_layer(from_fn(tenant::require_enabled))
         // api_limit thêm SAU → chạy TRƯỚC require_auth (reject rẻ trước khi verify session).
         .route_layer(from_fn_with_state(state.clone(), rate_limit::api_limit));
 
     // Auth: rate-limit chặt (chống brute/amplification). Health KHÔNG giới hạn (systemd/nginx liveness).
-    // Trình duyệt mở thẳng: tenant chưa bật thì về trang đăng nhập của tenant với `?error=not_enabled`.
-    let web_login = Router::new()
+    let auth_routes = Router::new()
         .route("/api/auth/login", get(auth::login))
         .route("/api/auth/callback", get(auth::callback))
-        .route_layer(from_fn(tenant::require_enabled_web))
-        .route_layer(from_fn_with_state(state.clone(), rate_limit::auth_limit));
-    let native_routes = Router::new()
         .route("/api/auth/native/config", get(auth::native_config))
         .route("/api/auth/native/refresh", post(auth::native_refresh))
-        // App di động chỉ nói với tenant chính.
-        .route_layer(from_fn(tenant::primary_only))
-        .route_layer(from_fn_with_state(state.clone(), rate_limit::auth_limit));
-    // Đăng xuất chạy cả khi tenant đã tắt; `/api/idp` luôn trả để web hiện trang "chưa bật".
-    let always = Router::new()
         .route("/api/auth/logout", post(auth::logout))
-        // Tenant của Host cho trang đăng nhập (chưa có phiên); đọc bộ nhớ, không gọi IdP.
+        // Tên tài khoản đăng nhập cho trang đăng nhập (chưa có phiên); đọc bộ nhớ, không gọi IdP.
         .route("/api/idp", get(idp_brand::info))
         .route_layer(from_fn_with_state(state.clone(), rate_limit::auth_limit));
 
     // Đổi code của app: route public, mỗi lần gọi IdP ⟹ giới hạn chặt riêng.
     let exchange_routes = Router::new()
         .route("/api/auth/native/exchange", post(auth::native_exchange))
-        .route_layer(from_fn(tenant::primary_only))
         .route_layer(from_fn_with_state(state.clone(), rate_limit::exchange_limit));
 
     // Back-channel logout: IdP gọi (logout token có chữ ký), không giới hạn tần suất — bị 429 thì phiên
-    // web sống tiếp sau khi người dùng đã đăng xuất ở IdP. Chạy cả khi tenant đã tắt.
+    // web sống tiếp sau khi người dùng đã đăng xuất ở IdP.
     let backchannel = Router::new().route("/api/auth/backchannel-logout", post(auth::backchannel_logout));
 
-    let by_tenant = Router::new()
-        .merge(web_login)
-        .merge(native_routes)
-        .merge(always)
+    let public = Router::new()
+        .route("/api/health", get(health))
+        .merge(auth_routes)
         .merge(exchange_routes)
-        .merge(backchannel)
-        .merge(protected)
-        // Ngoài cùng của mọi route theo tenant: Host → tenant (404 `UNKNOWN_TENANT` khi không phục vụ host này).
-        .layer(from_fn_with_state(state.clone(), tenant::resolve));
+        .merge(backchannel);
 
     Router::new()
-        .route("/api/health", get(health))
-        .merge(by_tenant)
+        .merge(public)
+        .merge(protected)
         .layer(tower_http::trace::TraceLayer::new_for_http())
         // Ngoài cùng: thấy cả request bị rate-limit/401 và đặt IP cho audit.
         .layer(from_fn(access_log::layer))

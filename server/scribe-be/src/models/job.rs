@@ -1,7 +1,8 @@
-//! `jobs` collection: job queue Mode B (split). Claim atomic concurrency=1, xoay vòng theo tenant như hàng đợi chép
-//! lời (`transcript::claim_next`).
+//! `jobs` collection: job queue Mode B (split). Claim atomic concurrency=1, chỉ job của tenant duy nhất
+//! (`tenantId: "primary"`).
 
 use crate::error::AppError;
+use crate::tenant::PRIMARY_ID;
 use core_split::SplitCriterion;
 use mongodb::bson::{doc, oid::ObjectId, DateTime, Document};
 use mongodb::options::ReturnDocument;
@@ -10,8 +11,8 @@ use serde::{Deserialize, Serialize};
 
 const COLL: &str = "jobs";
 
-/// Index `{status, createdAt}` — tăng tốc claim_next (queued cũ nhất) + poll theo trạng thái; `{status, tenantId,
-/// createdAt}` cho lượt xoay vòng theo tenant.
+/// Index `{status, createdAt}` — poll theo trạng thái; `{status, tenantId, createdAt}` cho claim_next (queued cũ nhất
+/// của tenant duy nhất).
 pub async fn ensure_indexes(db: &Database) -> Result<(), String> {
     let coll = db.collection::<Job>(COLL);
     coll.create_index(IndexModel::builder().keys(doc! { "status": 1, "createdAt": 1 }).build())
@@ -52,7 +53,7 @@ pub struct Job {
     pub id: Option<ObjectId>,
     #[serde(rename = "userId")]
     pub user_id: String,
-    /// Tenant của chủ job (lượt xoay vòng trong hàng đợi).
+    /// Luôn [`PRIMARY_ID`] với job mới; `claim_next` chỉ nhận job của tenant này.
     #[serde(rename = "tenantId", default = "crate::tenant::primary_id")]
     pub tenant_id: String,
     #[serde(rename = "type")]
@@ -85,7 +86,6 @@ impl Job {
 /// Tạo job split (status queued) → trả jobId hex.
 pub async fn create_split(
     db: &Database,
-    tenant_id: &str,
     user_id: &str,
     input_file_id: &str,
     criterion: SplitCriterion,
@@ -95,7 +95,7 @@ pub async fn create_split(
     let job = Job {
         id: None,
         user_id: user_id.into(),
-        tenant_id: tenant_id.into(),
+        tenant_id: PRIMARY_ID.into(),
         job_type: "split".into(),
         input_file_id: input_file_id.into(),
         criterion,
@@ -127,30 +127,21 @@ pub async fn get_owned(db: &Database, job_id: &str, user_id: &str) -> Result<Opt
         .map_err(|e| AppError::Internal(format!("find job: {e}")))
 }
 
-/// Claim job queued cũ nhất → running (atomic, concurrency=1). Có `last_tenant` (tenant của job vừa chạy) thì ưu tiên
-/// job cũ nhất của tenant khác, không có mới lấy job cũ nhất bất kỳ. heartbeatAt để sweep stale.
-pub async fn claim_next(db: &Database, last_tenant: Option<&str>) -> Result<Option<Job>, mongodb::error::Error> {
-    claim_next_in(db, last_tenant, doc! {}).await
+/// Claim job queued cũ nhất của tenant duy nhất → running (atomic, concurrency=1). Job mang `tenantId` khác không bao
+/// giờ được nhận. heartbeatAt để sweep stale.
+pub async fn claim_next(db: &Database) -> Result<Option<Job>, mongodb::error::Error> {
+    claim_next_in(db, doc! {}).await
 }
 
 /// [`claim_next`] trong phạm vi `scope` (test chỉ nhận job của user giả của nó).
-async fn claim_next_in(db: &Database, last_tenant: Option<&str>, scope: Document) -> Result<Option<Job>, mongodb::error::Error> {
-    let coll = db.collection::<Job>(COLL);
-    let mut queued = doc! { "status": "queued" };
-    queued.extend(scope);
-    let claim = |filter: Document| {
-        coll.find_one_and_update(filter, doc! { "$set": { "status": "running", "heartbeatAt": DateTime::now() } })
-            .sort(doc! { "createdAt": 1 })
-            .return_document(ReturnDocument::After)
-    };
-    if let Some(last) = last_tenant {
-        let mut other = queued.clone();
-        other.insert("tenantId", doc! { "$ne": last });
-        if let Some(job) = claim(other).await? {
-            return Ok(Some(job));
-        }
-    }
-    claim(queued).await
+async fn claim_next_in(db: &Database, scope: Document) -> Result<Option<Job>, mongodb::error::Error> {
+    let mut filter = doc! { "status": "queued", "tenantId": PRIMARY_ID };
+    filter.extend(scope);
+    db.collection::<Job>(COLL)
+        .find_one_and_update(filter, doc! { "$set": { "status": "running", "heartbeatAt": DateTime::now() } })
+        .sort(doc! { "createdAt": 1 })
+        .return_document(ReturnDocument::After)
+        .await
 }
 
 pub async fn finish_done(db: &Database, job_id: &str, segments: Vec<SegRef>) -> Result<(), AppError> {
@@ -196,30 +187,34 @@ pub async fn reset_running_to_queued(db: &Database) -> Result<u64, AppError> {
 mod tests {
     use super::*;
 
-    /// Job cắt xoay vòng theo tenant như hàng đợi chép lời. `cargo test jobs_rotate -- --ignored`.
+    /// Chỉ job của tenant duy nhất được nhận: job mang `tenantId` khác (hay thiếu `tenantId`) nằm yên ở `queued`.
+    /// `cargo test jobs_of_other_tenants -- --ignored`.
     #[tokio::test]
     #[ignore]
-    async fn jobs_rotate_between_tenants_on_real_mongo() {
+    async fn jobs_of_other_tenants_are_never_claimed_on_real_mongo() {
         let uri = std::env::var("TRANSCRIPT_TEST_MONGO_URI").expect("TRANSCRIPT_TEST_MONGO_URI");
         let db_name = std::env::var("TRANSCRIPT_TEST_DB_NAME").expect("TRANSCRIPT_TEST_DB_NAME");
         let db = crate::db::connect(&uri, &db_name).await.expect("kết nối Mongo");
         ensure_indexes(&db).await.expect("index");
-        let tag = uuid::Uuid::new_v4().simple().to_string();
-        let (ten_a, ten_b) = (format!("ten_a_{tag}"), format!("ten_b_{tag}"));
-        let (user_a, user_b) = (format!("selftest-a-{tag}"), format!("selftest-b-{tag}"));
-        for (tenant, user, n) in [(&ten_a, &user_a, 2), (&ten_b, &user_b, 2)] {
-            for _ in 0..n {
-                create_split(&db, tenant, user, "f", SplitCriterion::Minutes, 1.0, false).await.expect("tạo");
-                tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        let user = format!("selftest-{}", uuid::Uuid::new_v4().simple());
+        let coll = db.collection::<Document>(COLL);
+        let queued = |tenant: Option<&str>| {
+            let mut d = doc! { "userId": &user, "type": "split", "inputFileId": "f", "criterion": "minutes", "value": 1.0,
+                               "status": "queued", "progress": 0.0, "createdAt": DateTime::now() };
+            if let Some(t) = tenant {
+                d.insert("tenantId", t);
             }
-        }
-        let scope = doc! { "userId": { "$in": [&user_a, &user_b] } };
-        let (mut order, mut last) = (Vec::new(), None::<String>);
-        while let Some(job) = claim_next_in(&db, last.as_deref(), scope.clone()).await.expect("nhận") {
-            order.push(job.tenant_id.clone());
-            last = Some(job.tenant_id);
-        }
-        assert_eq!(order, vec![ten_a.clone(), ten_b.clone(), ten_a.clone(), ten_b.clone()]);
-        db.collection::<Job>(COLL).delete_many(scope).await.expect("dọn");
+            d
+        };
+        // Job của tenant khác và job thiếu `tenantId` xếp TRƯỚC job của tenant chính.
+        coll.insert_many([queued(Some("ten_other")), queued(None)]).await.expect("job lạ");
+        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        let mine = create_split(&db, &user, "f", SplitCriterion::Minutes, 1.0, false).await.expect("tạo");
+        let scope = doc! { "userId": &user };
+        let claimed = claim_next_in(&db, scope.clone()).await.expect("nhận").expect("có job tenant chính");
+        assert_eq!((claimed.hex_id(), claimed.tenant_id.as_str()), (mine, PRIMARY_ID));
+        assert!(claim_next_in(&db, scope.clone()).await.expect("nhận").is_none(), "job tenant khác không bao giờ được nhận");
+        assert_eq!(coll.count_documents(doc! { "userId": &user, "status": "queued" }).await.expect("đếm"), 2);
+        coll.delete_many(scope).await.expect("dọn");
     }
 }

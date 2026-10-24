@@ -10,9 +10,9 @@
 //! [`DEFER_S`] giây. Tiền: giây của từng đoạn cộng vào doc của đoạn đó TRƯỚC khi
 //! gửi; ElevenLabs trả `audio_duration_secs` thì chỉnh lại theo đúng số đó ([`allocate_billed`]).
 //!
-//! Lượt bằng key ElevenLabs riêng của người dùng hay của chủ domain (`byok`): key mở lúc chạy, không giữ phút, không
-//! đụng sổ giờ ElevenLabs của Scribe; key lỗi thì chỉ key đó bị đánh dấu (`ByokKey::explain`), không ngắt chép lời của
-//! server hay đặt dấu hết quota tháng.
+//! Lượt bằng key ElevenLabs riêng của người dùng (`byok`): key đọc và giải mã lúc chạy, không giữ phút, không đụng sổ
+//! giờ ElevenLabs của Scribe; key lỗi thì chỉ key đó bị đánh dấu (`user_keys::report`), không ngắt chép lời của server
+//! hay đặt dấu hết quota tháng.
 
 use super::chunking::{Sentence, SILENT_PEAK_DB};
 use super::{elevenlabs, is_key_broken, record, report_key_broken, reserve_shortfall, words, Outcome, CANCELLED};
@@ -184,8 +184,8 @@ async fn add_late_segments(
     session_ids: &[ObjectId],
 ) -> Result<usize, crate::error::AppError> {
     let charge = first.charge();
-    let billing = match (first.byok_billing(), &charge) {
-        (Some(billing), _) => billing,
+    let billing = match (first.own_provider(), &charge) {
+        (Some(provider), _) => transcript::Billing::Own(provider),
         (None, Some(charge)) => transcript::Billing::Server(charge),
         (None, None) => return Ok(0),
     };
@@ -201,7 +201,7 @@ async fn add_late_segments(
         .collect();
     let mut added = 0;
     for id in missing.into_iter().filter(|id| !known.contains(id)) {
-        if transcript::enqueue(db, id, &first.tenant_id, &first.user_id, &first.run_id, &first.model, billing, 0).await? {
+        if transcript::enqueue(db, id, &first.user_id, &first.run_id, &first.model, billing, 0).await? {
             added += 1;
         }
     }
@@ -225,18 +225,21 @@ async fn transcribe_unit(state: &AppState, members: &[Member]) -> Outcomes {
         out.error = Some("tài khoản đã bị khoá".into());
         return out;
     }
-    let own = match super::open_byok(state, &first.t).await {
-        Ok(key) => key,
-        Err(message) => {
-            out.error = Some(message);
-            return out;
-        }
+    let own = match first.t.own_provider() {
+        Some(provider) => match crate::user_keys::open(state, &first.t.user_id, provider).await {
+            Ok(key) => Some(key),
+            Err(message) => {
+                out.error = Some(message);
+                return out;
+            }
+        },
+        None => None,
     };
-    let api_key = match (&own, super::server_key_for(state, &first.t)) {
+    let api_key = match (&own, state.transcriber.transcribe_key()) {
         (Some(key), _) => key.value(),
-        (None, Ok(key)) => key.0.as_str(),
-        (None, Err(e)) => {
-            out.error = Some(e.into());
+        (None, Some(key)) => key.0.as_str(),
+        (None, None) => {
+            out.error = Some(PAUSED.into());
             return out;
         }
     };
@@ -267,11 +270,10 @@ async fn transcribe_unit(state: &AppState, members: &[Member]) -> Outcomes {
         usage::release_provider_hold(&state.db, &run_id).await;
         out.error.get_or_insert_with(|| TOO_LONG.to_string());
     }
-    // Key riêng hay key chủ domain bị ElevenLabs từ chối hoặc hết credit: đánh dấu key đó, người dùng thấy câu chỉ cách
-    // sửa.
-    if let Some(key) = &own {
-        if let Some(e) = out.error.take() {
-            out.error = Some(key.explain(state, e).await);
+    // Key riêng bị ElevenLabs từ chối hoặc hết credit: đánh dấu key đó, người dùng thấy câu chỉ cách sửa.
+    if let (Some(key), Some(e)) = (&own, &out.error) {
+        if let Some(problem) = crate::user_keys::problem_of(e) {
+            out.error = Some(crate::user_keys::report(state, key, problem).await);
         }
     }
     out
@@ -862,7 +864,7 @@ mod tests {
         let run = format!("run-{}", uuid::Uuid::new_v4());
         usage::reserve(&db, &charge, 10_000, 120, &limits).await.expect("giữ").expect("đủ");
         for id in &ids[..2] {
-            assert!(transcript::enqueue_held(&db, *id, crate::tenant::PRIMARY_ID, &user, &run, "scribe_v2", transcript::Billing::Server(&charge), 60).await.expect("xếp"));
+            assert!(transcript::enqueue_held(&db, *id, &user, &run, "scribe_v2", transcript::Billing::Server(&charge), 60).await.expect("xếp"));
         }
         let coll = db.collection::<mongodb::bson::Document>("transcripts");
         let queued = |coll: mongodb::Collection<mongodb::bson::Document>, user: String| async move {
@@ -875,7 +877,7 @@ mod tests {
         assert_eq!(queued(coll.clone(), user.clone()).await, 2);
 
         // Đoạn 3 tải lên sau lúc bấm (chưa có lượt nào), đoạn 4 đã chép ở lượt khác: chỉ đoạn 3 được thêm vào lượt.
-        assert!(transcript::enqueue(&db, ids[3], crate::tenant::PRIMARY_ID, &user, "run-cu", "scribe_v2", transcript::Billing::Server(&charge), 0).await.expect("lượt khác"));
+        assert!(transcript::enqueue(&db, ids[3], &user, "run-cu", "scribe_v2", transcript::Billing::Server(&charge), 0).await.expect("lượt khác"));
         transcript::finish_failed(&db, ids[3], "run-cu", "lỗi cũ").await.expect("đóng lượt khác");
         coll.update_one(doc! { "_id": ids[0] }, doc! { "$set": { "status": "running" } }).await.expect("nhận đầu");
         let first = docs(vec![ids[0]]).await.remove(0);
@@ -931,7 +933,7 @@ mod tests {
         // Panic giữa lượt: mọi file còn mở của lượt đóng, không file nào kẹt `running`.
         let run2 = format!("run-{}", uuid::Uuid::new_v4());
         for id in [ids[0], ids[2]] {
-            assert!(transcript::enqueue(&db, id, crate::tenant::PRIMARY_ID, &user, &run2, "scribe_v2", transcript::Billing::Server(&charge), 0).await.expect("xếp lại"));
+            assert!(transcript::enqueue(&db, id, &user, &run2, "scribe_v2", transcript::Billing::Server(&charge), 0).await.expect("xếp lại"));
         }
         assert_eq!(transcript::fail_open_run(&db, &user, &run2, "lỗi nội bộ").await.expect("đóng"), 2);
         let open = coll.count_documents(doc! { "userId": &user, "open": true }).await.expect("đếm");

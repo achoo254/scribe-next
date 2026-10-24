@@ -1,10 +1,8 @@
-//! Client OIDC của hoandat-auth cho một issuer (một tenant): discovery, JWKS (EC P-256 + RSA, chọn theo `kid`), xác
-//! minh ID token và logout token, đổi code, làm mới refresh token. Scribe chỉ dùng ID token lúc đăng nhập rồi cấp phiên
-//! riêng (`models::session`), không dùng access token của IdP. Đường tới IdP (công khai cho tenant chính, API nội bộ +
-//! loopback cho tenant sổ) ở `oidc_transport`; mỗi tenant một `Oidc` (`oidc_registry`).
+//! Client OIDC của hoandat-auth: discovery, JWKS (EC P-256 + RSA, chọn theo `kid`), xác minh ID token và
+//! logout token, đổi code, làm mới refresh token. Scribe chỉ dùng ID token lúc đăng nhập rồi cấp phiên
+//! riêng (`models::session`), không dùng access token của IdP.
 
 use crate::error::AppError;
-use crate::oidc_transport::{InternalRoute, Transport};
 use jsonwebtoken::jwk::JwkSet;
 use jsonwebtoken::{decode, decode_header, Algorithm, DecodingKey, Validation};
 use serde::Deserialize;
@@ -22,8 +20,6 @@ pub const SCOPE: &str = "openid profile email";
 
 #[derive(Debug, Deserialize)]
 pub struct Discovery {
-    #[serde(default)]
-    pub issuer: Option<String>,
     pub authorization_endpoint: String,
     pub token_endpoint: String,
     pub jwks_uri: String,
@@ -121,53 +117,31 @@ pub enum GrantError {
 
 pub struct Oidc {
     pub issuer: String,
-    transport: Transport,
     discovery: OnceCell<Discovery>,
     keys: RwLock<KeyCache>,
 }
 
 impl Oidc {
-    /// IdP của tenant chính, qua URL công khai.
     pub fn new(issuer: &str) -> Oidc {
-        Oidc::with_transport(issuer, Transport::Public)
+        Oidc { issuer: issuer.trim_end_matches('/').to_string(), discovery: OnceCell::new(), keys: RwLock::default() }
     }
 
-    /// IdP của tenant sổ, qua API nội bộ và listener loopback.
-    pub fn internal(issuer: &str, route: InternalRoute) -> Oidc {
-        Oidc::with_transport(issuer, Transport::Internal(route))
-    }
-
-    fn with_transport(issuer: &str, transport: Transport) -> Oidc {
-        Oidc {
-            issuer: issuer.trim_end_matches('/').to_string(),
-            transport,
-            discovery: OnceCell::new(),
-            keys: RwLock::default(),
-        }
-    }
-
-    /// Metadata của IdP (tải một lần; lỗi thì lần sau thử lại). Qua API nội bộ thì `issuer` phải đúng issuer này.
+    /// Metadata của IdP (tải một lần; lỗi thì lần sau thử lại).
     pub async fn discovery(&self, http: &reqwest::Client) -> Result<&Discovery, AppError> {
         self.discovery
             .get_or_try_init(|| async {
-                let resp = self
-                    .transport
-                    .discovery(http, &self.issuer)
+                let url = format!("{}/.well-known/openid-configuration", self.issuer);
+                let resp = http
+                    .get(&url)
+                    .timeout(Duration::from_secs(10))
                     .send()
                     .await
-                    .map_err(|e| AppError::Unavailable(format!("không kết nối được máy chủ đăng nhập: {}", e.without_url())))?;
-                let discovery = resp
-                    .error_for_status()
-                    .map_err(|e| AppError::Unavailable(format!("máy chủ đăng nhập lỗi: {}", e.without_url())))?
+                    .map_err(|e| AppError::Unavailable(format!("không kết nối được máy chủ đăng nhập: {e}")))?;
+                resp.error_for_status()
+                    .map_err(|e| AppError::Unavailable(format!("máy chủ đăng nhập lỗi: {e}")))?
                     .json::<Discovery>()
                     .await
-                    .map_err(|e| AppError::Unavailable(format!("đọc metadata máy chủ đăng nhập: {}", e.without_url())))?;
-                if self.transport.checks_issuer()
-                    && discovery.issuer.as_deref().map(|i| i.trim_end_matches('/')) != Some(self.issuer.as_str())
-                {
-                    return Err(AppError::Unavailable("metadata máy chủ đăng nhập là của issuer khác".into()));
-                }
-                Ok(discovery)
+                    .map_err(|e| AppError::Unavailable(format!("đọc metadata máy chủ đăng nhập: {e}")))
             })
             .await
     }
@@ -193,8 +167,8 @@ impl Oidc {
             return Err(AppError::Unauthorized("không tìm thấy khoá ký".into()));
         }
         let fetched: Result<JwkSet, String> = async {
-            self.transport
-                .jwks(http, &jwks_uri)
+            http.get(&jwks_uri)
+                .timeout(Duration::from_secs(10))
                 .send()
                 .await
                 .map_err(|e| format!("tải JWKS: {e}"))?
@@ -296,12 +270,7 @@ impl Oidc {
             .map_err(|e| GrantError::Unavailable(format!("{e:?}")))?
             .token_endpoint
             .clone();
-        let mut req = self
-            .transport
-            .endpoint(http, reqwest::Method::POST, &endpoint)
-            .map_err(GrantError::Unavailable)?
-            .form(form)
-            .timeout(Duration::from_secs(15));
+        let mut req = http.post(&endpoint).form(form).timeout(Duration::from_secs(15));
         if let Some((id, secret)) = basic {
             req = req.basic_auth(id, Some(secret));
         }
@@ -338,10 +307,8 @@ impl Oidc {
             .userinfo_endpoint
             .clone()
             .ok_or_else(|| AppError::Unavailable("IdP không có userinfo endpoint".into()))?;
-        let resp = self
-            .transport
-            .endpoint(http, reqwest::Method::GET, &endpoint)
-            .map_err(AppError::Unavailable)?
+        let resp = http
+            .get(&endpoint)
             .bearer_auth(&tokens.access_token)
             .timeout(Duration::from_secs(10))
             .send()
@@ -390,14 +357,7 @@ impl Oidc {
         // IdP không có endpoint thu hồi: không có gì để thử lại.
         let Some(endpoint) = discovery.revocation_endpoint.clone() else { return true };
         let form = [("token", refresh_token), ("token_type_hint", "refresh_token"), ("client_id", client_id)];
-        let req = match self.transport.endpoint(http, reqwest::Method::POST, &endpoint) {
-            Ok(req) => req,
-            Err(e) => {
-                tracing::warn!("thu hồi refresh token: {e}");
-                return false;
-            }
-        };
-        match req.form(&form).timeout(Duration::from_secs(10)).send().await {
+        match http.post(&endpoint).form(&form).timeout(Duration::from_secs(10)).send().await {
             Ok(res) if res.status().is_success() => true,
             Ok(res) => {
                 tracing::warn!(status = %res.status(), "IdP từ chối thu hồi refresh token");

@@ -1,6 +1,6 @@
-//! User model. Định danh đăng nhập là `(tenantId, idpSub)`: tài khoản ở IdP của tenant đó (hoandat-auth phục vụ mọi
-//! tenant, `sub` chỉ có nghĩa trong tenant của nó). User tạo thời đăng nhập Firebase (chỉ có ở tenant chính) còn
-//! `firebaseUid` và được gắn `idpSub` ở lần đăng nhập IdP đầu tiên, theo email đã xác minh.
+//! User model. Định danh đăng nhập là `idpSub` (tài khoản ở auth-next), lưu cùng `tenantId: "primary"` (tenant duy
+//! nhất) theo index unique `(tenantId, idpSub)`. User tạo thời đăng nhập Firebase còn `firebaseUid` và được gắn `idpSub`
+//! ở lần đăng nhập IdP đầu tiên, theo email đã xác minh.
 
 use crate::error::AppError;
 use crate::tenant::PRIMARY_ID;
@@ -13,16 +13,15 @@ const COLL: &str = "users";
 const DUP_KEY: i32 = 11000;
 /// Mongo: collection chưa có (database mới).
 const NAMESPACE_NOT_FOUND: i32 = 26;
-/// Index unique của danh tính đăng nhập, theo tenant.
+/// Index unique của danh tính đăng nhập.
 const TENANT_SUB_INDEX: &str = "tenantId_idpSub_unique";
-/// Index unique toàn cục của `idpSub` trước khi có tenant: sub của tenant khác nhau có thể trùng nên được thay.
+/// Index unique toàn cục của `idpSub` trước khi có trường `tenantId`: đã thay bằng [`TENANT_SUB_INDEX`], không tạo lại.
 const GLOBAL_SUB_INDEX: &str = "idpSub_unique";
 
 /// Index unique chỉ trên doc có trường đó (partial): user mới không có `firebaseUid`, user cũ chưa có
 /// `idpSub`. Index `firebaseUid_1` cũ (unique, không partial) sẽ coi mọi user mới là trùng `null`, nên
-/// được thay. `(tenantId, idpSub)` thay `idpSub_unique`: tạo index mới trước rồi mới bỏ index cũ, nên không lúc nào
-/// thiếu ràng buộc. Gọi lúc khởi động SAU migration gắn `tenantId`, chặn khởi động nếu lỗi (đăng nhập dựa vào nó để
-/// không tạo user trùng).
+/// được thay. `(tenantId, idpSub)` thay `idpSub_unique` (còn sót thì bỏ, sau khi index mới đã có, nên không lúc nào
+/// thiếu ràng buộc). Gọi lúc khởi động, chặn khởi động nếu lỗi (đăng nhập dựa vào nó để không tạo user trùng).
 pub async fn ensure_indexes(db: &Database) -> Result<(), String> {
     let coll = db.collection::<Document>(COLL);
     let names = match coll.list_index_names().await {
@@ -64,12 +63,11 @@ fn command_code(e: &MongoError) -> Option<i32> {
     }
 }
 
-/// Tài khoản IdP `sub` của tenant → `_id` user (hex). Đã có `(tenantId, idpSub)` thì dùng; chưa có thì, chỉ ở tenant
-/// chính, gắn vào user cũ (thời Firebase) cùng email — nguyên tử, chỉ doc chưa có `idpSub` — rồi mới tạo mới. Người
-/// gọi bảo đảm email đã xác minh. Trả (id, đã gắn user cũ?).
+/// Tài khoản IdP `sub` → `_id` user (hex). Đã có `idpSub` thì dùng; chưa có thì gắn vào user cũ (thời Firebase) cùng
+/// email — nguyên tử, chỉ doc chưa có `idpSub` — rồi mới tạo mới. Người gọi bảo đảm email đã xác minh. Trả (id, đã gắn
+/// user cũ?).
 pub async fn find_or_link(
     db: &Database,
-    tenant_id: &str,
     sub: &str,
     email: &str,
     name: Option<&str>,
@@ -77,7 +75,7 @@ pub async fn find_or_link(
     let coll = db.collection::<Document>(COLL);
     let name_bson = name.map(|n| Bson::String(n.to_string())).unwrap_or(Bson::Null);
     let fail = |e: MongoError| AppError::Internal(format!("mongo user: {e}"));
-    let identity = doc! { "tenantId": tenant_id, "idpSub": sub };
+    let identity = doc! { "tenantId": PRIMARY_ID, "idpSub": sub };
     let refresh = doc! { "$set": { "email": email, "name": name_bson.clone(), "lastLoginAt": DateTime::now() } };
     if let Some(d) = coll
         .find_one_and_update(identity.clone(), refresh.clone())
@@ -87,29 +85,26 @@ pub async fn find_or_link(
     {
         return extract_id(Some(d)).map(|id| (id, false));
     }
-    // User thời Firebase chỉ có ở tenant chính: email trùng ở domain khác không bao giờ chiếm được họ.
-    if tenant_id == PRIMARY_ID {
-        let pattern = format!("^{}$", regex_escape(email));
-        let linked = coll
-            .find_one_and_update(
-                doc! {
-                    "tenantId": PRIMARY_ID,
-                    "firebaseUid": { "$exists": true },
-                    "idpSub": { "$exists": false },
-                    "email": { "$regex": pattern, "$options": "i" },
-                },
-                doc! { "$set": { "idpSub": sub, "email": email, "name": name_bson.clone(), "lastLoginAt": DateTime::now() } },
-            )
-            .return_document(ReturnDocument::After)
-            .await
-            .map_err(fail)?;
-        if linked.is_some() {
-            return extract_id(linked).map(|id| (id, true));
-        }
+    let pattern = format!("^{}$", regex_escape(email));
+    let linked = coll
+        .find_one_and_update(
+            doc! {
+                "tenantId": PRIMARY_ID,
+                "firebaseUid": { "$exists": true },
+                "idpSub": { "$exists": false },
+                "email": { "$regex": pattern, "$options": "i" },
+            },
+            doc! { "$set": { "idpSub": sub, "email": email, "name": name_bson.clone(), "lastLoginAt": DateTime::now() } },
+        )
+        .return_document(ReturnDocument::After)
+        .await
+        .map_err(fail)?;
+    if linked.is_some() {
+        return extract_id(linked).map(|id| (id, true));
     }
     let inserted = coll
         .insert_one(doc! {
-            "tenantId": tenant_id,
+            "tenantId": PRIMARY_ID,
             "idpSub": sub,
             "email": email,
             "name": name_bson,
@@ -132,11 +127,11 @@ pub async fn find_or_link(
     }
 }
 
-/// `_id` của user có tài khoản IdP `sub` ở tenant `tenant_id`.
-pub async fn find_id_by_sub(db: &Database, tenant_id: &str, sub: &str) -> Result<Option<String>, AppError> {
+/// `_id` của user có tài khoản IdP `sub`.
+pub async fn find_id_by_sub(db: &Database, sub: &str) -> Result<Option<String>, AppError> {
     let d = db
         .collection::<Document>(COLL)
-        .find_one(doc! { "tenantId": tenant_id, "idpSub": sub })
+        .find_one(doc! { "tenantId": PRIMARY_ID, "idpSub": sub })
         .projection(doc! { "_id": 1 })
         .await
         .map_err(|e| AppError::Internal(format!("mongo user: {e}")))?;
@@ -227,21 +222,12 @@ pub async fn set_blocked(db: &Database, user_id: &str, reason: Option<&str>) -> 
         .map_err(|e| AppError::Internal(format!("mongo block user: {e}")))
 }
 
-/// Các user của tenant có email này (không phân biệt hoa thường). Dùng cho CLI admin: phải khớp đúng một user.
-pub async fn find_ids_by_email(db: &Database, tenant_id: &str, email: &str) -> Result<Vec<String>, AppError> {
+/// Các user có email này (không phân biệt hoa thường). Dùng cho CLI admin: phải khớp đúng một user.
+pub async fn find_ids_by_email(db: &Database, email: &str) -> Result<Vec<String>, AppError> {
     let pattern = format!("^{}$", regex_escape(email));
-    ids_matching(db, doc! { "tenantId": tenant_id, "email": { "$regex": pattern, "$options": "i" } }).await
-}
-
-/// `_id` (hex) của mọi user của tenant (CLI `purge-tenant`).
-pub async fn ids_of_tenant(db: &Database, tenant_id: &str) -> Result<Vec<String>, AppError> {
-    ids_matching(db, doc! { "tenantId": tenant_id }).await
-}
-
-async fn ids_matching(db: &Database, filter: Document) -> Result<Vec<String>, AppError> {
     let mut cur = db
         .collection::<Document>(COLL)
-        .find(filter)
+        .find(doc! { "tenantId": PRIMARY_ID, "email": { "$regex": pattern, "$options": "i" } })
         .projection(doc! { "_id": 1 })
         .await
         .map_err(|e| AppError::Internal(format!("mongo find user: {e}")))?;
@@ -315,18 +301,18 @@ mod tests {
             .inserted_id;
 
         // Lần đầu đăng nhập IdP: gắn vào user cũ (email khác hoa thường), giữ nguyên `_id`.
-        let (id, linked) = find_or_link(&db, PRIMARY_ID, &format!("acc_{tag}"), &email, None).await.expect("gắn");
+        let (id, linked) = find_or_link(&db, &format!("acc_{tag}"), &email, None).await.expect("gắn");
         assert!(linked);
         assert_eq!(Some(id.clone()), old.as_object_id().map(|o| o.to_hex()));
         // Lần sau: theo `idpSub`.
-        assert_eq!(find_or_link(&db, PRIMARY_ID, &format!("acc_{tag}"), &email, None).await.expect("lại"), (id.clone(), false));
+        assert_eq!(find_or_link(&db, &format!("acc_{tag}"), &email, None).await.expect("lại"), (id.clone(), false));
         // Tài khoản IdP khác cùng email không chiếm được user đã gắn: tạo user mới.
-        let (other, linked) = find_or_link(&db, PRIMARY_ID, &format!("acc2_{tag}"), &email, None).await.expect("khác");
+        let (other, linked) = find_or_link(&db, &format!("acc2_{tag}"), &email, None).await.expect("khác");
         assert!(!linked);
         assert_ne!(other, id);
         // Nhiều user mới không có `firebaseUid` không đụng index unique.
-        let (third, _) = find_or_link(&db, PRIMARY_ID, &format!("acc3_{tag}"), &format!("n3-{tag}@x.vn"), None).await.expect("mới");
-        assert_eq!(find_id_by_sub(&db, PRIMARY_ID, &format!("acc3_{tag}")).await.expect("tìm"), Some(third.clone()));
+        let (third, _) = find_or_link(&db, &format!("acc3_{tag}"), &format!("n3-{tag}@x.vn"), None).await.expect("mới");
+        assert_eq!(find_id_by_sub(&db, &format!("acc3_{tag}")).await.expect("tìm"), Some(third.clone()));
 
         // User mới có `createdAt`; khoá rồi mở khoá.
         let profile = find_profile(&db, &third).await.expect("đọc").expect("có");
@@ -339,40 +325,31 @@ mod tests {
         coll.delete_many(doc! { "email": { "$regex": tag.as_str() } }).await.expect("dọn");
     }
 
-    /// Cô lập danh tính: cùng `sub` ở hai tenant là hai user; user thời Firebase chỉ ghép ở tenant chính; tra theo
-    /// email hay theo `sub` không bao giờ thấy user tenant khác.
+    /// `ensure_indexes` chỉ tạo index danh tính `tenantId_idpSub_unique`, không bao giờ tạo lại `idpSub_unique`; còn
+    /// sót index cũ thì bỏ. Database riêng `<DB_NAME>_user_indexes` (bỏ index). `cargo test user_indexes -- --ignored`.
     #[tokio::test]
     #[ignore]
-    async fn users_are_isolated_by_tenant_on_real_mongo() {
+    async fn user_indexes_on_real_mongo() {
         let uri = std::env::var("TRANSCRIPT_TEST_MONGO_URI").expect("TRANSCRIPT_TEST_MONGO_URI");
         let db_name = std::env::var("TRANSCRIPT_TEST_DB_NAME").expect("TRANSCRIPT_TEST_DB_NAME");
-        let db = crate::db::connect(&uri, &db_name).await.expect("kết nối Mongo");
-        ensure_indexes(&db).await.expect("index");
-        let tag = uuid::Uuid::new_v4().simple().to_string();
-        let (ten_a, ten_b) = (format!("ten_a_{tag}"), format!("ten_b_{tag}"));
-        let sub = format!("acc_{tag}");
-        let email = format!("same-{tag}@x.vn");
-        let coll = db.collection::<Document>(COLL);
-        coll.insert_one(doc! { "tenantId": PRIMARY_ID, "firebaseUid": format!("fb-{tag}"), "email": &email })
-            .await
-            .expect("user Firebase");
-
-        let (a, linked_a) = find_or_link(&db, &ten_a, &sub, &email, None).await.expect("a");
-        let (b, linked_b) = find_or_link(&db, &ten_b, &sub, &email, None).await.expect("b");
-        assert!(!linked_a && !linked_b, "tenant sổ không ghép user thời Firebase");
-        assert_ne!(a, b, "cùng sub ở hai tenant là hai user");
-        assert_eq!(find_or_link(&db, &ten_a, &sub, &email, None).await.expect("lại"), (a.clone(), false));
-        assert_eq!(find_id_by_sub(&db, &ten_a, &sub).await.expect("tìm"), Some(a.clone()));
-        assert_eq!(find_id_by_sub(&db, &ten_b, &sub).await.expect("tìm"), Some(b.clone()));
-        assert_eq!(find_id_by_sub(&db, PRIMARY_ID, &sub).await.expect("tìm"), None);
-        assert_eq!(find_ids_by_email(&db, &ten_a, &email).await.expect("email"), vec![a.clone()]);
-        assert_eq!(ids_of_tenant(&db, &ten_b).await.expect("tenant"), vec![b.clone()]);
-        // Ở tenant chính, user Firebase vẫn ghép được (chưa ai chiếm).
-        let (p, linked_p) = find_or_link(&db, PRIMARY_ID, &sub, &email, None).await.expect("chính");
-        assert!(linked_p);
-        assert!(p != a && p != b);
-
-        coll.delete_many(doc! { "email": &email }).await.expect("dọn");
+        let db = crate::db::connect(&uri, &format!("{db_name}_user_indexes")).await.expect("kết nối Mongo");
+        db.drop().await.expect("dọn");
+        let names = |db: Database| async move {
+            let mut names = db.collection::<Document>(COLL).list_index_names().await.expect("đọc index");
+            names.sort();
+            names
+        };
+        ensure_indexes(&db).await.expect("database mới");
+        assert_eq!(names(db.clone()).await, vec!["_id_", "firebaseUid_unique", TENANT_SUB_INDEX]);
+        // Index toàn cục còn sót từ thời trước: bị bỏ, không tạo lại.
+        let global = IndexModel::builder()
+            .keys(doc! { "idpSub": 1 })
+            .options(IndexOptions::builder().name(GLOBAL_SUB_INDEX.to_string()).build())
+            .build();
+        db.collection::<Document>(COLL).create_index(global).await.expect("index cũ");
+        ensure_indexes(&db).await.expect("lần hai");
+        assert_eq!(names(db.clone()).await, vec!["_id_", "firebaseUid_unique", TENANT_SUB_INDEX]);
+        db.drop().await.expect("dọn");
     }
 
     #[test]
