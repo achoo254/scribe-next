@@ -47,6 +47,19 @@ export class ApiError extends Error {
 	}
 }
 
+/** Listeners told when a reply says Scribe is off on this domain (403 `TENANT_DISABLED`). */
+const tenantDisabledListeners = new Set<() => void>();
+
+/**
+ * Calls `listener` whenever a request is refused with `TENANT_DISABLED`
+ * (the domain's owner or the operator turned Scribe off while the page was
+ * open): lib/tenant-info.ts switches the app to the "not enabled" page.
+ */
+export function onTenantDisabled(listener: () => void): () => void {
+	tenantDisabledListeners.add(listener);
+	return () => tenantDisabledListeners.delete(listener);
+}
+
 /** `code` of a caught `ApiError`, else null. */
 export function errorCode(error: unknown): string | null {
 	return error instanceof ApiError ? error.code : null;
@@ -177,7 +190,13 @@ export async function apiFetch(
 		}
 		throw new ApiError(0, activeTranslator().t("errors.network"));
 	}
-	if (!res.ok) throw await errorFrom(res, fallbackError);
+	if (!res.ok) {
+		const error = await errorFrom(res, fallbackError);
+		if (error.code === "TENANT_DISABLED") {
+			for (const notify of tenantDisabledListeners) notify();
+		}
+		throw error;
+	}
 	return res;
 }
 

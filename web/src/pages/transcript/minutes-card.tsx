@@ -23,6 +23,7 @@ import { useT } from "../../i18n/i18n-context";
 import type { Translate } from "../../i18n/translate";
 import { ApiError, errorCode, errorMessage } from "../../lib/api";
 import { formatDateTime, formatTimeAndDay } from "../../lib/format";
+import { useTenantInfo } from "../../lib/tenant-info";
 import { TimeJump } from "./time-jump";
 
 export interface MinutesCardProps {
@@ -78,11 +79,13 @@ export function MinutesCard({
 	const queryClient = useQueryClient();
 	const create = useCreateSummary(transcriptKey);
 	const share = useShareSummary(transcriptKey);
-	const chatLink = useChatLinkQuery(summary !== null);
+	// Sending to chat (bot of chat.hoandat.com) exists on the primary tenant only.
+	const chatOffered = useTenantInfo().primary;
+	const chatLink = useChatLinkQuery(summary !== null && chatOffered);
 	const [linking, setLinking] = useState(false);
 	const linked = chatLink.data?.linked === true;
 	// The server takes no links: nothing to offer until one exists.
-	const canSend = linked || chatLink.data?.enabled !== false;
+	const canSend = chatOffered && (linked || chatLink.data?.enabled !== false);
 
 	function send(): void {
 		if (!linked) {

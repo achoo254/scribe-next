@@ -6,8 +6,8 @@ import { useT } from "../i18n/i18n-context";
 import { renderRich } from "../i18n/rich-text";
 import { TEXT_LINK } from "../layout/legal-links";
 import { errorCode, errorMessage } from "../lib/api";
-import { IDP_ACCOUNT_URL } from "../lib/idp";
-import { useIdpName } from "../lib/idp-name";
+import { idpAccountUrlOf } from "../lib/idp";
+import { useTenantInfo } from "../lib/tenant-info";
 import { Alert } from "./ui/alert";
 import { Button } from "./ui/button";
 import { FormField } from "./ui/form-field";
@@ -36,7 +36,8 @@ export function DeleteAccountDialog({
 	busy,
 }: DeleteAccountDialogProps) {
 	const t = useT();
-	const idpName = useIdpName();
+	const tenant = useTenantInfo();
+	const idpName = tenant.displayName;
 	const { forgetDeletedAccount } = useAuth();
 	const [typed, setTyped] = useState("");
 	const [working, setWorking] = useState(false);
@@ -130,7 +131,7 @@ export function DeleteAccountDialog({
 					// In the iOS app Capacitor opens target=_blank links in Safari.
 					account: (chunk) => (
 						<a
-							href={IDP_ACCOUNT_URL}
+							href={idpAccountUrlOf(tenant)}
 							target="_blank"
 							rel="noopener noreferrer"
 							className={TEXT_LINK}

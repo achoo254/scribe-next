@@ -10,6 +10,7 @@ import { record } from "./record";
 import { recorder } from "./recorder";
 import { search } from "./search";
 import { split } from "./split";
+import { tenant } from "./tenant";
 import { transcript } from "./transcript";
 import { ui } from "./ui";
 
@@ -31,6 +32,7 @@ export const vi = {
 	recorder,
 	search,
 	split,
+	tenant,
 	transcript,
 	ui,
 } as const;

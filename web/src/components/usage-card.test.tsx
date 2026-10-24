@@ -9,6 +9,16 @@ const auth = vi.hoisted(() => ({ user: null as CurrentUser | null }));
 vi.mock("../auth/auth-context", () => ({
 	useAuth: () => ({ user: auth.user }),
 }));
+// The tenant of the host: the primary one unless a test says otherwise.
+const tenant = vi.hoisted(() => ({ domain: "hoandat.com", primary: true }));
+vi.mock("../lib/tenant-info", () => ({
+	useTenantInfo: () => ({
+		displayName: "Auth Next",
+		issuer: "https://auth.hoandat.com",
+		scribe: "enabled",
+		...tenant,
+	}),
+}));
 
 const MB = 1024 * 1024;
 
@@ -134,5 +144,28 @@ describe("UsageCard", () => {
 		);
 		expect(screen.queryByText("Chép lời tháng này")).toBeNull();
 		expect(screen.queryByText("Hôm nay")).toBeNull();
+	});
+
+	it("on a tenant's domain says the owner's AI key is used and keeps the storage", async () => {
+		Object.assign(tenant, { domain: "acme.vn", primary: false });
+		renderCard(
+			{
+				...FREE,
+				// The backend sends no minutes for runs on the owner's key.
+				transcription: { keySource: "tenant" } as CurrentUser["transcription"],
+			},
+			50 * MB,
+			200 * MB,
+		);
+		const card = await screen.findByRole("region", { name: "Gói và mức dùng" });
+		expect(card).toHaveTextContent(
+			"Chép lời, biên bản, hỏi đáp, dịchDùng key AI của acme.vn",
+		);
+		expect(card).toHaveTextContent("Lưu trữ50 MB / 200 MB");
+		expect(card).toHaveTextContent("Tệp tự xoá sau 7 ngày");
+		expect(screen.queryByText("Chép lời tháng này")).toBeNull();
+		expect(screen.queryByText("Hôm nay")).toBeNull();
+		expect(card).not.toHaveTextContent("phút đặt lại");
+		Object.assign(tenant, { domain: "hoandat.com", primary: true });
 	});
 });

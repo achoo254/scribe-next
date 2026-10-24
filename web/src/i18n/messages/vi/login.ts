@@ -19,6 +19,7 @@ export const login = {
 		idp: "Máy chủ đăng nhập báo lỗi — thử lại sau.",
 		busy: "Quá nhiều lượt đăng nhập — đợi một phút rồi thử lại.",
 		failed: "Đăng nhập thất bại — thử lại sau.",
+		notEnabled: "Scribe chưa bật trên domain này.",
 	},
 	failed: "Đăng nhập thất bại",
 	accountDeleted:

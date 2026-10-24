@@ -16,6 +16,7 @@ const LOGIN_ERRORS = {
 	idp: "login.errors.idp",
 	busy: "login.errors.busy",
 	failed: "login.errors.failed",
+	not_enabled: "login.errors.notEnabled",
 } as const satisfies Readonly<Record<string, MessageKey>>;
 
 function isLoginErrorCode(code: string): code is keyof typeof LOGIN_ERRORS {

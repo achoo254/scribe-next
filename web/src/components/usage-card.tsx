@@ -5,6 +5,7 @@ import { useT } from "../i18n/i18n-context";
 import type { MessageKey } from "../i18n/message-types";
 import { cn } from "../lib/cn";
 import { formatDate, formatDayMonth, formatStorage } from "../lib/format";
+import { useTenantInfo } from "../lib/tenant-info";
 import { PROVIDER_INFO } from "./key-providers";
 import { Badge } from "./ui/badge";
 import { cardClassName } from "./ui/card";
@@ -77,27 +78,22 @@ function useProviderName(): (code: string) => string {
 	};
 }
 
-interface OwnKeyRowProps {
+interface KeyRowProps {
 	label: string;
-	provider: string;
+	/** Whose key ("Dùng key của bạn (OpenAI)", "Dùng key AI của acme.vn"). */
+	value: string;
 	detail?: string;
 	"data-id": string;
 }
 
-/** A use that runs on the user's own key: no Scribe allowance to show. */
-function OwnKeyRow({
-	label,
-	provider,
-	detail,
-	"data-id": dataId,
-}: OwnKeyRowProps) {
-	const t = useT();
+/** A use that runs on someone's own key (the user's, the domain owner's): no Scribe allowance to show. */
+function KeyRow({ label, value, detail, "data-id": dataId }: KeyRowProps) {
 	return (
 		<div data-id={dataId} className="grid min-w-0 gap-1">
 			<div className="flex items-baseline justify-between gap-2 text-xs">
 				<span className="truncate text-muted">{label}</span>
 				<span data-id={`${dataId}-value`} className="shrink-0 text-fg">
-					{t("ui.usage.ownKey.value", { provider })}
+					{value}
 				</span>
 			</div>
 			{detail ? <span className="text-muted text-xs">{detail}</span> : null}
@@ -110,20 +106,25 @@ function OwnKeyRow({
  * plan badge (with its end date) and how long files are kept, then storage,
  * this month's transcription minutes and, on the free plan, today's. Shows
  * once `/api/me/usage` answers; the minutes only for accounts that may
- * transcribe.
+ * transcribe. On a tenant's domain the runs use the owner's AI key
+ * (`transcription.keySource: "tenant"`): no minutes, one line saying whose
+ * key; the storage of the plan still applies.
  */
 export function UsageCard() {
 	const t = useT();
 	const { user } = useAuth();
 	const { data: storage } = useUsageQuery();
 	const providerName = useProviderName();
+	const tenant = useTenantInfo();
 	if (!storage) return null;
 	const own = user?.ownKeys ?? null;
+	const tenantKey = user?.transcription?.keySource === "tenant";
 	const plan: PlanInfo["name"] = user?.plan?.name ?? storage.plan ?? "free";
 	const until = user?.plan?.until ?? null;
 	const retentionDays = user?.plan?.retentionDays ?? storage.retentionDays ?? 0;
-	// Transcription on the user's own key: Scribe's minutes do not apply.
-	const minutes = own?.transcribe ? null : (user?.transcription ?? null);
+	// Transcription on the user's own key or the domain owner's: Scribe's minutes do not apply.
+	const minutes =
+		own?.transcribe || tenantKey ? null : (user?.transcription ?? null);
 	const reset = formatDayMonth(minutes?.resetsAt);
 	const storageFull =
 		storage.quotaBytes > 0 && storage.usageBytes >= storage.quotaBytes;
@@ -178,11 +179,20 @@ export function UsageCard() {
 						limit={minutes.limitMinutes}
 					/>
 				) : null}
+				{tenantKey && !(own?.transcribe && own?.text) ? (
+					<KeyRow
+						data-id="usage-tenant-key"
+						label={t("ui.usage.tenantKey.label")}
+						value={t("ui.usage.tenantKey.value", { domain: tenant.domain })}
+					/>
+				) : null}
 				{own?.transcribe ? (
-					<OwnKeyRow
+					<KeyRow
 						data-id="usage-own-transcribe"
 						label={t("ui.usage.ownKey.transcribe")}
-						provider={providerName(own.transcribe)}
+						value={t("ui.usage.ownKey.value", {
+							provider: providerName(own.transcribe),
+						})}
 						detail={
 							own.minutes > 0
 								? t("ui.usage.ownKey.minutes", { count: own.minutes })
@@ -191,10 +201,12 @@ export function UsageCard() {
 					/>
 				) : null}
 				{own?.text ? (
-					<OwnKeyRow
+					<KeyRow
 						data-id="usage-own-text"
 						label={t("ui.usage.ownKey.text")}
-						provider={providerName(own.text)}
+						value={t("ui.usage.ownKey.value", {
+							provider: providerName(own.text),
+						})}
 					/>
 				) : null}
 				{minutes?.daily ? (

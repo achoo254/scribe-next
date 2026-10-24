@@ -27,6 +27,10 @@ export const ui = {
 			value: "Dùng key của bạn ({provider})",
 			minutes: { other: "{count} phút bằng key của bạn tháng này" },
 		},
+		tenantKey: {
+			label: "Chép lời, biên bản, hỏi đáp, dịch",
+			value: "Dùng key AI của {domain}",
+		},
 		storageFull:
 			"Đã đầy dung lượng: xoá bớt bản ghi hoặc tệp để ghi và tải lên tiếp.",
 	},

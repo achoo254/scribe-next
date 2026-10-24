@@ -19,6 +19,12 @@ export interface Transcription {
 	wholeSession?: boolean;
 	/** Free plan: minutes of today (Vietnam time); null on plus. */
 	daily?: { usedMinutes: number; limitMinutes: number } | null;
+	/**
+	 * Whose AI key the account's runs use: `tenant` on a domain other than
+	 * the primary one (its owner's keys: no minutes, pool or monthly cap, the
+	 * numbers above are absent); missing means Scribe's own key, metered.
+	 */
+	keySource?: "server" | "tenant";
 }
 
 /** The plan in effect and what it allows. */
