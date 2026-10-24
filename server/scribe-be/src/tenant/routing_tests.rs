@@ -61,8 +61,9 @@ async fn hosts_route_to_their_tenant_and_disabled_tenants_stop_before_any_sessio
     // Route cần đăng nhập: 403 trước khi đọc phiên (Mongo không được chạm).
     let (status, _, body) = get(&origin, "scribe.inetdev.io.vn", "/api/me", Some("__Host-scribe=x")).await;
     assert_eq!((status, body["code"].clone()), (403, json!("TENANT_DISABLED")));
-    let (status, _, body) = get(&origin, "scribe.inetdev.io.vn", "/api/auth/native/config", None).await;
-    assert_eq!((status, body["code"].clone()), (403, json!("TENANT_DISABLED")));
+    // App di động chỉ ở tenant chính.
+    let (status, _, _) = get(&origin, "scribe.inetdev.io.vn", "/api/auth/native/config", None).await;
+    assert_eq!(status, 404);
     // Đăng nhập trên trình duyệt: về trang đăng nhập của chính tenant đó.
     let (status, location, _) = get(&origin, "scribe.inetdev.io.vn", "/api/auth/login", None).await;
     assert_eq!((status, location.as_deref()), (303, Some("https://scribe.inetdev.io.vn/login?error=not_enabled")));
@@ -109,4 +110,102 @@ async fn cross_tenant_session_is_rejected_on_real_mongo() {
     assert!(sessions::find(&db, &ten_a, &token).await.expect("tìm").is_some(), "phiên A không bị xoá");
 
     crate::account::purge_user(&db, &std::env::temp_dir().to_string_lossy(), &user_a).await.expect("dọn");
+}
+
+/// Hai tenant sổ đã bật (đủ điều kiện phía Scribe) với IdP giả: tenant A `ten_a` ở `a.vn`, tenant B `ten_b` ở `b.vn`.
+async fn two_enabled_tenants(db: mongodb::Database) -> (String, crate::oidc_registry::tests::FakeTenantIdp) {
+    use crate::oidc_registry::tests::{fake_tenant_idp, registry};
+    let tenants = HashMap::from([
+        ("scribe.a.vn".to_string(), tenant_body("ten_a", "a.vn", true)),
+        ("scribe.b.vn".to_string(), tenant_body("ten_b", "b.vn", true)),
+    ]);
+    let (lookup, _) = fake_lookup(tenants).await;
+    let idp = fake_tenant_idp(&[("ten_a", "https://auth.a.vn"), ("ten_b", "https://auth.b.vn")]).await;
+    let dir = directory(Some(&lookup), Readiness { oidc: true, sealed_keys: true });
+    let state = AppState::for_tests_with(crate::config::Config::for_tests(), db, dir, registry(&idp));
+    (serve(state).await, idp)
+}
+
+fn logout_token(idp: &crate::oidc_registry::tests::FakeTenantIdp, issuer: &str, jti: &str) -> String {
+    let event = json!({ "http://schemas.openid.net/event/backchannel-logout": {} });
+    let claims = json!({ "iss": issuer, "aud": "scribe-web", "iat": chrono::Utc::now().timestamp(), "jti": jti,
+                         "sid": "sid-1", "events": event });
+    crate::oidc_registry::tests::sign(&idp.key, Some("logout+jwt"), claims)
+}
+
+async fn backchannel(origin: &str, host: &str, token: &str) -> u16 {
+    let res = client()
+        .post(format!("{origin}/api/auth/backchannel-logout"))
+        .header("host", host)
+        .form(&[("logout_token", token)])
+        .send()
+        .await
+        .expect("gửi");
+    res.status().as_u16()
+}
+
+#[tokio::test]
+async fn a_tenant_only_trusts_its_own_idp_and_has_no_mobile_sign_in() {
+    let (origin, idp) = two_enabled_tenants(lazy_db().await).await;
+    // Logout token do IdP ký cho tenant A gửi tới host B: bị từ chối trước khi đụng phiên nào.
+    assert_eq!(backchannel(&origin, "scribe.b.vn", &logout_token(&idp, "https://auth.a.vn", "j-a")).await, 400);
+    // App di động: chỉ tenant chính.
+    let res = client().post(format!("{origin}/api/auth/native/exchange")).header("host", "scribe.a.vn").json(&json!({})).send().await.expect("gửi");
+    assert_eq!(res.status().as_u16(), 404);
+    assert_eq!(get(&origin, "scribe.a.vn", "/api/auth/native/config", None).await.0, 404);
+    // `/api/idp` của tenant đã bật.
+    let (_, _, body) = get(&origin, "scribe.a.vn", "/api/idp", None).await;
+    assert_eq!((body["scribe"].clone(), body["issuer"].clone()), (json!("enabled"), json!("https://auth.a.vn")));
+}
+
+/// Đăng nhập web trọn vòng ở tenant A qua IdP của A (API nội bộ + loopback giả): phiên dùng được ở A, không ở B hay
+/// tenant chính; back-channel của A gửi tới B không xoá gì, gửi tới A thì xoá. `cargo test web_sign_in_on_a_tenant
+/// -- --ignored`.
+#[tokio::test]
+#[ignore]
+async fn web_sign_in_on_a_tenant_on_real_mongo() {
+    let uri = std::env::var("TRANSCRIPT_TEST_MONGO_URI").expect("TRANSCRIPT_TEST_MONGO_URI");
+    let db_name = std::env::var("TRANSCRIPT_TEST_DB_NAME").expect("TRANSCRIPT_TEST_DB_NAME");
+    let db = crate::db::connect(&uri, &db_name).await.expect("kết nối Mongo");
+    crate::models::user::ensure_indexes(&db).await.expect("index");
+    let (origin, idp) = two_enabled_tenants(db.clone()).await;
+
+    let res = client().get(format!("{origin}/api/auth/login")).header("host", "scribe.a.vn").send().await.expect("login");
+    assert_eq!(res.status().as_u16(), 303);
+    let location = reqwest::Url::parse(res.headers()["location"].to_str().expect("location")).expect("url");
+    assert_eq!(location.origin().ascii_serialization(), "https://auth.a.vn", "trang đăng nhập của IdP tenant A");
+    let query: HashMap<String, String> = location.query_pairs().into_owned().collect();
+    assert_eq!(query["client_id"], "scribe-web");
+    assert_eq!(query["redirect_uri"], "https://scribe.a.vn/api/auth/callback");
+    let login_cookie = res.headers()["set-cookie"].to_str().expect("cookie").split(';').next().expect("cặp").to_string();
+    assert!(login_cookie.starts_with("__Host-scribe_login="));
+    *idp.nonce.lock().expect("khoá") = query["nonce"].clone();
+
+    let callback = format!("{origin}/api/auth/callback?code=c1&state={}", query["state"]);
+    let res = client().get(callback).header("host", "scribe.a.vn").header("cookie", &login_cookie).send().await.expect("callback");
+    assert_eq!(res.status().as_u16(), 303);
+    assert_eq!(res.headers()["location"], "https://scribe.a.vn/");
+    let session = res
+        .headers()
+        .get_all("set-cookie")
+        .iter()
+        .filter_map(|v| v.to_str().ok())
+        .find(|c| c.starts_with("__Host-scribe="))
+        .and_then(|c| c.split(';').next())
+        .expect("cookie phiên")
+        .to_string();
+
+    assert_eq!(get(&origin, "scribe.a.vn", "/api/me/usage", Some(&session)).await.0, 200);
+    assert_eq!(get(&origin, "scribe.b.vn", "/api/me/usage", Some(&session)).await.0, 401);
+    assert_eq!(get(&origin, "scribe.hoandat.com", "/api/me/usage", Some(&session)).await.0, 401);
+    let user = crate::models::user::find_id_by_sub(&db, "ten_a", "acc_1").await.expect("tìm").expect("user của tenant A");
+    assert!(crate::models::user::find_id_by_sub(&db, "ten_b", "acc_1").await.expect("tìm").is_none());
+
+    let jti = format!("j-{}", uuid::Uuid::new_v4());
+    assert_eq!(backchannel(&origin, "scribe.b.vn", &logout_token(&idp, "https://auth.a.vn", &jti)).await, 400);
+    assert_eq!(get(&origin, "scribe.a.vn", "/api/me/usage", Some(&session)).await.0, 200, "B không xoá được phiên của A");
+    assert_eq!(backchannel(&origin, "scribe.a.vn", &logout_token(&idp, "https://auth.a.vn", &jti)).await, 200);
+    assert_eq!(get(&origin, "scribe.a.vn", "/api/me/usage", Some(&session)).await.0, 401, "đã đăng xuất ở IdP của A");
+
+    crate::account::purge_user(&db, &std::env::temp_dir().to_string_lossy(), &user).await.expect("dọn");
 }

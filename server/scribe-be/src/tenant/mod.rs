@@ -181,6 +181,15 @@ pub async fn require_enabled_web(Extension(tenant): Extension<Tenant>, req: Requ
     }
 }
 
+/// Route chỉ có ở tenant chính (đăng nhập của app di động: app chỉ nói với tenant chính): tenant sổ ⟹ 404.
+pub async fn primary_only(Extension(tenant): Extension<Tenant>, req: Request, next: Next) -> Response {
+    if tenant.primary {
+        next.run(req).await
+    } else {
+        AppError::NotFound("không có trên domain này".into()).into_response()
+    }
+}
+
 #[cfg(test)]
 pub(crate) fn test_tenant(id: &str, enabled: bool) -> Tenant {
     let primary = id == PRIMARY_ID;

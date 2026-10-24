@@ -84,7 +84,8 @@ pub fn build_router(state: AppState) -> Router {
     let native_routes = Router::new()
         .route("/api/auth/native/config", get(auth::native_config))
         .route("/api/auth/native/refresh", post(auth::native_refresh))
-        .route_layer(from_fn(tenant::require_enabled))
+        // App di động chỉ nói với tenant chính.
+        .route_layer(from_fn(tenant::primary_only))
         .route_layer(from_fn_with_state(state.clone(), rate_limit::auth_limit));
     // Đăng xuất chạy cả khi tenant đã tắt; `/api/idp` luôn trả để web hiện trang "chưa bật".
     let always = Router::new()
@@ -96,7 +97,7 @@ pub fn build_router(state: AppState) -> Router {
     // Đổi code của app: route public, mỗi lần gọi IdP ⟹ giới hạn chặt riêng.
     let exchange_routes = Router::new()
         .route("/api/auth/native/exchange", post(auth::native_exchange))
-        .route_layer(from_fn(tenant::require_enabled))
+        .route_layer(from_fn(tenant::primary_only))
         .route_layer(from_fn_with_state(state.clone(), rate_limit::exchange_limit));
 
     // Back-channel logout: IdP gọi (logout token có chữ ký), không giới hạn tần suất — bị 429 thì phiên

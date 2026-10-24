@@ -30,6 +30,8 @@ base64 = "0.22"
 aes-gcm = "0.10"
 # Xoá bản rõ của key riêng người dùng khỏi bộ nhớ sau khi dùng (đã có sẵn trong cây phụ thuộc của aes-gcm).
 zeroize = "1"
+# Secret client `scribe-web` của tenant sổ: HMAC-SHA256 của id tenant dưới khoá app (cùng cách IdP suy ra), thuần Rust.
+hmac = "0.12"
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
 rand = "0.8"
 time = "0.3"

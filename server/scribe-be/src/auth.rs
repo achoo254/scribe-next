@@ -12,7 +12,8 @@
 //! bị thu hồi ở `/account` (lần làm mới sau nhận `invalid_grant`).
 //!
 //! Mọi bước theo tenant của Host (`tenant::resolve`): user ghép theo `(tenantId, sub)`, phiên mang `tenantId` và chỉ
-//! có hiệu lực ở đúng tenant đó (cookie host-only, và `require_auth` kiểm lại).
+//! có hiệu lực ở đúng tenant đó (cookie host-only, và `require_auth` kiểm lại). Web đăng nhập bằng IdP của chính tenant
+//! (`oidc_registry`), mọi URL chuyển hướng dựng từ `public_url` của tenant. App di động chỉ ở tenant chính.
 
 use crate::audit;
 use crate::error::AppError;
@@ -39,10 +40,15 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
+/// Origin của tenant là https (prod): cookie `__Host-` + `Secure`.
+fn https(tenant: &TenantCtx) -> bool {
+    tenant.public_url.starts_with("https://")
+}
+
 /// Cookie gắn lượt đăng nhập web với trình duyệt đã bắt đầu nó. Trên https là `__Host-` (Path=/, không
-/// Domain): subdomain khác của hoandat.com (vd tunnel do người dùng tự phục vụ) không ghi đè được.
-fn login_cookie_name(state: &AppState) -> &'static str {
-    if state.config.public_url.starts_with("https://") {
+/// Domain): subdomain khác của domain (vd tunnel do người dùng tự phục vụ) không ghi đè được.
+fn login_cookie_name(tenant: &TenantCtx) -> &'static str {
+    if https(tenant) {
         "__Host-scribe_login"
     } else {
         "scribe_login"
@@ -86,8 +92,8 @@ impl SessionCache {
     }
 }
 
-fn cookie_name(state: &AppState) -> &'static str {
-    if state.config.public_url.starts_with("https://") {
+fn cookie_name(tenant: &TenantCtx) -> &'static str {
+    if https(tenant) {
         "__Host-scribe"
     } else {
         // Dev local http: `__Host-` bắt buộc Secure, iOS simulator không gửi cookie Secure qua http.
@@ -96,14 +102,14 @@ fn cookie_name(state: &AppState) -> &'static str {
 }
 
 /// `jar` bỏ cookie phiên (đăng xuất, xoá tài khoản).
-pub(crate) fn without_session_cookie(state: &AppState, jar: CookieJar) -> CookieJar {
-    jar.remove(Cookie::build(cookie_name(state)).path("/").build())
+pub(crate) fn without_session_cookie(tenant: &TenantCtx, jar: CookieJar) -> CookieJar {
+    jar.remove(Cookie::build(cookie_name(tenant)).path("/").build())
 }
 
-fn session_cookie(state: &AppState, value: String, ttl_secs: i64) -> Cookie<'static> {
-    Cookie::build((cookie_name(state), value))
+fn session_cookie(tenant: &TenantCtx, value: String, ttl_secs: i64) -> Cookie<'static> {
+    Cookie::build((cookie_name(tenant), value))
         .http_only(true)
-        .secure(state.config.public_url.starts_with("https://"))
+        .secure(https(tenant))
         .same_site(SameSite::Lax)
         .path("/")
         .max_age(time::Duration::seconds(ttl_secs))
@@ -123,13 +129,13 @@ fn pkce_challenge(verifier: &str) -> String {
     URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()))
 }
 
-fn callback_url(state: &AppState) -> String {
-    format!("{}/api/auth/callback", state.config.public_url)
+fn callback_url(tenant: &TenantCtx) -> String {
+    format!("{}/api/auth/callback", tenant.public_url)
 }
 
-/// Kết thúc lượt đăng nhập web có lỗi: về trang đăng nhập kèm mã ngắn (trang tự dịch ra câu).
-pub(crate) fn login_failed(state: &AppState, code: &str) -> Response {
-    Redirect::to(&format!("{}/login?error={code}", state.config.public_url)).into_response()
+/// Kết thúc lượt đăng nhập web có lỗi: về trang đăng nhập của tenant kèm mã ngắn (trang tự dịch ra câu).
+pub(crate) fn login_failed(tenant: &TenantCtx, code: &str) -> Response {
+    Redirect::to(&format!("{}/login?error={code}", tenant.public_url)).into_response()
 }
 
 /// Lý do từ chối đăng nhập khi tài khoản Scribe đang bị xoá (web đổi thành mã `deleting`).
@@ -174,23 +180,24 @@ pub async fn login(
     Extension(tenant): Extension<Tenant>,
     jar: CookieJar,
 ) -> Result<(CookieJar, Redirect), AppError> {
-    let discovery = state.oidc.discovery(&state.http).await?;
+    let oidc = state.oidc.get(&tenant)?;
+    let discovery = oidc.discovery(&state.http).await?;
     let (login_state, verifier, nonce) = (random_token(), random_token(), random_token());
     sessions::save_state(&state.db, &tenant.id, &login_state, &verifier, &nonce).await?;
     let mut url = reqwest::Url::parse(&discovery.authorization_endpoint)
         .map_err(|e| AppError::Internal(format!("authorization endpoint: {e}")))?;
     url.query_pairs_mut()
-        .append_pair("client_id", &state.config.oidc_web_client_id)
+        .append_pair("client_id", state.oidc.web_client_id(&tenant))
         .append_pair("response_type", "code")
         .append_pair("scope", SCOPE)
-        .append_pair("redirect_uri", &callback_url(&state))
+        .append_pair("redirect_uri", &callback_url(&tenant))
         .append_pair("state", &login_state)
         .append_pair("nonce", &nonce)
         .append_pair("code_challenge", &pkce_challenge(&verifier))
         .append_pair("code_challenge_method", "S256");
-    let cookie = Cookie::build((login_cookie_name(&state), login_state))
+    let cookie = Cookie::build((login_cookie_name(&tenant), login_state))
         .http_only(true)
-        .secure(state.config.public_url.starts_with("https://"))
+        .secure(https(&tenant))
         .same_site(SameSite::Lax)
         .path("/")
         .max_age(time::Duration::minutes(10))
@@ -212,24 +219,24 @@ pub async fn callback(
     jar: CookieJar,
     Query(q): Query<CallbackQuery>,
 ) -> Response {
-    let name = login_cookie_name(&state);
+    let name = login_cookie_name(&tenant);
     let expected = jar.get(name).map(|c| c.value().to_string());
     let jar = jar.remove(Cookie::build(name).path("/").build());
     if let Some(error) = q.error {
         let code = if error == "access_denied" { "denied" } else { "idp" };
-        return (jar, login_failed(&state, code)).into_response();
+        return (jar, login_failed(&tenant, code)).into_response();
     }
     let (Some(code), Some(login_state)) = (q.code, q.state) else {
-        return (jar, login_failed(&state, "invalid")).into_response();
+        return (jar, login_failed(&tenant, "invalid")).into_response();
     };
     // Lượt phải do chính trình duyệt này bắt đầu (chống CSRF đăng nhập).
     if expected.as_deref() != Some(login_state.as_str()) {
-        return (jar, login_failed(&state, "expired")).into_response();
+        return (jar, login_failed(&tenant, "expired")).into_response();
     }
     match finish_web_login(&state, &tenant, &code, &login_state).await {
         Ok((token, max_age)) => {
-            let jar = jar.add(session_cookie(&state, token, max_age));
-            (jar, Redirect::to(&format!("{}/", state.config.public_url))).into_response()
+            let jar = jar.add(session_cookie(&tenant, token, max_age));
+            (jar, Redirect::to(&format!("{}/", tenant.public_url))).into_response()
         }
         Err(AppError::Forbidden(m)) => {
             let code = if m.contains("xác minh") {
@@ -239,12 +246,12 @@ pub async fn callback(
             } else {
                 "forbidden"
             };
-            (jar, login_failed(&state, code)).into_response()
+            (jar, login_failed(&tenant, code)).into_response()
         }
-        Err(AppError::Unavailable(_)) => (jar, login_failed(&state, "idp")).into_response(),
+        Err(AppError::Unavailable(_)) => (jar, login_failed(&tenant, "idp")).into_response(),
         Err(e) => {
-            tracing::warn!("đăng nhập web lỗi: {e:?}");
-            (jar, login_failed(&state, "failed")).into_response()
+            tracing::warn!(tenant = %tenant.id, "đăng nhập web lỗi: {e:?}");
+            (jar, login_failed(&tenant, "failed")).into_response()
         }
     }
 }
@@ -253,14 +260,15 @@ async fn finish_web_login(state: &AppState, tenant: &TenantCtx, code: &str, logi
     let saved = sessions::take_state(&state.db, &tenant.id, login_state)
         .await?
         .ok_or_else(|| AppError::Unauthorized("lượt đăng nhập đã hết hạn".into()))?;
-    let client_id = &state.config.oidc_web_client_id;
+    let oidc = state.oidc.get(tenant)?;
+    let client_id = state.oidc.web_client_id(tenant);
+    let secret = state.oidc.client_secret(tenant)?;
     take_idp_budget(state)?;
-    let tokens = state
-        .oidc
-        .exchange_code(&state.http, client_id, Some(&state.oidc_web_secret), code, &saved.code_verifier, &callback_url(state))
+    let tokens = oidc
+        .exchange_code(&state.http, client_id, Some(&secret), code, &saved.code_verifier, &callback_url(tenant))
         .await
         .map_err(grant_error)?;
-    let claims = state.oidc.identify(&state.http, &tokens, client_id, Some(&saved.nonce)).await?;
+    let claims = oidc.identify(&state.http, &tokens, client_id, Some(&saved.nonce)).await?;
     let user_id = admit(state, tenant, &claims).await?;
     let (token, _) = sessions::create(&state.db, &tenant.id, &user_id, Client::Web, claims.sid.as_deref(), None).await?;
     audit::record(state, Some(&user_id), "auth.login", doc! { "client": "web" });
@@ -284,9 +292,10 @@ fn grant_error(e: GrantError) -> AppError {
 
 // MARK: iPhone
 
-/// `GET /api/auth/native/config` — tham số để app tự dựng yêu cầu đăng nhập (PKCE do app sinh và giữ).
+/// `GET /api/auth/native/config` — tham số để app tự dựng yêu cầu đăng nhập (PKCE do app sinh và giữ). App di động
+/// chỉ nói với tenant chính (route chỉ có ở tenant chính: `tenant::primary_only`).
 pub async fn native_config(State(state): State<AppState>) -> Result<Json<Value>, AppError> {
-    let discovery = state.oidc.discovery(&state.http).await?;
+    let discovery = state.oidc.primary().discovery(&state.http).await?;
     Ok(Json(json!({
         "authorizationEndpoint": discovery.authorization_endpoint,
         "clientId": state.config.oidc_mobile_client_id,
@@ -315,12 +324,12 @@ pub async fn native_exchange(
     }
     let client_id = &state.config.oidc_mobile_client_id;
     take_idp_budget(&state)?;
-    let tokens = state
-        .oidc
+    let oidc = state.oidc.primary();
+    let tokens = oidc
         .exchange_code(&state.http, client_id, None, &body.code, &body.code_verifier, &state.config.oidc_mobile_redirect_uri)
         .await
         .map_err(grant_error)?;
-    let claims = state.oidc.identify(&state.http, &tokens, client_id, Some(&body.nonce)).await?;
+    let claims = oidc.identify(&state.http, &tokens, client_id, Some(&body.nonce)).await?;
     let refresh = tokens
         .refresh_token
         .ok_or_else(|| AppError::Internal("IdP không cấp refresh token cho app".into()))?;
@@ -331,7 +340,7 @@ pub async fn native_exchange(
     audit::record(&state, Some(&user_id), "auth.login", doc! { "client": "mobile" });
     let email = claims.email.unwrap_or_default();
     Ok((
-        jar.add(session_cookie(&state, token, sessions::MOBILE_TTL_S)),
+        jar.add(session_cookie(&tenant, token, sessions::MOBILE_TTL_S)),
         Json(json!({ "email": email, "deviceToken": device_token })),
     ))
 }
@@ -383,7 +392,7 @@ pub async fn native_refresh(
         return Err(e);
     }
     let client_id = &state.config.oidc_mobile_client_id;
-    let tokens = match state.oidc.refresh(&state.http, client_id, &refresh).await {
+    let tokens = match state.oidc.primary().refresh(&state.http, client_id, &refresh).await {
         Ok(tokens) => tokens,
         Err(GrantError::Rejected(reason)) => {
             // Máy bị thu hồi ở /account hoặc grant hết hạn: bỏ thiết bị, app phải đăng nhập lại.
@@ -401,7 +410,7 @@ pub async fn native_refresh(
     sessions::unlock_device(&state.db, &device, sealed.as_deref()).await?;
 
     // Tài khoản vẫn phải là của máy này và vẫn được phép (allowlist có thể đã đổi).
-    let claims = state.oidc.identify(&state.http, &tokens, client_id, None).await?;
+    let claims = state.oidc.primary().identify(&state.http, &tokens, client_id, None).await?;
     let owner = user::find_id_by_sub(&state.db, &tenant.id, &claims.sub).await?;
     if owner.as_deref() != Some(device.user_id.as_str()) || admit(&state, &tenant, &claims).await.is_err() {
         revoke(&state, &device).await?;
@@ -409,7 +418,7 @@ pub async fn native_refresh(
         return Err(AppError::Unauthorized("tài khoản không còn được phép, đăng nhập lại".into()));
     }
     let (token, _) = sessions::create(&state.db, &tenant.id, &device.user_id, Client::Mobile, None, Some(&device.id)).await?;
-    Ok((jar.add(session_cookie(&state, token, sessions::MOBILE_TTL_S)), Json(json!({ "ok": true }))))
+    Ok((jar.add(session_cookie(&tenant, token, sessions::MOBILE_TTL_S)), Json(json!({ "ok": true }))))
 }
 
 // MARK: Đăng xuất
@@ -428,7 +437,7 @@ pub async fn logout(
     jar: CookieJar,
     body: Option<Json<LogoutBody>>,
 ) -> (CookieJar, Json<Value>) {
-    let name = cookie_name(&state);
+    let name = cookie_name(&tenant);
     let mut user_id = None;
     if let Some(token) = jar.get(name).map(|c| c.value().to_string()) {
         if let Ok(Some(s)) = sessions::find(&state.db, &tenant.id, &token).await {
@@ -443,7 +452,7 @@ pub async fn logout(
         // Thu hồi grant ở IdP để máy không còn treo ở /account.
         if let Ok(Some(sealed)) = sessions::device_refresh(&state.db, &device_id).await {
             if let Some(refresh) = open(&state.session_key, &sealed) {
-                let _ = state.oidc.revoke(&state.http, &state.config.oidc_mobile_client_id, &refresh).await;
+                let _ = state.oidc.primary().revoke(&state.http, &state.config.oidc_mobile_client_id, &refresh).await;
             }
         }
         if let Ok(removed) = sessions::delete_device(&state.db, &device_id).await {
@@ -451,16 +460,20 @@ pub async fn logout(
         }
     }
     audit::record(&state, user_id.as_deref(), "auth.logout", doc! {});
-    let end_session = state.oidc.discovery(&state.http).await.ok().and_then(|d| d.end_session_endpoint.clone()).map(|end| {
+    let discovery = match state.oidc.get(&tenant) {
+        Ok(oidc) => oidc.discovery(&state.http).await.ok().map(|d| d.end_session_endpoint.clone()),
+        Err(_) => None,
+    };
+    let end_session = discovery.flatten().map(|end| {
         let mut url = reqwest::Url::parse(&end).ok();
         if let Some(u) = url.as_mut() {
             u.query_pairs_mut()
-                .append_pair("client_id", &state.config.oidc_web_client_id)
-                .append_pair("post_logout_redirect_uri", &format!("{}/", state.config.public_url));
+                .append_pair("client_id", state.oidc.web_client_id(&tenant))
+                .append_pair("post_logout_redirect_uri", &format!("{}/", tenant.public_url));
         }
         url.map(|u| u.to_string())
     });
-    let jar = without_session_cookie(&state, jar);
+    let jar = without_session_cookie(&tenant, jar);
     (jar, Json(json!({ "ok": true, "endSessionUrl": end_session.flatten() })))
 }
 
@@ -476,11 +489,14 @@ pub async fn backchannel_logout(
     Extension(tenant): Extension<Tenant>,
     Form(form): Form<BackchannelForm>,
 ) -> Response {
-    let claims =
-        match state.oidc.verify_logout_token(&state.http, &form.logout_token, &state.config.oidc_web_client_id).await {
-            Ok(c) => c,
-            Err(_) => return (axum::http::StatusCode::BAD_REQUEST, "invalid logout token").into_response(),
-        };
+    // Logout token phải do IdP của chính tenant này ký cho client web của Scribe ở tenant này.
+    let verified = match state.oidc.get(&tenant) {
+        Ok(oidc) => oidc.verify_logout_token(&state.http, &form.logout_token, state.oidc.web_client_id(&tenant)).await,
+        Err(e) => Err(e),
+    };
+    let Ok(claims) = verified else {
+        return (axum::http::StatusCode::BAD_REQUEST, "invalid logout token").into_response();
+    };
     match sessions::seen_jti(&state.db, &tenant.id, &claims.jti).await {
         Ok(true) => return no_store_ok(),
         Ok(false) => {}
@@ -603,7 +619,7 @@ pub async fn require_auth(
     next: Next,
 ) -> Result<Response, AppError> {
     let token = jar
-        .get(cookie_name(&state))
+        .get(cookie_name(&tenant))
         .map(|c| c.value().to_string())
         .ok_or_else(|| AppError::Unauthorized("chưa đăng nhập".into()))?;
     let id = crate::session::hash_token(&token);

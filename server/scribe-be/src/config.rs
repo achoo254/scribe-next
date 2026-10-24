@@ -371,6 +371,13 @@ pub struct Config {
     pub idp_internal_api_secret_path: Option<String>,
     /// Tên tài khoản đăng nhập hiện cho người dùng tới khi hỏi được IdP (`IDP_DISPLAY_NAME`, mặc định "Auth Next").
     pub idp_display_name: String,
+    /// Listener công khai của IdP trên loopback (`IDP_LOOPBACK_URL`, prod `http://127.0.0.1:4500`): token, userinfo,
+    /// thu hồi của tenant sổ đi qua đây với `Host` của issuer, không qua DNS của domain.
+    pub idp_loopback_url: Option<String>,
+    /// Tệp khoá app `scribe-web` (`SCRIBE_WEB_CLIENT_KEY_PATH`, 600; sinh bằng `app-client-key scribe-web` của
+    /// auth-next): secret client của mỗi tenant sổ = HMAC-SHA256 của id tenant dưới khoá này. Thiếu tệp này, loopback hay
+    /// API nội bộ ⟹ không đăng nhập được ở tenant sổ (chế độ tenant tắt), tenant chính vẫn chạy.
+    pub scribe_web_client_key_path: Option<String>,
     /// `CHAT_LINK_POLL=1`: chạy task long-poll của bot để liên kết chat. Mặc định tắt: dev và prod dùng
     /// chung token bot, backend dev bật poll sẽ lấy mất update của prod.
     pub chat_link_poll: bool,
@@ -464,6 +471,11 @@ impl Config {
                 .map(str::to_string),
             idp_internal_api_secret_path: option_env!("IDP_INTERNAL_API_SECRET_PATH").filter(|p| !p.is_empty()).map(str::to_string),
             idp_display_name: crate::idp_brand::build_display_name(option_env!("IDP_DISPLAY_NAME")),
+            idp_loopback_url: option_env!("IDP_LOOPBACK_URL")
+                .map(|u| u.trim().trim_end_matches('/'))
+                .filter(|u| !u.is_empty())
+                .map(str::to_string),
+            scribe_web_client_key_path: option_env!("SCRIBE_WEB_CLIENT_KEY_PATH").filter(|p| !p.is_empty()).map(str::to_string),
             chat_link_poll: matches!(option_env!("CHAT_LINK_POLL"), Some("1" | "true")),
             chat_bot_username: option_env!("CHAT_BOT_USERNAME")
                 .map(|u| u.trim().trim_start_matches('@'))
@@ -579,6 +591,8 @@ impl Config {
             idp_internal_api_url: None,
             idp_internal_api_secret_path: None,
             idp_display_name: crate::idp_brand::DEFAULT_DISPLAY_NAME.into(),
+            idp_loopback_url: None,
+            scribe_web_client_key_path: None,
             chat_link_poll: false,
             chat_bot_username: None,
             session_key_path: String::new(),

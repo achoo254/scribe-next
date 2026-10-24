@@ -95,6 +95,7 @@ Tất cả trong `/opt/scribe-be`, chủ `scribe`, quyền 600, ghi bằng stdin
 | `.user-keys-secret` | `USER_KEYS_SECRET_PATH` | 32 byte ngẫu nhiên mã hoá "Key riêng" (key API người dùng tự nhập), §Key riêng. Thiếu tệp hoặc quyền khác 600 ⟹ tính năng tắt, giao diện báo |
 | `.gemini-key`, `.anthropic-key` | `GEMINI_KEY_PATH`, `ANTHROPIC_KEY_PATH` | Chỉ cần khi `LLM_PROVIDER` là `gemini` / `anthropic` (model chữ của server) |
 | `.notify-bot-token` | `NOTIFY_BOT_TOKEN_PATH` | Token bot `@bot_scribe_bot`: báo động, liên kết chat và gửi biên bản (§Deploy) |
+| `.scribe-web-client-key` | `SCRIBE_WEB_CLIENT_KEY_PATH` | Khoá app `scribe-web` cho tenant sổ (§Đăng nhập auth-next): sinh ở IdP bằng `node --env-file=.env dist/app-client-key.mjs scribe-web <file>` (mode 600, trong `/var/www/hoandat-auth`), chép sang đây; Scribe tự tính secret `scribe-web` của từng tenant = `base64url(HMAC-SHA256(khoá, tenantId))`. Đổi `APP_CLIENT_SECRET_KEY` ở IdP thì sinh lại tệp này. Thiếu hoặc sai dạng ⟹ chế độ tenant tắt, tenant chính không đổi |
 | `.idp-internal-secret` | `IDP_INTERNAL_API_SECRET_PATH` | Mật khẩu Basic của tài khoản `scribe` ở API nội bộ của auth-next (một dòng, ≥ 32 ký tự); phía IdP là mục `scribe:<secret>` của `INTERNAL_API_CREDENTIALS` trong `/var/www/hoandat-auth/.env` — đổi thì đổi cả hai. Thiếu hoặc sai dạng ⟹ dùng tên `IDP_DISPLAY_NAME` |
 
 ## ⚠️ Ràng buộc then chốt — cấu hình bake **compile-time**
@@ -142,6 +143,8 @@ Tất cả trong `/opt/scribe-be`, chủ `scribe`, quyền 600, ghi bằng stdin
 | `CHAT_BOT_USERNAME` | Tên bot trong deep link; prod để trống, BE hỏi `/bot/v1/me` |
 | `IDP_INTERNAL_API_URL` | API nội bộ của auth-next trên cùng máy, ví dụ `http://127.0.0.1:4501`. Cùng `IDP_INTERNAL_API_SECRET_PATH` (`/opt/scribe-be/.idp-internal-secret`): lúc khởi động rồi mỗi giờ BE gọi `GET {url}/internal/tenants/lookup?host=<host của PUBLIC_URL>` (Basic `scribe`, quá giờ 5 giây; lỗi thì thử lại sau 5 phút) để lấy tên hiển thị của tenant (`TENANT_DISPLAY_NAME` của IdP) và trả công khai ở `GET /api/idp`; giao diện gọi tài khoản đăng nhập bằng tên này ("Đăng nhập bằng …", "Tài khoản …", trang pháp lý). Lỗi thì giữ tên đúng gần nhất, journal ghi cảnh báo (không chứa bí mật). Request tới host `scribe.<domain>` khác cũng tra tenant qua route này (cache 60 giây; [ADR 0001](./decisions/0001-tenants-by-domain.md)). Thiếu một trong hai biến = tắt: tên mặc định, chỉ phục vụ tenant chính |
 | `IDP_DISPLAY_NAME` | Tên dùng tới khi hỏi được IdP (hoặc khi tính năng tắt), mặc định `Auth Next` (mặc định của auth-next); web cũng hiện `Auth Next` tới khi `/api/idp` trả lời |
+| `IDP_LOOPBACK_URL` | Listener công khai của auth-next trên loopback, prod `http://127.0.0.1:4500` (pm2 `hoandat-auth`). Token, userinfo, thu hồi của tenant sổ gửi tới đây với `Host: auth.<domain>`, `X-Forwarded-Proto: https` (không qua DNS của domain tenant). Cùng `SCRIBE_WEB_CLIENT_KEY_PATH` và hai biến API nội bộ ở trên: đủ cả ⟹ đăng nhập được ở tenant sổ (chế độ tenant); thiếu một ⟹ journal `chế độ tenant tắt (thiếu …)`, mọi `scribe.<domain>` khác hiện "Scribe chưa bật", tenant chính không đổi |
+| `SCRIBE_WEB_CLIENT_KEY_PATH` | `/opt/scribe-be/.scribe-web-client-key` (§Tệp bí mật trên server) |
 
 - `ALLOWED_DOMAINS` / `ALLOWED_EMAILS`: **KHÔNG set** → fallback rỗng = mở cho mọi tài khoản auth-next có email đã xác minh (quyết định hiện tại). Muốn siết → thêm `ALLOWED_DOMAINS=<domain>` rồi build lại.
 - `TRANSCRIBE_EMAILS`: rỗng (và chưa bật `TRANSCRIBE_OPEN`) nghĩa là **không ai** được chép lời (ngược với allowlist đăng nhập).
@@ -149,7 +152,11 @@ Tất cả trong `/opt/scribe-be`, chủ `scribe`, quyền 600, ghi bằng stdin
 
 ### Đăng nhập auth-next
 
-Hai client trên IdP `https://auth.hoandat.com` (chỉ tenant chính):
+Mỗi `scribe.<domain>` đăng nhập bằng IdP của chính domain đó (`https://auth.<domain>`); tenant chính `hoandat.com` như dưới đây.
+
+**Tenant sổ** ([ADR 0001](./decisions/0001-tenants-by-domain.md)): một client `scribe-web` (confidential, back-channel logout, không app di động, không dev) do auth-next dựng khi bật `SCRIBE_TENANTS` và chủ domain đã nhập key chép lời. Discovery và JWKS đọc qua API nội bộ (`/internal/tenants/<id>/openid-configuration`, `/jwks`, kiểm `issuer`), token/userinfo qua `IDP_LOOPBACK_URL`; secret tính từ khoá app `SCRIBE_WEB_CLIENT_KEY_PATH`. Redirect `https://scribe.<domain>/api/auth/callback`, back-channel `/api/auth/backchannel-logout` (chỉ xoá phiên của tenant đó), sau đăng xuất về `https://scribe.<domain>/`. `/api/auth/native/*` ở tenant sổ trả 404. Bật thật sự còn cần khoá niêm phong key AI phía Scribe; chưa có thì mọi tenant sổ hiện "Scribe chưa bật".
+
+Hai client trên IdP `https://auth.hoandat.com` (tenant chính):
 
 - **Web — `scribe-web` (confidential):** BE là BFF, chạy Code + PKCE phía server (`/api/auth/login` → IdP → `/api/auth/callback`), không token IdP nào tới JavaScript. Secret ở `OIDC_WEB_CLIENT_SECRET_PATH` trên server và `SCRIBE_WEB_CLIENT_SECRET` trong `/var/www/hoandat-auth/.env`. IdP gọi back-channel logout tới `/api/auth/backchannel-logout`.
 - **iPhone — `scribe-mobile` (public):** xem [ios-app.md](./ios-app.md); BE đổi code ở `/api/auth/native/exchange`, làm mới ở `/api/auth/native/refresh`.

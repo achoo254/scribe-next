@@ -15,6 +15,8 @@ mod jobs;
 mod models;
 mod notify;
 mod oidc;
+mod oidc_registry;
+mod oidc_transport;
 mod rate_limit;
 mod realtime;
 mod recordings;
@@ -159,7 +161,6 @@ async fn main() {
         tracing::error!("{e}");
         std::process::exit(1);
     }
-    let oidc_issuer = config.oidc_issuer.clone();
     let oidc_web_secret = std::fs::read_to_string(&config.oidc_web_client_secret_path)
         .map(|s| s.trim().to_string())
         .ok()
@@ -188,15 +189,25 @@ async fn main() {
             None
         }
     };
+    // Đăng nhập ở tenant sổ: API nội bộ + listener loopback của IdP + khoá app `scribe-web`. Thiếu ⟹ chế độ tenant tắt.
+    let tenant_access = oidc_registry::TenantAccess::load(&config, internal.clone()).unwrap_or_else(|e| {
+        tracing::error!("chế độ tenant tắt: {e}");
+        None
+    });
+    let oidc = oidc_registry::OidcRegistry::new(
+        oidc::Oidc::new(&config.oidc_issuer),
+        &config.oidc_web_client_id,
+        oidc_web_secret,
+        tenant_access,
+    );
     // Điều kiện phía Scribe để tenant sổ được bật; chưa đủ thì mọi tenant sổ hiện trang "chưa bật".
-    let readiness = tenant::Readiness::default();
+    let readiness = tenant::Readiness { oidc: oidc.tenant_mode(), ..tenant::Readiness::default() };
     let tenants = Arc::new(tenant::directory::TenantDirectory::new(&config, Some(db.clone()), internal, readiness));
     let state = AppState {
         config: Arc::new(config),
         db,
         http,
-        oidc: Arc::new(oidc::Oidc::new(&oidc_issuer)),
-        oidc_web_secret: Arc::new(oidc_web_secret),
+        oidc: Arc::new(oidc),
         session_cache: Arc::default(),
         session_key: Arc::new(session_key),
         rate: Arc::new(RateLimiter::new()),
