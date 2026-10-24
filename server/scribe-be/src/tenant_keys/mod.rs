@@ -11,6 +11,8 @@
 //! - Key tenant lỗi lúc dùng (sai, hết credit, không mở được): đánh dấu đúng bản niêm phong đó, báo IdP
 //!   `POST …/scribe-keys/:vendor/status` kèm `recipient` và `tag` để `/admin` hiện cho chủ domain, audit
 //!   `tenant_key.failed` ([`report`]). Không đụng cờ tạm ngưng hay báo động của key server, không chuyển sang key server.
+//! - Bản niêm phong cho khoá Scribe không có (tệp khoá đã gỡ hay thiếu): lỗi phía vận hành, không phải của key owner ⟹
+//!   không báo IdP, log lỗi và báo người vận hành qua bot một lần mỗi vân tay.
 //!
 //! Chưa có vòng khoá niêm phong (`TENANT_SEALING_KEYS_DIR`) hay API nội bộ ⟹ [`TenantKeys`] vắng và mọi tenant sổ "chưa
 //! bật" (`tenant::Readiness::sealed_keys`).
@@ -31,7 +33,8 @@ use cache::{KeyCache, StoredKey};
 use mongodb::bson::doc;
 use sealed::Keyring;
 use serde_json::{json, Value};
-use std::sync::Arc;
+use std::collections::HashSet;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use zeroize::Zeroizing;
 
@@ -39,6 +42,8 @@ const FETCH_TIMEOUT: Duration = Duration::from_secs(5);
 /// Báo trạng thái key lỗi mà IdP chưa nhận: thử lại chừng này lần, cách nhau [`REPORT_RETRY_EVERY`].
 const REPORT_ATTEMPTS: u32 = 3;
 const REPORT_RETRY_EVERY: Duration = Duration::from_secs(30);
+/// Số vân tay thiếu khoá đã báo người vận hành giữ tối đa (quá thì chỉ log).
+const MAX_ALERTED_RECIPIENTS: usize = 64;
 
 /// Câu cho người dùng khi chưa đọc được key của domain (IdP lỗi quá lâu).
 pub const UNAVAILABLE: &str = "Chưa đọc được key của domain lúc này, thử lại sau ít phút.";
@@ -46,8 +51,12 @@ pub const UNAVAILABLE: &str = "Chưa đọc được key của domain lúc này,
 /// Vòng khoá niêm phong + bản niêm phong theo tenant + API nội bộ để đọc và báo trạng thái.
 pub struct TenantKeys {
     keyring: Keyring,
-    cache: KeyCache,
+    cache: Arc<KeyCache>,
     api: Arc<InternalApi>,
+    /// Vân tay đã báo người vận hành là thiếu khoá (một lần mỗi process).
+    alerted: Mutex<HashSet<String>>,
+    /// Khoảng cách giữa các lần báo lại trạng thái key mà IdP chưa nhận.
+    report_retry_every: Duration,
 }
 
 impl TenantKeys {
@@ -68,14 +77,21 @@ impl TenantKeys {
     }
 
     pub fn new(keyring: Keyring, api: Arc<InternalApi>) -> TenantKeys {
-        TenantKeys { keyring, cache: KeyCache::default(), api }
+        TenantKeys {
+            keyring,
+            cache: Arc::new(KeyCache::default()),
+            api,
+            alerted: Mutex::default(),
+            report_retry_every: REPORT_RETRY_EVERY,
+        }
     }
 
     async fn keys(&self, tenant_id: &str) -> Result<Arc<Vec<StoredKey>>, String> {
         if !valid_tenant_id(tenant_id) {
             return Err("id tenant không hợp lệ".into());
         }
-        self.cache.get(tenant_id, || fetch(&self.api, tenant_id)).await
+        let (api, id) = (self.api.clone(), tenant_id.to_string());
+        self.cache.get(tenant_id, move || async move { fetch(&api, &id).await }).await
     }
 
     /// Nhà cung cấp có key dùng được (IdP chưa ghi lỗi, Scribe chưa báo lỗi bản niêm phong đó).
@@ -203,7 +219,8 @@ pub fn tenant_key_error(message: String) -> AppError {
 }
 
 /// Mở key `vendor` của `tenant_id` lúc chạy việc. `Err` là câu cho người dùng: chưa đọc được key, chủ domain đã gỡ key,
-/// key đã báo lỗi, hay bản niêm phong không mở được (lúc đó báo `unreadable` về IdP).
+/// key đã báo lỗi, Scribe không có khoá niêm phong của bản đó (báo người vận hành), hay có khoá mà bản niêm phong không
+/// mở được (báo `unreadable` về IdP).
 pub async fn open(state: &AppState, tenant_id: &str, vendor: Vendor) -> Result<TenantKey, String> {
     let Some(keys) = &state.tenant_keys else { return Err(failure_message(vendor)) };
     let listing = keys.keys(tenant_id).await.map_err(|e| {
@@ -216,6 +233,10 @@ pub async fn open(state: &AppState, tenant_id: &str, vendor: Vendor) -> Result<T
     if keys.cache.problem(tenant_id, stored).is_some() {
         return Err(failure_message(vendor));
     }
+    if !keys.keyring.holds(&stored.sealed.recipient) {
+        keys.missing_sealing_key(state, tenant_id, vendor, &stored.sealed.recipient);
+        return Err(failure_message(vendor));
+    }
     let context = sealed::context(tenant_id, vendor.code());
     match keys.keyring.open(&stored.sealed, &context) {
         Some(value) => Ok(TenantKey {
@@ -226,7 +247,7 @@ pub async fn open(state: &AppState, tenant_id: &str, vendor: Vendor) -> Result<T
             value,
         }),
         None => {
-            tracing::error!(tenant = %tenant_id, provider = vendor.code(), "không mở được key của domain (khoá niêm phong đã gỡ?)");
+            tracing::error!(tenant = %tenant_id, provider = vendor.code(), "không mở được key của domain (bản niêm phong hỏng hay sai tenant)");
             report_status(state, keys, tenant_id, vendor, &stored.sealed.recipient, &stored.sealed.tag, "unreadable").await;
             Err(failure_message(vendor))
         }
@@ -245,16 +266,45 @@ pub async fn report(state: &AppState, key: &TenantKey, problem: Problem) -> Stri
     failure_message(key.vendor)
 }
 
+impl TenantKeys {
+    /// Bản niêm phong mang vân tay `recipient` mà vòng khoá không có (khoá đã gỡ khi lộ, tệp thiếu sau deploy). Không báo
+    /// `unreadable` về IdP: lỗi phía vận hành, key của owner có thể vẫn tốt, và `/admin` sẽ không tự hiện gì; người vận
+    /// hành khôi phục tệp khoá hoặc báo chủ domain nhập lại key. Báo động chỉ có vân tay (công khai), không có gì của khoá.
+    fn missing_sealing_key(&self, state: &AppState, tenant_id: &str, vendor: Vendor, recipient: &str) {
+        let shown = if recipient.len() == 16 && recipient.bytes().all(|b| b.is_ascii_hexdigit()) { recipient } else { "?" };
+        tracing::error!(
+            tenant = %tenant_id,
+            provider = vendor.code(),
+            recipient = %shown,
+            "không có khoá niêm phong cho bản key của domain — không báo IdP, cần người vận hành"
+        );
+        let first = {
+            let mut alerted = self.alerted.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+            alerted.len() < MAX_ALERTED_RECIPIENTS && alerted.insert(shown.to_string())
+        };
+        if first {
+            crate::notify::send(
+                state,
+                format!(
+                    "Key AI của domain niêm phong cho khoá {shown} mà Scribe không có (tenant {tenant_id}, {}). Khôi phục \
+                     tệp khoá vào TENANT_SEALING_KEYS_DIR, hoặc báo chủ domain nhập lại key — /admin không tự hiện lỗi này.",
+                    vendor.label()
+                ),
+            );
+        }
+    }
+}
+
 async fn report_status(
     state: &AppState,
-    keys: &TenantKeys,
+    keys: &Arc<TenantKeys>,
     tenant_id: &str,
     vendor: Vendor,
     recipient: &str,
     tag: &str,
     status: &'static str,
 ) {
-    // Mỗi bản niêm phong chỉ báo một lần.
+    // Mỗi bản niêm phong chỉ báo một lần, trừ khi lần báo trước không tới IdP.
     if !keys.cache.mark(tenant_id, vendor, tag, status) {
         return;
     }
@@ -266,15 +316,22 @@ async fn report_status(
         return;
     }
     // IdP chưa nhận (đang khởi động lại?): thử lại nền, lượt của người dùng không phải chờ.
-    let api = keys.api.clone();
+    let (keys, tenant_id, tag) = (keys.clone(), tenant_id.to_string(), tag.to_string());
     tokio::spawn(async move {
         for _ in 1..REPORT_ATTEMPTS {
-            tokio::time::sleep(REPORT_RETRY_EVERY).await;
-            if post_status(&api, &path, &body).await {
+            tokio::time::sleep(keys.report_retry_every).await;
+            if post_status(&keys.api, &path, &body).await {
                 return;
             }
         }
-        tracing::error!(path = %path, "IdP không nhận trạng thái key của domain sau {REPORT_ATTEMPTS} lần");
+        // Vẫn không dùng bản key này, nhưng lần lỗi sau được báo lại để `/admin` có lúc biết.
+        keys.cache.forget_report(&tenant_id, vendor, &tag);
+        tracing::error!(
+            tenant = %tenant_id,
+            provider = vendor.code(),
+            status,
+            "IdP không nhận trạng thái key của domain sau {REPORT_ATTEMPTS} lần — lần lỗi sau sẽ báo lại"
+        );
     });
 }
 

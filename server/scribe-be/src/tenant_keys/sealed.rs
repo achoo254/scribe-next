@@ -150,6 +150,11 @@ impl Keyring {
         self.keys.iter().map(SealingKey::recipient).collect()
     }
 
+    /// Có khoá niêm phong của `recipient` không (vân tay công khai, không lộ gì về khoá).
+    pub fn holds(&self, recipient: &str) -> bool {
+        self.keys.iter().any(|k| k.recipient == recipient)
+    }
+
     /// Mở `sealed` với dữ liệu kèm `context`. Không có khoá của `recipient`, bọc hay bản mã hỏng, sai `context` ⟹ `None`
     /// (không phân biệt loại lỗi).
     pub fn open(&self, sealed: &Sealed, context: &str) -> Option<Zeroizing<String>> {
@@ -277,9 +282,11 @@ pub(crate) mod tests {
         // Bản cũ vẫn mở bằng khoá cũ.
         let v = vector();
         assert!(ring.open(&vector_sealed(), v["context"].as_str().expect("context")).is_some());
-        // Gỡ khoá đã bọc ⟹ không mở được.
+        // Gỡ khoá đã bọc ⟹ không mở được, và vòng khoá biết là không có khoá đó.
         let without = Keyring::new(vec![vector_key()]);
         assert!(without.open(&sealed, &context("ten_a", "elevenlabs")).is_none());
+        assert!(ring.holds(&sealed.recipient) && !without.holds(&sealed.recipient));
+        assert!(without.holds(v["recipient"].as_str().expect("recipient")));
     }
 
     #[test]

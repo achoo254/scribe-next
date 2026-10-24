@@ -14,25 +14,28 @@ use axum::{Json, Router};
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 use rsa::pkcs8::DecodePublicKey;
-use rsa::RsaPublicKey;
+use rsa::{RsaPrivateKey, RsaPublicKey};
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
-/// IdP giả: `scribe-keys` theo tenant (Basic `scribe`), ghi lại mọi lần báo trạng thái; `/messages` đếm báo động gửi
-/// cho người vận hành (bot chat).
+/// IdP giả: `scribe-keys` theo tenant (Basic `scribe`), ghi lại mọi lần báo trạng thái IdP nhận (`refuse_status` ⟹ trả
+/// 503, chỉ đếm lần thử); `/messages` đếm báo động gửi cho người vận hành (bot chat).
 struct FakeIdp {
     url: String,
     gets: Arc<AtomicUsize>,
     reports: Arc<Mutex<Vec<(String, Value)>>>,
+    status_attempts: Arc<AtomicUsize>,
+    refuse_status: Arc<AtomicBool>,
     alerts: Arc<AtomicUsize>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 struct Fake {
     keys: Arc<HashMap<String, Value>>,
     gets: Arc<AtomicUsize>,
     reports: Arc<Mutex<Vec<(String, Value)>>>,
+    status_attempts: Arc<AtomicUsize>,
+    refuse_status: Arc<AtomicBool>,
     alerts: Arc<AtomicUsize>,
 }
 
@@ -61,6 +64,10 @@ async fn status(
     if !authorized(&headers) {
         return axum::http::StatusCode::UNAUTHORIZED;
     }
+    f.status_attempts.fetch_add(1, Ordering::SeqCst);
+    if f.refuse_status.load(Ordering::SeqCst) {
+        return axum::http::StatusCode::SERVICE_UNAVAILABLE;
+    }
     f.reports.lock().expect("lock").push((format!("{id}/{vendor}"), body));
     axum::http::StatusCode::NO_CONTENT
 }
@@ -71,7 +78,7 @@ async fn alert(State(f): State<Fake>) -> axum::http::StatusCode {
 }
 
 async fn fake_idp(keys: HashMap<String, Value>) -> FakeIdp {
-    let fake = Fake { keys: Arc::new(keys), gets: Arc::default(), reports: Arc::default(), alerts: Arc::default() };
+    let fake = Fake { keys: Arc::new(keys), ..Fake::default() };
     let app = Router::new()
         .route("/internal/tenants/{id}/scribe-keys", get(list))
         .route("/internal/tenants/{id}/scribe-keys/{vendor}/status", post(status))
@@ -80,7 +87,14 @@ async fn fake_idp(keys: HashMap<String, Value>) -> FakeIdp {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("bind");
     let url = format!("http://{}", listener.local_addr().expect("addr"));
     tokio::spawn(async move { axum::serve(listener, app).await });
-    FakeIdp { url, gets: fake.gets, reports: fake.reports, alerts: fake.alerts }
+    FakeIdp {
+        url,
+        gets: fake.gets,
+        reports: fake.reports,
+        status_attempts: fake.status_attempts,
+        refuse_status: fake.refuse_status,
+        alerts: fake.alerts,
+    }
 }
 
 fn vector_public() -> RsaPublicKey {
@@ -89,7 +103,12 @@ fn vector_public() -> RsaPublicKey {
 
 /// Một key như API nội bộ trả: niêm phong `plain` cho tenant `tenant_id` (khoá của vector).
 fn sealed_key(tenant_id: &str, vendor: Vendor, plain: &str, status: Option<&str>) -> Value {
-    let s = seal_for_tests(&vector_public(), &context(tenant_id, vendor.code()), plain);
+    sealed_key_for(&vector_public(), tenant_id, vendor, plain, status)
+}
+
+/// Như [`sealed_key`] nhưng niêm phong cho `public`.
+fn sealed_key_for(public: &RsaPublicKey, tenant_id: &str, vendor: Vendor, plain: &str, status: Option<&str>) -> Value {
+    let s = seal_for_tests(public, &context(tenant_id, vendor.code()), plain);
     let mut key = json!({
         "vendor": vendor.code(), "hint": "abcd", "updatedAt": "2026-10-24T05:00:00.000Z",
         "sealed": { "kid": "recipient", "iv": s.iv, "ciphertext": s.ciphertext, "tag": s.tag,
@@ -254,6 +273,73 @@ async fn a_failing_tenant_key_is_reported_to_the_idp_and_never_touches_the_serve
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
     assert_eq!(idp.alerts.load(Ordering::SeqCst), 1);
+}
+
+/// Chờ việc nền tới khi `done`, tối đa ~2 giây.
+async fn settle(done: impl Fn() -> bool) {
+    for _ in 0..200 {
+        if done() {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    assert!(done(), "việc nền chưa xong");
+}
+
+#[tokio::test]
+async fn a_seal_for_a_key_scribe_does_not_hold_alerts_the_operator_once_and_is_not_reported() {
+    // Bản niêm phong cho khoá Scribe đã gỡ (khoá nhỏ cho test nhanh, không có trong vòng khoá của state).
+    let removed = RsaPrivateKey::new(&mut rand::thread_rng(), 1024).expect("sinh khoá").to_public_key();
+    let keys = HashMap::from([
+        (
+            "ten_a".to_string(),
+            json!([
+                sealed_key_for(&removed, "ten_a", Vendor::OpenAi, "sk-a", None),
+                sealed_key_for(&removed, "ten_a", Vendor::Gemini, "gm-a", None),
+            ]),
+        ),
+        ("ten_b".to_string(), json!([sealed_key_for(&removed, "ten_b", Vendor::OpenAi, "sk-b", None)])),
+    ]);
+    let idp = fake_idp(keys).await;
+    let state = state_with(&idp).await;
+    for (tenant, vendor) in [("ten_a", Vendor::OpenAi), ("ten_a", Vendor::Gemini), ("ten_b", Vendor::OpenAi), ("ten_a", Vendor::OpenAi)] {
+        assert_eq!(open(&state, tenant, vendor).await.err(), Some(failure_message(vendor)), "{tenant} {vendor:?}");
+    }
+    // Một báo động cho vân tay đó, không báo `unreadable` về IdP (key của owner có thể vẫn tốt).
+    settle(|| idp.alerts.load(Ordering::SeqCst) > 0).await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    assert_eq!(idp.alerts.load(Ordering::SeqCst), 1);
+    assert_eq!(idp.status_attempts.load(Ordering::SeqCst), 0);
+    assert!(idp.reports.lock().expect("lock").is_empty());
+}
+
+#[tokio::test]
+async fn a_status_report_the_idp_never_takes_is_sent_again_on_the_next_failure() {
+    let keys = HashMap::from([("ten_a".to_string(), json!([sealed_key("ten_a", Vendor::OpenAi, "sk-tenant-a", None)]))]);
+    let idp = fake_idp(keys).await;
+    let mut state = state_with(&idp).await;
+    let mut tenant_keys = TenantKeys::new(Keyring::new(vec![vector_key()]), Arc::new(InternalApi::new(&idp.url, SECRET).expect("client")));
+    tenant_keys.report_retry_every = Duration::from_millis(10);
+    let tenant_keys = Arc::new(tenant_keys);
+    state.tenant_keys = Some(tenant_keys.clone());
+    let key = open(&state, "ten_a", Vendor::OpenAi).await.expect("mở được");
+
+    // IdP từ chối cả `REPORT_ATTEMPTS` lần: bản key vẫn không dùng, dấu "đã báo" được xoá.
+    idp.refuse_status.store(true, Ordering::SeqCst);
+    report(&state, &key, Problem::NoCredit).await;
+    settle(|| !tenant_keys.cache.reported("ten_a", Vendor::OpenAi, &key.tag)).await;
+    assert_eq!(idp.status_attempts.load(Ordering::SeqCst), REPORT_ATTEMPTS as usize);
+    assert_eq!(open(&state, "ten_a", Vendor::OpenAi).await.err(), Some(failure_message(Vendor::OpenAi)));
+    assert_eq!(code(choose(&state, &test_tenant("ten_a", true), "u1", Use::Text).await.expect_err("hết key")), "TENANT_KEY_MISSING");
+
+    // Lần lỗi sau (lượt đang chạy bằng key đó) báo lại, IdP nhận; sau đó không báo nữa.
+    idp.refuse_status.store(false, Ordering::SeqCst);
+    report(&state, &key, Problem::NoCredit).await;
+    report(&state, &key, Problem::NoCredit).await;
+    let reports = idp.reports.lock().expect("lock").clone();
+    assert_eq!(reports.len(), 1, "{reports:?}");
+    assert_eq!((reports[0].0.as_str(), reports[0].1["status"].as_str()), ("ten_a/openai", Some("quota")));
+    assert_eq!(idp.status_attempts.load(Ordering::SeqCst), REPORT_ATTEMPTS as usize + 1);
 }
 
 /// Key `vendor` của `ten_a` mở bằng state mới (cache riêng, chưa có dấu lỗi).
