@@ -80,6 +80,8 @@ Cloudflare (DNS proxied, SSL "Full")
 | systemd unit | `/etc/systemd/system/scribe-be.service` | `deploy/scribe-be.service` |
 | nginx vhost | `/etc/nginx/conf.d/scribe.conf` | `deploy/nginx-scribe.conf` |
 | nginx header bảo mật | `/etc/nginx/scribe/security-headers.inc` | `deploy/nginx-scribe-security-headers.inc` (§Header bảo mật) |
+| nginx phần chung (`/api/`, web tĩnh, `/assets/`) | `/etc/nginx/scribe/locations.inc` | `deploy/nginx-scribe-locations.inc` |
+| nginx `scribe.<domain>` của tenant sổ | `/etc/nginx/conf.d/scribe-tenants.conf` | `deploy/nginx-scribe-tenants.conf` (§nginx cho domain tenant) |
 | FE static | `/var/www/scribe/dist` | `web/` → `pnpm run build` → `web/dist` |
 
 ### Tệp bí mật trên server
@@ -320,7 +322,7 @@ curl -s  "https://$DEPLOY_DOMAIN/api/health"   # liveness
 
 ## Header bảo mật
 
-nginx gắn bộ header bảo mật cho mọi response của Scribe (FE, `/assets/`, `/api/`, cả trang lỗi); BE Rust không tự đặt header nào. Nguồn duy nhất: `deploy/nginx-scribe-security-headers.inc`, `deploy/nginx-scribe.conf` include nó ở mức server (cho `/api/`) và lại trong `/assets/` và `/` — hai location này có `add_header Cache-Control` riêng nên nginx không thừa kế header của mức server. File include nằm ngoài `conf.d/` vì `conf.d/*.conf` nạp ở mức http, sẽ áp cho mọi vhost của box shared.
+nginx gắn bộ header bảo mật cho mọi response của Scribe (FE, `/assets/`, `/api/`, cả trang lỗi); BE Rust không tự đặt header nào. Nguồn duy nhất: `deploy/nginx-scribe-security-headers.inc`; mỗi server block (`deploy/nginx-scribe.conf`, `deploy/nginx-scribe-tenants.conf`) include nó ở mức server (cho `/api/`), và `deploy/nginx-scribe-locations.inc` include lại trong `/assets/` và `/` — hai location này có `add_header Cache-Control` riêng nên nginx không thừa kế header của mức server. File include nằm ngoài `conf.d/` vì `conf.d/*.conf` nạp ở mức http, sẽ áp cho mọi vhost của box shared.
 
 | Header | Giá trị |
 |---|---|
@@ -360,6 +362,32 @@ curl -sI "https://$DEPLOY_DOMAIN/api/health" | grep -i content-security
 ```
 
 Sau reload: mở web, đăng nhập, ghi thử vài giây và phát lại, mở account menu; DevTools Console không được có dòng `Refused to … Content Security Policy`.
+
+## nginx cho domain tenant
+
+`scribe.<domain>` của tenant sổ ([ADR 0001](./decisions/0001-tenants-by-domain.md)) dùng cùng backend và cùng `dist` với `scribe.hoandat.com`; backend chọn tenant theo `Host`, web đọc tenant lúc chạy (`GET /api/idp`), nên không có build hay cấu hình riêng cho từng domain. Ba file:
+
+- `deploy/nginx-scribe-locations.inc` → `/etc/nginx/scribe/locations.inc`: `/api/` (giữ `Host`), web tĩnh, `/assets/`, tách từ `nginx-scribe.conf` (không đổi hành vi của `scribe.hoandat.com`).
+- `deploy/nginx-scribe.conf` → `$DEPLOY_NGINX_CONF`: block cụ thể `scribe.hoandat.com`, nay include `locations.inc`; luôn thắng block regex.
+- `deploy/nginx-scribe-tenants.conf` → `/etc/nginx/conf.d/scribe-tenants.conf`: cổng 443, `server_name ~^scribe\.(?<tenant>.+)$`, chứng chỉ theo `$tenant_cert` (map trong `00-tenants-http.conf` của auth-next: lineage riêng `scribe.<domain>` do provisioner cấp), tin `127.0.0.1` và dải Cloudflare ở cấp server như `tenant-auth.conf` của auth-next. Cổng 80 (HTTP-01, Cloudflare Flexible) do `tenants-acme.conf` của auth-next lo.
+
+**CẦN USER DUYỆT trước khi cài** (nginx dùng chung của prod), sau khi auth-next đã có map `scribe.` (`00-tenants-http.conf`) và nhận nhãn `scribe` ở cổng 80. Từ máy deploy, `KEY` như §Deploy:
+
+```bash
+# 0) Không block regex nào khác khớp scribe.<d>; sao lưu cấu hình hiện tại
+ssh -i "$KEY" -p 24700 root@103.72.98.65 'nginx -T 2>/dev/null | grep -nE "server_name\s+[^;]*~"; ts=$(date +%Y%m%d-%H%M%S); cp -a /etc/nginx/conf.d/scribe.conf /root/scribe.conf.bak-$ts'
+# 1) Đẩy phần chung trước, rồi hai vhost
+scp -i "$KEY" -P 24700 deploy/nginx-scribe-locations.inc root@103.72.98.65:/etc/nginx/scribe/locations.inc
+scp -i "$KEY" -P 24700 deploy/nginx-scribe.conf root@103.72.98.65:$DEPLOY_NGINX_CONF
+scp -i "$KEY" -P 24700 deploy/nginx-scribe-tenants.conf root@103.72.98.65:/etc/nginx/conf.d/scribe-tenants.conf
+# 2) Kiểm cú pháp rồi mới reload; lỗi thì chép lại bản .bak, gỡ scribe-tenants.conf, KHÔNG reload
+ssh -i "$KEY" -p 24700 root@103.72.98.65 'nginx -t && systemctl reload nginx'
+# 3) scribe.hoandat.com không đổi (so header trước/sau), domain tenant trả trang web
+curl -sI "https://$DEPLOY_DOMAIN/" | sort; curl -s "https://$DEPLOY_DOMAIN/api/idp"
+curl -s https://scribe.<domain>/api/idp     # {…, "primary": false, "scribe": "enabled" | "disabled"}
+```
+
+Đã kiểm cú pháp (24/10/2026, `nginx -t` của nginx Homebrew trên máy Mac, cùng `00-tenants-http.conf` của auth-next và chứng chỉ tạm): hợp lệ. Quay lại: gỡ `/etc/nginx/conf.d/scribe-tenants.conf`, chép lại `scribe.conf` từ bản `.bak`, `nginx -t`, reload (`locations.inc` để lại vô hại).
 
 ## Log và audit
 

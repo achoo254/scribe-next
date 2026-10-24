@@ -1,7 +1,7 @@
 import { readFile, stat } from "node:fs/promises";
 /**
  * Serves the production build (`web/dist`) the way nginx does
- * (deploy/nginx-scribe.conf): static files, SPA fallback to index.html,
+ * (deploy/nginx-scribe-locations.inc): static files, SPA fallback to index.html,
  * and the security headers of every response. `/api/` never reaches it:
  * the specs stub the API in the browser.
  *
