@@ -85,7 +85,7 @@ pub struct Keyring {
     keys: Vec<SealingKey>,
 }
 
-/// Tệp hay thư mục có quyền rộng hơn `max` (unix); nơi khác không kiểm được.
+/// Tệp hay thư mục có bit quyền nào trong `mask` (unix); nơi khác không kiểm được.
 fn too_open(meta: &std::fs::Metadata, mask: u32) -> bool {
     #[cfg(unix)]
     {
@@ -160,7 +160,8 @@ impl Keyring {
         if iv.len() != IV_LEN || tag.len() != TAG_LEN {
             return None;
         }
-        let aes_key = Zeroizing::new(key.key.decrypt(Oaep::new::<Sha256>(), &wrapped).ok()?);
+        // Giải mã có blinding (ngẫu nhiên hoá phép mũ RSA) để thời gian không lộ thông tin về private key.
+        let aes_key = Zeroizing::new(key.key.decrypt_blinded(&mut rand::thread_rng(), Oaep::new::<Sha256>(), &wrapped).ok()?);
         if aes_key.len() != AES_KEY_LEN {
             return None;
         }

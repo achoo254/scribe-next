@@ -63,7 +63,7 @@ Thứ tự key cho mỗi việc: key riêng của user → key của tenant (ch�
 - **Cache:** bản niêm phong theo tenant 60 giây, một lần hỏi IdP mỗi tenant cùng lúc; IdP lỗi ⟹ dùng bản cũ tối đa 10 phút (hỏi lại sau 10 giây), quá hạn ⟹ 503 "chưa đọc được key của domain". Không giữ bản rõ.
 - **Key lỗi:** `invalid | quota | unreadable` ⟹ đánh dấu tại chỗ theo `(tenant, nhà cung cấp, tag)` (lượt sau không dùng lại bản đó, bản owner nhập lại có tag mới), báo IdP kèm `recipient` và `tag`, audit `tenant_key.failed`. Không đổi cờ tạm ngưng của key server, không báo bot, không chuyển sang key server.
 
-Scribe mở bản niêm phong bằng crate `rsa` 0.9 (thuần Rust, giữ binary musl tĩnh). Crate có cảnh báo RUSTSEC-2023-0071 (Marvin): giải mã RSA không hằng thời gian, đo thời gian rất nhiều lượt giải mã bản mã do kẻ tấn công chọn có thể lộ bản rõ. Chấp nhận vì Scribe không phải oracle giải mã: chỉ mở blob do IdP tạo, nhận qua loopback có Basic; lỗi giải mã không trả ra mạng và không phân biệt loại lỗi.
+Scribe mở bản niêm phong bằng crate `rsa` 0.9 (thuần Rust, giữ binary musl tĩnh). Crate có cảnh báo RUSTSEC-2023-0071 (Marvin): giải mã RSA không hằng thời gian, đo thời gian rất nhiều lượt giải mã bản mã do kẻ tấn công chọn có thể lộ bản rõ. Chấp nhận vì Scribe không phải oracle giải mã: chỉ mở blob do IdP tạo, nhận qua loopback có Basic; lỗi giải mã không trả ra mạng và không phân biệt loại lỗi. Thêm vào đó Scribe giải mã có blinding (`decrypt_blinded` với RNG của hệ thống), làm thời gian giải mã khó gắn với bản mã.
 
 ### 7. Không chọn
 
