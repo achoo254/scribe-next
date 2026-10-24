@@ -156,3 +156,22 @@ describe("loadTenantInfo", () => {
 		).toBe("enabled");
 	});
 });
+
+describe("a tenant's host whose /api/idp fails", () => {
+	it("is unavailable, never the primary tenant", async () => {
+		const { isTenantHost, loadTenantInfo, useTenantInfo } = await fresh();
+		expect(isTenantHost("scribe.acme.vn")).toBe(true);
+		expect(isTenantHost("Scribe.Hoandat.com")).toBe(false);
+		expect(isTenantHost("localhost")).toBe(false);
+		vi.stubGlobal("location", { hostname: "scribe.acme.vn" });
+		const down = fakeFetch({
+			"GET /api/idp": jsonResponse({ error: "bận" }, 503),
+		});
+		await loadTenantInfo(down.fetcher);
+		expect(renderHook(() => useTenantInfo()).result.current).toMatchObject({
+			domain: "acme.vn",
+			primary: false,
+			scribe: "unavailable",
+		});
+	});
+});

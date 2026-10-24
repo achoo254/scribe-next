@@ -3,15 +3,23 @@
    reads it once, at boot in `main.tsx`, instead of on the first
    subscriber); a host Scribe does not serve, or a tenant whose owner has
    not turned Scribe on, is "disabled" (the app shows the "not enabled"
-   page and never calls a signed-in API); the native shell talks to the
-   primary tenant only and keeps the build's IdP origin. */
+   page and never calls a signed-in API); a tenant's host whose
+   `/api/idp` fails is "unavailable" (a retry page, never the primary
+   tenant's names and links); the native shell talks to the primary tenant
+   only and keeps the build's IdP origin. */
 import { useSyncExternalStore } from "react";
 import { ApiError, apiJson, isNativeShell, onTenantDisabled } from "./api";
 import { PRIMARY_TENANT_DOMAIN } from "./brand";
 import { DEFAULT_IDP_ORIGIN, idpOriginOf } from "./idp";
 
-/** Scribe on this domain: on, or not (yet) turned on by the domain's owner. */
-export type ScribeState = "enabled" | "disabled";
+/**
+ * Scribe on this domain: on, not (yet) turned on by the domain's owner, or
+ * not known because `/api/idp` failed on a tenant's host.
+ */
+export type ScribeState = "enabled" | "disabled" | "unavailable";
+
+/** `/api/idp` answers within this long; then the app stops waiting. */
+const TENANT_TIMEOUT_MS = 10_000;
 
 /** The tenant of the host the page is served on (`GET /api/idp`). */
 export interface TenantInfo {
@@ -103,6 +111,17 @@ export function unknownTenantInfo(hostname: string): TenantInfo {
 	};
 }
 
+/**
+ * True for a host of another tenant (`scribe.<domain>` other than the
+ * primary one): there a failed `/api/idp` must not show the primary tenant.
+ */
+export function isTenantHost(hostname: string): boolean {
+	const host = hostname.toLowerCase();
+	return (
+		host.startsWith("scribe.") && host !== `scribe.${PRIMARY_TENANT_DOMAIN}`
+	);
+}
+
 let loaded: TenantInfo | undefined;
 /** True once `/api/idp` answered or failed: the app stops waiting. */
 let settled = false;
@@ -121,7 +140,11 @@ function publish(info: TenantInfo | undefined): void {
  * only the name is taken: the app talks to the primary tenant only.
  */
 export function loadTenantInfo(fetcher: typeof fetch = fetch): Promise<void> {
-	loading ??= apiJson<unknown>("/api/idp", {}, fetcher).then(
+	loading ??= apiJson<unknown>(
+		"/api/idp",
+		{ signal: AbortSignal.timeout(TENANT_TIMEOUT_MS) },
+		fetcher,
+	).then(
 		(body) => {
 			const info = tenantInfoOf(body);
 			publish(
@@ -131,13 +154,18 @@ export function loadTenantInfo(fetcher: typeof fetch = fetch): Promise<void> {
 			);
 		},
 		(error: unknown) => {
-			const unknownHost =
-				error instanceof ApiError &&
-				error.code === "UNKNOWN_TENANT" &&
-				!isNativeShell();
-			publish(
-				unknownHost ? unknownTenantInfo(window.location.hostname) : undefined,
-			);
+			if (isNativeShell()) {
+				publish(undefined);
+				return;
+			}
+			const hostname = globalThis.location.hostname;
+			if (error instanceof ApiError && error.code === "UNKNOWN_TENANT") {
+				publish(unknownTenantInfo(hostname));
+			} else if (isTenantHost(hostname)) {
+				publish({ ...unknownTenantInfo(hostname), scribe: "unavailable" });
+			} else {
+				publish(undefined);
+			}
 		},
 	);
 	return loading;

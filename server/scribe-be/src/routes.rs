@@ -22,12 +22,19 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/transcript-docs/{key}/segments/{file_id}", put(transcribe::docs::save_segment))
         .route("/api/transcript-docs/{key}/speakers", patch(transcribe::docs::rename_speakers))
         .route("/api/transcript-docs/{key}/summary", post(summary::create))
-        .route("/api/transcript-docs/{key}/share", post(summary::share::share))
+        // Bot của chat.hoandat.com chỉ có ở tenant chính.
+        .route("/api/transcript-docs/{key}/share", post(summary::share::share).route_layer(from_fn(tenant::primary_feature)))
         .route("/api/transcript-docs/{key}/translation", get(translate::get).post(translate::create))
         .route("/api/transcript-docs/{key}/translation/status", get(translate::status))
         .route("/api/transcript-docs/{key}/bookmarks", post(transcribe::bookmarks::add))
         .route("/api/transcript-docs/{key}/bookmarks/{id}", delete(transcribe::bookmarks::remove))
-        .route("/api/chat/link", get(chat_link::status).post(chat_link::create).delete(chat_link::remove))
+        .route(
+            "/api/chat/link",
+            get(chat_link::status)
+                .post(chat_link::create)
+                .delete(chat_link::remove)
+                .route_layer(from_fn(tenant::primary_feature)),
+        )
         .route("/api/search", get(search::search))
         .route("/api/ask", post(search::ask::ask))
         // Key riêng: chỉ ghi (không bao giờ trả key), mọi tài khoản đăng nhập.
@@ -62,8 +69,9 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/transcripts", post(transcribe::create).get(transcribe::get))
         .route("/api/transcripts/export", get(transcribe::export))
         // Chép trực tiếp trên iPhone: token tạm thời của OpenAI Realtime + báo số giây đã stream.
-        .route("/api/realtime/token", post(realtime::token))
-        .route("/api/realtime/usage", post(realtime::report_usage))
+        // Chép trực tiếp chỉ có trên app iPhone, app chỉ nói với tenant chính.
+        .route("/api/realtime/token", post(realtime::token).route_layer(from_fn(tenant::primary_feature)))
+        .route("/api/realtime/usage", post(realtime::report_usage).route_layer(from_fn(tenant::primary_feature)))
         // Chunk upload 5MB/lần → nâng body limit (mặc định axum 2MB). Không buffer cả file (append disk).
         .layer(DefaultBodyLimit::max(8 * 1024 * 1024))
         // Gộp SAU `.layer` ở trên: nhóm này giữ trần 1 MiB của riêng nó.

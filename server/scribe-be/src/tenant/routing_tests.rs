@@ -201,6 +201,20 @@ async fn web_sign_in_on_a_tenant_on_real_mongo() {
     let user = crate::models::user::find_id_by_sub(&db, "ten_a", "acc_1").await.expect("tìm").expect("user của tenant A");
     assert!(crate::models::user::find_id_by_sub(&db, "ten_b", "acc_1").await.expect("tìm").is_none());
 
+    // Tính năng chỉ của tenant chính và key server: không có ở tenant sổ.
+    let (status, _, body) = get(&origin, "scribe.a.vn", "/api/chat/link", Some(&session)).await;
+    assert_eq!((status, body["code"].clone()), (403, json!("NOT_ON_TENANT")));
+    let res = client()
+        .post(format!("{origin}/api/ask"))
+        .header("host", "scribe.a.vn")
+        .header("cookie", &session)
+        .json(&json!({ "question": "Ai chủ trì cuộc họp?" }))
+        .send()
+        .await
+        .expect("ask");
+    assert_eq!(res.status().as_u16(), 403);
+    assert_eq!(res.json::<serde_json::Value>().await.expect("json")["code"], "TENANT_KEY_MISSING");
+
     let jti = format!("j-{}", uuid::Uuid::new_v4());
     assert_eq!(backchannel(&origin, "scribe.b.vn", &logout_token(&idp, "https://auth.a.vn", &jti)).await, 400);
     assert_eq!(get(&origin, "scribe.a.vn", "/api/me/usage", Some(&session)).await.0, 200, "B không xoá được phiên của A");

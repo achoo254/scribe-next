@@ -158,10 +158,10 @@ impl Oidc {
                     .map_err(|e| AppError::Unavailable(format!("không kết nối được máy chủ đăng nhập: {}", e.without_url())))?;
                 let discovery = resp
                     .error_for_status()
-                    .map_err(|e| AppError::Unavailable(format!("máy chủ đăng nhập lỗi: {e}")))?
+                    .map_err(|e| AppError::Unavailable(format!("máy chủ đăng nhập lỗi: {}", e.without_url())))?
                     .json::<Discovery>()
                     .await
-                    .map_err(|e| AppError::Unavailable(format!("đọc metadata máy chủ đăng nhập: {e}")))?;
+                    .map_err(|e| AppError::Unavailable(format!("đọc metadata máy chủ đăng nhập: {}", e.without_url())))?;
                 if self.transport.checks_issuer()
                     && discovery.issuer.as_deref().map(|i| i.trim_end_matches('/')) != Some(self.issuer.as_str())
                 {

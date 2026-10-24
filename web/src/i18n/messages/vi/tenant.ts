@@ -8,4 +8,9 @@ export const tenant = {
 		owner:
 			"Bạn là chủ domain? Thêm key AI chép lời (ElevenLabs, OpenAI hoặc Google Gemini) ở <admin>trang quản trị {domain}</admin> để bật Scribe. Mọi lượt chép lời, biên bản, hỏi đáp và dịch của người dùng domain này tính vào tài khoản AI của bạn.",
 	},
+	unavailable: {
+		title: "Chưa kiểm được domain này",
+		body: "Scribe chưa kiểm được {domain} có đang bật hay không. Đợi một lát rồi thử lại.",
+		retry: "Thử lại",
+	},
 } as const;

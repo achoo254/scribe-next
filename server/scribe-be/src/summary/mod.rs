@@ -128,10 +128,19 @@ impl TextKey {
 }
 
 /// Key cho một lượt: key riêng của người dùng nếu có (không mở được ⟹ `USER_KEY_FAILED`, không dùng key server thay),
-/// không thì key server (thiếu hoặc đang tạm ngưng ⟹ 503 với câu `paused`).
-pub(crate) async fn text_key(state: &AppState, user_id: &str, paused: &str) -> Result<TextKey, AppError> {
+/// không thì key server (thiếu hoặc đang tạm ngưng ⟹ 503 với câu `paused`). Key server chỉ dành cho tenant chính: tenant
+/// sổ không có key riêng ⟹ 403 `TENANT_KEY_MISSING`.
+pub(crate) async fn text_key(
+    state: &AppState,
+    tenant: &crate::tenant::TenantCtx,
+    user_id: &str,
+    paused: &str,
+) -> Result<TextKey, AppError> {
     if let Some((key, model)) = user_keys::text_key(state, user_id).await? {
         return Ok(TextKey::Own { key, model });
+    }
+    if !tenant.primary {
+        return Err(crate::tenant::key_missing());
     }
     let (provider, key) = state
         .transcriber
@@ -294,7 +303,7 @@ pub async fn create(
     if !state.config.transcribe_allowed(&tenant, &profile.email) {
         return Err(AppError::Forbidden("tài khoản này chưa được dùng tóm tắt".into()));
     }
-    let text_key = text_key(&state, &user.0, PAUSED).await?;
+    let text_key = text_key(&state, &tenant, &user.0, PAUSED).await?;
     if !state.rate.allow(&format!("summary:{}", user.0), PER_MINUTE) {
         return Err(AppError::TooManyRequests("bấm tóm tắt quá nhanh, thử lại sau một phút".into()));
     }

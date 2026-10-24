@@ -6,7 +6,7 @@
 //! - `auth_states`, `logout_jtis`: doc chưa có `tenantId` bị xoá (TTL 10 phút, khoá `_id` của jti đổi dạng): lượt đăng
 //!   nhập đang dở lúc deploy phải bắt đầu lại.
 //!
-//! Lặp lại được: chạy lần hai không đổi gì. Đếm lại sau khi ghi; còn doc thiếu `tenantId` (ghi lỗi giữa chừng) ⟹ lỗi,
+//! Lặp lại được: chạy lần hai không đổi gì. Kiểm lại sau khi ghi; còn doc thiếu `tenantId` (ghi lỗi giữa chừng) ⟹ lỗi,
 //! `main` dừng khởi động thay vì phục vụ với danh tính chưa gắn tenant.
 
 use super::PRIMARY_ID;
@@ -35,10 +35,26 @@ fn missing() -> Document {
     doc! { "tenantId": { "$exists": false } }
 }
 
+/// Collection còn doc thiếu `tenantId` không. Một lần đọc tới doc đầu tiên khớp (chỉ `_id`): sau migration đầu tiên mỗi
+/// lần khởi động chỉ tốn một lượt quét mỗi collection thay vì ghi và đếm lại. Vẫn chạy mỗi lần khởi động có chủ đích:
+/// binary cũ chạy lại (rollback) có thể ghi doc chưa có `tenantId`.
+async fn has_missing(db: &Database, coll: &str) -> Result<bool, String> {
+    db.collection::<Document>(coll)
+        .find_one(missing())
+        .projection(doc! { "_id": 1 })
+        .await
+        .map(|d| d.is_some())
+        .map_err(|e| format!("đọc {coll}: {e}"))
+}
+
 /// Gắn và dọn; lỗi Mongo hay còn sót doc thiếu `tenantId` ⟹ `Err` (mô tả cho log).
 pub async fn run(db: &Database) -> Result<Report, String> {
     let mut report = Report::default();
     for coll in TAGGED {
+        if !has_missing(db, coll).await? {
+            report.tagged.push((coll, 0));
+            continue;
+        }
         let res = db
             .collection::<Document>(coll)
             .update_many(missing(), doc! { "$set": { "tenantId": PRIMARY_ID } })
@@ -47,6 +63,10 @@ pub async fn run(db: &Database) -> Result<Report, String> {
         report.tagged.push((coll, res.modified_count));
     }
     for coll in DROPPED {
+        if !has_missing(db, coll).await? {
+            report.dropped.push((coll, 0));
+            continue;
+        }
         let res = db
             .collection::<Document>(coll)
             .delete_many(missing())
@@ -54,7 +74,9 @@ pub async fn run(db: &Database) -> Result<Report, String> {
             .map_err(|e| format!("dọn {coll} chưa có tenantId: {e}"))?;
         report.dropped.push((coll, res.deleted_count));
     }
-    verify(db).await?;
+    if report.changed() > 0 {
+        verify(db).await?;
+    }
     Ok(report)
 }
 
@@ -62,13 +84,8 @@ pub async fn run(db: &Database) -> Result<Report, String> {
 pub async fn verify(db: &Database) -> Result<(), String> {
     let mut left = Vec::new();
     for coll in TAGGED.iter().chain(DROPPED.iter()) {
-        let n = db
-            .collection::<Document>(coll)
-            .count_documents(missing())
-            .await
-            .map_err(|e| format!("đếm lại {coll}: {e}"))?;
-        if n > 0 {
-            left.push(format!("{coll}: {n}"));
+        if has_missing(db, coll).await? {
+            left.push(*coll);
         }
     }
     if !left.is_empty() {
@@ -122,7 +139,7 @@ mod tests {
         assert_eq!(second.changed(), 0, "chạy lại không đổi gì");
         // Doc thiếu tenantId xuất hiện (ghi lỗi giữa chừng): kiểm báo lỗi, khởi động dừng.
         db.collection::<Document>("jobs").insert_one(doc! { "userId": "u2" }).await.expect("job sót");
-        assert!(verify(&db).await.expect_err("còn sót").contains("jobs: 1"));
+        assert!(verify(&db).await.expect_err("còn sót").contains("jobs"));
         db.drop().await.expect("xoá database test");
     }
 }

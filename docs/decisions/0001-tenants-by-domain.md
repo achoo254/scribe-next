@@ -18,6 +18,8 @@ Mục tiêu (24/10/2026, Jev chốt, user uỷ quyền): người dùng của m�
 - Host bằng host của `PUBLIC_URL`, hoặc loopback (dev qua proxy của Vite, lệnh trên máy chủ): **tenant chính**, id `primary` (cùng id với hoandat-auth), tĩnh, không hỏi IdP khi nhận request. Mọi hành vi của tenant chính giữ như trước: key server, gói, hạn mức, app iPhone/Android, allowlist.
 - Host `scribe.<domain>` khác: tra `GET /internal/tenants/lookup?host=` của API nội bộ hoandat-auth (Basic `scribe`), cache 60 giây, 404 cache 30 giây, IdP lỗi thì dùng câu trả lời cũ và thử lại sau 10 giây (cùng mốc với Localman). IdP trả tenant chính cho một host khác, hay domain không khớp host: coi như không có. Không có tenant: 404 `UNKNOWN_TENANT`. Host khác nữa: 404.
 - Không có API nội bộ thì chỉ phục vụ tenant chính.
+- Host lạ không được làm IdP làm việc không giới hạn: host chưa có trong cache chỉ được hỏi trong ngân sách 30 lượt/phút mỗi IP và 300 lượt/phút cả server (hết ngân sách ⟹ 429, host đã biết vẫn chạy), IdP lỗi với host chưa biết được nhớ 10 giây, và block nginx của tenant sổ trả 421 khi `Host` khác tên đã bắt tay TLS.
+- `PUBLIC_URL` không có host ⟹ không khởi động (không có tenant chính thì mọi request công khai đều 404).
 
 ### 2. Tenant sổ chỉ chạy khi đủ điều kiện, mặc định tắt
 
@@ -27,6 +29,8 @@ Mục tiêu (24/10/2026, Jev chốt, user uỷ quyền): người dùng của m�
 2. Đăng nhập qua IdP của tenant dựng được ở phía Scribe: API nội bộ, listener loopback của IdP và khoá app `scribe-web` (`tenant::Readiness::oidc`).
 3. Scribe mở được key niêm phong của tenant: có vòng khoá niêm phong (`tenant::Readiness::sealed_keys`). Chưa có thì không tenant sổ nào chạy, nên tenant sổ không bao giờ rơi vào key của server.
 4. Người vận hành không tắt tenant (`scribe-be admin tenant-disable <id>`, cờ trong `kv`).
+
+Ngoài điều kiện 3, key server và tính năng chỉ của tenant chính còn được chặn ngay tại chỗ: tenant sổ không có key riêng ⟹ 403 `TENANT_KEY_MISSING` (chép lời, biên bản, hỏi đáp, dịch), liên kết chat, gửi biên bản qua bot và chép trực tiếp ⟹ 403 `NOT_ON_TENANT`, đăng nhập app di động ⟹ 404.
 
 Chưa bật: route cần đăng nhập và route đăng nhập của app trả 403 `TENANT_DISABLED`, `/api/auth/login` và callback chuyển về `/login?error=not_enabled` của chính tenant đó, `/api/idp` luôn trả `{ displayName, domain, issuer, primary, scribe: "enabled" | "disabled" }` để web hiện trang "Scribe chưa bật trên domain này" kèm link `https://auth.<domain>/admin`. Đăng xuất và back-channel logout chạy cả khi tenant đã tắt.
 
@@ -67,4 +71,5 @@ Scribe mở bản niêm phong bằng crate `rsa` (thuần Rust, giữ binary mus
 - Production không đổi cho tới khi đủ điều kiện ở mục 2: tenant chính, app di động và mọi tenant chưa bật giữ nguyên hành vi. Thay đổi duy nhất lúc deploy là migration gắn `tenantId` và đổi index `users`.
 - Lệnh quản trị theo email nhận `--tenant <id>` (mặc định `primary`); thêm `tenants`, `tenant-disable`, `tenant-enable`, `purge-tenant <id> [--apply]`. Gỡ tenant ở IdP không tự xoá dữ liệu Scribe: người vận hành chạy `purge-tenant`.
 - Bundle tự host của hoandat-auth không có Scribe; tenant chuyển sang tự host không mang dữ liệu Scribe theo.
-- Rollback: chạy binary trước. Binary cũ bỏ qua `tenantId`, tạo lại `idpSub_unique` (sub của tenant sổ khác sub của tenant chính nên không trùng) và chỉ phục vụ tenant chính; không cần khôi phục bản sao lưu trừ khi dữ liệu hỏng.
+- Thứ tự deploy: binary mới trước, block nginx của tenant sổ sau. Binary cũ không đọc `Host`: gặp `scribe.<domain>` nó phục vụ như tenant chính.
+- Rollback: gỡ block nginx của tenant sổ (`scribe-tenants.conf`, `nginx -t`, reload) TRƯỚC, rồi chạy binary trước. Binary cũ bỏ qua `tenantId`, tạo lại `idpSub_unique` (sub của tenant sổ khác sub của tenant chính nên không trùng) và chỉ phục vụ tenant chính; không cần khôi phục bản sao lưu trừ khi dữ liệu hỏng. Doc nó ghi trong lúc chạy (chưa có `tenantId`) được binary mới gắn `primary` ở lần khởi động sau, nên migration chạy (rẻ: một lượt đọc mỗi collection) ở mọi lần khởi động.

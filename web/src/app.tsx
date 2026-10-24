@@ -8,7 +8,10 @@ import { TooltipProvider } from "./components/ui/tooltip";
 import { I18nProvider } from "./i18n/i18n-provider";
 import { isNativeShell } from "./lib/api";
 import { useTenantInfo, useTenantSettled } from "./lib/tenant-info";
-import { TenantDisabledPage } from "./pages/tenant-disabled-page";
+import {
+	TenantDisabledPage,
+	TenantUnavailablePage,
+} from "./pages/tenant-disabled-page";
 import type { AppRouter } from "./routes";
 
 export function createQueryClient(): QueryClient {
@@ -43,6 +46,9 @@ export function TenantGate({ children }: { children: ReactNode }) {
 	if (!settled) return <SessionCheck />;
 	if (tenant.scribe === "disabled")
 		return <TenantDisabledPage tenant={tenant} />;
+	if (tenant.scribe === "unavailable") {
+		return <TenantUnavailablePage tenant={tenant} />;
+	}
 	return children;
 }
 

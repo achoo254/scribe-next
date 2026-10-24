@@ -22,6 +22,7 @@ mod routing_tests;
 
 use crate::error::AppError;
 use crate::state::AppState;
+use answer_cache::LookupError;
 use axum::extract::{Request, State};
 use axum::http::{header, StatusCode};
 use axum::middleware::Next;
@@ -37,6 +38,10 @@ pub const PRIMARY_ID: &str = "primary";
 /// Nhãn đầu của host Scribe ở mọi tenant sổ.
 pub const HOST_PREFIX: &str = "scribe.";
 const KV: &str = "kv";
+/// Lượt hỏi IdP về host chưa có trong cache mỗi phút: theo IP người gọi và cho cả server. Host bịa ra (nginx nhận mọi
+/// `scribe.*`) không làm IdP làm việc không giới hạn; host đã biết không tốn lượt nào.
+const LOOKUPS_PER_IP: u32 = 30;
+const LOOKUPS_TOTAL: u32 = 300;
 
 /// Tenant của request hiện tại (gắn vào request bởi [`resolve`]).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -149,13 +154,18 @@ pub async fn resolve(State(state): State<AppState>, mut req: Request, next: Next
         .and_then(|v| v.to_str().ok())
         .map(str::to_string)
         .or_else(|| req.uri().authority().map(|a| a.to_string()));
-    match state.tenants.resolve(host.as_deref()).await {
+    let ip = crate::rate_limit::client_ip(req.headers());
+    let allow_lookup = || {
+        state.rate.allow(&format!("tenant-lookup:{ip}"), LOOKUPS_PER_IP) && state.rate.allow("tenant-lookup", LOOKUPS_TOTAL)
+    };
+    match state.tenants.resolve(host.as_deref(), allow_lookup).await {
         Ok(Some(tenant)) => {
             req.extensions_mut().insert(tenant);
             next.run(req).await
         }
         Ok(None) => unknown_tenant().into_response(),
-        Err(e) => {
+        Err(LookupError::Busy) => AppError::TooManyRequests("quá nhiều yêu cầu, thử lại sau ít phút".into()).into_response(),
+        Err(LookupError::Failed(e)) => {
             tracing::warn!(host = host.as_deref().unwrap_or("-"), "tra tenant lỗi: {e}");
             AppError::Unavailable("chưa kiểm được domain này, thử lại sau ít phút".into()).into_response()
         }
@@ -178,6 +188,22 @@ pub async fn require_enabled_web(Extension(tenant): Extension<Tenant>, req: Requ
         next.run(req).await
     } else {
         Redirect::to(&format!("{}/login?error=not_enabled", tenant.public_url)).into_response()
+    }
+}
+
+/// Tenant sổ chưa có key cho việc này (key của server chỉ dành cho tenant chính): 403 `TENANT_KEY_MISSING`.
+pub fn key_missing() -> AppError {
+    AppError::Coded { status: StatusCode::FORBIDDEN, code: "TENANT_KEY_MISSING", message: "Chủ domain chưa thêm key cho việc này".into() }
+}
+
+/// Tính năng chỉ của tenant chính (liên kết chat, gửi biên bản qua bot, chép trực tiếp): tenant sổ ⟹ 403
+/// `NOT_ON_TENANT`.
+pub async fn primary_feature(Extension(tenant): Extension<Tenant>, req: Request, next: Next) -> Response {
+    if tenant.primary {
+        next.run(req).await
+    } else {
+        AppError::Coded { status: StatusCode::FORBIDDEN, code: "NOT_ON_TENANT", message: "Tính năng này chỉ có trên hoandat.com".into() }
+            .into_response()
     }
 }
 

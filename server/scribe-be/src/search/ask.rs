@@ -320,7 +320,7 @@ pub async fn ask(
     if !state.config.transcribe_allowed(&tenant, &profile.email) {
         return Err(AppError::Forbidden("tài khoản này chưa được dùng hỏi đáp".into()));
     }
-    let text_key = summary::text_key(&state, &user.0, PAUSED).await?;
+    let text_key = summary::text_key(&state, &tenant, &user.0, PAUSED).await?;
     if !state.rate.allow(&format!("ask:{}", user.0), PER_MINUTE) {
         return Err(AppError::TooManyRequests("hỏi quá nhanh, thử lại sau một phút".into()));
     }

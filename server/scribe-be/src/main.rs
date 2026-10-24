@@ -202,7 +202,13 @@ async fn main() {
     );
     // Điều kiện phía Scribe để tenant sổ được bật; chưa đủ thì mọi tenant sổ hiện trang "chưa bật".
     let readiness = tenant::Readiness { oidc: oidc.tenant_mode(), ..tenant::Readiness::default() };
-    let tenants = Arc::new(tenant::directory::TenantDirectory::new(&config, Some(db.clone()), internal, readiness));
+    let tenants = match tenant::directory::TenantDirectory::new(&config, Some(db.clone()), internal, readiness) {
+        Ok(directory) => Arc::new(directory),
+        Err(e) => {
+            tracing::error!("{e}");
+            std::process::exit(1);
+        }
+    };
     let state = AppState {
         config: Arc::new(config),
         db,

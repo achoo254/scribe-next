@@ -315,6 +315,10 @@ pub async fn create(
     // Key riêng của người dùng cho chép lời (nếu có): không giữ phút, không giới hạn ngày hay chờ tài khoản mới, không
     // đụng sổ giờ ElevenLabs; chạy được cả khi key server đang tạm ngưng.
     let own = crate::user_keys::active(&state, &user.0).await?.transcribe;
+    // Key server (phút, quỹ, trần USD) chỉ dành cho tenant chính.
+    if own.is_none() && !tenant.primary {
+        return Err(crate::tenant::key_missing());
+    }
     if own.is_none() && !state.transcriber.ready() {
         return Err(AppError::Unavailable(PAUSED.into()));
     }

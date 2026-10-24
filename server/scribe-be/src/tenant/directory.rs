@@ -5,11 +5,12 @@
 //! Tên tài khoản đăng nhập của tenant chính (`/api/idp`, giao diện gọi "Đăng nhập bằng …") vẫn hỏi nền lúc khởi động
 //! rồi mỗi giờ như trước; lỗi giữ tên đúng gần nhất, chưa hỏi được lần nào thì dùng `IDP_DISPLAY_NAME`.
 
-use super::answer_cache::AnswerCache;
+use super::answer_cache::{AnswerCache, LookupError};
 use super::internal_api::{send_error, InternalApi};
 use super::{host_of_url, is_disabled, is_loopback, normalize_host, Readiness, Tenant, TenantCtx, HOST_PREFIX, PRIMARY_ID};
 use crate::config::Config;
 use crate::idp_brand::clean_name;
+use crate::oidc_transport::valid_tenant_id;
 use mongodb::Database;
 use serde::Deserialize;
 use std::sync::{Arc, RwLock};
@@ -74,8 +75,15 @@ fn primary_domain(host: &str) -> String {
 }
 
 impl TenantDirectory {
-    pub fn new(config: &Config, flags: Option<Database>, internal: Option<Arc<InternalApi>>, readiness: Readiness) -> TenantDirectory {
-        let primary_host = host_of_url(&config.public_url).unwrap_or_default();
+    /// Lỗi khi `PUBLIC_URL` không có host: không có tenant chính thì mọi request công khai đều 404, nên `main` dừng.
+    pub fn new(
+        config: &Config,
+        flags: Option<Database>,
+        internal: Option<Arc<InternalApi>>,
+        readiness: Readiness,
+    ) -> Result<TenantDirectory, String> {
+        let primary_host =
+            host_of_url(&config.public_url).ok_or_else(|| format!("PUBLIC_URL không có host: {}", config.public_url))?;
         let primary = Arc::new(TenantCtx {
             id: PRIMARY_ID.to_string(),
             domain: primary_domain(&primary_host),
@@ -85,7 +93,7 @@ impl TenantDirectory {
             primary: true,
             enabled: true,
         });
-        TenantDirectory { primary_host, primary: RwLock::new(primary), internal, flags, readiness, cache: AnswerCache::new() }
+        Ok(TenantDirectory { primary_host, primary: RwLock::new(primary), internal, flags, readiness, cache: AnswerCache::new() })
     }
 
     pub fn primary(&self) -> Tenant {
@@ -103,8 +111,10 @@ impl TenantDirectory {
         }
     }
 
-    /// Tenant phục vụ `raw_host` (header Host). `Ok(None)`: không phải host của Scribe ở tenant nào.
-    pub async fn resolve(&self, raw_host: Option<&str>) -> Result<Option<Tenant>, String> {
+    /// Tenant phục vụ `raw_host` (header Host). `Ok(None)`: không phải host của Scribe ở tenant nào. Host của tenant sổ
+    /// chưa có trong cache chỉ được hỏi IdP khi `allow_lookup()` cho phép (ngân sách theo IP và toàn server): host bịa
+    /// ra không làm IdP làm việc không giới hạn.
+    pub async fn resolve(&self, raw_host: Option<&str>, allow_lookup: impl FnOnce() -> bool) -> Result<Option<Tenant>, LookupError> {
         let Some(host) = raw_host.and_then(normalize_host) else { return Ok(None) };
         if host == self.primary_host || is_loopback(&host) {
             return Ok(Some(self.primary()));
@@ -112,15 +122,21 @@ impl TenantDirectory {
         if !host.starts_with(HOST_PREFIX) || host.len() == HOST_PREFIX.len() || self.internal.is_none() {
             return Ok(None);
         }
-        self.cache.get(&host, || self.load(&host)).await
+        self.cache.get(&host, allow_lookup, || self.load(&host)).await
     }
 
     async fn load(&self, host: &str) -> Result<Option<Tenant>, String> {
         let Some(api) = &self.internal else { return Ok(None) };
         let Some(lookup) = fetch_lookup(api, host).await? else { return Ok(None) };
         let domain = lookup.domain.trim().to_ascii_lowercase();
-        // Chỉ host của `PUBLIC_URL` là tenant chính; host phải đúng `scribe.<domain>` của tenant IdP trả về.
-        if lookup.id.is_empty() || lookup.id == PRIMARY_ID || format!("{HOST_PREFIX}{domain}") != host {
+        // Chỉ host của `PUBLIC_URL` là tenant chính; host phải đúng `scribe.<domain>` của tenant IdP trả về, id dùng được
+        // trong khoá Mongo và đường dẫn API nội bộ, issuer đúng `https://auth.<domain>`.
+        let issuer = lookup.issuer.trim_end_matches('/');
+        if !valid_tenant_id(&lookup.id)
+            || lookup.id == PRIMARY_ID
+            || format!("{HOST_PREFIX}{domain}") != host
+            || issuer != format!("https://auth.{domain}")
+        {
             tracing::warn!(host, tenant = %lookup.id, "IdP trả tenant không khớp host — coi như không có");
             return Ok(None);
         }
@@ -134,7 +150,7 @@ impl TenantDirectory {
         Ok(Some(Arc::new(TenantCtx {
             display_name: clean_name(&lookup.display_name).unwrap_or_else(|| domain.clone()),
             id: lookup.id,
-            issuer: lookup.issuer.trim_end_matches('/').to_string(),
+            issuer: issuer.to_string(),
             domain,
             public_url,
             primary: false,
@@ -230,7 +246,7 @@ pub(crate) mod tests {
     pub fn directory(api: Option<&str>, readiness: Readiness) -> TenantDirectory {
         let config = crate::config::Config::for_tests();
         let internal = api.map(|a| Arc::new(InternalApi::new(a, SECRET).expect("client")));
-        TenantDirectory::new(&config, None, internal, readiness)
+        TenantDirectory::new(&config, None, internal, readiness).expect("PUBLIC_URL có host")
     }
 
     #[tokio::test]
@@ -238,16 +254,16 @@ pub(crate) mod tests {
         let (api, calls) = fake_lookup(HashMap::new()).await;
         let dir = directory(Some(&api), Readiness::default());
         for host in ["scribe.hoandat.com", "SCRIBE.hoandat.com:443", "127.0.0.1:8787", "localhost:5173"] {
-            let t = dir.resolve(Some(host)).await.expect("ok").expect("tenant chính");
+            let t = dir.resolve(Some(host), || true).await.expect("ok").expect("tenant chính");
             assert!(t.primary && t.enabled && t.id == PRIMARY_ID, "{host}");
             assert_eq!((t.domain.as_str(), t.public_url.as_str()), ("hoandat.com", "https://scribe.hoandat.com"));
         }
         assert_eq!(calls.load(Ordering::SeqCst), 0);
         // Host không phải `scribe.` của tenant nào: 404 mà không hỏi IdP.
         for host in ["evil.example.com", "auth.hoandat.com", "scribe.", ""] {
-            assert!(dir.resolve(Some(host)).await.expect("ok").is_none(), "{host}");
+            assert!(dir.resolve(Some(host), || true).await.expect("ok").is_none(), "{host}");
         }
-        assert!(dir.resolve(None).await.expect("ok").is_none());
+        assert!(dir.resolve(None, || true).await.expect("ok").is_none());
         assert_eq!(calls.load(Ordering::SeqCst), 0);
     }
 
@@ -263,32 +279,42 @@ pub(crate) mod tests {
         ]);
         let (api, calls) = fake_lookup(tenants).await;
         let off = directory(Some(&api), Readiness { oidc: true, sealed_keys: false });
-        let a = off.resolve(Some("scribe.inetdev.io.vn")).await.expect("ok").expect("tenant");
+        let a = off.resolve(Some("scribe.inetdev.io.vn"), || true).await.expect("ok").expect("tenant");
         assert_eq!(
             (a.id.as_str(), a.domain.as_str(), a.issuer.as_str(), a.display_name.as_str(), a.primary, a.enabled),
             ("ten_a", "inetdev.io.vn", "https://auth.inetdev.io.vn", "inetdev.io.vn login", false, false)
         );
         assert_eq!(a.public_url, "https://scribe.inetdev.io.vn");
         // Lần hai trong 60 giây: từ cache.
-        off.resolve(Some("scribe.inetdev.io.vn")).await.expect("ok");
+        off.resolve(Some("scribe.inetdev.io.vn"), || true).await.expect("ok");
         assert_eq!(calls.load(Ordering::SeqCst), 1);
-        assert!(off.resolve(Some("scribe.unknown.vn")).await.expect("ok").is_none());
-        assert!(off.resolve(Some("scribe.alias.vn")).await.expect("ok").is_none());
-        assert!(off.resolve(Some("scribe.mismatch.vn")).await.expect("ok").is_none());
+        assert!(off.resolve(Some("scribe.unknown.vn"), || true).await.expect("ok").is_none());
+        assert!(off.resolve(Some("scribe.alias.vn"), || true).await.expect("ok").is_none());
+        assert!(off.resolve(Some("scribe.mismatch.vn"), || true).await.expect("ok").is_none());
         // Không có API nội bộ: không tenant sổ nào.
         let none = directory(None, Readiness { oidc: true, sealed_keys: true });
-        assert!(none.resolve(Some("scribe.inetdev.io.vn")).await.expect("ok").is_none());
+        assert!(none.resolve(Some("scribe.inetdev.io.vn"), || true).await.expect("ok").is_none());
     }
 
     #[tokio::test]
     async fn an_idp_failure_with_nothing_cached_is_an_error() {
         let dir = directory(Some("http://127.0.0.1:1"), Readiness::default());
-        let err = dir.resolve(Some("scribe.inetdev.io.vn")).await.expect_err("IdP không chạy");
-        assert!(!err.contains(SECRET), "lỗi không lộ bí mật");
+        let err = dir.resolve(Some("scribe.inetdev.io.vn"), || true).await.expect_err("IdP không chạy");
+        assert!(!format!("{err:?}").contains(SECRET), "lỗi không lộ bí mật");
+        // Hết ngân sách hỏi IdP: không hỏi, báo bận; host chính vẫn chạy.
+        assert_eq!(dir.resolve(Some("scribe.other.vn"), || false).await, Err(LookupError::Busy));
+        assert!(dir.resolve(Some("scribe.hoandat.com"), || false).await.expect("ok").is_some());
         // Sai bí mật: IdP trả 401, không phải 404.
         let (api, _) = fake_lookup(HashMap::new()).await;
         let wrong = InternalApi::new(&api, "other-secret-other-secret-other-se").expect("client");
         assert_eq!(fetch_lookup(&wrong, "scribe.x.vn").await.expect_err("401"), "IdP trả 401 Unauthorized");
+    }
+
+    #[test]
+    fn a_public_url_without_host_stops_startup() {
+        let mut config = crate::config::Config::for_tests();
+        config.public_url = "not a url".into();
+        assert!(TenantDirectory::new(&config, None, None, Readiness::default()).is_err());
     }
 
     #[test]

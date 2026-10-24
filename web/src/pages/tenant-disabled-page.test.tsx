@@ -39,6 +39,20 @@ describe("TenantDisabledPage", () => {
 	});
 });
 
+describe("TenantUnavailablePage", () => {
+	it("says the domain could not be checked and offers a retry", async () => {
+		const { TenantUnavailablePage, renderWithProviders } = await fresh();
+		renderWithProviders(
+			<TenantUnavailablePage tenant={{ ...ACME, scribe: "unavailable" }} />,
+		);
+		expect(
+			screen.getByRole("heading", { name: "Chưa kiểm được domain này" }),
+		).toBeVisible();
+		expect(screen.getByRole("button", { name: "Thử lại" })).toBeVisible();
+		expect(screen.queryByRole("link")).toBeNull();
+	});
+});
+
 describe("TenantGate", () => {
 	it("waits for the tenant, then shows the app or the not enabled page", async () => {
 		const { TenantGate, loadTenantInfo, renderWithProviders } = await fresh();

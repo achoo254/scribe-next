@@ -447,7 +447,8 @@ pub async fn logout(
             state.session_cache.forget(&[id]);
         }
     }
-    if let Some(device_token) = body.and_then(|Json(b)| b.device_token) {
+    // Thiết bị (app di động) chỉ có ở tenant chính.
+    if let Some(device_token) = body.and_then(|Json(b)| b.device_token).filter(|_| tenant.primary) {
         let device_id = crate::session::hash_token(&device_token);
         // Thu hồi grant ở IdP để máy không còn treo ở /account.
         if let Ok(Some(sealed)) = sessions::device_refresh(&state.db, &device_id).await {
