@@ -81,7 +81,6 @@ Cloudflare (DNS proxied, SSL "Full")
 | nginx vhost | `/etc/nginx/conf.d/scribe.conf` | `deploy/nginx-scribe.conf` |
 | nginx header bảo mật | `/etc/nginx/scribe/security-headers.inc` | `deploy/nginx-scribe-security-headers.inc` (§Header bảo mật) |
 | nginx phần chung (`/api/`, web tĩnh, `/assets/`) | `/etc/nginx/scribe/locations.inc` | `deploy/nginx-scribe-locations.inc` |
-| nginx `scribe.<domain>` của tenant sổ | `/etc/nginx/conf.d/scribe-tenants.conf` | `deploy/nginx-scribe-tenants.conf` (§nginx cho domain tenant) |
 | FE static | `/var/www/scribe/dist` | `web/` → `pnpm run build` → `web/dist` |
 
 ### Tệp bí mật trên server
@@ -97,9 +96,6 @@ Tất cả trong `/opt/scribe-be`, chủ `scribe`, quyền 600, ghi bằng stdin
 | `.user-keys-secret` | `USER_KEYS_SECRET_PATH` | 32 byte ngẫu nhiên mã hoá "Key riêng" (key API người dùng tự nhập), §Key riêng. Thiếu tệp hoặc quyền khác 600 ⟹ tính năng tắt, giao diện báo |
 | `.gemini-key`, `.anthropic-key` | `GEMINI_KEY_PATH`, `ANTHROPIC_KEY_PATH` | Chỉ cần khi `LLM_PROVIDER` là `gemini` / `anthropic` (model chữ của server) |
 | `.notify-bot-token` | `NOTIFY_BOT_TOKEN_PATH` | Token bot `@bot_scribe_bot`: báo động, liên kết chat và gửi biên bản (§Deploy) |
-| `.scribe-web-client-key` | `SCRIBE_WEB_CLIENT_KEY_PATH` | Khoá app `scribe-web` cho tenant sổ (§Đăng nhập auth-next): sinh ở IdP bằng `node --env-file=.env dist/app-client-key.mjs scribe-web <file>` (mode 600, trong `/var/www/hoandat-auth`), chép sang đây; Scribe tự tính secret `scribe-web` của từng tenant = `base64url(HMAC-SHA256(khoá, tenantId))`. Đổi `APP_CLIENT_SECRET_KEY` ở IdP thì sinh lại tệp này. Thiếu hoặc sai dạng ⟹ chế độ tenant tắt, tenant chính không đổi |
-| `tenant-sealing-keys/` (thư mục 700) | `TENANT_SEALING_KEYS_DIR` | Private key RSA-3072 niêm phong key AI của tenant, mỗi tệp `<vân tay>.pem` (600), §Key AI của tenant. Thiếu hoặc không có khoá dùng được ⟹ mọi tenant sổ "chưa bật", tenant chính không đổi |
-| `.idp-internal-secret` | `IDP_INTERNAL_API_SECRET_PATH` | Mật khẩu Basic của tài khoản `scribe` ở API nội bộ của auth-next (một dòng, ≥ 32 ký tự); phía IdP là mục `scribe:<secret>` của `INTERNAL_API_CREDENTIALS` trong `/var/www/hoandat-auth/.env` — đổi thì đổi cả hai. Thiếu hoặc sai dạng ⟹ dùng tên `IDP_DISPLAY_NAME` |
 
 ## ⚠️ Ràng buộc then chốt — cấu hình bake **compile-time**
 
@@ -144,11 +140,7 @@ Tất cả trong `/opt/scribe-be`, chủ `scribe`, quyền 600, ghi bằng stdin
 | `TRANSLATE_FREE_DAILY`, `TRANSLATE_PAID_DAILY` | Số lượt dịch mỗi ngày, mặc định 3 / 20 (§Deploy); prod dùng mặc định. Dịch dùng model `SUMMARY_MODEL` và trần chi phí tháng của tóm tắt, không có biến trần riêng |
 | `CHAT_LINK_POLL` | `1`/`true` = chạy task long-poll của bot để liên kết chat. **Chỉ bật trên prod**, không bao giờ ở dev (§Deploy) |
 | `CHAT_BOT_USERNAME` | Tên bot trong deep link; prod để trống, BE hỏi `/bot/v1/me` |
-| `IDP_INTERNAL_API_URL` | API nội bộ của auth-next trên cùng máy, ví dụ `http://127.0.0.1:4501`. Cùng `IDP_INTERNAL_API_SECRET_PATH` (`/opt/scribe-be/.idp-internal-secret`): lúc khởi động rồi mỗi giờ BE gọi `GET {url}/internal/tenants/lookup?host=<host của PUBLIC_URL>` (Basic `scribe`, quá giờ 5 giây; lỗi thì thử lại sau 5 phút) để lấy tên hiển thị của tenant (`TENANT_DISPLAY_NAME` của IdP) và trả công khai ở `GET /api/idp`; giao diện gọi tài khoản đăng nhập bằng tên này ("Đăng nhập bằng …", "Tài khoản …", trang pháp lý). Lỗi thì giữ tên đúng gần nhất, journal ghi cảnh báo (không chứa bí mật). Request tới host `scribe.<domain>` khác cũng tra tenant qua route này (cache 60 giây; [ADR 0001](./decisions/0001-tenants-by-domain.md)). Thiếu một trong hai biến = tắt: tên mặc định, chỉ phục vụ tenant chính |
-| `IDP_DISPLAY_NAME` | Tên dùng tới khi hỏi được IdP (hoặc khi tính năng tắt), mặc định `Auth Next` (mặc định của auth-next); web cũng hiện `Auth Next` tới khi `/api/idp` trả lời |
-| `IDP_LOOPBACK_URL` | Listener công khai của auth-next trên loopback, prod `http://127.0.0.1:4500` (pm2 `hoandat-auth`). Token, userinfo, thu hồi của tenant sổ gửi tới đây với `Host: auth.<domain>`, `X-Forwarded-Proto: https` (không qua DNS của domain tenant). Cùng `SCRIBE_WEB_CLIENT_KEY_PATH` và hai biến API nội bộ ở trên: đủ cả ⟹ đăng nhập được ở tenant sổ (chế độ tenant); thiếu một ⟹ journal `chế độ tenant tắt (thiếu …)`, mọi `scribe.<domain>` khác hiện "Scribe chưa bật", tenant chính không đổi |
-| `SCRIBE_WEB_CLIENT_KEY_PATH` | `/opt/scribe-be/.scribe-web-client-key` (§Tệp bí mật trên server) |
-| `TENANT_SEALING_KEYS_DIR` | `/opt/scribe-be/tenant-sealing-keys` (§Key AI của tenant). Cần thêm API nội bộ; thiếu ⟹ journal `key AI của tenant tắt (…)`, mọi tenant sổ hiện "Scribe chưa bật". Đủ ⟹ journal `key AI của tenant bật` kèm vân tay các khoá |
+| `IDP_DISPLAY_NAME` | Tên tài khoản đăng nhập trả ở `GET /api/idp` và hiện ở giao diện ("Đăng nhập bằng …", "Tài khoản …", trang pháp lý). Mặc định `Auth Next` (mặc định `TENANT_DISPLAY_NAME` của auth-next); prod đặt `IDP_DISPLAY_NAME=Auth Next` cho tường minh. Không còn hỏi API nội bộ của IdP |
 
 - `ALLOWED_DOMAINS` / `ALLOWED_EMAILS`: **KHÔNG set** → fallback rỗng = mở cho mọi tài khoản auth-next có email đã xác minh (quyết định hiện tại). Muốn siết → thêm `ALLOWED_DOMAINS=<domain>` rồi build lại.
 - `TRANSCRIBE_EMAILS`: rỗng (và chưa bật `TRANSCRIBE_OPEN`) nghĩa là **không ai** được chép lời (ngược với allowlist đăng nhập).
@@ -156,11 +148,7 @@ Tất cả trong `/opt/scribe-be`, chủ `scribe`, quyền 600, ghi bằng stdin
 
 ### Đăng nhập auth-next
 
-Mỗi `scribe.<domain>` đăng nhập bằng IdP của chính domain đó (`https://auth.<domain>`); tenant chính `hoandat.com` như dưới đây.
-
-**Tenant sổ** ([ADR 0001](./decisions/0001-tenants-by-domain.md)): một client `scribe-web` (confidential, back-channel logout, không app di động, không dev) do auth-next dựng khi bật `SCRIBE_TENANTS` và chủ domain đã nhập key chép lời. Discovery và JWKS đọc qua API nội bộ (`/internal/tenants/<id>/openid-configuration`, `/jwks`, kiểm `issuer`), token/userinfo qua `IDP_LOOPBACK_URL`; secret tính từ khoá app `SCRIBE_WEB_CLIENT_KEY_PATH`. Redirect `https://scribe.<domain>/api/auth/callback`, back-channel `/api/auth/backchannel-logout` (chỉ xoá phiên của tenant đó), sau đăng xuất về `https://scribe.<domain>/`. `/api/auth/native/*` ở tenant sổ trả 404. Bật thật sự còn cần khoá niêm phong key AI phía Scribe (§Key AI của tenant); chưa có thì mọi tenant sổ hiện "Scribe chưa bật".
-
-Hai client trên IdP `https://auth.hoandat.com` (tenant chính):
+Hai client trên IdP `https://auth.hoandat.com` (tenant duy nhất; đa tenant theo domain đã bỏ, [ADR 0001](./decisions/0001-tenants-by-domain.md) superseded):
 
 - **Web — `scribe-web` (confidential):** BE là BFF, chạy Code + PKCE phía server (`/api/auth/login` → IdP → `/api/auth/callback`), không token IdP nào tới JavaScript. Secret ở `OIDC_WEB_CLIENT_SECRET_PATH` trên server và `SCRIBE_WEB_CLIENT_SECRET` trong `/var/www/hoandat-auth/.env`. IdP gọi back-channel logout tới `/api/auth/backchannel-logout`.
 - **iPhone — `scribe-mobile` (public):** xem [ios-app.md](./ios-app.md); BE đổi code ở `/api/auth/native/exchange`, làm mới ở `/api/auth/native/refresh`.
@@ -236,21 +224,6 @@ nginx -t && systemctl reload nginx
 > **Sao lưu:** sao lưu tệp này riêng với bản sao lưu Mongo (không để chung một chỗ). Mất hoặc đổi tệp ⟹ mọi key đã lưu không giải mã được nữa (trạng thái "unreadable"), người dùng phải nhập lại; không có cách khôi phục. Đừng tạo lại tệp khi tệp cũ còn.
 > Việc chạy bằng key riêng không tính phút, lượt ngày, quỹ free, trần tổng hay sổ giờ ElevenLabs (sổ chi tiết `transcribe_runs`, `summary_runs`/`ask_runs`/`translate_runs` có `byok`, `admin usage --recompute` bỏ qua; số giây chép bằng key riêng ở sổ `b:<userId>:<tháng>` chỉ để người dùng xem). Key riêng lỗi lúc dùng chỉ đánh dấu key đó (audit `user_key.failed`), không ngắt chép lời hay tóm tắt của server. Audit `user_key.save|delete|rejected|prefs` không có key.
 >
-> **Key AI của tenant** ([ADR 0001](./decisions/0001-tenants-by-domain.md) §6, auth-next ADR 0012). Chủ domain nhập key AI ở `https://auth.<domain>/admin`; IdP niêm phong key bằng **public key** của Scribe (RSA-OAEP SHA-256 bọc khoá AES-256-GCM) và chỉ trả bản niêm phong cho tài khoản `scribe` qua `GET /internal/tenants/<id>/scribe-keys`. **Private key** chỉ nằm ở Scribe, trong `TENANT_SEALING_KEYS_DIR` (thư mục 700, mỗi tệp `<vân tay>.pem` PKCS#8, 600; vân tay = 16 ký tự hex đầu SHA-256 của SPKI DER, cùng cách IdP tính). Sinh khoá **một lần**, trên server (đăng nhập root như §Server; lệnh chạy hết trên server, không in khoá):
-> ```bash
-> ssh -i "$KEY" -p 24700 root@103.72.98.65 'set -eu; umask 077
->   D=/opt/scribe-be/tenant-sealing-keys; install -d -m 700 -o scribe -g scribe "$D"
->   T=$(mktemp); openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out "$T"
->   R=$(openssl pkey -in "$T" -pubout -outform DER | sha256sum | cut -c1-16)
->   install -m 600 -o scribe -g scribe "$T" "$D/$R.pem"
->   openssl pkey -in "$T" -pubout -out /var/www/hoandat-auth/secrets/scribe-sealing.pub.pem
->   chmod 644 /var/www/hoandat-auth/secrets/scribe-sealing.pub.pem; shred -u "$T"; echo "recipient $R"'
-> ```
-> Thêm `TENANT_SEALING_KEYS_DIR=/opt/scribe-be/tenant-sealing-keys` vào `.env.production`, build và restart Scribe; journal có `key AI của tenant bật` với đúng vân tay. Phía IdP: `SCRIBE_SEALING_PUBLIC_KEY_PATH=/var/www/hoandat-auth/secrets/scribe-sealing.pub.pem` cùng `SCRIBE_TENANTS=1` trong `/var/www/hoandat-auth/.env`, restart IdP (IdP từ chối private key, khoá dưới 3072 bit; xem `auth-next/docs/deployment-guide.md`). Public key không bí mật.
-> **Sao lưu:** chép tệp `<vân tay>.pem` (qua `ssh … 'cat /opt/scribe-be/tenant-sealing-keys/<vân tay>.pem'`, không in ra màn hình) vào iCloud `ENV production/one-scribe/server/`, tách khỏi bản sao lưu Mongo. Mất private key ⟹ mọi key AI đã niêm phong cho nó không mở được: Scribe **không** báo `unreadable` về IdP (`/admin` không tự hiện gì), chỉ log lỗi và báo bot người vận hành một lần mỗi vân tay; người vận hành khôi phục tệp từ bản sao lưu, không thì báo từng chủ domain nhập lại key.
-> **Xoay khoá theo kế hoạch:** sinh khoá mới vào cùng thư mục (lệnh trên, nhưng ghi public key ra tệp mới `/var/www/hoandat-auth/scribe-sealing-public-<vân tay>.pem` thay vì đè tệp đang dùng), restart Scribe (journal liệt kê cả hai vân tay); trỏ `SCRIBE_SEALING_PUBLIC_KEY_PATH` sang public key mới, restart IdP. Key cũ vẫn mở bằng khoá cũ (chọn theo `recipient`); chủ domain lưu lại key thì doc mang vân tay mới. Chỉ gỡ khoá cũ khi không còn doc nào mang vân tay cũ (đếm, chỉ đọc, trong DB của IdP: `db.tenant_secrets.countDocuments({ _id: /:scribe-/, "sealed.recipient": "<vân tay cũ>" })`). **Khi lộ khoá:** coi mọi key AI niêm phong cho khoá đó là đã lộ. Trước khi gỡ, lấy danh sách tenant bị ảnh hưởng (chỉ đọc, DB của IdP: `db.tenant_secrets.find({ _id: /:scribe-/, "sealed.recipient": "<vân tay lộ>" }, { _id: 1 })`); gỡ ngay tệp khoá đó và restart Scribe. Scribe không báo `unreadable` cho bản niêm phong mà nó không có khoá, nên `/admin` **không** tự hiện "cần nhập lại": người vận hành phải tự báo từng chủ domain trong danh sách (qua kênh khác ngoài `/admin`) thu hồi key ở nhà cung cấp và nhập key mới. Trong lúc đó lượt dùng key cũ báo "Key … của domain không dùng được" và bot báo người vận hành một lần mỗi vân tay.
-> Chọn key mỗi việc: key riêng của người dùng → key của chủ domain → key server (**chỉ tenant chính**); tenant sổ không có key cho việc đó ⟹ 403 `TENANT_KEY_MISSING`. Lượt bằng key chủ domain không tính phút, lượt ngày, quỹ free, trần tổng hay sổ giờ ElevenLabs (sổ chi tiết có `byok` + `keySource: "tenant"`, `transcribe_runs` có thêm `tenantId`); hạn mức dung lượng gói free vẫn áp. Bản niêm phong cache 60 giây (quá hạn thì dùng bản cũ ngay và hỏi lại IdP nền; IdP lỗi thì giữ bản cũ tối đa 10 phút), bản rõ chỉ mở lúc dùng và không bao giờ vào log. Key chủ domain lỗi (401/403, hết credit, có khoá mà không mở được) ⟹ Scribe báo IdP `POST …/scribe-keys/<vendor>/status` kèm `recipient` và `tag` (thử lại nền 3 lần nếu IdP chưa nhận; vẫn không nhận thì journal lỗi kèm tenant và nhà cung cấp, lần lỗi sau báo lại), audit `tenant_key.failed`, người dùng thấy "Key … của domain không dùng được — chủ domain sửa ở trang quản trị" (403 `TENANT_KEY_FAILED` với model chữ); không bao giờ ngắt chép lời hay tóm tắt của server và không báo bot. Ngoại lệ duy nhất có bot: bản niêm phong cho khoá Scribe không có (ở trên). Quay lại: gỡ `TENANT_SEALING_KEYS_DIR` khỏi `.env.production`, build, restart ⟹ mọi tenant sổ về "chưa bật"; lượt đang xếp hàng bằng key chủ domain dừng với câu trên, không tốn tiền server.
->
 > **Gói và sổ phút** (chạy trên `.65` bằng user của service, cấu hình nhúng trong binary):
 > `sudo -u $DEPLOY_USER $DEPLOY_APP_DIR/$DEPLOY_SERVICE admin set-plan <email> <free|plus> [--until YYYY-MM-DD]`;
 > `… admin shorten-free-retention [--apply]`: tệp của user không có gói plus hiệu lực về `expiresAt = min(expiresAt, createdAt + 7 ngày)`. Không `--apply` thì chỉ in số tệp, số user và số tệp sẽ bị sweep xoá ở vòng kế tiếp (tối đa một giờ); sao lưu trước khi `--apply` (audit `admin.shorten_free_retention`).
@@ -270,7 +243,7 @@ nginx -t && systemctl reload nginx
 >
 > **Dịch lời chép** (chưa deploy): dịch cả phiên khi người dùng bấm "Dịch", dùng key OpenAI của server và model `SUMMARY_MODEL`. Mỗi tài khoản có số lượt mỗi ngày giờ VN `TRANSLATE_FREE_DAILY` (3) / `TRANSLATE_PAID_DAILY` (20) (sổ `tr:<userId>:<ngày>` trong `summary_usage`); trần chi phí tháng của tài khoản, trần tổng tháng và cờ tạm ngưng khi key hỏng **dùng chung với tóm tắt và hỏi đáp**. Một lượt gọi model theo từng lô 100 câu trong task nền, giữ chỗ một lần và quyết toán một lần (`translate_runs`); lượt dài có thể chạy hơn 10 phút nên `admin usage --apply` coi lượt dịch mở dưới 60 phút là còn chạy. Bản dịch lưu ở collection mới `transcript_translations` (index unique `{userId, key, lang}` tạo lúc khởi động, lỗi thì dừng khởi động). Khởi động lại giữa lượt thì lượt đó báo "bị ngắt", người dùng bấm dịch tiếp; phần giữ chỗ của lượt dở không được quyết toán, giống tóm tắt (đối soát bằng `admin usage --recompute`).
 >
-> **Gắn tenant cho dữ liệu cũ** (bản đầu tiên có đa tenant, [ADR 0001](./decisions/0001-tenants-by-domain.md)): lúc khởi động, trước khi nhận request, BE gắn `tenantId: "primary"` cho mọi doc chưa có ở `users`, `sessions`, `devices`, `transcripts`, `jobs` (chỉ thêm trường), xoá `auth_states`/`logout_jtis` chưa có `tenantId` (lượt đăng nhập đang dở phải bắt đầu lại), rồi tạo index unique `users.(tenantId, idpSub)` và bỏ `idpSub_unique`. Journal ghi `đã gắn tenantId cho dữ liệu cũ` kèm số doc; còn sót doc chưa gắn hoặc Mongo lỗi ⟹ journal `migration tenant: …` và BE dừng (không phục vụ). Chạy lại được, lần sau không đổi gì (mỗi lần khởi động chỉ đọc mỗi collection một lượt). `mongodump --db "$DB_NAME"` vào thư mục sao lưu ngay trước lần deploy này. Quay lại: nếu đã cài `scribe-tenants.conf` thì gỡ nó trước (§nginx cho domain tenant), rồi chạy binary trước (bỏ qua `tenantId`, tạo lại `idpSub_unique`); không cần khôi phục dump trừ khi dữ liệu hỏng. Lệnh `admin` theo email tìm trong tenant chính (`--tenant <id>` cho tenant khác) và chỉ thấy user đã gắn `tenantId`: chạy sau khi service bản mới đã khởi động một lần.
+> **Bỏ đa tenant** (bản sau `ff75fba`, chưa deploy): BE chỉ phục vụ tenant chính, không còn migration gắn `tenantId` lúc khởi động. Dữ liệu giữ `tenantId: "primary"` và index `users.tenantId_idpSub_unique` (BE không tạo lại `idpSub_unique`); worker cắt và chép lời chỉ nhận lượt `tenantId: "primary"`. Trước khi build: bỏ năm biến `IDP_INTERNAL_API_URL`, `IDP_INTERNAL_API_SECRET_PATH`, `IDP_LOOPBACK_URL`, `SCRIBE_WEB_CLIENT_KEY_PATH`, `TENANT_SEALING_KEYS_DIR` khỏi `.env.production` (sao lưu tệp trước) và đặt `IDP_DISPLAY_NAME=Auth Next`. Ngay trước khi thay binary: đếm `jobs` và `transcripts` có `tenantId` khác `"primary"` (hay thiếu `tenantId`) phải bằng 0. Sau deploy: `GET /api/idp` phải trả đúng từng byte `{"displayName":"Auth Next","domain":"hoandat.com","issuer":"https://auth.hoandat.com","primary":true,"scribe":"enabled"}`, `strings $DEPLOY_APP_DIR/$DEPLOY_SERVICE | grep -c 4501` trả 0. Sau smoke test: huỷ (`shred -u`) `/opt/scribe-be/tenant-sealing-keys/`, `.scribe-web-client-key`, `.idp-internal-secret` và bản sao của chúng trên iCloud `ENV production/one-scribe/server/`. Quay lại: binary `scribe-be.prev` (mang cấu hình cũ); nó đọc được dữ liệu do bản mới ghi.
 >
 > **Đổi dữ liệu chép lời (`transcripts`):** chạy `scripts/transcripts-audit.js` (chỉ đọc) trước, và `mongodump --db "$DB_NAME" --collection transcripts` vào thư mục sao lưu ngay trước deploy. Khôi phục khi dữ liệu hỏng: `mongorestore --drop --nsInclude "$DB_NAME.transcripts" <thư mục sao lưu>`.
 
@@ -339,7 +312,7 @@ curl -s  "https://$DEPLOY_DOMAIN/api/health"   # liveness
 
 ## Header bảo mật
 
-nginx gắn bộ header bảo mật cho mọi response của Scribe (FE, `/assets/`, `/api/`, cả trang lỗi); BE Rust không tự đặt header nào. Nguồn duy nhất: `deploy/nginx-scribe-security-headers.inc`; mỗi server block (`deploy/nginx-scribe.conf`, `deploy/nginx-scribe-tenants.conf`) include nó ở mức server (cho `/api/`), và `deploy/nginx-scribe-locations.inc` include lại trong `/assets/` và `/` — hai location này có `add_header Cache-Control` riêng nên nginx không thừa kế header của mức server. File include nằm ngoài `conf.d/` vì `conf.d/*.conf` nạp ở mức http, sẽ áp cho mọi vhost của box shared.
+nginx gắn bộ header bảo mật cho mọi response của Scribe (FE, `/assets/`, `/api/`, cả trang lỗi); BE Rust không tự đặt header nào. Nguồn duy nhất: `deploy/nginx-scribe-security-headers.inc`; `deploy/nginx-scribe.conf` include nó ở mức server (cho `/api/`), và `deploy/nginx-scribe-locations.inc` include lại trong `/assets/` và `/` — hai location này có `add_header Cache-Control` riêng nên nginx không thừa kế header của mức server. File include nằm ngoài `conf.d/` vì `conf.d/*.conf` nạp ở mức http, sẽ áp cho mọi vhost của box shared.
 
 | Header | Giá trị |
 |---|---|
@@ -381,32 +354,6 @@ curl -sI "https://$DEPLOY_DOMAIN/api/health" | grep -i content-security
 ```
 
 Sau reload: mở web, đăng nhập, ghi thử vài giây và phát lại, mở account menu; DevTools Console không được có dòng `Refused to … Content Security Policy`.
-
-## nginx cho domain tenant
-
-`scribe.<domain>` của tenant sổ ([ADR 0001](./decisions/0001-tenants-by-domain.md)) dùng cùng backend và cùng `dist` với `scribe.hoandat.com`; backend chọn tenant theo `Host`, web đọc tenant lúc chạy (`GET /api/idp`), nên không có build hay cấu hình riêng cho từng domain. Ba file:
-
-- `deploy/nginx-scribe-locations.inc` → `/etc/nginx/scribe/locations.inc`: `/api/` (giữ `Host`), web tĩnh, `/assets/`, tách từ `nginx-scribe.conf` (không đổi hành vi của `scribe.hoandat.com`).
-- `deploy/nginx-scribe.conf` → `$DEPLOY_NGINX_CONF`: block cụ thể `scribe.hoandat.com`, nay include `locations.inc`; luôn thắng block regex.
-- `deploy/nginx-scribe-tenants.conf` → `/etc/nginx/conf.d/scribe-tenants.conf`: cổng 443, `server_name ~^scribe\.(?<tenant>.+)$`, chứng chỉ theo `$tenant_cert` (map trong `00-tenants-http.conf` của auth-next: lineage riêng `scribe.<domain>` do provisioner cấp), tin `127.0.0.1` và dải Cloudflare ở cấp server như `tenant-auth.conf` của auth-next. Cổng 80 (HTTP-01, Cloudflare Flexible) do `tenants-acme.conf` của auth-next lo.
-
-**CẦN USER DUYỆT trước khi cài** (nginx dùng chung của prod), sau khi binary Scribe bản đa tenant đã chạy (binary cũ phục vụ mọi `scribe.*` như tenant chính) và auth-next đã có map `scribe.` (`00-tenants-http.conf`) và nhận nhãn `scribe` ở cổng 80. Block trả 421 khi `Host` khác SNI. Từ máy deploy, `KEY` như §Deploy:
-
-```bash
-# 0) Không block regex nào khác khớp scribe.<d>; sao lưu cấu hình hiện tại
-ssh -i "$KEY" -p 24700 root@103.72.98.65 'nginx -T 2>/dev/null | grep -nE "server_name\s+[^;]*~"; ts=$(date +%Y%m%d-%H%M%S); cp -a /etc/nginx/conf.d/scribe.conf /root/scribe.conf.bak-$ts'
-# 1) Đẩy phần chung trước, rồi hai vhost
-scp -i "$KEY" -P 24700 deploy/nginx-scribe-locations.inc root@103.72.98.65:/etc/nginx/scribe/locations.inc
-scp -i "$KEY" -P 24700 deploy/nginx-scribe.conf root@103.72.98.65:$DEPLOY_NGINX_CONF
-scp -i "$KEY" -P 24700 deploy/nginx-scribe-tenants.conf root@103.72.98.65:/etc/nginx/conf.d/scribe-tenants.conf
-# 2) Kiểm cú pháp rồi mới reload; lỗi thì chép lại bản .bak, gỡ scribe-tenants.conf, KHÔNG reload
-ssh -i "$KEY" -p 24700 root@103.72.98.65 'nginx -t && systemctl reload nginx'
-# 3) scribe.hoandat.com không đổi (so header trước/sau), domain tenant trả trang web
-curl -sI "https://$DEPLOY_DOMAIN/" | sort; curl -s "https://$DEPLOY_DOMAIN/api/idp"
-curl -s https://scribe.<domain>/api/idp     # {…, "primary": false, "scribe": "enabled" | "disabled"}
-```
-
-Đã kiểm cú pháp (24/10/2026, `nginx -t` của nginx Homebrew trên máy Mac, cùng `00-tenants-http.conf` của auth-next và chứng chỉ tạm): hợp lệ. Quay lại: gỡ `/etc/nginx/conf.d/scribe-tenants.conf`, chép lại `scribe.conf` từ bản `.bak`, `nginx -t`, reload (`locations.inc` để lại vô hại).
 
 ## Log và audit
 

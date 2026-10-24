@@ -138,14 +138,11 @@ Tìm nhanh tiêu đề: `grep -n '^#' docs/deploy-web-production.md`.
 
 - **Định danh user:** `userId` trong mọi collection là `_id` hex của `users`, không phải email, `idpSub` (tài
   khoản auth-next) hay `firebaseUid` (chỉ còn ở user cũ). Tra theo email ⟹ tìm `users` trước.
-- **Tenant (ADR `docs/decisions/0001-tenants-by-domain.md`):** user là của một tenant (`users.tenantId`, `primary` =
-  `hoandat.com`); danh tính là `(tenantId, idpSub)`, cùng email có thể có ở nhiều tenant. `sessions`, `devices`,
-  `auth_states`, `logout_jtis` (`_id` = `<tenantId>:<jti>`), `transcripts`, `jobs` mang `tenantId`; collection khác chỉ
-  có `userId`. Lệnh theo email (`set-plan`, `usage --email`, `block`, `unblock`) nhận `--tenant <id>` (mặc định `primary`)
-  và in `tenantId`. Lệnh theo tenant: `admin tenants` (số user, byte tệp, cờ tắt — chỉ đọc), `admin tenant-disable <id>`
-  / `tenant-enable <id>` (cờ `tenant.disabled:<id>` trong `kv`, hiệu lực trong 60 giây — thao tác ghi), `admin
-  purge-tenant <id>` (chỉ đếm) / `--apply` (xoá dữ liệu Scribe của mọi user tenant đó — ghi, sao lưu trước). Tenant
-  chính không tắt hay xoá được bằng các lệnh này.
+- **Một tenant:** Scribe chỉ phục vụ `scribe.hoandat.com` (đa tenant theo domain đã bỏ 24/10/2026, ADR
+  `docs/decisions/0001-tenants-by-domain.md` superseded). `users` (index `tenantId_idpSub_unique`, không tạo lại
+  `idpSub_unique`), `sessions`, `devices`, `auth_states`, `logout_jtis` (`_id` = `primary:<jti>`), `transcripts`, `jobs`
+  vẫn mang `tenantId: "primary"`; worker không nhận lượt có `tenantId` khác. Không còn lệnh `admin tenants`,
+  `tenant-disable`, `purge-tenant` hay cờ `--tenant`; không còn API nội bộ IdP, khoá app `scribe-web`, khoá niêm phong.
 - **Collection:** `files` (`kind` upload|output|recording, hạn 14 ngày theo `expiresAt`, sweep mỗi giờ xoá đĩa trước
   rồi doc), `transcripts` (kết quả máy + hàng đợi chép lời, `_id` = id file), `transcript_docs` (tiêu đề + câu sửa theo
   phiên, `{userId, key}` unique), `jobs`, `upload_sessions`/`recording_sessions`, `audit_events` (TTL 180 ngày).

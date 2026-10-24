@@ -1,7 +1,15 @@
 # ADR 0001: Scribe phục vụ mọi tenant theo Host, cô lập theo user và `tenantId`
 
-- Trạng thái: chấp nhận
+- Trạng thái: **superseded** (24/10/2026) bởi ADR đơn tenant của auth-next: [`auth-next/docs/decisions/0013-single-tenant.md`](https://github.com/achoo254/auth-next/blob/main/docs/decisions/0013-single-tenant.md)
 - Ngày: 2026-10-24
+
+> **Superseded.** Hệ sinh thái chỉ phục vụ `hoandat.com`. Scribe bỏ tenant theo Host, danh bạ tenant, API nội bộ của
+> IdP, OIDC qua loopback, khoá app `scribe-web`, key AI niêm phong của tenant, lệnh `admin tenants` /
+> `tenant-disable` / `tenant-enable` / `purge-tenant` / `--tenant`, nginx `scribe.<domain>` và trang "Scribe chưa
+> bật". Phần còn giữ từ ADR này: trường `tenantId` (luôn `"primary"`) ở danh tính và hàng đợi, index
+> `tenantId_idpSub_unique` (không tạo lại `idpSub_unique`), worker chỉ nhận lượt `tenantId: "primary"`, và shape
+> `GET /api/idp` `{ displayName, domain, issuer, primary, scribe }` (app di động đã phát hành đọc nó). Nội dung dưới
+> đây là lịch sử, không còn mô tả code hiện tại.
 - Phạm vi: backend `server/scribe-be` (tenant theo Host, danh tính, phiên, hàng đợi, OIDC của tenant sổ, key AI của tenant), web `web/` (trang "Scribe chưa bật", link theo tenant), nginx `deploy/`. Đi cùng ADR 0012 của hoandat-auth (`auth-next/docs/decisions/0012-scribe-on-tenants.md`): key AI do chủ domain nhập ở `/admin`, niêm phong cho Scribe.
 
 ## Bối cảnh
