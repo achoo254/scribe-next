@@ -1,7 +1,7 @@
 # Brainstorm Report — Scribe Web (media ghi+cắt, BỎ AI)
 
 **Date:** 2026-07-11 · **Skill:** /brainstorm · **Status:** APPROVED (user duyệt; BE chốt **Rust/axum** sau tư vấn /ask — repo AI-built 100%)
-**Target deploy:** box .65 (103.72.98.65 — 4 vCPU Broadwell, ~7.5GB RAM, ~35GB disk trống, ~15 service, **MongoDB sẵn**, **nginx** reverse proxy; **Cloudflare chỉ là DNS proxied** trỏ endpoint về nginx trên .65 — KHÔNG tunnel/Access)
+**Target deploy:** box .65 (<SERVER_65_IP> — 4 vCPU Broadwell, ~7.5GB RAM, ~35GB disk trống, ~15 service, **MongoDB sẵn**, **nginx** reverse proxy; **Cloudflare chỉ là DNS proxied** trỏ endpoint về nginx trên .65 — KHÔNG tunnel/Access)
 
 ## 1. Problem statement
 

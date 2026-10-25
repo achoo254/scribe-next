@@ -33,7 +33,7 @@ Thao tác ghi prod; người dùng đã đồng ý các hạng mục phần B. M
 
 ## 7b — Đổi đăng nhập + domain (một chiều)
 
-1. DNS `A scribe.hoandat.com → 103.72.98.65` proxied (như `auth.hoandat.com`), zone SSL "full", origin dùng chứng chỉ tự ký chung `/etc/pki/nginx/server.{crt,key}`.
+1. DNS `A scribe.hoandat.com → <SERVER_65_IP>` proxied (như `auth.hoandat.com`), zone SSL "full", origin dùng chứng chỉ tự ký chung `/etc/pki/nginx/server.{crt,key}`.
 2. vhost `scribe.hoandat.com` từ `deploy/nginx-scribe.conf` (443 ssl với chứng chỉ chung, 80 → https; `nginx -t` trước reload). **Bỏ hẳn domain cũ** (người dùng chốt 16/10 13:05, không 301): xoá vhost `onescribe.conf` (`scribe.inetdev.io.vn`) trong cùng cửa sổ, sau khi domain mới đã chạy; sao lưu tệp vhost cũ vào thư mục sao lưu của lượt.
 3. IdP đã có `scribe-web`/`scribe-mobile` (Phase 4). Deploy backend + web bản OIDC (Phase 5–6) với `PUBLIC_URL=https://scribe.hoandat.com`; cài app iPhone mới (`VITE_NATIVE_API_ORIGIN=https://scribe.hoandat.com`).
 4. Kiểm: đăng nhập web, user cũ được ghép theo email giữ nguyên bản ghi; iPhone đăng nhập, ghi, tải lên; back-channel logout web.

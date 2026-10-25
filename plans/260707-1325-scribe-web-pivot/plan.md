@@ -26,7 +26,7 @@ source: skill
 
 Pivot theo brainstorm ĐÃ DUYỆT: [brainstorm-260707-1325-scribe-web-pivot-server-side-transcribe-report.md](../reports/brainstorm-260707-1325-scribe-web-pivot-server-side-transcribe-report.md).
 
-Web app trên server staging .65 (103.72.98.65 — 4 vCPU Broadwell, 7.5GB RAM, 3.2GB available, 60GB disk, ~15 service đang chạy, LiveKit Scribe staging ĐÃ chạy port 7880). Desktop → maintenance mode. **~70% tái dùng:** engine sidecar Python (vad-cut stream + batch), `server/meeting-server` (token C6/C7/C8, caption store, TURN), `apps/web`, `packages/meeting-shared`, `infra/`.
+Web app trên server staging .65 (<SERVER_65_IP> — 4 vCPU Broadwell, 7.5GB RAM, 3.2GB available, 60GB disk, ~15 service đang chạy, LiveKit Scribe staging ĐÃ chạy port 7880). Desktop → maintenance mode. **~70% tái dùng:** engine sidecar Python (vad-cut stream + batch), `server/meeting-server` (token C6/C7/C8, caption store, TURN), `apps/web`, `packages/meeting-shared`, `infra/`.
 
 ## Quyết định đã chốt (nguồn chân lý — user duyệt 2026-07-07)
 

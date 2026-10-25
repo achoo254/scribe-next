@@ -48,9 +48,9 @@ Không dựng thêm môi trường xem trước (tunnel, preview) trên `.65`.
 
 | Server | IP | SSH port | Vai trò | Ghi chú |
 |---|---|---|---|---|
-| **Prod single-box `.65`** | `103.72.98.65` | `24700` | BE axum `:8787` + FE static + MongoDB **co-located** | Box SHARED (~15 vhost + MongoDB, chỉ ~3Gi RAM free). |
+| **Prod single-box `.65`** | `<SERVER_65_IP>` | `24700` | BE axum `:8787` + FE static + MongoDB **co-located** | Box SHARED (~15 vhost + MongoDB, chỉ ~3Gi RAM free). |
 
-**Credentials SSH (root@.65):** trong tệp credential lab (biến môi trường `ALL_IN_ONE_STAGING_DEV`), entry `name = "SSH_SERVER_STAGING"`, trường `private_key` (PEM inline). Cách dùng: ghi ra file tạm + `chmod 600` → `ssh -i <tmp.pem> -p 24700 root@103.72.98.65`:
+**Credentials SSH (root@.65):** trong tệp credential lab (biến môi trường `ALL_IN_ONE_STAGING_DEV`), entry `name = "SSH_SERVER_STAGING"`, trường `private_key` (PEM inline). Cách dùng: ghi ra file tạm + `chmod 600` → `ssh -i <tmp.pem> -p 24700 root@<SERVER_65_IP>`:
 
 ```bash
 KEY=$(mktemp); chmod 600 "$KEY"
@@ -219,7 +219,7 @@ nginx -t && systemctl reload nginx
 > Một tệp (bản ghi trình duyệt, tệp tải lên) = một request; **phiên iPhone = một request cho cả phiên**: ffmpeg ghép các đoạn theo thứ tự rồi chia câu về lại từng đoạn, nhãn người nói nhất quán cả phiên. Audio gửi đi là Opus mono 16 kHz 32 kbps (khoảng 14 MB mỗi giờ); tệp hay phiên hoàn toàn im lặng (đỉnh < −30 dB) không gửi, không tính phút. Đoạn tải lên trong lúc lượt đang hoãn (phiên còn đoạn đang tải) được thêm vào cùng lượt; đoạn tải lên muộn hơn (sau khi phiên đã chép) làm lần bấm chép tiếp theo **chép lại cả phiên** và tính phút cả phiên lần nữa (web hỏi trước nếu mất câu đã sửa hay tên người nói). ElevenLabs từ chối chắc chắn thì hoàn cả phút người dùng, trần USD và giờ ElevenLabs; chỉ hết thời gian chờ hay mất kết nối sau khi gửi mới giữ nguyên (có thể đã bị tính). Deploy khi hàng đợi chép lời rỗng. ElevenLabs báo key hỏng (401/403) ⟹ ngắt chép lời tới lần khởi động sau, audit `transcript.key_invalid`, báo bot; tóm tắt không bị ảnh hưởng. ElevenLabs báo hết credit tháng (402 `insufficient_credits`, hoặc 401 `quota_exceeded`) ⟹ **không** coi là key hỏng: đánh dấu tháng, dừng gửi tới đầu tháng sau, audit `transcript.provider_quota`, báo bot một lần; nạp thêm credit rồi `… admin elevenlabs-quota --clear` để mở lại ngay. Trần giờ riêng `ELEVENLABS_MONTHLY_HOURS` (sổ `el:<tháng>` trong `transcribe_usage`) giữ chỗ trước khi gửi và quyết toán theo `audio_duration_secs` ElevenLabs trả; hết trần thì người dùng thấy "Đã dùng hết giờ chép lời của tháng này, mở lại ngày 1/MM" (403 `PROVIDER_HOURS`). Xem sổ: `… admin usage` (mục `elevenlabs`) hoặc `… admin elevenlabs-quota [--month YYYY-MM]`.
 >
 > **Key riêng** (key API người dùng tự nhập: ElevenLabs, OpenAI, Gemini, Claude; từ 19/10/2026). Key lưu trong collection `user_keys`, mã hoá AES-256-GCM bằng bí mật 32 byte ở tệp `USER_KEYS_SECRET_PATH`. Tạo tệp **một lần**, trên server, bí mật không bao giờ rời máy, không in ra:
-> `ssh -i "$KEY" -p 24700 root@103.72.98.65 'test -e /opt/scribe-be/.user-keys-secret || head -c 32 /dev/urandom | install -m 600 -o scribe -g scribe /dev/stdin /opt/scribe-be/.user-keys-secret'`
+> `ssh -i "$KEY" -p 24700 root@<SERVER_65_IP> 'test -e /opt/scribe-be/.user-keys-secret || head -c 32 /dev/urandom | install -m 600 -o scribe -g scribe /dev/stdin /opt/scribe-be/.user-keys-secret'`
 > (đăng nhập root như các bước deploy — §Server; lệnh trong nháy đơn chạy hết trên server nên không phụ thuộc biến của máy mình hay sudo; `test -e` để không bao giờ ghi đè bí mật đang dùng; `scribe` là user của service; BE từ chối tệp không đúng 32 byte hoặc quyền rộng hơn 600). Thêm `USER_KEYS_SECRET_PATH=/opt/scribe-be/.user-keys-secret` vào `.env.production`, build và restart; journal có "Key riêng bật".
 > **Sao lưu:** sao lưu tệp này riêng với bản sao lưu Mongo (không để chung một chỗ). Mất hoặc đổi tệp ⟹ mọi key đã lưu không giải mã được nữa (trạng thái "unreadable"), người dùng phải nhập lại; không có cách khôi phục. Đừng tạo lại tệp khi tệp cũ còn.
 > Việc chạy bằng key riêng không tính phút, lượt ngày, quỹ free, trần tổng hay sổ giờ ElevenLabs (sổ chi tiết `transcribe_runs`, `summary_runs`/`ask_runs`/`translate_runs` có `byok`, `admin usage --recompute` bỏ qua; số giây chép bằng key riêng ở sổ `b:<userId>:<tháng>` chỉ để người dùng xem). Key riêng lỗi lúc dùng chỉ đánh dấu key đó (audit `user_key.failed`), không ngắt chép lời hay tóm tắt của server. Audit `user_key.save|delete|rejected|prefs` không có key.
@@ -262,9 +262,9 @@ cargo zigbuild --release --target x86_64-unknown-linux-musl -p scribe-be
 cd web && pnpm install --frozen-lockfile && pnpm run build && cd ..   # → web/dist
 
 # 3) Đẩy lên .65 (KEY = file tạm chứa private key, xem mục Server)
-rsync -avz -e "ssh -i $KEY -p 24700" target/x86_64-unknown-linux-musl/release/scribe-be root@103.72.98.65:/tmp/scribe-be.new
-rsync -avz --delete -e "ssh -i $KEY -p 24700" web/dist/ root@103.72.98.65:/tmp/scribe-fe/
-ssh -i "$KEY" -p 24700 root@103.72.98.65 "
+rsync -avz -e "ssh -i $KEY -p 24700" target/x86_64-unknown-linux-musl/release/scribe-be root@<SERVER_65_IP>:/tmp/scribe-be.new
+rsync -avz --delete -e "ssh -i $KEY -p 24700" web/dist/ root@<SERVER_65_IP>:/tmp/scribe-fe/
+ssh -i "$KEY" -p 24700 root@<SERVER_65_IP> "
   set -e
   install -o $DEPLOY_USER -g $DEPLOY_USER -m 700 /tmp/scribe-be.new $DEPLOY_APP_DIR/$DEPLOY_SERVICE.new
   mv -f $DEPLOY_APP_DIR/$DEPLOY_SERVICE.new $DEPLOY_APP_DIR/$DEPLOY_SERVICE
@@ -343,11 +343,11 @@ nginx gắn bộ header bảo mật cho mọi response của Scribe (FE, `/asset
 
 ```bash
 # 1) Đẩy file include + vhost (thư mục /etc/nginx/scribe/ tạo lần đầu)
-ssh -i "$KEY" -p 24700 root@103.72.98.65 'mkdir -p /etc/nginx/scribe && cp -a /etc/nginx/conf.d/scribe.conf /root/scribe.conf.bak-$(date +%Y%m%d-%H%M%S)'
-scp -i "$KEY" -P 24700 deploy/nginx-scribe-security-headers.inc root@103.72.98.65:/etc/nginx/scribe/security-headers.inc
-scp -i "$KEY" -P 24700 deploy/nginx-scribe.conf root@103.72.98.65:$DEPLOY_NGINX_CONF
+ssh -i "$KEY" -p 24700 root@<SERVER_65_IP> 'mkdir -p /etc/nginx/scribe && cp -a /etc/nginx/conf.d/scribe.conf /root/scribe.conf.bak-$(date +%Y%m%d-%H%M%S)'
+scp -i "$KEY" -P 24700 deploy/nginx-scribe-security-headers.inc root@<SERVER_65_IP>:/etc/nginx/scribe/security-headers.inc
+scp -i "$KEY" -P 24700 deploy/nginx-scribe.conf root@<SERVER_65_IP>:$DEPLOY_NGINX_CONF
 # 2) Kiểm cú pháp rồi mới reload; nginx -t lỗi thì chép lại bản .bak, KHÔNG reload
-ssh -i "$KEY" -p 24700 root@103.72.98.65 'nginx -t && systemctl reload nginx'
+ssh -i "$KEY" -p 24700 root@<SERVER_65_IP> 'nginx -t && systemctl reload nginx'
 # 3) Xác nhận từ ngoài
 curl -sI "https://$DEPLOY_DOMAIN/" | grep -iE 'strict-transport|content-security|permissions-policy|referrer-policy|x-content-type'
 curl -sI "https://$DEPLOY_DOMAIN/api/health" | grep -i content-security

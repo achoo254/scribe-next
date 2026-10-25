@@ -1,7 +1,7 @@
 # Brainstorm Report — Scribe Web: pivot desktop offline → web app server-side
 
 **Date:** 2026-07-07 · **Skill:** /brainstorm (no flags) · **Status:** APPROVED (user duyệt Approach A)
-**Target deploy:** server staging .65 (103.72.98.65 — 4 vCPU Broadwell, 7.5GB RAM, 60GB disk, ~15 service đang chạy)
+**Target deploy:** server staging .65 (<SERVER_65_IP> — 4 vCPU Broadwell, 7.5GB RAM, 60GB disk, ~15 service đang chạy)
 
 ## 1. Problem statement (problem-first inversion)
 

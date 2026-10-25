@@ -217,7 +217,7 @@
     <h2><span class="num">01</span>Kiến trúc</h2>
     <div class="diagram">
 <pre>
- Browser (Vue3+Vite+UI)        CF DNS proxied        Box .65 (103.72.98.65)
+ Browser (Vue3+Vite+UI)        CF DNS proxied        Box .65 (<SERVER_65_IP>)
  ─ Ghi: getUserMedia /       ──── TLS edge ────▶   <b>nginx listen :80</b>  (bề mặt public DUY NHẤT)
      getDisplayMedia                                 ├─ location /     → FE static (dist)
  ─ Cắt: chọn file + tiêu chí                          └─ location /api  → proxy 127.0.0.1:PORT
@@ -343,7 +343,7 @@
     <ul class="clean">
       <li><b>Google OAuth client:</b> <code>GOOGLE_CLIENT_ID</code> + <code>GOOGLE_CLIENT_SECRET</code>, redirect URI <code>https://$DEPLOY_DOMAIN/api/auth/callback</code>, consent screen</li>
       <li><b>MongoDB URI</b> + tạo DB/user riêng <code>$DB_NAME</code> trên .65</li>
-      <li><b>CF DNS record</b> proxied <code>$DEPLOY_DOMAIN</code> → 103.72.98.65 + dải IP Cloudflare (cho firewall / <code>set_real_ip_from</code>)</li>
+      <li><b>CF DNS record</b> proxied <code>$DEPLOY_DOMAIN</code> → <SERVER_65_IP> + dải IP Cloudflare (cho firewall / <code>set_real_ip_from</code>)</li>
     </ul>
   </section>
 

@@ -1,6 +1,6 @@
 # Phase 1 — Benchmark ASR Gate trên box .65 (KẾT QUẢ + GO/NO-GO)
 
-**Ngày:** 2026-07-07 · **Box:** staging .65 (`103.72.98.65`, 4 vCPU Broadwell, 7.5GB RAM, 2GB swap, 60GB disk).
+**Ngày:** 2026-07-07 · **Box:** staging .65 (`<SERVER_65_IP>`, 4 vCPU Broadwell, 7.5GB RAM, 2GB swap, 60GB disk).
 **Đo bởi:** chạy trực tiếp trên box qua SSH, model + mẫu tải về `/opt/scribe/`. Mẫu = FLEURS `vi_vn` (read speech thật 16kHz mono, ghép bằng ffmpeg → batch 10'/60', stream 2×60s).
 **Đúng cấu hình production (finding RT-1):** mọi batch đo với `taskset -c 0,1 nice -n 10` + `SCRIBE_CPU_THREADS=2` (mô phỏng `CPUQuota=200%`). Stream `--cpu-threads 2`.
 

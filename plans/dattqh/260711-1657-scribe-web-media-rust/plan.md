@@ -134,7 +134,7 @@ Web hóa Scribe: **ghi + cắt media, BỎ hoàn toàn AI transcribe** (box .65 
 **Prerequisite user cung cấp trước `/ck:cook` (không phải quyết định — là giá trị/secret):**
 1. ~~Google Cloud OAuth client~~ → **KHÔNG cần** (chuyển Firebase Auth 2026-07-11): Firebase project `$FIREBASE_PROJECT_ID` đã provision, tự quản OAuth client, Google provider đã bật. FE chỉ cần Firebase web config (public, lấy qua `firebase_get_sdk_config`).
 2. MongoDB URI + tạo DB/user riêng `$DB_NAME` trên .65.
-3. Tạo CF DNS record proxied cho `$DEPLOY_DOMAIN` → 103.72.98.65; dải IP Cloudflare cho firewall/`set_real_ip_from`.
+3. Tạo CF DNS record proxied cho `$DEPLOY_DOMAIN` → <SERVER_65_IP>; dải IP Cloudflare cho firewall/`set_real_ip_from`.
 
 ### Auth pivot — Firebase (2026-07-11)
 - User chốt dùng Firebase làm module Google Auth (thay OAuth2 native Rust — đảo decision #7, user tự quyết, không phải audit drift).
