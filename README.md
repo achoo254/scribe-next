@@ -1,78 +1,38 @@
 # Scribe
 
-Ghi âm, cắt file audio/video và chép lời tiếng Việt. Repo `scribe-next`, một app trong hệ sinh thái hoandat (cùng Chat, Localman).
+Ghi âm, cắt file audio/video và chép lời tiếng Việt, chạy tại <https://scribe.hoandat.com>. Một app trong hệ sinh thái hoandat (cùng Chat, Localman…), đăng nhập qua IdP `auth-next` (`auth.hoandat.com`).
 
 Các ứng dụng dùng chung một backend:
 
-| App | Vị trí | Stack |
-|-----|--------|-------|
-| **Web** | `web/` | React 19 + Vite 7 + Tailwind 4 + TanStack Query |
-| **iPhone** | `web/ios/` | Capacitor 8 đóng gói bản build của `web/` + plugin Swift (ghi nền khi khoá màn hình, tải lên dần) |
-| **Android** | `web/android/` | Capacitor 8, cùng bản build `web/` + plugin Kotlin cùng contract JS với iOS (chưa phát hành, chưa kiểm trên máy thật — [docs/android-app.md](./docs/android-app.md)) |
-| Backend | `server/scribe-be/` + `crates/core-split/` | Rust/axum, một binary musl tĩnh, MongoDB |
+| App | Vị trí | Ghi chú |
+|-----|--------|---------|
+| Web | `web/` | React + Vite, cài được lên màn hình chính như app |
+| iPhone | `web/ios/` | Capacitor bọc bản build của `web/` + plugin Swift để ghi khi khoá màn hình — [docs/ios-app.md](./docs/ios-app.md) |
+| Android | `web/android/` | Capacitor, cùng bản build `web/` + plugin Kotlin giữ đúng contract JS của iOS; trạng thái phát hành ở [docs/android-app.md](./docs/android-app.md) |
+| Backend | `server/scribe-be/` + `crates/core-split/` | Rust/axum, một binary tĩnh, MongoDB; workspace ở [`Cargo.toml`](./Cargo.toml) |
 
-- **Bundle id iPhone / applicationId Android**: `com.hoandat.scribe`
-- **Brand**: tên, màu, icon, bundle id, URL scheme, tenant chính và mẫu host nằm ở một file `web/brand.config.json`, kiểm theo schema của gói dùng chung `@shared-next/brand` (`github:achoo254/shared-next#v0.2.0&path:/packages/brand`, repo `shared-next`; mã thương hiệu chỉ sửa ở đó rồi nâng tag). Sửa file đó (hoặc `web/brand/icon*.svg`) rồi chạy `cd web && pnpm run brand:gen` (`web/scripts/brand-gen.ts`, chạy bằng `tsx`) để sinh lại `web/brand/generated/` (web manifest, `capacitor.json`, icon web vẽ bằng Chromium của `@playwright/test`; icon launcher, màu splash của app Android và ảnh Play ở `web/brand/generated/play/` — `web/scripts/brand-android.ts`). Web phục vụ `/manifest.webmanifest`, `/favicon.svg` (icon brand), `/favicon.ico`, `/apple-touch-icon.png` và icon PNG thường + maskable ở gốc site, link sẵn trong `index.html`, nên cài được lên màn hình chính như app (mở `/`, không service worker; trên iPhone app cài từ Safari có cookie riêng nên phải đăng nhập lại một lần). `pnpm run lint` chặn tên sản phẩm viết cứng (`check:brand`, CLI `check-brand` của gói: cấm tên cũ "OneScribe" ở mọi file và `appName` là một từ trong HTML, dùng `%APP_NAME%`) và mã màu ngoài `web/src/styles/tokens.css` (`check:tokens`). Icon app iPhone (`Assets.xcassets`) và tên trong `Info.plist` giữ như bản đã phát hành, không sinh.
-- **Tính năng**: ghi mic và màn hình/tiếng hệ thống (trình duyệt), ghi khi khoá màn hình (iPhone), cắt file theo phút / dung lượng / số phần, lịch sử ghi và phát lại, chép lời bằng OpenAI `gpt-4o-mini-transcribe` (key của server, tính phút theo gói).
-- **Đăng nhập**: auth-next (`auth.hoandat.com`) cho web, iPhone và Android. Scribe chỉ phục vụ một tenant (`hoandat.com`); đa tenant theo domain đã bỏ ngày 24/10/2026 ([ADR 0001](./docs/decisions/0001-tenants-by-domain.md), superseded), dữ liệu vẫn giữ trường `tenantId: "primary"`.
-- **Môi trường**: dev local và prod (`https://scribe.hoandat.com`). Không có staging.
+## Quyết định và ràng buộc
 
-## Chạy dev
+- **Đơn tenant.** Scribe chỉ phục vụ `hoandat.com`. Đa tenant theo domain đã chạy rồi bị bỏ ([ADR 0001](./docs/decisions/0001-tenants-by-domain.md), superseded); dữ liệu vẫn mang `tenantId: "primary"` và giữ shape `GET /api/idp` vì app di động đã phát hành đọc nó.
+- **Chép lời bằng key server có hạn mức, hoặc key riêng của người dùng.** Nhà cung cấp và giá mỗi phút nằm ở `server/scribe-be/src/config.rs`; việc chạy bằng key riêng không tính vào hạn mức của Scribe (lý do và quy tắc ở đầu `server/scribe-be/src/user_keys/mod.rs`).
+- **Backend đọc cấu hình lúc build** (`option_env!`), không phải lúc chạy: đổi biến là phải build lại. Chi tiết ở mục "Ràng buộc then chốt" của [docs/deploy-web-production.md](./docs/deploy-web-production.md).
+- **Hai môi trường: dev local và prod.** Không có staging, không dựng môi trường xem trước; deploy prod làm tay.
+- **Env nằm ngoài repo.** [`scripts/env-dir.sh`](./scripts/env-dir.sh) in ra thư mục chứa env (dùng chung giữa các máy của chủ dự án); mẫu biến web ở [`web/.env.example`](./web/.env.example).
+- **Brand ở một file.** Tên, màu, icon, bundle id, URL scheme và mẫu host chỉ khai trong [`web/brand.config.json`](./web/brand.config.json), kiểm theo schema của gói dùng chung `@shared-next/brand` (repo `shared-next`; mã thương hiệu chỉ sửa ở đó rồi nâng tag). Asset sinh bằng `pnpm run brand:gen` trong `web/`; `pnpm run lint` chặn tên sản phẩm viết cứng và mã màu ngoài `web/src/styles/tokens.css`. Icon app iPhone và tên trong `Info.plist` giữ như bản đã phát hành, không sinh.
 
-```bash
-# Env nằm trên iCloud, không trong repo: scripts/env-dir.sh (xem docs/deploy-web-production.md)
-set -a; . "$(scripts/env-dir.sh)/.env.development"; set +a
-cargo run -p scribe-be                 # → 127.0.0.1:8787
+## Chạy và kiểm tra
 
-# Web (đọc web/.env trong thư mục env trên iCloud, mẫu ở web/.env.example)
-cd web && pnpm install && pnpm run dev   # → http://localhost:5173, proxy /api → backend
-```
-
-## Kiểm tra
-
-```bash
-cd web && pnpm run lint && pnpm run typecheck && pnpm test   # lint gồm check:brand và check:tokens
-cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace
-```
-
-CI GitHub Actions (`.github/workflows/ci.yml`) chạy đúng các lệnh này cho mỗi push `main` và pull request. Deploy prod làm tay.
-
-Test trên Mongo thật (`#[ignore]`) chạy trên mọi Mongo trống: CI chạy chúng trên service `mongo:7.0` (cùng major với prod), máy dev có thể dùng Mongo local (`TRANSCRIPT_TEST_MONGO_URI=mongodb://127.0.0.1:27017 TRANSCRIPT_TEST_DB_NAME=<db riêng>`) hoặc Mongo dev trên lab 176 (cần VPN) với URI trong `.env.development` trên iCloud; `--skip live_` bỏ các test gọi API trả tiền thật (OpenAI, ElevenLabs):
-
-```bash
-( set -a; . "$(scripts/env-dir.sh)/.env.development"; set +a
-  TRANSCRIPT_TEST_MONGO_URI="$MONGO_URI" TRANSCRIPT_TEST_DB_NAME="$DB_NAME" cargo test -p scribe-be -- --ignored --skip live_ )
-```
-
-Ngoài CI, chạy thêm trước khi deploy web:
-
-```bash
-cd web && pnpm run test:e2e && pnpm run build
-```
-
-`test:e2e` là bộ Playwright trong `web/e2e/` (stub API và Capacitor, không cần backend; ảnh chụp sáng/tối trên Chromium desktop và WebKit iPhone, kiểm axe). `build` kết thúc bằng `check:dist`, báo lỗi nếu stub của e2e lọt vào `dist/`.
-
-## Cài app lên iPhone
-
-```bash
-cd web && pnpm run ios:device
-```
-
-Chi tiết: [docs/ios-app.md](./docs/ios-app.md).
-
-## Cài app lên Android
-
-```bash
-cd web && pnpm run android:device
-```
-
-Cần JDK 21 + Android SDK. CI build APK debug ở mỗi push (artifact `scribe-android-debug-apk`); AAB để lên Play do
-workflow `android-release.yml` ký bằng upload key trong GitHub secrets. Chi tiết: [docs/android-app.md](./docs/android-app.md).
+- Dev local (nạp env, chạy backend rồi web): mục "Chạy dev local" của [docs/deploy-web-production.md](./docs/deploy-web-production.md).
+- Lệnh web: `scripts` trong [`web/package.json`](./web/package.json). Lệnh backend: `cargo clippy` và `cargo test` trên workspace.
+- CI ([`.github/workflows/ci.yml`](./.github/workflows/ci.yml)) chạy bộ kiểm của web, Rust (gồm test trên Mongo thật, `--skip live_` bỏ các test gọi API trả tiền) và Android. CI bỏ qua so ảnh chụp e2e, nên trước khi deploy web chạy `pnpm run test:e2e` và `pnpm run build` trong `web/`; `build` kết thúc bằng `check:dist` để chặn stub của e2e lọt vào `dist/`.
+- AAB Android cho Play do [`.github/workflows/android-release.yml`](./.github/workflows/android-release.yml) ký.
 
 ## Tài liệu
 
 - [docs/codebase-summary.md](./docs/codebase-summary.md) — kiến trúc, module backend/frontend, API, MongoDB, storage
-- [docs/project-roadmap.md](./docs/project-roadmap.md) — lộ trình, trạng thái, backlog
-- [docs/deploy-web-production.md](./docs/deploy-web-production.md) — build và deploy prod
-- [docs/ios-app.md](./docs/ios-app.md) — app iPhone
+- [docs/deploy-web-production.md](./docs/deploy-web-production.md) — chạy dev, build và deploy prod
+- [docs/ios-app.md](./docs/ios-app.md) — app iPhone, cài lên máy và phát hành
 - [docs/android-app.md](./docs/android-app.md) — app Android
+- [docs/app-store/](./docs/app-store/) — metadata và ảnh cho store
+- [docs/project-roadmap.md](./docs/project-roadmap.md) — lộ trình và backlog (bản ghi theo thời gian)
+- [docs/decisions/](./docs/decisions/) — quyết định kiến trúc
