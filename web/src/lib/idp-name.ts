@@ -4,13 +4,14 @@
    instead of on the first subscriber, so components only read the store. */
 import { useSyncExternalStore } from "react";
 import { apiJson } from "./api";
+import { PRIMARY_TENANT_DOMAIN } from "./brand";
 
 /**
  * Name of the account people sign in with, until the backend answers (and
- * if it cannot): the IdP's default tenant name, as the backend's own
- * fallback (`IDP_DISPLAY_NAME`).
+ * if it cannot): the primary tenant's domain ("hoandat.com account"), as
+ * the backend's own fallback (`IDP_DISPLAY_NAME`).
  */
-export const DEFAULT_IDP_NAME = "Auth Next";
+export const DEFAULT_IDP_NAME = PRIMARY_TENANT_DOMAIN;
 
 /** Longest name shown; the backend applies the same limit. */
 const MAX_NAME_LENGTH = 64;

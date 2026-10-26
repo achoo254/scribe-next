@@ -1,6 +1,6 @@
 //! `GET /api/idp`: tài khoản đăng nhập của Scribe, công khai (trang đăng nhập chưa có phiên). Tên hiển thị là tên tài
-//! khoản đăng nhập (`IDP_DISPLAY_NAME` của bản build, mặc định "Auth Next" như `TENANT_DISPLAY_NAME` mặc định của
-//! auth-next): giao diện gọi tài khoản người dùng theo tên này thay vì viết cứng.
+//! khoản đăng nhập (`IDP_DISPLAY_NAME` của bản build, mặc định "hoandat.com" như tên thương hiệu của IdP auth-next):
+//! giao diện ghép "tài khoản {tên}" thay vì viết cứng.
 //!
 //! Shape `{ displayName, domain, issuer, primary, scribe }` giữ nguyên từ thời đa tenant: app iPhone/Android đã phát
 //! hành đọc nó. Scribe chỉ còn một tenant nên `primary` luôn `true` và `scribe` luôn `"enabled"`.
@@ -10,8 +10,8 @@ use axum::extract::State;
 use axum::Json;
 use serde_json::{json, Value};
 
-/// Tên mặc định của tài khoản đăng nhập ở auth-next (`TENANT_DISPLAY_NAME` khi IdP không đặt).
-pub const DEFAULT_DISPLAY_NAME: &str = "Auth Next";
+/// Tên mặc định của tài khoản đăng nhập: "tài khoản hoandat.com", như IdP auth-next tự gọi.
+pub const DEFAULT_DISPLAY_NAME: &str = "hoandat.com";
 const MAX_NAME_CHARS: usize = 64;
 /// Nhãn đầu của host Scribe: `scribe.hoandat.com` ⟹ domain `hoandat.com`.
 const HOST_PREFIX: &str = "scribe.";
@@ -23,7 +23,7 @@ fn clean_name(raw: &str) -> Option<String> {
     ok.then(|| name.to_string())
 }
 
-/// Giá trị `IDP_DISPLAY_NAME` của bản build sau khi làm sạch; không đặt hoặc không dùng được ⟹ "Auth Next".
+/// Giá trị `IDP_DISPLAY_NAME` của bản build sau khi làm sạch; không đặt hoặc không dùng được ⟹ "hoandat.com".
 pub fn build_display_name(raw: Option<&str>) -> String {
     raw.and_then(clean_name).unwrap_or_else(|| DEFAULT_DISPLAY_NAME.to_string())
 }
@@ -68,17 +68,17 @@ mod tests {
         assert_eq!(clean_name("a\nb"), None);
         assert_eq!(clean_name(&"x".repeat(65)), None);
         assert_eq!(clean_name(&"đ".repeat(64)), Some("đ".repeat(64)));
-        assert_eq!(build_display_name(None), "Auth Next");
-        assert_eq!(build_display_name(Some(" ")), "Auth Next");
+        assert_eq!(build_display_name(None), "hoandat.com");
+        assert_eq!(build_display_name(Some(" ")), "hoandat.com");
         assert_eq!(build_display_name(Some("hoandat")), "hoandat");
     }
 
-    /// Đúng từng byte như production trả trước khi bỏ đa tenant, với `IDP_DISPLAY_NAME` không đặt hay đặt "Auth Next":
-    /// app di động đã phát hành đọc shape này.
+    /// Shape đúng từng byte như production trả từ trước khi bỏ đa tenant (app di động đã phát hành đọc nó); chỉ giá trị
+    /// `displayName` đổi theo tên tài khoản, ở đây với `IDP_DISPLAY_NAME` không đặt hay đặt "hoandat.com".
     #[test]
     fn production_body_is_unchanged_byte_for_byte() {
-        const PROD: &str = r#"{"displayName":"Auth Next","domain":"hoandat.com","issuer":"https://auth.hoandat.com","primary":true,"scribe":"enabled"}"#;
-        for name in [None, Some("Auth Next")] {
+        const PROD: &str = r#"{"displayName":"hoandat.com","domain":"hoandat.com","issuer":"https://auth.hoandat.com","primary":true,"scribe":"enabled"}"#;
+        for name in [None, Some("hoandat.com")] {
             let value = body("https://scribe.hoandat.com", "https://auth.hoandat.com", &build_display_name(name));
             assert_eq!(serde_json::to_string(&value).expect("json"), PROD);
         }

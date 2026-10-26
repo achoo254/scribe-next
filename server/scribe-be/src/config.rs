@@ -362,7 +362,7 @@ pub struct Config {
     pub anthropic_key_path: Option<String>,
     /// Tệp 32 byte bí mật mã hoá key riêng của người dùng (`USER_KEYS_SECRET_PATH`, 600). Thiếu thì tính năng tắt.
     pub user_keys_secret_path: Option<String>,
-    /// Tên tài khoản đăng nhập hiện cho người dùng (`IDP_DISPLAY_NAME`, mặc định "Auth Next"), trả ở `GET /api/idp`.
+    /// Tên tài khoản đăng nhập hiện cho người dùng (`IDP_DISPLAY_NAME`, mặc định "hoandat.com"), trả ở `GET /api/idp`.
     pub idp_display_name: String,
     /// `CHAT_LINK_POLL=1`: chạy task long-poll của bot để liên kết chat. Mặc định tắt: dev và prod dùng
     /// chung token bot, backend dev bật poll sẽ lấy mất update của prod.

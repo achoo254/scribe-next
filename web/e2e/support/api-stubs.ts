@@ -634,7 +634,7 @@ export async function stubApi(
 				// shows before the reply, so screenshots do not depend on when it lands.
 				case "GET /api/idp":
 					return json(route, 200, {
-						displayName: "Auth Next",
+						displayName: "hoandat.com",
 						domain: "hoandat.com",
 						issuer: "https://auth.hoandat.com",
 						primary: true,

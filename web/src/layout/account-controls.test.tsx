@@ -280,7 +280,7 @@ describe("account menu", () => {
 	});
 
 	it.each([
-		["Tài khoản Auth Next", "https://auth.hoandat.com/account"],
+		["Tài khoản hoandat\\.com", "https://auth.hoandat.com/account"],
 		["Ứng dụng", "https://auth.hoandat.com/account#account-apps"],
 	])("opens '%s' of the IdP in a new tab", async (label, url) => {
 		const open = vi.spyOn(window, "open").mockReturnValue(null);
@@ -289,7 +289,7 @@ describe("account menu", () => {
 		await userEvent.click(
 			screen.getByRole("menuitem", {
 				// jsdom puts a space before the sr-only suffix; browsers do not.
-				name: new RegExp(`^${label} ?, mở trang Auth Next ở thẻ mới$`),
+				name: new RegExp(`^${label} ?, mở trang hoandat\\.com ở thẻ mới$`),
 			}),
 		);
 		expect(open).toHaveBeenCalledWith(url, "_blank", "noopener,noreferrer");

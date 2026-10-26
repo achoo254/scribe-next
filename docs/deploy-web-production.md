@@ -140,7 +140,7 @@ Tất cả trong `/opt/scribe-be`, chủ `scribe`, quyền 600, ghi bằng stdin
 | `TRANSLATE_FREE_DAILY`, `TRANSLATE_PAID_DAILY` | Số lượt dịch mỗi ngày, mặc định 3 / 20 (§Deploy); prod dùng mặc định. Dịch dùng model `SUMMARY_MODEL` và trần chi phí tháng của tóm tắt, không có biến trần riêng |
 | `CHAT_LINK_POLL` | `1`/`true` = chạy task long-poll của bot để liên kết chat. **Chỉ bật trên prod**, không bao giờ ở dev (§Deploy) |
 | `CHAT_BOT_USERNAME` | Tên bot trong deep link; prod để trống, BE hỏi `/bot/v1/me` |
-| `IDP_DISPLAY_NAME` | Tên tài khoản đăng nhập trả ở `GET /api/idp` và hiện ở giao diện ("Đăng nhập bằng …", "Tài khoản …", trang pháp lý). Mặc định `Auth Next` (mặc định `TENANT_DISPLAY_NAME` của auth-next); prod đặt `IDP_DISPLAY_NAME=Auth Next` cho tường minh. Không còn hỏi API nội bộ của IdP |
+| `IDP_DISPLAY_NAME` | Tên tài khoản đăng nhập trả ở `GET /api/idp`; giao diện ghép "tài khoản …" ("Đăng nhập bằng tài khoản …", "Tài khoản …", trang pháp lý). Mặc định `hoandat.com` (tên thương hiệu của IdP auth-next, từ 26/10/2026; trước đó `Auth Next`); prod đặt `IDP_DISPLAY_NAME=hoandat.com` cho tường minh. Web dùng domain tenant chính trong `web/brand.config.json` làm tên mặc định tới khi BE trả lời. Không còn hỏi API nội bộ của IdP |
 
 - `ALLOWED_DOMAINS` / `ALLOWED_EMAILS`: **KHÔNG set** → fallback rỗng = mở cho mọi tài khoản auth-next có email đã xác minh (quyết định hiện tại). Muốn siết → thêm `ALLOWED_DOMAINS=<domain>` rồi build lại.
 - `TRANSCRIBE_EMAILS`: rỗng (và chưa bật `TRANSCRIBE_OPEN`) nghĩa là **không ai** được chép lời (ngược với allowlist đăng nhập).

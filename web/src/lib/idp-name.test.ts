@@ -44,7 +44,7 @@ describe("useIdpName", () => {
 		const down = fakeFetch({ "GET /api/idp": new TypeError("offline") });
 		await failing.loadIdpName(down.fetcher);
 		expect(renderHook(() => failing.useIdpName()).result.current).toBe(
-			"Auth Next",
+			"hoandat.com",
 		);
 
 		const odd = await freshModule();
@@ -52,6 +52,8 @@ describe("useIdpName", () => {
 			"GET /api/idp": jsonResponse({ displayName: " " }),
 		});
 		await odd.loadIdpName(empty.fetcher);
-		expect(renderHook(() => odd.useIdpName()).result.current).toBe("Auth Next");
+		expect(renderHook(() => odd.useIdpName()).result.current).toBe(
+			"hoandat.com",
+		);
 	});
 });

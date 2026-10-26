@@ -24,7 +24,9 @@ describe("pages naming the sign-in account", () => {
 	it("use the default, then the backend's name", async () => {
 		renderWithProviders(<LoginPage />);
 		expect(
-			await screen.findByRole("button", { name: "Đăng nhập bằng Auth Next" }),
+			await screen.findByRole("button", {
+				name: "Đăng nhập bằng tài khoản hoandat.com",
+			}),
 		).toBeVisible();
 
 		const { fetcher } = fakeFetch({
@@ -32,7 +34,7 @@ describe("pages naming the sign-in account", () => {
 		});
 		await act(() => loadIdpName(fetcher));
 		expect(
-			screen.getByRole("button", { name: "Đăng nhập bằng Acme" }),
+			screen.getByRole("button", { name: "Đăng nhập bằng tài khoản Acme" }),
 		).toBeVisible();
 		expect(
 			screen.getByText("Ghi âm, cắt file và chép lời bằng tài khoản Acme."),
@@ -53,7 +55,9 @@ describe("pages naming the sign-in account", () => {
 
 		const privacy = renderWithProviders(<LegalPage doc="privacy" />);
 		const article = await screen.findByRole("article");
-		expect(article).toHaveTextContent("Acme (auth.hoandat.com): đăng nhập.");
+		expect(article).toHaveTextContent(
+			"Tài khoản Acme (auth.hoandat.com): đăng nhập.",
+		);
 		expect(article).toHaveTextContent("mã định danh tài khoản Acme");
 		expect(article).toHaveTextContent("We collect your Acme account email");
 		expect(article).toHaveTextContent(

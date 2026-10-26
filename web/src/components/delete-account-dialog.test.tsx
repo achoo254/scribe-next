@@ -54,7 +54,7 @@ describe("DeleteAccountDialog", () => {
 		]);
 		expect(dialog).toHaveTextContent("Không hoàn tác được.");
 		expect(dialog).toHaveTextContent(
-			"Tài khoản Auth Next dùng chung cho nhiều ứng dụng",
+			"Tài khoản hoandat.com dùng chung cho nhiều ứng dụng",
 		);
 		const idp = within(dialog).getByRole("link", {
 			name: "auth.hoandat.com/account",

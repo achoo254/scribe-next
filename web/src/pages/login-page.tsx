@@ -83,10 +83,16 @@ export function LoginPage() {
 						block
 						loading={busy}
 						data-id="login-submit"
+						className="py-3"
 						leadingIcon={<IconLogin2 size={20} aria-hidden="true" />}
 						onClick={() => void signIn()}
 					>
-						{t("login.submit", { idpName })}
+						{/* The account name comes from the backend and may be long:
+						    the label wraps instead of widening the card past a
+						    phone screen. */}
+						<span className="whitespace-normal text-center leading-snug">
+							{t("login.submit", { idpName })}
+						</span>
 					</Button>
 					{error ? (
 						<Alert tone="danger" data-id="login-error">
