@@ -34,7 +34,7 @@ Không dựng thêm môi trường xem trước (tunnel, preview) trên `.65`.
 
 ### Chạy dev local
 
-- **Mongo dev:** database dev trên mongod lab **176** (`192.168.122.176:27017`, cần VPN lab), user dev chỉ có `readWrite` trên đúng database đó. 176 là máy khác với prod nên không đụng dữ liệu thật. Tạo ngày 2026-10-15; đã kiểm cách ly: user này không thấy database nào khác.
+- **Mongo dev:** database dev trên mongod lab **176** (cần VPN lab; địa chỉ trong skill `inet-lab-ops`), user dev chỉ có `readWrite` trên đúng database đó. 176 là máy khác với prod nên không đụng dữ liệu thật. Tạo ngày 2026-10-15; đã kiểm cách ly: user này không thấy database nào khác.
 - **Biến BE dev** nằm trong `.env.development` ở thư mục env trên iCloud (`scripts/env-dir.sh`): `MONGO_URI`, `PORT`, `DB_NAME`, `SESSION_KEY_PATH`, `DATA_DIR`, `PUBLIC_URL`, `OIDC_ISSUER`, `OIDC_WEB_CLIENT_ID`, `OIDC_WEB_CLIENT_SECRET_PATH`, `OPENAI_KEY_PATH`, `ELEVENLABS_KEY_PATH` (máy dev không có key ElevenLabs thì đặt `TRANSCRIBE_PROVIDER=openai` để vẫn chép lời được), `TRANSCRIBE_EMAILS` (các đường dẫn tệp trỏ vào thư mục dev trong home, vì thư mục prod không ghi được trên macOS). BE đọc biến **lúc build** (`option_env!`), nên nạp env rồi mới build/chạy:
 
   ```bash
@@ -48,9 +48,9 @@ Không dựng thêm môi trường xem trước (tunnel, preview) trên `.65`.
 
 | Server | IP | SSH port | Vai trò | Ghi chú |
 |---|---|---|---|---|
-| **Prod single-box `.65`** | `<SERVER_65_IP>` | `24700` | BE axum `:8787` + FE static + MongoDB **co-located** | Box SHARED (~15 vhost + MongoDB, chỉ ~3Gi RAM free). |
+| **Prod single-box `.65`** | `<SERVER_65_IP>` | `<SSH_PORT>` | BE axum `:8787` + FE static + MongoDB **co-located** | Box SHARED (~15 vhost + MongoDB, chỉ ~3Gi RAM free). |
 
-**Credentials SSH (root@.65):** trong tệp credential lab (biến môi trường `ALL_IN_ONE_STAGING_DEV`), entry `name = "SSH_SERVER_STAGING"`, trường `private_key` (PEM inline). Cách dùng: ghi ra file tạm + `chmod 600` → `ssh -i <tmp.pem> -p 24700 root@<SERVER_65_IP>`:
+**Credentials SSH (.65):** trong tệp credential lab (biến môi trường `ALL_IN_ONE_STAGING_DEV`), entry `name = "SSH_SERVER_STAGING"`, trường `private_key` (PEM inline). Cách dùng: ghi ra file tạm + `chmod 600` → `ssh -i <tmp.pem> -p <SSH_PORT> <user>@<SERVER_65_IP>`:
 
 ```bash
 KEY=$(mktemp); chmod 600 "$KEY"
@@ -171,7 +171,7 @@ Tuỳ chọn: `VITE_IDP_ORIGIN` — origin auth-next cho link "Tài khoản hoan
 
 ### SSH source-IP allowlist
 
-`.65` chặn SSH port `24700` theo iptables chain **`CP_SSH_ACL`** (allowlist source IP). Máy deploy phải có IP nằm trong allowlist. Chain này là hardening ops có chủ đích — KHÔNG gỡ; chỉ thêm IP khi cần:
+`.65` chặn cổng SSH theo iptables chain **`CP_SSH_ACL`** (allowlist source IP). Máy deploy phải có IP nằm trong allowlist. Chain này là hardening ops có chủ đích — KHÔNG gỡ; chỉ thêm IP khi cần:
 
 ```bash
 iptables -C CP_SSH_ACL -s <IP>/32 -j ACCEPT 2>/dev/null || \
@@ -181,7 +181,7 @@ service iptables save   # → /etc/sysconfig/iptables
 
 ## Setup 1 lần trên `.65` (bootstrap — trước lần deploy đầu)
 
-Deploy **giả định** đã có sẵn: user, systemd unit, nginx vhost, MongoDB, thư mục. Làm 1 lần (SSH root@.65, đã có các biến `DEPLOY_*` trong shell):
+Deploy **giả định** đã có sẵn: user, systemd unit, nginx vhost, MongoDB, thư mục. Làm 1 lần (SSH vào .65, đã có các biến `DEPLOY_*` trong shell):
 
 ```bash
 # 1) User + thư mục (session key + data ghi được; ProtectSystem=full chừa /opt)
@@ -219,7 +219,7 @@ nginx -t && systemctl reload nginx
 > Một tệp (bản ghi trình duyệt, tệp tải lên) = một request; **phiên iPhone = một request cho cả phiên**: ffmpeg ghép các đoạn theo thứ tự rồi chia câu về lại từng đoạn, nhãn người nói nhất quán cả phiên. Audio gửi đi là Opus mono 16 kHz 32 kbps (khoảng 14 MB mỗi giờ); tệp hay phiên hoàn toàn im lặng (đỉnh < −30 dB) không gửi, không tính phút. Đoạn tải lên trong lúc lượt đang hoãn (phiên còn đoạn đang tải) được thêm vào cùng lượt; đoạn tải lên muộn hơn (sau khi phiên đã chép) làm lần bấm chép tiếp theo **chép lại cả phiên** và tính phút cả phiên lần nữa (web hỏi trước nếu mất câu đã sửa hay tên người nói). ElevenLabs từ chối chắc chắn thì hoàn cả phút người dùng, trần USD và giờ ElevenLabs; chỉ hết thời gian chờ hay mất kết nối sau khi gửi mới giữ nguyên (có thể đã bị tính). Deploy khi hàng đợi chép lời rỗng. ElevenLabs báo key hỏng (401/403) ⟹ ngắt chép lời tới lần khởi động sau, audit `transcript.key_invalid`, báo bot; tóm tắt không bị ảnh hưởng. ElevenLabs báo hết credit tháng (402 `insufficient_credits`, hoặc 401 `quota_exceeded`) ⟹ **không** coi là key hỏng: đánh dấu tháng, dừng gửi tới đầu tháng sau, audit `transcript.provider_quota`, báo bot một lần; nạp thêm credit rồi `… admin elevenlabs-quota --clear` để mở lại ngay. Trần giờ riêng `ELEVENLABS_MONTHLY_HOURS` (sổ `el:<tháng>` trong `transcribe_usage`) giữ chỗ trước khi gửi và quyết toán theo `audio_duration_secs` ElevenLabs trả; hết trần thì người dùng thấy "Đã dùng hết giờ chép lời của tháng này, mở lại ngày 1/MM" (403 `PROVIDER_HOURS`). Xem sổ: `… admin usage` (mục `elevenlabs`) hoặc `… admin elevenlabs-quota [--month YYYY-MM]`.
 >
 > **Key riêng** (key API người dùng tự nhập: ElevenLabs, OpenAI, Gemini, Claude; từ 19/10/2026). Key lưu trong collection `user_keys`, mã hoá AES-256-GCM bằng bí mật 32 byte ở tệp `USER_KEYS_SECRET_PATH`. Tạo tệp **một lần**, trên server, bí mật không bao giờ rời máy, không in ra:
-> `ssh -i "$KEY" -p 24700 root@<SERVER_65_IP> 'test -e /opt/scribe-be/.user-keys-secret || head -c 32 /dev/urandom | install -m 600 -o scribe -g scribe /dev/stdin /opt/scribe-be/.user-keys-secret'`
+> `ssh -i "$KEY" -p <SSH_PORT> <user>@<SERVER_65_IP> 'test -e /opt/scribe-be/.user-keys-secret || head -c 32 /dev/urandom | install -m 600 -o scribe -g scribe /dev/stdin /opt/scribe-be/.user-keys-secret'`
 > (đăng nhập root như các bước deploy — §Server; lệnh trong nháy đơn chạy hết trên server nên không phụ thuộc biến của máy mình hay sudo; `test -e` để không bao giờ ghi đè bí mật đang dùng; `scribe` là user của service; BE từ chối tệp không đúng 32 byte hoặc quyền rộng hơn 600). Thêm `USER_KEYS_SECRET_PATH=/opt/scribe-be/.user-keys-secret` vào `.env.production`, build và restart; journal có "Key riêng bật".
 > **Sao lưu:** sao lưu tệp này riêng với bản sao lưu Mongo (không để chung một chỗ). Mất hoặc đổi tệp ⟹ mọi key đã lưu không giải mã được nữa (trạng thái "unreadable"), người dùng phải nhập lại; không có cách khôi phục. Đừng tạo lại tệp khi tệp cũ còn.
 > Việc chạy bằng key riêng không tính phút, lượt ngày, quỹ free, trần tổng hay sổ giờ ElevenLabs (sổ chi tiết `transcribe_runs`, `summary_runs`/`ask_runs`/`translate_runs` có `byok`, `admin usage --recompute` bỏ qua; số giây chép bằng key riêng ở sổ `b:<userId>:<tháng>` chỉ để người dùng xem). Key riêng lỗi lúc dùng chỉ đánh dấu key đó (audit `user_key.failed`), không ngắt chép lời hay tóm tắt của server. Audit `user_key.save|delete|rejected|prefs` không có key.
@@ -262,9 +262,9 @@ cargo zigbuild --release --target x86_64-unknown-linux-musl -p scribe-be
 cd web && pnpm install --frozen-lockfile && pnpm run build && cd ..   # → web/dist
 
 # 3) Đẩy lên .65 (KEY = file tạm chứa private key, xem mục Server)
-rsync -avz -e "ssh -i $KEY -p 24700" target/x86_64-unknown-linux-musl/release/scribe-be root@<SERVER_65_IP>:/tmp/scribe-be.new
-rsync -avz --delete -e "ssh -i $KEY -p 24700" web/dist/ root@<SERVER_65_IP>:/tmp/scribe-fe/
-ssh -i "$KEY" -p 24700 root@<SERVER_65_IP> "
+rsync -avz -e "ssh -i $KEY -p <SSH_PORT>" target/x86_64-unknown-linux-musl/release/scribe-be <user>@<SERVER_65_IP>:/tmp/scribe-be.new
+rsync -avz --delete -e "ssh -i $KEY -p <SSH_PORT>" web/dist/ <user>@<SERVER_65_IP>:/tmp/scribe-fe/
+ssh -i "$KEY" -p <SSH_PORT> <user>@<SERVER_65_IP> "
   set -e
   install -o $DEPLOY_USER -g $DEPLOY_USER -m 700 /tmp/scribe-be.new $DEPLOY_APP_DIR/$DEPLOY_SERVICE.new
   mv -f $DEPLOY_APP_DIR/$DEPLOY_SERVICE.new $DEPLOY_APP_DIR/$DEPLOY_SERVICE
@@ -343,11 +343,11 @@ nginx gắn bộ header bảo mật cho mọi response của Scribe (FE, `/asset
 
 ```bash
 # 1) Đẩy file include + vhost (thư mục /etc/nginx/scribe/ tạo lần đầu)
-ssh -i "$KEY" -p 24700 root@<SERVER_65_IP> 'mkdir -p /etc/nginx/scribe && cp -a /etc/nginx/conf.d/scribe.conf /root/scribe.conf.bak-$(date +%Y%m%d-%H%M%S)'
-scp -i "$KEY" -P 24700 deploy/nginx-scribe-security-headers.inc root@<SERVER_65_IP>:/etc/nginx/scribe/security-headers.inc
-scp -i "$KEY" -P 24700 deploy/nginx-scribe.conf root@<SERVER_65_IP>:$DEPLOY_NGINX_CONF
+ssh -i "$KEY" -p <SSH_PORT> <user>@<SERVER_65_IP> 'mkdir -p /etc/nginx/scribe && cp -a /etc/nginx/conf.d/scribe.conf /root/scribe.conf.bak-$(date +%Y%m%d-%H%M%S)'
+scp -i "$KEY" -P <SSH_PORT> deploy/nginx-scribe-security-headers.inc <user>@<SERVER_65_IP>:/etc/nginx/scribe/security-headers.inc
+scp -i "$KEY" -P <SSH_PORT> deploy/nginx-scribe.conf <user>@<SERVER_65_IP>:$DEPLOY_NGINX_CONF
 # 2) Kiểm cú pháp rồi mới reload; nginx -t lỗi thì chép lại bản .bak, KHÔNG reload
-ssh -i "$KEY" -p 24700 root@<SERVER_65_IP> 'nginx -t && systemctl reload nginx'
+ssh -i "$KEY" -p <SSH_PORT> <user>@<SERVER_65_IP> 'nginx -t && systemctl reload nginx'
 # 3) Xác nhận từ ngoài
 curl -sI "https://$DEPLOY_DOMAIN/" | grep -iE 'strict-transport|content-security|permissions-policy|referrer-policy|x-content-type'
 curl -sI "https://$DEPLOY_DOMAIN/api/health" | grep -i content-security
