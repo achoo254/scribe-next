@@ -276,7 +276,7 @@
 	}
 }
 
-/* App switcher of the *-next apps (@shared-next/app-switcher, top bar):
+/* App switcher of the *-next apps (@achoo254/app-switcher, top bar):
    its variables mapped to the tokens, sized like the ghost icon buttons
    (size-9, size-11 for touch on small screens). */
 .sn-app-switcher {
@@ -293,8 +293,6 @@
 	--app-switcher-radius: var(--radius-md);
 	--app-switcher-item-radius: var(--radius-sm);
 	--app-switcher-font: var(--font-sans);
-	--app-switcher-icon: var(--c-primary);
-	--app-switcher-icon-stroke: var(--icon-stroke);
 }
 
 @media (pointer: coarse) and (width < 40rem) {
