@@ -18,10 +18,13 @@ add_header Permissions-Policy "camera=(), geolocation=(), microphone=(self), dis
 # CSP — lập từ những gì app thực sự dùng (web/src + web/dist):
 # - script-src: bundle Vite từ 'self' + hash của script inline áp theme trước first paint
 #   (web/index.html). Sửa script đó thì hash đổi: pnpm run test:e2e:csp báo vi phạm, cập nhật hash.
+#   Thêm https://static.cloudflareinsights.com: beacon Cloudflare Web Analytics mà Cloudflare tự chèn
+#   (không đặt cookie; trang quyền riêng tư ghi rõ), nó gửi số liệu về https://cloudflareinsights.com
+#   (connect-src).
 # - style-src 'unsafe-inline': Radix (Dialog/DropdownMenu, qua react-remove-scroll) chèn thẻ
 #   <style> lúc chạy; style={{…}} của React đi qua CSSOM nên không cần. Không có nonce trên site tĩnh.
-# - connect-src/media-src/font-src/img-src 'self': API, stream media /api/files/…, font tự host,
-#   icon — đều cùng origin; img-src thêm data: cho logo app nhúng sẵn trong @achoo254/app-switcher; IdP (auth.hoandat.com) chỉ là điều hướng, không phải fetch.
+# - connect-src/media-src/font-src/img-src 'self' (connect-src thêm beacon Cloudflare ở trên): API,
+#   stream media /api/files/…, font tự host, icon — đều cùng origin; img-src thêm data: cho logo app nhúng sẵn trong @achoo254/app-switcher; IdP (auth.hoandat.com) chỉ là điều hướng, không phải fetch.
 # - form-action 'self': form của app đều xử lý bằng JS (onSubmit), không post ra ngoài.
 # - frame-ancestors 'none': không cho trang nào nhúng Scribe trong iframe (clickjacking).
-add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'sha256-xm6mYjbQROrwta3dXJ1qt/VXzqssPzi4affxRPKBh3g='; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; media-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'" always;
+add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'sha256-xm6mYjbQROrwta3dXJ1qt/VXzqssPzi4affxRPKBh3g=' https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://cloudflareinsights.com; media-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'" always;

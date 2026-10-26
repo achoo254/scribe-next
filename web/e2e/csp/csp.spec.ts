@@ -42,16 +42,31 @@ test("the page carries every production security header", async ({ page }) => {
 	}
 });
 
-test("sign-in page and public pages load with no CSP violation", async ({
+test("landing, sign-in and public pages load with no CSP violation", async ({
 	page,
 }) => {
 	await watchViolations(page);
 	await stubApi(page, apiFixtures({ user: null }));
-	for (const url of ["/login", "/privacy", "/terms"]) {
+	for (const url of ["/", "/login", "/privacy", "/terms"]) {
 		await page.goto(url);
 		await expect(page.locator("#app")).not.toBeEmpty();
 		await fontsReady(page);
 	}
+	expect(await violations(page)).toEqual([]);
+});
+
+test("the landing's hero art is a file this origin serves (img-src 'self')", async ({
+	page,
+}) => {
+	await watchViolations(page);
+	await stubApi(page, apiFixtures({ user: null }));
+	await page.goto("/");
+	const art = page.getByTestId("landing-hero-art");
+	await expect(art).toBeVisible();
+	await expect
+		.poll(() => art.evaluate((img: HTMLImageElement) => img.naturalWidth))
+		.toBeGreaterThan(0);
+	expect(await art.getAttribute("src")).toMatch(/^\/assets\//);
 	expect(await violations(page)).toEqual([]);
 });
 

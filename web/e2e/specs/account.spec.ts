@@ -35,7 +35,7 @@ for (const scheme of COLOR_SCHEMES) {
 				name: "Chính sách quyền riêng tư",
 			}),
 		).toBeVisible();
-		await expect(policy).toContainText("Có hiệu lực từ 19/10/2026");
+		await expect(policy).toContainText("Có hiệu lực từ 26/10/2026");
 		await expect(
 			policy.getByRole("heading", { level: 2, name: "Bên xử lý dữ liệu" }),
 		).toBeVisible();
