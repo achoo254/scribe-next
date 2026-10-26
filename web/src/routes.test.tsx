@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { RouterProvider, createMemoryRouter } from "react-router";
@@ -183,6 +183,20 @@ describe("app routes", () => {
 		expect(
 			screen.getByRole("link", { name: "Một app của hoandat.com" }),
 		).toHaveAttribute("href", "https://hoandat.com");
+		// The footer is the account app's: language, privacy policy, terms.
+		const footer = document.querySelector<HTMLElement>(
+			'[data-id="public-footer"]',
+		);
+		if (!footer) throw new Error("no public footer");
+		expect(
+			within(footer).getByRole("link", { name: "Tiếng Việt" }),
+		).toHaveAttribute("aria-current", "true");
+		expect(
+			within(footer).getByRole("link", { name: "Quyền riêng tư" }),
+		).toHaveAttribute("href", "/privacy");
+		expect(
+			within(footer).getByRole("link", { name: "Điều khoản" }),
+		).toHaveAttribute("href", "/terms");
 		await userEvent.click(screen.getByRole("link", { name: "Đăng nhập" }));
 		expect(await screen.findByText("login")).toBeInTheDocument();
 		expect(router.state.location.pathname).toBe("/login");

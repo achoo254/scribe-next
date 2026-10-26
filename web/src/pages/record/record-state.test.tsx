@@ -71,6 +71,9 @@ const native = vi.hoisted(() => {
 
 const browser = vi.hoisted(() => ({ created: 0, disposed: 0 }));
 
+/** The backend's id of the browser recording's file, known once it starts. */
+const BROWSER_FILE_ID = vi.hoisted(() => "65f0a1b2c3d4e5f60718293a");
+
 vi.mock("../../features/recorder/native-recorder", async (importOriginal) => {
 	const original =
 		await importOriginal<
@@ -90,6 +93,7 @@ vi.mock("../../features/recorder/recorder", () => ({
 			elapsedS: 0,
 			previewStream: null,
 			error: "",
+			fileId: null as string | null,
 		};
 		private readonly listeners = new Set<() => void>();
 		constructor() {
@@ -101,10 +105,11 @@ vi.mock("../../features/recorder/recorder", () => ({
 			return () => this.listeners.delete(listener);
 		};
 		start = async () => {
-			this.state = { ...this.state, recording: true };
+			this.state = { ...this.state, recording: true, fileId: BROWSER_FILE_ID };
 			for (const listener of this.listeners) listener();
 		};
 		stop = async () => null;
+		position = () => 12.5;
 		dispose = () => {
 			browser.disposed += 1;
 		};
@@ -135,6 +140,23 @@ function BrowserProbe() {
 			<button type="button" onClick={() => setSplitEnabled(true)}>
 				Bật cắt
 			</button>
+		</>
+	);
+}
+
+function BrowserMarkProbe() {
+	const { toggle, mark, bookmarks } = useBrowserRecordState();
+	return (
+		<>
+			<p>{bookmarks.marked} mốc</p>
+			<button type="button" onClick={() => void toggle()}>
+				Bắt đầu
+			</button>
+			{mark && (
+				<button type="button" onClick={mark}>
+					Đánh dấu
+				</button>
+			)}
 		</>
 	);
 }
@@ -217,6 +239,31 @@ describe("RecordStateProvider (browser)", () => {
 		await userEvent.click(screen.getByRole("button", { name: "Bắt đầu" }));
 		expect(refresh).toHaveBeenCalledWith({ queryKey: ["recordings"] });
 		refresh.mockRestore();
+	});
+
+	it("bookmarks the browser recording under its file id at the recorder's position", async () => {
+		const fake = fakeFetch({
+			[`POST /api/transcript-docs/f%3A${BROWSER_FILE_ID}/bookmarks`]:
+				jsonResponse({ id: "b1", at: 12.5, label: null }),
+		});
+		vi.stubGlobal("fetch", fake.fetcher);
+		renderRoutes(BrowserRecordProvider, <BrowserMarkProbe />);
+		// No recording yet: nothing to bookmark.
+		expect(screen.queryByRole("button", { name: "Đánh dấu" })).toBeNull();
+
+		await userEvent.click(screen.getByRole("button", { name: "Bắt đầu" }));
+		await userEvent.click(
+			await screen.findByRole("button", { name: "Đánh dấu" }),
+		);
+		expect(await screen.findByText("1 mốc")).toBeInTheDocument();
+		await waitFor(() => expect(fake.calls).toHaveLength(1));
+		expect(fake.calls[0]?.url).toBe(
+			`/api/transcript-docs/f%3A${BROWSER_FILE_ID}/bookmarks`,
+		);
+		expect(fake.calls[0]?.body).toEqual({
+			at: 12.5,
+			id: expect.stringMatching(/^[0-9a-f]{24}$/),
+		});
 	});
 });
 
