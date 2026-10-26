@@ -1,0 +1,63 @@
+# Toàn bộ Playwright e2e, hằng đêm 02:00 giờ Việt Nam và khi bấm tay (workflow_dispatch): mọi spec trên
+# Chromium desktop + WebKit iPhone (web/e2e/playwright.config.ts), rồi bản build prod dưới header bảo mật prod
+# trên Chromium + WebKit desktop (pnpm run test:e2e:csp). Mỗi lần push chỉ chạy bộ smoke (job e2e của ci.yml).
+#
+# Chạy trong image Playwright chính thức: trình duyệt và thư viện hệ thống của WebKit có sẵn, khỏi bước apt
+# install-deps ~45 phút. Tag image phải đúng phiên bản @playwright/test trong web/pnpm-lock.yaml; nâng
+# Playwright thì sửa cả tag image lẫn PLAYWRIGHT_VERSION dưới đây (bước đầu kiểm hai số khớp nhau).
+name: E2E nightly
+
+on:
+  schedule:
+    # 19:00 UTC = 02:00 Asia/Saigon.
+    - cron: "0 19 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: e2e-nightly
+  cancel-in-progress: false
+
+# `vite build` dừng nếu thiếu biến này (web/vite.config.ts); cùng giá trị công khai như ci.yml.
+env:
+  VITE_NATIVE_API_ORIGIN: https://scribe.hoandat.com
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    container:
+      image: mcr.microsoft.com/playwright:v1.64.1-noble
+      options: --user 1001
+    env:
+      PLAYWRIGHT_VERSION: 1.64.1
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: web/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - name: Image matches the installed Playwright
+        run: |
+          installed="$(node -p "require('@playwright/test/package.json').version")"
+          if [ "$installed" != "$PLAYWRIGHT_VERSION" ]; then
+            echo "::error::@playwright/test is $installed but the container image is $PLAYWRIGHT_VERSION; update both in e2e-nightly.yml"
+            exit 1
+          fi
+      # Ảnh chụp mốc chỉ có bản macOS (*-darwin.png): trên Linux bỏ so sánh ảnh, giữ mọi assert khác.
+      - run: pnpm run test:e2e --ignore-snapshots
+      - run: pnpm exec vite build
+      - run: pnpm run test:e2e:csp
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-nightly-test-results
+          path: web/e2e/test-results
+          retention-days: 7

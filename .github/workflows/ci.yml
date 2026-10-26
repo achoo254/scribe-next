@@ -41,10 +41,13 @@ jobs:
       - run: pnpm exec vite build
       - run: pnpm run check:dist
 
-  # Playwright như chạy local (web/e2e/playwright.config.ts: Vite dev + API stub, chromium-desktop
-  # + webkit-iphone, 2 worker), rồi bản build prod dưới header bảo mật prod (pnpm run test:e2e:csp).
+  # Bộ smoke Playwright mỗi lần push/PR: chỉ các test gắn tag @smoke (SMOKE trong
+  # web/e2e/support/page-helpers.ts), chỉ Chromium desktop: Vite dev + API stub, rồi bản build prod dưới
+  # header bảo mật prod (csp.spec.ts + các test smoke). WebKit iPhone, mọi spec còn lại và CSP trên WebKit
+  # chạy hằng đêm ở e2e-nightly.yml. Không cài WebKit ở đây: thư viện apt của WebKit từng tốn ~45 phút.
   e2e:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: web
@@ -59,23 +62,23 @@ jobs:
           cache: pnpm
           cache-dependency-path: web/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
-      # Cache trình duyệt theo đúng phiên bản Playwright đã cài; thư viện hệ thống (apt) thì
-      # không cache được nên lần cache-hit chỉ cài install-deps.
+      # Cache Chromium (headless shell, đủ cho chạy headless) theo đúng phiên bản Playwright đã cài; thư viện
+      # hệ thống (apt) thì không cache được nên lần cache-hit chỉ cài install-deps của Chromium.
       - id: playwright
         run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
       - id: browsers
         uses: actions/cache@v4
         with:
           path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+          key: playwright-chromium-shell-${{ runner.os }}-${{ steps.playwright.outputs.version }}
       - if: steps.browsers.outputs.cache-hit != 'true'
-        run: node node_modules/@playwright/test/cli.js install --with-deps chromium webkit
+        run: node node_modules/@playwright/test/cli.js install --with-deps --only-shell chromium
       - if: steps.browsers.outputs.cache-hit == 'true'
-        run: node node_modules/@playwright/test/cli.js install-deps chromium webkit
+        run: node node_modules/@playwright/test/cli.js install-deps chromium
       # Ảnh chụp mốc chỉ có bản macOS (*-darwin.png): trên Linux bỏ so sánh ảnh, giữ mọi assert khác.
-      - run: pnpm run test:e2e --ignore-snapshots
+      - run: pnpm run test:e2e:smoke --ignore-snapshots
       - run: pnpm exec vite build
-      - run: pnpm run test:e2e:csp
+      - run: pnpm run test:e2e:csp:smoke
       - if: failure()
         uses: actions/upload-artifact@v4
         with:
