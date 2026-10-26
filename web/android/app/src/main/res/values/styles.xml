@@ -13,10 +13,11 @@
     </style>
 
     <!-- Launch (Android 12+ SplashScreen and its compat theme): the brand icon on the brand background,
-         light or dark with the system (values-night/brand_colors.xml). Both colours come from brand:gen. -->
+         light or dark with the system (values-night/brand_colors.xml). The colours and splash_icon (an alias
+         of the launcher foreground layer, values/brand_splash.xml) come from brand:gen. -->
     <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
         <item name="windowSplashScreenBackground">@color/splash_background</item>
-        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/splash_icon</item>
         <item name="windowSplashScreenIconBackgroundColor">@color/ic_launcher_background</item>
         <item name="postSplashScreenTheme">@style/AppTheme.NoActionBar</item>
     </style>

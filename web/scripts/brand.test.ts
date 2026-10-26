@@ -6,7 +6,7 @@
  * colours are the tokens, and web/vite-brand.ts links and serves the
  * manifest and icons.
  */
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import {
 	formatGenerated,
 	generateManifests,
@@ -187,6 +187,43 @@ describe("Android app", () => {
 			}
 			for (const path of VECTOR_ONLY_DRAWABLES) {
 				expect(existsSync(new URL(path, resDir)), path).toBe(!picture);
+			}
+		},
+	);
+
+	it.runIf(hasAndroid)(
+		"resolves every drawable and mipmap the theme and manifest name (brand:gen removes some)",
+		() => {
+			const resDir = new URL(ANDROID_RES_DIR, BRAND_ROOT);
+			const dirs = readdirSync(resDir);
+			const values = dirs
+				.filter((dir) => dir === "values" || dir.startsWith("values-"))
+				.flatMap((dir) =>
+					readdirSync(new URL(`${dir}/`, resDir)).map((file) =>
+						readFileSync(new URL(`${dir}/${file}`, resDir), "utf8"),
+					),
+				)
+				.join("\n");
+			const exists = (type: string, name: string): boolean =>
+				values.includes(`<item name="${name}" type="${type}">`) ||
+				dirs
+					.filter((dir) => dir === type || dir.startsWith(`${type}-`))
+					.some((dir) =>
+						readdirSync(new URL(`${dir}/`, resDir)).some(
+							(file) => file.replace(/\..*$/, "") === name,
+						),
+					);
+			const referrers = [
+				`${ANDROID_RES_DIR}values/styles.xml`,
+				"android/app/src/main/AndroidManifest.xml",
+			];
+			for (const path of referrers) {
+				const xml = readFileSync(new URL(path, BRAND_ROOT), "utf8");
+				for (const [ref, type, name] of xml.matchAll(
+					/@(drawable|mipmap)\/(\w+)/g,
+				)) {
+					expect(exists(type ?? "", name ?? ""), `${path}: ${ref}`).toBe(true);
+				}
 			}
 		},
 	);
