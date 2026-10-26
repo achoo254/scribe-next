@@ -7,6 +7,7 @@
 import { IconExternalLink } from "@tabler/icons-react";
 import { ThemeCycleButton, ThemeToggle } from "../components/theme-toggle";
 import { useT } from "../i18n/i18n-context";
+import { ECOSYSTEM_HOME_URL } from "../lib/brand";
 import { IDP_ACCOUNT_URL, IDP_APPS_URL } from "../lib/idp";
 import { useIdpName } from "../lib/idp-name";
 import { LegalLinks } from "./legal-links";
@@ -14,7 +15,10 @@ import { LegalLinks } from "./legal-links";
 const FOOTER_LINK =
 	"inline-flex min-h-11 cursor-pointer items-center gap-1 whitespace-nowrap rounded-sm font-mono font-semibold text-primary underline-offset-4 hover:underline";
 
-/** Page footer: IdP account pages, privacy and terms, the theme switch. */
+/**
+ * Page footer: IdP account pages, then "Một app của hoandat.com", privacy
+ * and terms (the same row as the public footer), and the theme switch.
+ */
 export function AppFooter() {
 	const t = useT();
 	const idpName = useIdpName();
@@ -56,6 +60,13 @@ export function AppFooter() {
 							</a>
 						))}
 					</nav>
+					<a
+						href={ECOSYSTEM_HOME_URL}
+						data-id="app-footer-home"
+						className={FOOTER_LINK}
+					>
+						{t("layout.publicChrome.ecosystem")}
+					</a>
 					<LegalLinks linkClassName={FOOTER_LINK} />
 				</div>
 				{/* Phones get one button so the theme switch stays on the first row. */}

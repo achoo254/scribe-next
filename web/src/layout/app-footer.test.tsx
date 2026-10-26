@@ -33,6 +33,13 @@ describe("AppFooter", () => {
 		expect(link).not.toHaveAttribute("target");
 	});
 
+	it("links back to hoandat.com, like the public footer", () => {
+		render(<AppFooter />);
+		const link = screen.getByRole("link", { name: "Một app của hoandat.com" });
+		expect(link).toHaveAttribute("href", "https://hoandat.com");
+		expect(link).not.toHaveAttribute("target");
+	});
+
 	it("holds the theme switch", () => {
 		render(<AppFooter />);
 		const footer = screen.getByRole("contentinfo");
