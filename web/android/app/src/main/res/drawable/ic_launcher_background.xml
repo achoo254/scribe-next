@@ -6,20 +6,5 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <path android:pathData="M0,0H108V108H0Z">
-        <aapt:attr name="android:fillColor">
-            <gradient android:type="linear" android:startX="0" android:startY="0" android:endX="0" android:endY="108">
-                <item android:offset="0" android:color="#FF1C1B22"/>
-                <item android:offset="1" android:color="#FF111113"/>
-            </gradient>
-        </aapt:attr>
-    </path>
-    <path android:pathData="M0,0H108V108H0Z">
-        <aapt:attr name="android:fillColor">
-            <gradient android:type="radial" android:centerX="38.88" android:centerY="54" android:gradientRadius="59.4">
-                <item android:offset="0" android:color="#476E56CF"/>
-                <item android:offset="1" android:color="#006E56CF"/>
-            </gradient>
-        </aapt:attr>
-    </path>
+    <path android:pathData="M0,0H108V108H0Z" android:fillColor="#FF6E56CF"/>
 </vector>

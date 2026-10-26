@@ -130,9 +130,10 @@ export default defineConfig(({ command, mode }) => {
 			},
 		},
 		build: {
-			// Fonts stay separate files instead of base64 in the stylesheet.
+			// Fonts stay separate files instead of base64 in the stylesheet,
+			// and the brand mark a cacheable file rather than a data: URI.
 			assetsInlineLimit: (file) =>
-				file.endsWith(".woff2") ? false : undefined,
+				file.endsWith(".woff2") || file.endsWith(".webp") ? false : undefined,
 			rollupOptions: { output: { manualChunks: vendorChunk } },
 		},
 	};

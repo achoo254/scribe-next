@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { type Locator, type Page, expect, test } from "@playwright/test";
 import {
 	STUB_SENTENCE,
 	STUB_UPLOADED,
@@ -13,6 +13,18 @@ import { preparePage } from "../support/page-helpers";
  * upload does not); one-tap delete
  * with "Hoàn tác"; "Xoá tất cả" behind a confirmation.
  */
+
+/**
+ * "Hoàn tác" of the toast that is open. Undo closes its toast, which stays in
+ * the page (`data-state="closed"`) while it fades out: a delete right after
+ * an undo briefly shows the old toast's button next to the new one.
+ */
+function undoButton(page: Page): Locator {
+	return page
+		.getByTestId("toast-viewport")
+		.locator('[data-state="open"]')
+		.getByRole("button", { name: "Hoàn tác" });
+}
 
 test("an uploaded audio file shows in the history and can be transcribed", async ({
 	page,
@@ -90,13 +102,13 @@ test("one tap deletes a recording, “Hoàn tác” brings it back, the toast's 
 
 	await page.getByTestId("history-item-f-browser-1-delete").click();
 	await expect(row).toBeHidden();
-	await page.getByRole("button", { name: "Hoàn tác" }).click();
+	await undoButton(page).click();
 	await expect(row).toBeVisible();
 	expect(api.deletes).toEqual([]);
 
 	await page.getByTestId("history-item-f-browser-1-delete").click();
 	await expect(row).toBeHidden();
-	await expect(page.getByRole("button", { name: "Hoàn tác" })).toBeVisible();
+	await expect(undoButton(page)).toBeVisible();
 	expect(api.deletes).toEqual([]);
 	// Nothing is sent before the 5 seconds of the toast are over.
 	await expect

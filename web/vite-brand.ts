@@ -11,7 +11,7 @@
  *   served in dev and emitted in builds.
  *
  * Scribe specifics: no inline splash logo (BrandMark in
- * src/components/brand/wordmark.tsx draws the mark with tokens), no
+ * src/components/brand/wordmark.tsx shows brand/scribe-mark-128.webp), no
  * theme-color meta (index.html has the one src/lib/theme.ts keeps on --c-bg;
  * a second one would win over it), and index.html links the SVG favicon
  * itself at /favicon.svg, the URL the site has always used.

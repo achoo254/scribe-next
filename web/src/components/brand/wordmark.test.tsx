@@ -14,12 +14,11 @@ describe("Wordmark", () => {
 });
 
 describe("BrandMark", () => {
-	it("is decorative and coloured by tokens", () => {
+	it("is the decorative app mark image", () => {
 		const { container } = render(<BrandMark size={44} />);
-		const svg = container.querySelector("svg");
-		expect(svg).toHaveAttribute("aria-hidden", "true");
-		expect(svg).toHaveAttribute("width", "44");
-		expect(container.querySelector(".fill-primary")).not.toBeNull();
-		expect(container.querySelector(".fill-accent")).not.toBeNull();
+		const img = container.querySelector("img");
+		expect(img).toHaveAttribute("alt", "");
+		expect(img).toHaveAttribute("width", "44");
+		expect(img?.getAttribute("src")).toMatch(/scribe-mark-128\.webp$/);
 	});
 });

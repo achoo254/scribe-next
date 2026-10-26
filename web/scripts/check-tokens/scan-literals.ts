@@ -1,10 +1,15 @@
 /**
- * Finds design-token bypasses in web sources: colour literals and raw px
- * spacing. `src/styles/tokens.css` is the only file allowed to
- * hold those values, so it is never passed to this scanner.
+ * Finds design-token bypasses in web sources: colour literals, raw px
+ * spacing and references to Tailwind's `--color-*` theme names.
+ * `src/styles/tokens.css` is the only file allowed to hold those values, so
+ * it is never passed to this scanner.
  */
 
-export type LiteralRule = "hex-color" | "color-function" | "spacing-px";
+export type LiteralRule =
+	| "hex-color"
+	| "color-function"
+	| "spacing-px"
+	| "theme-color-var";
 
 /** Which spacing syntaxes apply: CSS declarations or JS style/class strings. */
 export type SourceKind = "stylesheet" | "script";
@@ -39,6 +44,14 @@ const HEX_COLOR =
 const COLOR_FUNCTION = /\b(?:rgba?|hsla?|hwb|oklch|oklab)\(/gi;
 
 const PX_VALUE = /-?\d*\.?\d+px\b/g;
+
+/**
+ * `var(--color-primary)` or `bg-(--color-primary)`: the `--color-*` names are
+ * declared with `@theme inline reference` (global.css), so Tailwind never
+ * emits them as CSS variables and such a value resolves to nothing. Read the
+ * token itself (`--c-primary`) instead.
+ */
+const THEME_COLOR_VAR = /\(\s*--color-[\w-]+/g;
 
 /** CSS declaration whose property sets spacing: `padding-top: 12px`. */
 const CSS_SPACING_DECL =
@@ -78,6 +91,9 @@ function scanLine(
 	}
 	for (const m of line.matchAll(COLOR_FUNCTION)) {
 		hits.push({ rule: "color-function", match: m[0] });
+	}
+	for (const m of line.matchAll(THEME_COLOR_VAR)) {
+		hits.push({ rule: "theme-color-var", match: m[0].slice(1).trim() });
 	}
 	if (kind === "stylesheet") {
 		for (const m of line.matchAll(CSS_SPACING_DECL)) {

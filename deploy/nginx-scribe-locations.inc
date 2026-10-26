@@ -25,6 +25,16 @@ location /assets/ {
     try_files $uri =404;
 }
 
+# Web app manifest: mime.types của nginx không có webmanifest (trước đây trả application/octet-stream),
+# trình duyệt cần application/manifest+json. Không cache như index.html; bộ header bảo mật giữ nguyên.
+location = /manifest.webmanifest {
+    types { }
+    default_type application/manifest+json;
+    add_header Cache-Control "no-cache";
+    include /etc/nginx/scribe/security-headers.inc;
+    try_files $uri =404;
+}
+
 # SPA: index.html + fallback → KHÔNG cache (luôn revalidate) nên deploy mới hiện ngay,
 # không kẹt bundle cũ trong browser cache (nguyên nhân UI hiện lệch sau khi deploy).
 location / {

@@ -40,7 +40,11 @@ Test JVM: `cd web/android && ./gradlew testDebugUnitTest`; test `SecureStore` v�
 icon launcher adaptive dạng vector (nền, tiền cảnh, monochrome cho themed icon Android 13+) từ `icon-maskable.svg`,
 icon PNG cho Android 7.x, màu splash sáng/tối, và ảnh Play ở `web/brand/generated/play/` (icon 512 × 512,
 feature graphic 1024 × 500 JPEG) — `web/scripts/brand-android.ts`. Bộ chuyển SVG chỉ hiểu `<rect>`, `<g fill>`,
-gradient: vẽ lại icon bằng phần tử khác thì `brand:gen` báo lỗi thay vì sinh sai.
+gradient: vẽ lại icon bằng phần tử khác thì `brand:gen` báo lỗi thay vì sinh sai. Riêng icon là ảnh nhúng
+(`<image>`, như icon vẽ bằng AI hiện tại) thì lớp tiền cảnh là PNG `mipmap-*/ic_launcher_foreground.png` vẽ từ cả
+`icon-maskable.svg`, nền vector màu `colors.primary`, lớp monochrome là PNG `mipmap-*/ic_launcher_monochrome.png` vẽ từ
+`web/brand/icon-monochrome.svg` (bóng trắng của sóng âm và dòng chữ trên nền trong suốt, cùng khung với `icon-maskable.svg`,
+tách một lần từ ảnh gốc AI); thiếu file này thì không có lớp monochrome (Android 13+ hiện icon màu gốc).
 
 ## CI
 

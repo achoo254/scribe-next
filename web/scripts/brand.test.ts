@@ -27,8 +27,17 @@ import {
 	ANDROID_RES_DIR,
 	LEGACY_DENSITIES,
 	PLAY_DIR,
+	VECTOR_ONLY_DRAWABLES,
+	adaptiveLayerSize,
 	androidResourceFiles,
+	isPictureIcon,
+	readMonochromeIcon,
 } from "./brand-android.js";
+import {
+	IOS_SPLASH_DIR,
+	IOS_SPLASH_FILES,
+	iosSplashSvg,
+} from "./brand-ios-splash.js";
 import { resolveThemes } from "./check-tokens/parse-tokens.js";
 
 const brand = loadScribeBrand();
@@ -91,6 +100,32 @@ function imageSize(bytes: Buffer): {
 	throw new Error("not a PNG or JPEG");
 }
 
+const iosSplashDir = new URL(IOS_SPLASH_DIR, BRAND_ROOT);
+
+describe("iOS splash", () => {
+	it("centres the brand icon on the background colour", () => {
+		const svg = iosSplashSvg('<svg id="icon"/>', "#f9f9fb");
+		expect(svg).toContain('fill="#f9f9fb"');
+		expect(svg).toContain(
+			`href="data:image/svg+xml;base64,${Buffer.from('<svg id="icon"/>').toString("base64")}"`,
+		);
+		expect(svg).toContain('x="1066" y="1066" width="601" height="601"');
+	});
+
+	it.skipIf(!existsSync(iosSplashDir))(
+		"is one 2732 px picture in all three files (run pnpm brand:gen)",
+		() => {
+			const files = IOS_SPLASH_FILES.map((file) =>
+				readFileSync(new URL(file, iosSplashDir)),
+			);
+			for (const file of files) {
+				expect(imageSize(file)).toEqual({ width: 2732, height: 2732 });
+				expect(file.equals(files[0] ?? Buffer.alloc(0))).toBe(true);
+			}
+		},
+	);
+});
+
 const androidDir = new URL("android/", BRAND_ROOT);
 const hasAndroid = existsSync(androidDir);
 
@@ -115,9 +150,10 @@ describe("Android app", () => {
 				new URL(brand.iconMaskable, BRAND_ROOT),
 				"utf8",
 			);
+			const monochrome = readMonochromeIcon(BRAND_ROOT);
 			const resDir = new URL(ANDROID_RES_DIR, BRAND_ROOT);
 			for (const [path, content] of Object.entries(
-				androidResourceFiles(maskable, brand.colors),
+				androidResourceFiles(maskable, brand.colors, monochrome),
 			)) {
 				expect(readFileSync(new URL(path, resDir), "utf8"), path).toBe(content);
 			}
@@ -130,8 +166,50 @@ describe("Android app", () => {
 					});
 				}
 			}
+			// A picture icon has PNG foreground (and themed) layers instead of the vector ones.
+			const picture = isPictureIcon(maskable);
+			const pngLayers = [
+				["ic_launcher_foreground.png", picture],
+				["ic_launcher_monochrome.png", picture && monochrome !== null],
+			] as const;
+			for (const { dir, size } of LEGACY_DENSITIES) {
+				for (const [name, present] of pngLayers) {
+					const file = new URL(`${dir}/${name}`, resDir);
+					expect(existsSync(file), `${dir}/${name}`).toBe(present);
+					if (present) {
+						const layer = adaptiveLayerSize(size);
+						expect(imageSize(readFileSync(file))).toEqual({
+							width: layer,
+							height: layer,
+						});
+					}
+				}
+			}
+			for (const path of VECTOR_ONLY_DRAWABLES) {
+				expect(existsSync(new URL(path, resDir)), path).toBe(!picture);
+			}
 		},
 	);
+
+	it("gives a picture icon a themed layer only with its silhouette", () => {
+		const maskable = readFileSync(
+			new URL(brand.iconMaskable, BRAND_ROOT),
+			"utf8",
+		);
+		const monochrome = readMonochromeIcon(BRAND_ROOT);
+		expect(monochrome).not.toBeNull();
+		const adaptive = "mipmap-anydpi-v26/ic_launcher.xml";
+		expect(
+			androidResourceFiles(maskable, brand.colors, monochrome)[adaptive],
+		).toContain(
+			'<monochrome android:drawable="@mipmap/ic_launcher_monochrome"/>',
+		);
+		if (isPictureIcon(maskable)) {
+			expect(
+				androidResourceFiles(maskable, brand.colors, null)[adaptive],
+			).not.toContain("<monochrome");
+		}
+	});
 
 	it("has the Play listing icon and feature graphic", () => {
 		const icon = readFileSync(

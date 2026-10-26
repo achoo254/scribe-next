@@ -1,4 +1,5 @@
 import type { ComponentProps } from "react";
+import scribeMark from "../../../brand/scribe-mark-128.webp";
 import { APP_NAME } from "../../lib/brand";
 import { cn } from "../../lib/cn";
 
@@ -27,28 +28,18 @@ export interface BrandMarkProps {
 }
 
 /**
- * App mark: sound wave (primary) turning into transcript lines (accent),
- * the same drawing as the app icon, coloured by tokens.
+ * App mark: the AI-drawn Scribe icon (rounded tile, transparent corners),
+ * the same art as the app icon. A file, never inlined (vite.config.ts): the
+ * CSP allows images from this origin only.
  */
 export function BrandMark({ size = 28, className }: BrandMarkProps) {
 	return (
-		<svg
+		<img
+			src={scribeMark}
 			width={size}
 			height={size}
-			viewBox="0 0 32 32"
-			aria-hidden="true"
+			alt=""
 			className={cn("block flex-none", className)}
-		>
-			<g className="fill-primary">
-				<rect x="3.5" y="10" width="3.5" height="12" rx="1.75" />
-				<rect x="9" y="6" width="3.5" height="20" rx="1.75" />
-				<rect x="14.5" y="9" width="3.5" height="14" rx="1.75" />
-			</g>
-			<g className="fill-accent">
-				<rect x="21" y="9" width="8" height="3.5" rx="1.75" />
-				<rect x="21" y="14.25" width="6.5" height="3.5" rx="1.75" />
-				<rect x="21" y="19.5" width="5" height="3.5" rx="1.75" />
-			</g>
-		</svg>
+		/>
 	);
 }

@@ -30,6 +30,7 @@ const MIME: Record<string, string> = {
 	".webmanifest": "application/manifest+json",
 	".svg": "image/svg+xml",
 	".png": "image/png",
+	".webp": "image/webp",
 	".ico": "image/x-icon",
 	".woff2": "font/woff2",
 };

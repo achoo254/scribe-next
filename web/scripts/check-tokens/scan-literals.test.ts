@@ -33,6 +33,26 @@ describe("findLiteralViolations", () => {
 		]);
 	});
 
+	it("flags --color-* theme names, which are not CSS variables", () => {
+		expect(
+			rules(
+				'"bg-[color-mix(in_srgb,var(--color-primary)_10%,var(--color-bg))]"',
+			),
+		).toEqual([
+			[1, "theme-color-var", "--color-primary"],
+			[1, "theme-color-var", "--color-bg"],
+		]);
+		expect(rules('className="text-(--color-muted)"')).toEqual([
+			[1, "theme-color-var", "--color-muted"],
+		]);
+		expect(
+			rules("@theme inline { --color-bg: var(--c-bg); }", "a.css"),
+		).toEqual([]);
+		expect(
+			rules('"bg-[color-mix(in_srgb,var(--c-primary)_10%,var(--c-bg))]"'),
+		).toEqual([]);
+	});
+
 	it("flags px spacing in CSS but not other px properties", () => {
 		expect(rules(".x { padding: 12px 4px; gap: 6px }", "a.css")).toEqual([
 			[1, "spacing-px", "padding: 12px"],
