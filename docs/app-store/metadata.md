@@ -55,7 +55,7 @@ RIÊNG TƯ
 • Xoá tài khoản và mọi dữ liệu ngay trong app.
 • Có thể dùng key API của chính bạn (OpenAI, Gemini, Claude, ElevenLabs).
 
-Đăng nhập bằng tài khoản hoandat. Hãy xin phép mọi người trước khi ghi âm.
+Đăng nhập bằng tài khoản hoandat.com. Hãy xin phép mọi người trước khi ghi âm.
 ```
 
 EN:
@@ -85,7 +85,7 @@ PRIVATE
 • Delete your account and all your data in the app.
 • Bring your own API key (OpenAI, Gemini, Claude, ElevenLabs).
 
-Sign in with a hoandat account. Ask everyone's permission before you record.
+Sign in with a hoandat.com account. Ask everyone's permission before you record.
 ```
 
 ### Từ khoá (≤ 100, ngăn bằng dấu phẩy, không lặp tên app)
@@ -114,12 +114,12 @@ Khớp `web/ios/App/App/PrivacyInfo.xcprivacy` và `/privacy`. **Không theo dõ
 
 | Nhóm App Store Connect | Loại | Ghi chú |
 |---|---|---|
-| Contact Info | Name | Tên hiển thị từ tài khoản hoandat |
-| Contact Info | Email Address | Email tài khoản hoandat |
+| Contact Info | Name | Tên hiển thị từ tài khoản hoandat.com |
+| Contact Info | Email Address | Email tài khoản hoandat.com |
 | User Content | Audio Data | Bản ghi, tệp âm thanh tải lên; gửi ElevenLabs để chép lời |
 | User Content | Photos or Videos | Video người dùng tự chọn hoặc quay để tải lên |
 | User Content | Other User Content | Lời chép, câu sửa, tên người nói, biên bản, dấu mốc, bản dịch, Key riêng (mã hoá) |
-| Identifiers | User ID | Mã tài khoản hoandat |
+| Identifiers | User ID | Mã tài khoản hoandat.com |
 | Usage Data | Product Interaction | Nhật ký bảo mật hành động (đăng nhập, tải lên, xoá), số liệu mức dùng |
 
 Không thu thập: Location, Contacts, Health, Financial, Browsing/Search History (câu tìm kiếm không lưu), Sensitive Info, Diagnostics, Purchases, Device ID.
@@ -131,7 +131,7 @@ Dán vào **App Review Information → Notes** (tiếng Anh, người duyệt đ
 ```
 Scribe records meetings and transcribes Vietnamese speech.
 
-Sign-in: tap "Đăng nhập bằng hoandat" (Sign in with hoandat). hoandat is our own account
+Sign-in: tap "Đăng nhập bằng hoandat.com" (Sign in with hoandat.com). hoandat.com is our own account
 service (auth.hoandat.com) shared by our apps. Use the demo account in the Sign-In
 Information fields. It is on the Plus plan and already holds a transcribed sample meeting,
 so every feature can be tried without recording.
@@ -146,7 +146,7 @@ Microphone: used only while recording. Camera / Photos: only when the user choos
 pick a video to upload for transcription.
 
 Account deletion (5.1.1(v)): account menu (avatar, top right) → "Xoá tài khoản" (Delete
-account) → type XOÁ → "Xoá tài khoản". All Scribe data is deleted at once. The shared hoandat
+account) → type XOÁ → "Xoá tài khoản". All Scribe data is deleted at once. The shared hoandat.com
 account itself can be deleted at auth.hoandat.com/account (linked in the same dialog).
 
 Privacy policy and terms: account menu → "Quyền riêng tư" / "Điều khoản", also on the sign-in
@@ -156,7 +156,7 @@ The interface is in Vietnamese. Main tabs: Ghi âm (Record), Cắt file (Split f
 Lời đã chép (Transcripts).
 ```
 
-**Tài khoản demo (không bao giờ ghi vào repo):** đề xuất một tài khoản hoandat riêng cho người duyệt, ví dụ email `<review email do chủ dự án tạo>`, đăng nhập được không cần thiết bị thứ hai (không 2FA bằng điện thoại, không bị chặn khi đăng nhập từ máy lạ ở Mỹ). Thông tin đăng nhập chỉ nhập vào ô **Sign-In Information** của App Store Connect. Trước khi gửi duyệt:
+**Tài khoản demo (không bao giờ ghi vào repo):** đề xuất một tài khoản hoandat.com riêng cho người duyệt, ví dụ email `<review email do chủ dự án tạo>`, đăng nhập được không cần thiết bị thứ hai (không 2FA bằng điện thoại, không bị chặn khi đăng nhập từ máy lạ ở Mỹ). Thông tin đăng nhập chỉ nhập vào ô **Sign-In Information** của App Store Connect. Trước khi gửi duyệt:
 
 1. Tạo tài khoản đó trên auth-next, đăng nhập Scribe một lần.
 2. `scribe-be admin set-plan <email> plus --until <ngày sau đợt duyệt>` để người duyệt không chạm hạn mức free.

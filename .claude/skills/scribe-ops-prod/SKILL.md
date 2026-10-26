@@ -53,7 +53,7 @@ của máy edge iNET, không phải môi trường của Scribe).
 | Dấu hiệu | Môi trường | Ai lo |
 |---|---|---|
 | `scribe.hoandat.com`, `<SERVER_65_IP>`, `scribe-be`, `/opt/scribe-be`, `/var/www/scribe`, db `scribe` trên `.65` (tên cũ `onescribe*` từ trước 16/10/2026) | **Scribe prod** | skill này |
-| `localhost:5173` / `:8787`, `.env.development`, Mongo dev lab 176, `cargo run`, `pnpm run dev` | Dev local | `README.md` §Chạy dev, skill `inet-lab-ops` cho box lab |
+| `localhost:5173` / `:8787`, `.env.development`, Mongo dev lab 176, `cargo run`, `pnpm run dev` | Dev local | `docs/deploy-web-production.md` §Chạy dev local, skill `inet-lab-ops` cho box lab |
 | App iPhone cài qua cáp (`pnpm run ios:device`) | Bản build trên máy người dùng, nói chuyện với prod | `docs/ios-app.md` |
 | `localman.hoandat.com`, `auth.hoandat.com`, pm2 `localman-api`/`hoandat-auth` (IdP, repo auth-next), `tunelo`, mongod `27018` | Repo khác trên cùng máy | skill của repo đó; không đụng |
 
@@ -70,8 +70,8 @@ app trên máy, không chỉ Scribe.
 3. **DB `scribe` nằm trên mongod CHUNG cổng 27017** (cùng các db của app khác). Chỉ truy vấn db `scribe` qua
    `scripts/prod-mongosh.sh`; không `dropDatabase`, không đụng db khác, không đổi cấu hình mongod. Cổng 27017 mở ra
    ngoài và mật khẩu chia sẻ là **cố ý** (team kết nối trực tiếp) — không tự firewall/rotate.
-4. **Restart backend khi đang chép lời làm tốn tiền:** lượt dở không mất (key OpenAI nằm ở server, lượt `running`
-   được xếp lại) nhưng chạy lại từ đầu, audio gửi lại bị OpenAI tính lần nữa. Trước mọi restart: hàng đợi nên rỗng
+4. **Restart backend khi đang chép lời làm tốn tiền:** lượt dở không mất (key chép lời nằm ở server, lượt `running`
+   được xếp lại) nhưng chạy lại từ đầu, audio gửi lại bị nhà cung cấp (ElevenLabs mặc định) tính lần nữa. Trước mọi restart: hàng đợi nên rỗng
    (§6); khác 0 thì chờ nếu được.
 5. **KHÔNG build trên server.** Build ở máy dev (`cargo zigbuild` cho backend musl, `pnpm run build` cho FE), đẩy
    artifact lên.
@@ -143,7 +143,7 @@ Tìm nhanh tiêu đề: `grep -n '^#' docs/deploy-web-production.md`.
   `idpSub_unique`), `sessions`, `devices`, `auth_states`, `logout_jtis` (`_id` = `primary:<jti>`), `transcripts`, `jobs`
   vẫn mang `tenantId: "primary"`; worker không nhận lượt có `tenantId` khác. Không còn lệnh `admin tenants`,
   `tenant-disable`, `purge-tenant` hay cờ `--tenant`; không còn API nội bộ IdP, khoá app `scribe-web`, khoá niêm phong.
-- **Collection:** `files` (`kind` upload|output|recording, hạn 14 ngày theo `expiresAt`, sweep mỗi giờ xoá đĩa trước
+- **Collection:** `files` (`kind` upload|output|recording, hạn theo gói lúc tạo — free 7 ngày, plus 14 — ghi ở `expiresAt`, `server/scribe-be/src/config.rs`; sweep mỗi giờ xoá đĩa trước
   rồi doc), `transcripts` (kết quả máy + hàng đợi chép lời, `_id` = id file), `transcript_docs` (tiêu đề + câu sửa theo
   phiên, `{userId, key}` unique), `jobs`, `upload_sessions`/`recording_sessions`, `audit_events` (TTL 180 ngày).
 - **Phiên iPhone** là nhiều file tên `<sessionId>#<index>`; khoá transcript `s:<sessionId>`, bản ghi trình duyệt
@@ -153,8 +153,9 @@ Tìm nhanh tiêu đề: `grep -n '^#' docs/deploy-web-production.md`.
   "Máy chủ đã khởi động lại…". Thấy lỗi này hàng loạt ⟹ restart lặp lại khi đang chép.
 - **Tiền chép lời:** sổ `transcribe_usage` (tháng giờ VN), chi tiết `transcribe_runs`. Tra: `sudo -u <user> <binary> admin
   usage [--email …]`; đối soát `--recompute` (chỉ xem), `--apply` là thao tác ghi. Cấp gói `admin set-plan` cũng là ghi.
-- **Chép lời tạm ngưng toàn hệ thống** (503 "Chép lời đang tạm ngưng"): key OpenAI hỏng hoặc hết credit — tìm
-  `transcript.key_invalid` trong `audit_events` và dòng "key OpenAI của server không dùng được" trong journal.
+- **Chép lời tạm ngưng toàn hệ thống** (503 "Chép lời đang tạm ngưng"): key chép lời của server hỏng — tìm
+  `transcript.key_invalid` trong `audit_events` và dòng "key chép lời của server không dùng được" trong journal. ElevenLabs
+  hết credit tháng là `transcript.provider_quota` (deploy doc, mục key ElevenLabs).
 - **Đĩa:** dữ liệu người dùng ở `/opt/scribe-be/data/<userId>/` (`recordings/`, `uploads/`, `outputs/`, `tmp/*.part`).
 - **`lsof -ti :PORT` liệt kê cả client** — dùng `ss -ltnp` hoặc `-sTCP:LISTEN` trước khi kết luận hay kill gì.
 - **Bản sao lưu** nằm ở `/root/scribe-backup-<YYYYMMDD-HHMMSS>/` trên chính .65 (`scribe-be.prev`, `dist/`,

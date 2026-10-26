@@ -47,7 +47,7 @@ Chuẩn bị sẵn trong repo (19/10/2026, plan `plans/dattqh/261019-1105-app-st
 6. **TestFlight**: build hiện trong tab TestFlight sau khi Apple xử lý (vài phút tới vài chục phút). Lần đầu trả lời câu hỏi mã hoá đã được `ITSAppUsesNonExemptEncryption` trả lời sẵn. Tạo nhóm Internal Testing, thêm người thử (tài khoản trong Users and Access, tối đa 100), bật build cho nhóm.
 7. **Nộp duyệt** (khi muốn lên App Store): điền hồ sơ từ [app-store/metadata.md](./app-store/metadata.md) (mô tả, từ khoá, ảnh `docs/app-store/screenshots/`, App Privacy, Age Rating, ghi chú cho người duyệt, tài khoản demo), chọn build, Submit for Review.
 
-Việc cần Apple duyệt tài khoản trước: tạo app, key API, chạy script, TestFlight. Làm được ngay: tài khoản demo cho người duyệt, `VITE_SUPPORT_EMAIL`, deploy backend có `DELETE /api/me` và trang `/privacy`, `/terms` lên prod.
+Backend có xoá tài khoản và trang `/privacy`, `/terms` đã chạy trên prod; trước khi nộp duyệt còn cần tài khoản demo cho người duyệt và `VITE_SUPPORT_EMAIL`.
 
 ## Cách app hoạt động
 
