@@ -5,12 +5,15 @@ import { cn } from "../../lib/cn";
 
 export type WordmarkProps = Omit<ComponentProps<"span">, "children">;
 
-/** The app name in bold JetBrains Mono, its first letter in violet step 11. */
+/**
+ * The app name in bold Inter (the sans token, like the other apps of the
+ * ecosystem), its first letter in violet step 11.
+ */
 export function Wordmark({ className, ...rest }: WordmarkProps) {
 	return (
 		<span
 			className={cn(
-				"font-bold font-mono text-fg text-xl tracking-[-0.02em]",
+				"font-bold font-sans text-fg text-xl tracking-[-0.02em]",
 				className,
 			)}
 			{...rest}

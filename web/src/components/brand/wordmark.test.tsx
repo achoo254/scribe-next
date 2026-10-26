@@ -7,7 +7,8 @@ describe("Wordmark", () => {
 		const { container } = render(<Wordmark data-id="brand" />);
 		const root = container.firstElementChild;
 		expect(root).toHaveTextContent(/^Scribe$/);
-		expect(root).toHaveClass("font-mono", "font-bold", "text-fg");
+		expect(root).toHaveClass("font-sans", "font-bold", "text-fg");
+		expect(root).not.toHaveClass("font-mono");
 		expect(root).toHaveAttribute("data-id", "brand");
 		expect(screen.getByText("S")).toHaveClass("text-primary");
 	});
