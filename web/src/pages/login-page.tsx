@@ -9,7 +9,7 @@ import { Alert } from "../components/ui/alert";
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
 import { useT } from "../i18n/i18n-context";
-import { LegalLinks } from "../layout/legal-links";
+import { LegalLinks, QUIET_LINK } from "../layout/legal-links";
 import { useIdpName } from "../lib/idp-name";
 
 /**
@@ -20,7 +20,7 @@ import { useIdpName } from "../lib/idp-name";
  * account is gone (`accountDeleted`). Laid out like the hoandat-auth sign-in
  * page: the 100px grid behind, a top bar with the wordmark, one 420px
  * card 48px under it with a mono title, a subtitle, the button and a
- * muted note.
+ * muted note; the legal links sit quietly under the card.
  */
 export function LoginPage() {
 	const t = useT();
@@ -96,8 +96,12 @@ export function LoginPage() {
 					<p className="m-0 text-center text-muted text-sm">
 						{t("login.note", { idpName })}
 					</p>
-					<LegalLinks className="justify-center text-sm" />
 				</Card>
+				{/* Under the card, not in it: the card holds only signing in. */}
+				<LegalLinks
+					className="mt-5 justify-center gap-5 text-[0.8125rem] sm:gap-5"
+					linkClassName={QUIET_LINK}
+				/>
 			</main>
 		</div>
 	);
