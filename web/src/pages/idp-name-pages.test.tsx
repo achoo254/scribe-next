@@ -25,7 +25,7 @@ describe("pages naming the sign-in account", () => {
 		renderWithProviders(<LoginPage />);
 		expect(
 			await screen.findByRole("button", {
-				name: "Đăng nhập bằng tài khoản hoandat.com",
+				name: "Đăng nhập bằng hoandat.com",
 			}),
 		).toBeVisible();
 
@@ -34,7 +34,7 @@ describe("pages naming the sign-in account", () => {
 		});
 		await act(() => loadIdpName(fetcher));
 		expect(
-			screen.getByRole("button", { name: "Đăng nhập bằng tài khoản Acme" }),
+			screen.getByRole("button", { name: "Đăng nhập bằng Acme" }),
 		).toBeVisible();
 		expect(
 			screen.getByText("Ghi âm, cắt file và chép lời bằng tài khoản Acme."),
