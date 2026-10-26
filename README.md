@@ -24,7 +24,8 @@ Các ứng dụng dùng chung một backend:
 
 - Dev local (nạp env, chạy backend rồi web): mục "Chạy dev local" của [docs/deploy-web-production.md](./docs/deploy-web-production.md).
 - Lệnh web: `scripts` trong [`web/package.json`](./web/package.json). Lệnh backend: `cargo clippy` và `cargo test` trên workspace.
-- CI ([`.github/workflows/ci.yml`](./.github/workflows/ci.yml)) chạy bộ kiểm của web, Rust (gồm test trên Mongo thật, `--skip live_` bỏ các test gọi API trả tiền) và Android. CI bỏ qua so ảnh chụp e2e, nên trước khi deploy web chạy `pnpm run test:e2e` và `pnpm run build` trong `web/`; `build` kết thúc bằng `check:dist` để chặn stub của e2e lọt vào `dist/`.
+- CI ([`.github/workflows/ci.yml`](./.github/workflows/ci.yml)) chạy bộ kiểm của web, Rust (gồm test trên Mongo thật, `--skip live_` bỏ các test gọi API trả tiền) và Android. Về e2e, mỗi lần push chỉ chạy bộ smoke trên Chromium; toàn bộ e2e (thêm WebKit iPhone) chạy hằng đêm ở [`.github/workflows/e2e-nightly.yml`](./.github/workflows/e2e-nightly.yml). CI bỏ qua so ảnh chụp e2e, nên trước khi deploy web chạy `pnpm run test:e2e` và `pnpm run build` trong `web/`; `build` kết thúc bằng `check:dist` để chặn stub của e2e lọt vào `dist/`.
+- **Luật e2e.** Logic nghiệp vụ được khoá bằng unit test cạnh code (`web/src/**/*.test.ts(x)`) và test Rust. Chỉ viết e2e cho thứ unit test không thay được: một luồng chính qua nhiều trang, ảnh chụp mốc, axe, CSP. Chỉ gắn tag smoke (`SMOKE` trong `web/e2e/support/page-helpers.ts`) cho luồng mà hỏng là người dùng không dùng được app: đăng nhập, ghi âm, tải và cắt file, điều hướng, key riêng, xoá tài khoản. Thêm hay xoá spec thì ghi trong spec hành vi nào đã có unit test nào khoá.
 - AAB Android cho Play do [`.github/workflows/android-release.yml`](./.github/workflows/android-release.yml) ký.
 
 ## Tài liệu
