@@ -6,20 +6,16 @@ import { cn } from "../../lib/cn";
 export type WordmarkProps = Omit<ComponentProps<"span">, "children">;
 
 /**
- * The app name in bold Inter (the sans token, like the other apps of the
- * ecosystem), its first letter in violet step 11.
+ * The app name in bold Inter and the primary colour, as the account app
+ * (auth.hoandat.com) sets the brand name in its top bar.
  */
 export function Wordmark({ className, ...rest }: WordmarkProps) {
 	return (
 		<span
-			className={cn(
-				"font-bold font-sans text-fg text-xl tracking-[-0.02em]",
-				className,
-			)}
+			className={cn("font-bold font-sans text-base text-primary", className)}
 			{...rest}
 		>
-			<span className="text-primary">{APP_NAME.slice(0, 1)}</span>
-			{APP_NAME.slice(1)}
+			{APP_NAME}
 		</span>
 	);
 }

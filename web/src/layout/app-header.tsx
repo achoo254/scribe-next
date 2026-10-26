@@ -100,7 +100,7 @@ export function AppHeader({ user }: AppHeaderProps) {
 					aria-label={t("layout.appHeader.home")}
 					className="flex items-center gap-2 rounded-sm no-underline"
 				>
-					<BrandMark size={28} />
+					<BrandMark size={24} />
 					<Wordmark />
 				</Link>
 				<nav

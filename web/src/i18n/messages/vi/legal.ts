@@ -11,7 +11,6 @@ export const legal = {
 		privacy: "Quyền riêng tư",
 		terms: "Điều khoản",
 	},
-	back: "Về Scribe",
 	contactFallback: "người vận hành Scribe qua tài khoản {idpName}",
 	englishTitle: "English summary",
 	privacy: {

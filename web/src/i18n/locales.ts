@@ -6,3 +6,11 @@
 export type Locale = "vi";
 
 export const DEFAULT_LOCALE: Locale = "vi";
+
+/** Every language of the UI, in the order the language switcher lists them. */
+export const LOCALES: readonly Locale[] = ["vi"];
+
+/** Each language's name in that language (the switcher's labels). */
+export const LOCALE_NAMES: Readonly<Record<Locale, string>> = {
+	vi: "Tiếng Việt",
+};

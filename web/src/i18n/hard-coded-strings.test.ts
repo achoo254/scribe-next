@@ -18,8 +18,14 @@ const VIETNAMESE =
  * Literals allowed outside the dictionary. Each entry names the file, the
  * exact text and why it is not user-facing copy. Keep it short.
  */
-const ALLOWED: ReadonlyArray<{ file: string; text: string; reason: string }> =
-	[];
+const ALLOWED: ReadonlyArray<{ file: string; text: string; reason: string }> = [
+	{
+		file: "./locales.ts",
+		text: "Tiếng Việt",
+		reason:
+			"A language's own name in the switcher, the same whatever language the page is in",
+	},
+];
 
 /** App source without the dictionary, tests, test helpers and dev-only pages. */
 const SOURCES: Record<string, string> = import.meta.glob(

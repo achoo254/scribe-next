@@ -1,16 +1,15 @@
-import { render, screen } from "@testing-library/react";
+import { render } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { BrandMark, Wordmark } from "./wordmark";
 
 describe("Wordmark", () => {
-	it("reads Scribe with the 'S' in the primary colour", () => {
+	it("reads Scribe in bold sans, in the primary colour", () => {
 		const { container } = render(<Wordmark data-id="brand" />);
 		const root = container.firstElementChild;
 		expect(root).toHaveTextContent(/^Scribe$/);
-		expect(root).toHaveClass("font-sans", "font-bold", "text-fg");
+		expect(root).toHaveClass("font-sans", "font-bold", "text-primary");
 		expect(root).not.toHaveClass("font-mono");
 		expect(root).toHaveAttribute("data-id", "brand");
-		expect(screen.getByText("S")).toHaveClass("text-primary");
 	});
 });
 

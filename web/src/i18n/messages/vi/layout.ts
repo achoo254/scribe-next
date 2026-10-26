@@ -32,6 +32,14 @@ export const layout = {
 	footer: {
 		links: "Liên kết tài khoản",
 	},
+	/** Top bar and footer of the public pages (landing, sign-in, legal), as on auth.hoandat.com. */
+	publicChrome: {
+		nav: "Điều hướng",
+		signIn: "Đăng nhập",
+		language: "Ngôn ngữ",
+		footLinks: "Liên kết cuối trang",
+		ecosystem: "Một app của hoandat.com",
+	},
 	leaveGuard: {
 		title: "Rời trang",
 		question: "Rời trang khi chưa lưu?",

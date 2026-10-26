@@ -13,11 +13,13 @@ import { Badge } from "../../components/ui/badge";
 import { buttonClassName } from "../../components/ui/button";
 import { cardClassName } from "../../components/ui/card";
 import { useT } from "../../i18n/i18n-context";
+import { PublicFooter, PublicHeader } from "../../layout/public-chrome";
 import { MAIN_ID, SkipLink } from "../../layout/skip-link";
 import { cn } from "../../lib/cn";
 import { useIdpName } from "../../lib/idp-name";
-import { LandingFooter } from "./landing-footer";
-import { LANDING_ANCHORS, LandingHeader } from "./landing-header";
+
+/** In-page anchors of the landing sections. */
+const LANDING_ANCHORS = { features: "features", how: "how" } as const;
 
 const START_CLASS = cn(
 	buttonClassName({ variant: "primary", size: "lg" }),
@@ -25,10 +27,10 @@ const START_CLASS = cn(
 );
 
 const EYEBROW =
-	"m-0 font-mono font-semibold text-primary text-xs uppercase tracking-[0.12em]";
+	"m-0 font-mono font-semibold text-muted text-xs uppercase tracking-[0.12em]";
 
 const H2 =
-	"m-0 font-bold text-[clamp(1.625rem,4vw,2.25rem)] leading-tight tracking-[-0.02em]";
+	"m-0 font-bold font-mono text-[clamp(1.5rem,3.6vw,2rem)] leading-tight tracking-[-0.02em]";
 
 /** Feature cards, in order (keys written out: the dictionary test finds them). */
 const FEATURES = [
@@ -114,10 +116,12 @@ function Hero() {
 			className="grid items-center gap-10 pt-10 pb-8 md:pt-16 lg:grid-cols-[1.1fr_0.9fr] lg:gap-12 lg:pt-20 lg:pb-12"
 		>
 			<div className="grid min-w-0 justify-items-start gap-6">
-				<Badge tone="primary">{t("landing.hero.eyebrow")}</Badge>
+				<Badge tone="primary" className="rounded-full px-3 py-1.5">
+					{t("landing.hero.eyebrow")}
+				</Badge>
 				<h1
 					id="landing-hero-title"
-					className="m-0 text-balance font-bold text-[clamp(2.25rem,6vw,3.5rem)] leading-[1.08] tracking-[-0.03em]"
+					className="m-0 text-balance font-bold font-mono text-[clamp(2rem,5vw,3rem)] leading-[1.1] tracking-[-0.02em]"
 				>
 					{t("landing.hero.title")}
 				</h1>
@@ -181,7 +185,7 @@ function Features() {
 						<span className="tint-soft grid size-11 place-items-center rounded-md border text-primary [--tone:var(--c-primary)]">
 							<Icon size={22} aria-hidden="true" />
 						</span>
-						<h3 className="m-0 font-bold text-lg">{t(title)}</h3>
+						<h3 className="m-0 font-bold font-mono text-lg">{t(title)}</h3>
 						<p className="m-0 text-muted">{t(body)}</p>
 					</li>
 				))}
@@ -229,7 +233,7 @@ function HowItWorks() {
 						>
 							{String(index + 1).padStart(2, "0")}
 						</span>
-						<h3 className="m-0 font-bold text-lg">{title}</h3>
+						<h3 className="m-0 font-bold font-mono text-lg">{title}</h3>
 						<p className="m-0 text-muted">{body}</p>
 					</li>
 				))}
@@ -252,7 +256,7 @@ function ClosingCta() {
 			<div className="grid max-w-150 gap-2">
 				<h2
 					id="landing-cta-title"
-					className="m-0 font-bold text-[clamp(1.375rem,3vw,1.75rem)] leading-tight tracking-[-0.02em]"
+					className="m-0 font-bold font-mono text-[clamp(1.25rem,3vw,1.5rem)] leading-tight tracking-[-0.01em]"
 				>
 					{t("landing.cta.title")}
 				</h2>
@@ -270,10 +274,25 @@ function ClosingCta() {
  * users never see it (`/` takes them to the app).
  */
 export function LandingPage() {
+	const t = useT();
 	return (
-		<div data-id="landing" className="flex min-h-dvh flex-col">
+		<div data-id="landing" className="grid-backdrop flex min-h-dvh flex-col">
 			<SkipLink />
-			<LandingHeader />
+			<PublicHeader
+				hideLinksOnPhones
+				links={[
+					{
+						href: `#${LANDING_ANCHORS.features}`,
+						label: t("landing.nav.features"),
+						"data-id": "landing-nav-features",
+					},
+					{
+						href: `#${LANDING_ANCHORS.how}`,
+						label: t("landing.nav.how"),
+						"data-id": "landing-nav-how",
+					},
+				]}
+			/>
 			<main
 				id={MAIN_ID}
 				tabIndex={-1}
@@ -284,7 +303,7 @@ export function LandingPage() {
 				<HowItWorks />
 				<ClosingCta />
 			</main>
-			<LandingFooter />
+			<PublicFooter />
 		</div>
 	);
 }

@@ -180,10 +180,9 @@ describe("app routes", () => {
 			"href",
 			"#features",
 		);
-		expect(screen.getByRole("link", { name: "hoandat.com" })).toHaveAttribute(
-			"href",
-			"https://hoandat.com",
-		);
+		expect(
+			screen.getByRole("link", { name: "Một app của hoandat.com" }),
+		).toHaveAttribute("href", "https://hoandat.com");
 		await userEvent.click(screen.getByRole("link", { name: "Đăng nhập" }));
 		expect(await screen.findByText("login")).toBeInTheDocument();
 		expect(router.state.location.pathname).toBe("/login");

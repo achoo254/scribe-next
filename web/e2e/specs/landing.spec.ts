@@ -52,8 +52,32 @@ test.describe("landing page", () => {
 		await expect(page).toHaveURL(/\/login$/);
 		await expect(page.getByTestId("login-submit")).toBeVisible();
 		await page.goBack();
-		await page.getByTestId("landing-sign-in").click();
+		await page.getByTestId("public-sign-in").click();
 		await expect(page).toHaveURL(/\/login$/);
+	});
+
+	test("the footer is the account app's: language, hoandat.com, privacy, terms", async ({
+		page,
+	}) => {
+		await stubApi(page, GUEST);
+		await page.goto("/");
+		const footer = page.getByTestId("public-footer");
+		await expect(
+			footer.getByRole("navigation", { name: "Ngôn ngữ" }).getByRole("link"),
+		).toHaveText(["Tiếng Việt"]);
+		await expect(footer.getByTestId("lang-vi")).toHaveAttribute(
+			"aria-current",
+			"true",
+		);
+		await expect(
+			footer.getByRole("link", { name: "Một app của hoandat.com" }),
+		).toHaveAttribute("href", "https://hoandat.com");
+		await expect(
+			footer.getByRole("link", { name: "Quyền riêng tư" }),
+		).toHaveAttribute("href", "/privacy");
+		await expect(
+			footer.getByRole("link", { name: "Điều khoản" }),
+		).toHaveAttribute("href", "/terms");
 	});
 
 	test("Xem tính năng scrolls to the features", async ({ page }) => {

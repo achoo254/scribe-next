@@ -5,10 +5,8 @@
  */
 export const landing = {
 	nav: {
-		label: "Giới thiệu",
 		features: "Tính năng",
 		how: "Cách dùng",
-		signIn: "Đăng nhập",
 	},
 	hero: {
 		eyebrow: "Ghi âm và chép lời tiếng Việt",
@@ -60,8 +58,5 @@ export const landing = {
 	cta: {
 		title: "Thử với cuộc họp tiếp theo",
 		body: "Gói miễn phí có 200 MB lưu trữ; tệp tự xoá sau 7 ngày, nên hãy tải về bản bạn cần giữ.",
-	},
-	footer: {
-		madeBy: "Một app của <home>hoandat.com</home>",
 	},
 } as const;

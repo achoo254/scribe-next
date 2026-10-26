@@ -7,11 +7,7 @@ import { PATHS } from "./app-paths";
 export const TEXT_LINK =
 	"font-semibold text-primary underline underline-offset-4 hover:no-underline";
 
-/** A quiet link under a card, like the sign-in page's legal row. */
-export const QUIET_LINK =
-	"inline-flex min-h-8 items-center rounded-sm text-muted underline-offset-4 hover:text-fg hover:underline pointer-coarse:min-h-11";
-
-/** "Quyền riêng tư · Điều khoản": the footer, sign-in page and legal pages. */
+/** "Quyền riêng tư · Điều khoản": the app footer and the legal pages. */
 export function LegalLinks({
 	className,
 	linkClassName = TEXT_LINK,
