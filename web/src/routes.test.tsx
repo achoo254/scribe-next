@@ -110,7 +110,7 @@ afterEach(() => {
 });
 
 describe("app routes", () => {
-	it("sends / and unknown paths to /record", async () => {
+	it("sends a signed-in user from / and unknown paths to /record", async () => {
 		const router = renderAt("/");
 		expect(await screen.findByText("record page")).toBeInTheDocument();
 		expect(router.state.location.pathname).toBe("/record");
@@ -156,6 +156,60 @@ describe("app routes", () => {
 		await act(() => router.navigate("/record"));
 		expect(await screen.findByText("record page")).toBeInTheDocument();
 		expect(auth.stateMounts).toBe(1);
+	});
+
+	it("shows a visitor the landing page at /, whose calls to action open /login", async () => {
+		auth.signedIn = false;
+		const router = renderAt("/");
+		expect(
+			await screen.findByRole("heading", {
+				level: 1,
+				name: "Nói. Nhận bản chép lời.",
+			}),
+		).toBeInTheDocument();
+		expect(router.state.location.pathname).toBe("/");
+		expect(auth.stateMounts).toBe(0);
+		expect(screen.getByRole("link", { name: "Đăng nhập" })).toHaveAttribute(
+			"href",
+			"/login",
+		);
+		const starts = screen.getAllByRole("link", { name: "Bắt đầu miễn phí" });
+		expect(starts).toHaveLength(2);
+		for (const start of starts) expect(start).toHaveAttribute("href", "/login");
+		expect(screen.getByRole("link", { name: "Xem tính năng" })).toHaveAttribute(
+			"href",
+			"#features",
+		);
+		expect(screen.getByRole("link", { name: "hoandat.com" })).toHaveAttribute(
+			"href",
+			"https://hoandat.com",
+		);
+		await userEvent.click(screen.getByRole("link", { name: "Đăng nhập" }));
+		expect(await screen.findByText("login")).toBeInTheDocument();
+		expect(router.state.location.pathname).toBe("/login");
+	});
+
+	it("keeps the sign-in card at /login for a visitor", async () => {
+		auth.signedIn = false;
+		const router = renderAt("/login");
+		expect(await screen.findByText("login")).toBeInTheDocument();
+		expect(router.state.location.pathname).toBe("/login");
+		expect(screen.queryByRole("heading", { level: 1 })).toBeNull();
+	});
+
+	it("sends a signed-in user from /login to the app", async () => {
+		const router = renderAt("/login");
+		expect(await screen.findByText("record page")).toBeInTheDocument();
+		expect(router.state.location.pathname).toBe("/record");
+		expect(screen.queryByText("Nói. Nhận bản chép lời.")).toBeNull();
+	});
+
+	it("takes a visitor in the iPhone or Android app from / straight to /login", async () => {
+		auth.signedIn = false;
+		vi.stubGlobal("Capacitor", { isNativePlatform: () => true });
+		const router = renderAt("/");
+		expect(await screen.findByText("login")).toBeInTheDocument();
+		expect(router.state.location.pathname).toBe("/login");
 	});
 
 	it("opens the legal pages without signing in, every other page goes to /login", async () => {

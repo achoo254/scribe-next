@@ -2,29 +2,38 @@ import { Link, Navigate, Outlet, useMatches } from "react-router";
 import { BrandMark, Wordmark } from "../components/brand/wordmark";
 import { ThemeToggle } from "../components/theme-toggle";
 import { useT } from "../i18n/i18n-context";
+import { isNativeShell } from "../lib/api";
 import { cn } from "../lib/cn";
+import { LandingPage } from "../pages/landing/landing-page";
 import { MAIN_CLASS, MAIN_ID, SkipLink } from "./skip-link";
 
 /** `handle` of a route a visitor may open without signing in. */
 export const PUBLIC_ROUTE = { public: true } as const;
 
-function isPublicHandle(handle: unknown): boolean {
+/** `handle` of the route a visitor sees as the landing page (`/`). */
+export const LANDING_ROUTE = { landing: true } as const;
+
+function hasHandleFlag(handle: unknown, flag: "public" | "landing"): boolean {
 	return (
 		typeof handle === "object" &&
 		handle !== null &&
-		Reflect.get(handle, "public") === true
+		Reflect.get(handle, flag) === true
 	);
 }
 
 /**
- * What a visitor sees on the signed-in route tree: the public pages
- * (privacy, terms) under the sign-in page's top bar; any other URL goes
- * to /login.
+ * What a visitor sees on the signed-in route tree: the landing page at `/`
+ * (the iPhone and Android apps go straight to /login: an installed app has
+ * nothing to advertise), the public pages (privacy, terms) under the
+ * sign-in page's top bar; any other URL goes to /login.
  */
 export function PublicLayout() {
 	const t = useT();
 	const matches = useMatches();
-	if (!matches.some((match) => isPublicHandle(match.handle))) {
+	if (matches.some((match) => hasHandleFlag(match.handle, "landing"))) {
+		return isNativeShell() ? <Navigate to="/login" replace /> : <LandingPage />;
+	}
+	if (!matches.some((match) => hasHandleFlag(match.handle, "public"))) {
 		return <Navigate to="/login" replace />;
 	}
 	return (

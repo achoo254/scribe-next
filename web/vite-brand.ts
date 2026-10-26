@@ -34,6 +34,7 @@ import {
 	svgManifestIcons,
 	webIconFiles,
 } from "@shared-next/brand/build";
+import { primaryOrigin } from "@shared-next/brand/hosts";
 import type { Plugin } from "vite";
 
 /** web/, where brand.config.json and the icon paths inside it are rooted. */
@@ -72,6 +73,12 @@ export const MANIFEST_OPTIONS: GenerateManifestsOptions = {
 	// the WebView keeps capacitor://localhost (lib/api.ts adds the backend origin).
 	capacitor: { urlScheme: false },
 };
+
+/**
+ * Link preview image (1200×630, web/public/og-image.jpg). Crawlers need an
+ * absolute URL, so it is served from the primary origin.
+ */
+export const OG_IMAGE = { path: "og-image.jpg", width: 1200, height: 630 };
 
 /** URL path (no leading slash) of the web app manifest. */
 export const MANIFEST_PATH = "manifest.webmanifest";
@@ -137,9 +144,22 @@ export function renderIndexHtml(html: string, brand: ScribeBrand): string {
 	}
 	// Browsers with SVG favicons take the SVG (linked after the ICO); the
 	// others fall back to the ICO.
+	const origin = primaryOrigin(brand);
+	const description = escapeHtml(brand.description);
 	const tags = [
 		// Search results and link previews (brand.description is Vietnamese, like <html lang="vi">).
-		`<meta name="description" content="${escapeHtml(brand.description)}" />`,
+		`<meta name="description" content="${description}" />`,
+		`<meta property="og:type" content="website" />`,
+		`<meta property="og:site_name" content="${escapeHtml(brand.appName)}" />`,
+		`<meta property="og:title" content="${escapeHtml(brand.appName)}" />`,
+		`<meta property="og:description" content="${description}" />`,
+		`<meta property="og:url" content="${origin}/" />`,
+		`<meta property="og:locale" content="vi_VN" />`,
+		`<meta property="og:image" content="${origin}/${OG_IMAGE.path}" />`,
+		`<meta property="og:image:width" content="${OG_IMAGE.width}" />`,
+		`<meta property="og:image:height" content="${OG_IMAGE.height}" />`,
+		`<meta name="twitter:card" content="summary_large_image" />`,
+		`<meta name="twitter:image" content="${origin}/${OG_IMAGE.path}" />`,
 		`<link rel="manifest" href="/${MANIFEST_PATH}" />`,
 		`<link rel="apple-touch-icon" href="/${appleTouch.file}" sizes="${appleTouch.size}x${appleTouch.size}" />`,
 		// The iOS home screen name (iOS reads it before the manifest's short_name).

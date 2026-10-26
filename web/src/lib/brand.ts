@@ -16,3 +16,6 @@ export const PRIMARY_ISSUER = brand.primaryTenant.issuer;
 
 /** Root domain of the primary tenant (`hoandat.com`), the only one Scribe runs on. */
 export const PRIMARY_TENANT_DOMAIN = brand.primaryTenant.domain;
+
+/** Home page of the ecosystem (`https://hoandat.com`), linked from the landing footer. */
+export const ECOSYSTEM_HOME_URL = `https://${PRIMARY_TENANT_DOMAIN}`;

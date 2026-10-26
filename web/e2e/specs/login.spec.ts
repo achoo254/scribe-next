@@ -30,9 +30,11 @@ test.describe("login page", () => {
 		});
 	}
 
-	test("a visitor sent to / lands on /login", async ({ page }) => {
+	test("a visitor sent to another app page lands on /login", async ({
+		page,
+	}) => {
 		await stubApi(page, GUEST);
-		await page.goto("/");
+		await page.goto("/record");
 		await expect(page).toHaveURL(/\/login$/);
 	});
 

@@ -5,7 +5,11 @@ import { RequireAuth, RequireGuest } from "./auth/require-auth";
 import { PATHS } from "./layout/app-paths";
 import { AppShell } from "./layout/app-shell";
 import { PageError } from "./layout/page-error";
-import { PUBLIC_ROUTE, PublicLayout } from "./layout/public-layout";
+import {
+	LANDING_ROUTE,
+	PUBLIC_ROUTE,
+	PublicLayout,
+} from "./layout/public-layout";
 import { SignedInState } from "./layout/signed-in-state";
 import { LegalPage } from "./pages/legal-page";
 import { LoginPage } from "./pages/login-page";
@@ -40,7 +44,8 @@ function RequireTranscribe({ children }: { children: ReactNode }) {
  * open across a deploy must not ask for a chunk that no longer exists.
  * The legal pages are public (`PUBLIC_ROUTE`): a visitor gets them in
  * `PublicLayout`, a signed-in user inside the shell, so opening them while
- * recording does not unmount the recording.
+ * recording does not unmount the recording. At `/` a visitor gets the
+ * landing page (`LANDING_ROUTE`), a signed-in user the app.
  */
 export const appRoutes: RouteObject[] = [
 	{
@@ -58,7 +63,12 @@ export const appRoutes: RouteObject[] = [
 				// here, below the shell, without unmounting `SignedInState`.
 				errorElement: <PageError />,
 				children: [
-					{ index: true, element: <Navigate to={PATHS.record} replace /> },
+					{
+						// A visitor sees the landing page here (`LANDING_ROUTE`).
+						index: true,
+						element: <Navigate to={PATHS.record} replace />,
+						handle: LANDING_ROUTE,
+					},
 					{ path: PATHS.record, element: <RecordPage /> },
 					{ path: PATHS.split, element: <SplitPage /> },
 					{

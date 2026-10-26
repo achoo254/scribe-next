@@ -19,6 +19,7 @@ import {
 	BRAND_ROOT,
 	MANIFEST_OPTIONS,
 	MANIFEST_PATH,
+	OG_IMAGE,
 	brandFiles,
 	loadScribeBrand,
 	renderIndexHtml,
@@ -310,6 +311,30 @@ describe("index.html head", () => {
 		expect(html).toContain(
 			`<meta name="description" content="${brand.description}" />`,
 		);
+	});
+
+	it("gives link previews the app name, description and the 1200×630 image", () => {
+		const image = `https://scribe.hoandat.com/${OG_IMAGE.path}`;
+		expect(html).toContain(
+			`<meta property="og:title" content="${brand.appName}" />`,
+		);
+		expect(html).toContain(
+			`<meta property="og:description" content="${brand.description}" />`,
+		);
+		expect(html).toContain(`<meta property="og:image" content="${image}" />`);
+		expect(html).toContain(`<meta name="twitter:image" content="${image}" />`);
+		expect(html).toContain(
+			'<meta name="twitter:card" content="summary_large_image" />',
+		);
+		// JPEG start-of-frame: height then width, big-endian, after the marker.
+		const jpeg = readFileSync(new URL(`public/${OG_IMAGE.path}`, BRAND_ROOT));
+		const sof = jpeg.findIndex(
+			(byte, i) =>
+				byte === 0xff && (jpeg[i + 1] === 0xc0 || jpeg[i + 1] === 0xc2),
+		);
+		expect(sof).toBeGreaterThan(0);
+		expect(jpeg.readUInt16BE(sof + 7)).toBe(OG_IMAGE.width);
+		expect(jpeg.readUInt16BE(sof + 5)).toBe(OG_IMAGE.height);
 	});
 
 	it("keeps the single theme-color meta that src/lib/theme.ts updates", () => {
