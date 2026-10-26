@@ -48,6 +48,13 @@ jobs:
   e2e:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # Image Playwright chính thức (giống e2e-nightly.yml): trình duyệt và thư viện hệ thống có sẵn, khỏi bước
+    # apt install-deps chậm trên runner. Nâng Playwright thì sửa tag image ở cả hai workflow.
+    container:
+      image: mcr.microsoft.com/playwright:v1.64.1-noble
+      options: --user 1001
+    env:
+      PLAYWRIGHT_VERSION: 1.64.1
     defaults:
       run:
         working-directory: web
@@ -62,19 +69,13 @@ jobs:
           cache: pnpm
           cache-dependency-path: web/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
-      # Cache Chromium (headless shell, đủ cho chạy headless) theo đúng phiên bản Playwright đã cài; thư viện
-      # hệ thống (apt) thì không cache được nên lần cache-hit chỉ cài install-deps của Chromium.
-      - id: playwright
-        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
-      - id: browsers
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-chromium-shell-${{ runner.os }}-${{ steps.playwright.outputs.version }}
-      - if: steps.browsers.outputs.cache-hit != 'true'
-        run: node node_modules/@playwright/test/cli.js install --with-deps --only-shell chromium
-      - if: steps.browsers.outputs.cache-hit == 'true'
-        run: node node_modules/@playwright/test/cli.js install-deps chromium
+      - name: Image matches the installed Playwright
+        run: |
+          installed="$(node -p "require('@playwright/test/package.json').version")"
+          if [ "$installed" != "$PLAYWRIGHT_VERSION" ]; then
+            echo "::error::@playwright/test is $installed but the container image is $PLAYWRIGHT_VERSION; update both workflows"
+            exit 1
+          fi
       # Ảnh chụp mốc chỉ có bản macOS (*-darwin.png): trên Linux bỏ so sánh ảnh, giữ mọi assert khác.
       - run: pnpm run test:e2e:smoke --ignore-snapshots
       - run: pnpm exec vite build

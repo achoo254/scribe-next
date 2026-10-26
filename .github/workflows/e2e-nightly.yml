@@ -48,7 +48,7 @@ jobs:
         run: |
           installed="$(node -p "require('@playwright/test/package.json').version")"
           if [ "$installed" != "$PLAYWRIGHT_VERSION" ]; then
-            echo "::error::@playwright/test is $installed but the container image is $PLAYWRIGHT_VERSION; update both in e2e-nightly.yml"
+            echo "::error::@playwright/test is $installed but the container image is $PLAYWRIGHT_VERSION; update both workflows"
             exit 1
           fi
       # Ảnh chụp mốc chỉ có bản macOS (*-darwin.png): trên Linux bỏ so sánh ảnh, giữ mọi assert khác.
