@@ -3,7 +3,7 @@ import type {
 	AskReply,
 	SearchReply,
 } from "../../src/features/search/search-api";
-import { apiFixtures, countOf, stubApi } from "../support/api-stubs";
+import { apiFixtures, stubApi } from "../support/api-stubs";
 import {
 	COLOR_SCHEMES,
 	fontsReady,
@@ -17,9 +17,11 @@ import {
 } from "../support/transcript-fixtures";
 
 /*
- * "Kho bản ghi": searching every transcript (typed with or without
- * Vietnamese marks) and "Hỏi Scribe", whose sources play the transcript
- * from their second.
+ * "Kho bản ghi" against its screenshots: search results and a "Hỏi Scribe"
+ * answer, whose source opens the reader at its second. Search without
+ * Vietnamese marks, the marked match, the answer's sources and the daily
+ * allowance are locked by src/features/search/normalize.test.ts,
+ * src/pages/search/search-page.test.tsx and src/pages/search/ask-card.test.tsx.
  */
 
 const SEARCH: SearchReply = {
@@ -72,71 +74,6 @@ async function expectSecondSegmentPlaying(page: Page): Promise<void> {
 
 test.beforeEach(async ({ page }) => {
 	await preparePage(page, "light");
-});
-
-test("search from Lời đã chép without marks, then open the sentence at its second", async ({
-	page,
-}) => {
-	const api = await stubApi(page, FIXTURES);
-	await page.goto("/transcripts");
-	await page.getByTestId("search-entry-input").fill("cau dau");
-	await page.getByTestId("search-entry-submit").click();
-	await expect(page).toHaveURL(/\/search\?q=cau\+dau$/);
-	const result = page.getByTestId(`search-result-${DOC_KEY}-62`);
-	await expect(result).toBeVisible();
-	// The part typed without marks is marked in the sentence with marks.
-	await expect(result.locator("mark")).toHaveText("Câu đầu");
-	// React's development double mount may cancel and repeat the first request.
-	expect(api.searches.length).toBeGreaterThan(0);
-	expect(api.searches.every((q) => q === "cau dau")).toBe(true);
-
-	await result.click();
-	await expectSecondSegmentPlaying(page);
-	expect(api.unexpected).toEqual([]);
-});
-
-test("Hỏi Scribe on one transcript: a source jumps to its sentence", async ({
-	page,
-}) => {
-	const api = await stubApi(page, FIXTURES);
-	await page.goto(`/transcripts/${encodeURIComponent(DOC_KEY)}`);
-	await askScribe(page, "Đoạn 2 mở đầu thế nào?");
-	const answer = page.getByTestId("ask-entry-1-answer");
-	await expect(answer).toContainText("Đoạn 2 mở đầu bằng câu chào của khách");
-	expect(api.questions).toEqual([
-		{ question: "Đoạn 2 mở đầu thế nào?", key: DOC_KEY },
-	]);
-	await page.getByTestId("ask-entry-1-cite-1").click();
-	await expect(page.getByText("Đang ở đoạn 2")).toBeVisible();
-	await expect(page.getByTestId("reader-segment-1-line-0")).toBeFocused();
-	expect(api.unexpected).toEqual([]);
-});
-
-test("a used-up daily allowance says when Hỏi Scribe opens again", async ({
-	page,
-}) => {
-	const api = await stubApi(page, {
-		...FIXTURES,
-		replies: {
-			"POST /api/ask": {
-				status: 403,
-				body: {
-					error: "Hôm nay đã dùng 30/30 lượt hỏi. Mở lại lúc 0 giờ.",
-					code: "ASK_DAILY_LIMIT",
-					usedMinutes: 30,
-					limitMinutes: 30,
-					retryAt: "2026-10-16T17:00:00+00:00",
-				},
-			},
-		},
-	});
-	await page.goto("/search");
-	await askScribe(page, "Ai gửi báo giá?");
-	await expect(page.getByTestId("ask-entry-1-error")).toContainText(
-		"Hôm nay đã dùng 30/30 lượt hỏi. Mở lại lúc 00:00 17/10.",
-	);
-	expect(countOf(api, "POST /api/ask")).toBe(1);
-	expect(api.unexpected).toEqual([]);
 });
 
 for (const scheme of COLOR_SCHEMES) {

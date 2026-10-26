@@ -6,6 +6,7 @@ import {
 	fontsReady,
 	preparePage,
 	seriousA11yViolations,
+	smokeIn,
 } from "../support/page-helpers";
 
 /*
@@ -27,7 +28,7 @@ async function openKeys(page: Page, native: boolean): Promise<void> {
 }
 
 for (const scheme of COLOR_SCHEMES) {
-	test.describe(`Key riêng in ${scheme}`, () => {
+	test.describe(`Key riêng in ${scheme}`, smokeIn(scheme), () => {
 		test("add keys, pick their uses, delete", async ({ page, isMobile }) => {
 			await preparePage(page, scheme);
 			const api = await stubApi(page);

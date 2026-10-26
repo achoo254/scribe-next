@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 import { apiFixtures, stubApi } from "../support/api-stubs";
 import {
 	COLOR_SCHEMES,
+	SMOKE,
 	fontsReady,
 	preparePage,
 	seriousA11yViolations,
@@ -30,28 +31,26 @@ test.describe("login page", () => {
 		});
 	}
 
-	test("a visitor sent to another app page lands on /login", async ({
-		page,
-	}) => {
-		await stubApi(page, GUEST);
-		await page.goto("/record");
-		await expect(page).toHaveURL(/\/login$/);
-	});
+	test(
+		"a visitor sent to another app page lands on /login",
+		SMOKE,
+		async ({ page }) => {
+			await stubApi(page, GUEST);
+			await page.goto("/record");
+			await expect(page).toHaveURL(/\/login$/);
+		},
+	);
 
-	test("Đăng nhập hands over to the backend sign-in", async ({ page }) => {
-		const api = await stubApi(page, GUEST);
-		await page.goto("/login");
-		await page.getByTestId("login-submit").click();
+	test(
+		"Đăng nhập hands over to the backend sign-in",
+		SMOKE,
+		async ({ page }) => {
+			const api = await stubApi(page, GUEST);
+			await page.goto("/login");
+			await page.getByTestId("login-submit").click();
 
-		await expect(page).toHaveURL(/\/api\/auth\/login$/);
-		expect(api.requests).toContain("GET /api/auth/login");
-	});
-
-	test("shows why a sign-in came back with ?error=", async ({ page }) => {
-		await stubApi(page, GUEST);
-		await page.goto("/login?error=forbidden");
-		await expect(page.getByTestId("login-error")).toHaveText(
-			"Tài khoản này chưa được phép dùng Scribe.",
-		);
-	});
+			await expect(page).toHaveURL(/\/api\/auth\/login$/);
+			expect(api.requests).toContain("GET /api/auth/login");
+		},
+	);
 });

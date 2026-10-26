@@ -6,34 +6,37 @@ import {
 	fontsReady,
 	preparePage,
 	seriousA11yViolations,
+	smokeIn,
 } from "../support/page-helpers";
 
 test.describe("record page (browser)", () => {
 	for (const scheme of COLOR_SCHEMES) {
-		test(`renders in ${scheme} with no serious a11y violation`, async ({
-			page,
-		}) => {
-			await preparePage(page, scheme);
-			const api = await stubApi(page);
-			await page.goto("/");
+		test(
+			`renders in ${scheme} with no serious a11y violation`,
+			smokeIn(scheme),
+			async ({ page }) => {
+				await preparePage(page, scheme);
+				const api = await stubApi(page);
+				await page.goto("/");
 
-			await expect(page.getByTestId("app-shell")).toBeVisible();
-			// Role queries skip the nav hidden at this width.
-			await expect(
-				page
-					.getByRole("navigation", { name: "Chức năng" })
-					.getByRole("link", { name: "Ghi âm" }),
-			).toHaveAttribute("aria-current", "page");
-			const history = page.getByTestId("history");
-			await expect(history).toContainText("Họp nhóm sáng thứ Năm.webm");
-			await expect(page.getByTestId("usage")).toBeVisible();
-			await fontsReady(page);
-			await expect(page).toHaveScreenshot(`record-${scheme}.png`, {
-				fullPage: true,
-			});
-			expect(await seriousA11yViolations(page)).toEqual([]);
-			expect(api.unexpected).toEqual([]);
-		});
+				await expect(page.getByTestId("app-shell")).toBeVisible();
+				// Role queries skip the nav hidden at this width.
+				await expect(
+					page
+						.getByRole("navigation", { name: "Chức năng" })
+						.getByRole("link", { name: "Ghi âm" }),
+				).toHaveAttribute("aria-current", "page");
+				const history = page.getByTestId("history");
+				await expect(history).toContainText("Họp nhóm sáng thứ Năm.webm");
+				await expect(page.getByTestId("usage")).toBeVisible();
+				await fontsReady(page);
+				await expect(page).toHaveScreenshot(`record-${scheme}.png`, {
+					fullPage: true,
+				});
+				expect(await seriousA11yViolations(page)).toEqual([]);
+				expect(api.unexpected).toEqual([]);
+			},
+		);
 	}
 });
 

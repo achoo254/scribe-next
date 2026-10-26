@@ -7,6 +7,7 @@ import {
 } from "../support/capacitor-stub";
 import {
 	COLOR_SCHEMES,
+	SMOKE,
 	fontsReady,
 	preparePage,
 	seriousA11yViolations,
@@ -15,7 +16,8 @@ import {
 /*
  * The app shell: top bar, account menu and footer. Desktop runs the
  * browser UI; the iPhone project runs the iOS app's UI (Capacitor stub),
- * which is what iPhone users get.
+ * which is what iPhone users get. Their entries and the sign-out prompt
+ * are locked by src/layout/*.test.tsx; these add screenshots and axe.
  */
 
 async function openApp(page: Page, native: boolean): Promise<void> {
@@ -131,29 +133,33 @@ for (const scheme of COLOR_SCHEMES) {
 	});
 }
 
-test("the nav opens each page at its URL", async ({ page, isMobile }) => {
-	await preparePage(page, "light");
-	await stubApi(page);
-	await openApp(page, isMobile);
-	await expect(page).toHaveURL(/\/record$/);
-	const nav = page
-		.getByTestId("topbar")
-		.getByRole("navigation", { name: "Chức năng" });
+test(
+	"the nav opens each page at its URL",
+	SMOKE,
+	async ({ page, isMobile }) => {
+		await preparePage(page, "light");
+		await stubApi(page);
+		await openApp(page, isMobile);
+		await expect(page).toHaveURL(/\/record$/);
+		const nav = page
+			.getByTestId("topbar")
+			.getByRole("navigation", { name: "Chức năng" });
 
-	await nav.getByRole("link", { name: "Cắt file" }).click();
-	await expect(page).toHaveURL(/\/split$/);
-	await expect(nav.getByRole("link", { name: "Cắt file" })).toHaveAttribute(
-		"aria-current",
-		"page",
-	);
-	await expect(page.getByTestId("split")).toBeVisible();
-	// The page left is unmounted; its state lives above the routes.
-	await expect(page.getByTestId("record")).toHaveCount(0);
+		await nav.getByRole("link", { name: "Cắt file" }).click();
+		await expect(page).toHaveURL(/\/split$/);
+		await expect(nav.getByRole("link", { name: "Cắt file" })).toHaveAttribute(
+			"aria-current",
+			"page",
+		);
+		await expect(page.getByTestId("split")).toBeVisible();
+		// The page left is unmounted; its state lives above the routes.
+		await expect(page.getByTestId("record")).toHaveCount(0);
 
-	await page.getByRole("link", { name: "Scribe, về trang Ghi âm" }).click();
-	await expect(page).toHaveURL(/\/record$/);
-	await expect(page.getByTestId("record")).toBeVisible();
-});
+		await page.getByRole("link", { name: "Scribe, về trang Ghi âm" }).click();
+		await expect(page).toHaveURL(/\/record$/);
+		await expect(page.getByTestId("record")).toBeVisible();
+	},
+);
 
 test.describe("sign-out from the iOS app while recording", () => {
 	test.skip(

@@ -6,6 +6,19 @@ export const COLOR_SCHEMES = ["light", "dark"] as const;
 export type ColorScheme = (typeof COLOR_SCHEMES)[number];
 
 /**
+ * The smoke set: the journeys CI runs on every push and pull request
+ * (`pnpm run test:e2e:smoke`, Chromium only). Everything else runs nightly
+ * and before a web deploy. Tag a test only when no unit test can stand in
+ * for it: logic belongs in a unit test next to its code.
+ */
+export const SMOKE = { tag: "@smoke" };
+
+/** The smoke tag for the light run of a test repeated per color scheme. */
+export function smokeIn(scheme: ColorScheme): { tag: string[] } {
+	return { tag: scheme === "light" ? [SMOKE.tag] : [] };
+}
+
+/**
  * Freezes `Date` on the fixtures' day and follows the OS theme (no saved
  * choice), so screenshots do not change with the day or the machine.
  */
