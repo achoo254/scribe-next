@@ -123,6 +123,7 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = 504EC3161FED79650016851F /* Build configuration list for PBXNativeTarget "App" */;
 			buildPhases = (
+				5C1BE0A12E9F000100A0B0C0 /* Check backend origin */,
 				504EC3001FED79650016851F /* Sources */,
 				504EC3011FED79650016851F /* Frameworks */,
 				504EC3021FED79650016851F /* Resources */,
@@ -192,6 +193,25 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		5C1BE0A12E9F000100A0B0C0 /* Check backend origin */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			name = "Check backend origin";
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "case \"$SCRIBE_BACKEND_ORIGIN\" in\nhttps://?*|http://localhost*|http://127.0.0.1*) ;;\n*) echo \"error: SCRIBE_BACKEND_ORIGIN is not set (got '$SCRIBE_BACKEND_ORIGIN'). Build with pnpm run ios:device or ios:release; without it the app quits on sign-in.\"; exit 1 ;;\nesac\n";
+			showEnvVarsInLog = 0;
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		504EC3001FED79650016851F /* Sources */ = {
