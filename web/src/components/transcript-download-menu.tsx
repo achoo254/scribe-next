@@ -30,7 +30,7 @@ import {
 } from "./ui/dropdown-menu";
 
 /** Menu entries in display order; format names read the same in every language. */
-const FORMATS: readonly {
+export const EXPORT_FORMATS: readonly {
 	format: ExportFormat;
 	label: string;
 	icon: ReactNode;
@@ -148,7 +148,7 @@ export function TranscriptDownloadMenu({
 						<DropdownMenuSeparator />
 					</>
 				) : null}
-				{FORMATS.map(({ format, label, icon }) => (
+				{EXPORT_FORMATS.map(({ format, label, icon }) => (
 					<DropdownMenuItem
 						key={format}
 						data-id={`${dataId}-${format}`}

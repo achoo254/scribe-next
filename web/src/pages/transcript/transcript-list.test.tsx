@@ -28,14 +28,25 @@ afterEach(() => {
 	vi.unstubAllGlobals();
 });
 
-function renderList(replies: Response[]) {
-	vi.stubGlobal(
-		"fetch",
-		fakeFetch({ "GET /api/transcript-docs": replies }).fetcher,
-	);
+const DOC_PATH = `/api/transcript-docs/${encodeURIComponent(DOC.key)}`;
+
+function renderList(
+	replies: Response[],
+	extra: Parameters<typeof fakeFetch>[0] = {},
+) {
+	const fake = fakeFetch({ "GET /api/transcript-docs": replies, ...extra });
+	vi.stubGlobal("fetch", fake.fetcher);
 	const onOpen = vi.fn();
 	renderWithProviders(<TranscriptList onOpen={onOpen} />);
-	return onOpen;
+	return { onOpen, calls: fake.calls };
+}
+
+async function openRowMenu(): Promise<void> {
+	await userEvent.click(
+		await screen.findByRole("button", {
+			name: "Thao tác với “Phỏng vấn khách hàng”",
+		}),
+	);
 }
 
 describe("TranscriptList", () => {
@@ -50,9 +61,9 @@ describe("TranscriptList", () => {
 	});
 
 	it("opens a transcript from its row", async () => {
-		const onOpen = renderList([jsonResponse({ items: [DOC] })]);
+		const { onOpen } = renderList([jsonResponse({ items: [DOC] })]);
 		await userEvent.click(
-			await screen.findByRole("button", { name: /Phỏng vấn khách hàng/ }),
+			await screen.findByRole("button", { name: /^Phỏng vấn khách hàng/ }),
 		);
 		expect(onOpen).toHaveBeenCalledWith(DOC.key);
 		expect(
@@ -100,7 +111,73 @@ describe("TranscriptList", () => {
 		).toBeInTheDocument();
 		await userEvent.click(screen.getByRole("button", { name: "Thử lại" }));
 		expect(
-			await screen.findByRole("button", { name: /Phỏng vấn khách hàng/ }),
+			await screen.findByRole("button", { name: /^Phỏng vấn khách hàng/ }),
 		).toBeInTheDocument();
+	});
+
+	it("offers download formats, rename and delete from the row menu", async () => {
+		renderList([jsonResponse({ items: [DOC] })]);
+		await openRowMenu();
+		for (const format of ["TXT", "SRT", "VTT", "Markdown", "Word (.docx)"]) {
+			expect(
+				screen.getByRole("menuitem", { name: format }),
+			).toBeInTheDocument();
+		}
+		expect(
+			screen.getByRole("menuitem", { name: "Đổi tên" }),
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole("menuitem", { name: "Xoá bản chép lời" }),
+		).toBeInTheDocument();
+	});
+
+	it("hides download in the row menu until a segment is transcribed", async () => {
+		renderList([jsonResponse({ items: [{ ...DOC, done: 0, pending: 2 }] })]);
+		await openRowMenu();
+		expect(screen.queryByRole("menuitem", { name: "TXT" })).toBeNull();
+		expect(
+			screen.getByRole("menuitem", { name: "Đổi tên" }),
+		).toBeInTheDocument();
+	});
+
+	it("renames a transcript from the row menu", async () => {
+		const { calls } = renderList(
+			[
+				jsonResponse({ items: [DOC] }),
+				jsonResponse({ items: [{ ...DOC, title: "Họp ISO" }] }),
+			],
+			{ [`PATCH ${DOC_PATH}`]: jsonResponse({ title: "Họp ISO" }) },
+		);
+		await openRowMenu();
+		await userEvent.click(screen.getByRole("menuitem", { name: "Đổi tên" }));
+		const input = await screen.findByRole("textbox", {
+			name: "Tên bản chép lời",
+		});
+		expect(input).toHaveFocus();
+		await userEvent.clear(input);
+		await userEvent.type(input, "Họp ISO");
+		await userEvent.click(screen.getByRole("button", { name: "Lưu tên" }));
+		expect(
+			await screen.findByRole("button", { name: /^Họp ISO/ }),
+		).toBeInTheDocument();
+		expect(calls.find((c) => c.method === "PATCH")?.body).toEqual({
+			title: "Họp ISO",
+		});
+	});
+
+	it("deletes a transcript from the row menu after confirming", async () => {
+		const { calls } = renderList(
+			[jsonResponse({ items: [DOC] }), jsonResponse({ items: [] })],
+			{ [`DELETE ${DOC_PATH}`]: new Response(null, { status: 204 }) },
+		);
+		await openRowMenu();
+		await userEvent.click(
+			screen.getByRole("menuitem", { name: "Xoá bản chép lời" }),
+		);
+		await userEvent.click(await screen.findByRole("button", { name: "Xoá" }));
+		expect(
+			await screen.findByText("Chưa có bản chép lời nào"),
+		).toBeInTheDocument();
+		expect(calls.some((c) => c.method === "DELETE")).toBe(true);
 	});
 });

@@ -8,8 +8,11 @@ import {
 import type { TranscriptSummary } from "../../features/transcript-docs/transcript-docs-api";
 import { useT } from "../../i18n/i18n-context";
 import { formatDuration, formatTimeOfDay } from "../../lib/format";
+import { TranscriptRowActions } from "./transcript-row-actions";
 
 /**
+ * The row opens the transcript; the ⋮ beside it (outside the button, since
+ * buttons cannot nest) downloads, renames or deletes without opening it.
  * Rows sit edge to edge, so focus draws inside the row (an outer ring would
  * hide under the sticky day header and the next row). The scroll margin keeps
  * a focused row clear of the top bar plus the day header.
@@ -44,7 +47,7 @@ export function TranscriptListRow({ item, onOpen }: TranscriptListRowProps) {
 	].filter(Boolean);
 
 	return (
-		<li className="border-border-subtle border-t first:border-t-0 last:*:rounded-b-lg">
+		<li className="flex items-center border-border-subtle border-t pr-1 first:border-t-0 last:[&>button]:rounded-bl-lg sm:pr-2">
 			<button
 				type="button"
 				data-id={`transcripts-item-${item.key}`}
@@ -82,6 +85,7 @@ export function TranscriptListRow({ item, onOpen }: TranscriptListRowProps) {
 					className="flex-none text-icon-muted"
 				/>
 			</button>
+			<TranscriptRowActions item={item} />
 		</li>
 	);
 }
