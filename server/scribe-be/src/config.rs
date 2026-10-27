@@ -183,6 +183,18 @@ fn elevenlabs_monthly_seconds(raw: Option<&str>) -> i64 {
     (hours.unwrap_or(DEFAULT_ELEVENLABS_MONTHLY_HOURS) * 3600.0).round() as i64
 }
 
+/// Số lượt chép lời chạy cùng lúc, mặc định 3 (chủ dự án chốt 27/10/2026 theo đo đạc: máy .65 còn dư RAM/CPU, gói
+/// ElevenLabs Starter cho 12 request đồng thời). Trần 12 theo gói đó; 1 = chạy lần lượt như trước.
+const DEFAULT_TRANSCRIBE_CONCURRENCY: usize = 3;
+const MAX_TRANSCRIBE_CONCURRENCY: usize = 12;
+
+/// `TRANSCRIBE_CONCURRENCY` (số nguyên 1..=12); sai dạng hoặc 0 thì dùng mặc định, lớn hơn trần thì lấy trần.
+fn transcribe_concurrency(raw: Option<&str>) -> usize {
+    raw.and_then(|v| v.trim().parse::<usize>().ok())
+        .filter(|n| *n >= 1)
+        .map_or(DEFAULT_TRANSCRIBE_CONCURRENCY, |n| n.min(MAX_TRANSCRIBE_CONCURRENCY))
+}
+
 /// Giá một phút chép lời của bản build này (USD) — đổi trần chi phí ra giây và quy chi phí tóm tắt ra giây chép lời.
 pub fn usd_per_minute() -> f64 {
     Provider::from_build().usd_per_minute()
@@ -339,6 +351,8 @@ pub struct Config {
     pub elevenlabs_key_path: Option<String>,
     /// Trần giây audio ElevenLabs mỗi tháng (`ELEVENLABS_MONTHLY_HOURS`).
     pub elevenlabs_monthly_seconds: i64,
+    /// Số lượt chép lời chạy cùng lúc (`TRANSCRIBE_CONCURRENCY`).
+    pub transcribe_concurrency: usize,
     /// Nhà cung cấp chép trực tiếp trên iPhone (`REALTIME_PROVIDER`).
     pub realtime_provider: Provider,
     /// `TRANSCRIBE_OPEN=1`: mọi user đăng nhập được chép lời (trong hạn mức gói), không chỉ `TRANSCRIBE_EMAILS`.
@@ -418,6 +432,7 @@ impl Config {
             transcribe_provider: Provider::from_build(),
             elevenlabs_key_path: option_env!("ELEVENLABS_KEY_PATH").filter(|p| !p.is_empty()).map(str::to_string),
             elevenlabs_monthly_seconds: elevenlabs_monthly_seconds(option_env!("ELEVENLABS_MONTHLY_HOURS")),
+            transcribe_concurrency: transcribe_concurrency(option_env!("TRANSCRIBE_CONCURRENCY")),
             realtime_provider: Provider::realtime_from_build(),
             transcribe_open: matches!(option_env!("TRANSCRIBE_OPEN"), Some("1" | "true")),
             transcribe_limits: TranscribeLimits::from_parts(
@@ -565,6 +580,15 @@ mod tests {
         assert_eq!(elevenlabs_monthly_seconds(Some("-1")), 90_000);
         assert_eq!(elevenlabs_monthly_seconds(Some("x")), 90_000);
         assert_eq!(elevenlabs_monthly_seconds(Some("0")), 0);
+    }
+
+    #[test]
+    fn transcribe_concurrency_defaults_and_caps() {
+        assert_eq!(transcribe_concurrency(None), 3);
+        assert_eq!(transcribe_concurrency(Some(" 1 ")), 1);
+        assert_eq!(transcribe_concurrency(Some("0")), 3);
+        assert_eq!(transcribe_concurrency(Some("x")), 3);
+        assert_eq!(transcribe_concurrency(Some("50")), 12);
     }
 
     #[test]

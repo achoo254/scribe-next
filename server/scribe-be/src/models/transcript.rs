@@ -345,6 +345,19 @@ pub async fn defer_run(db: &Database, user_id: &str, run_id: &str, until: DateTi
         .map_err(|e| AppError::Internal(format!("hoãn lượt chép lời: {e}")))
 }
 
+/// Trả một file vừa nhận về hàng đợi, chờ tới `until`. Worker gọi khi lượt của file đang chạy ở vòng khác. Chỉ đổi khi
+/// file còn `running` của lượt `run_id` đang mở: lượt kia đã chép xong file này thì giữ nguyên kết quả.
+pub async fn requeue_claimed(db: &Database, file_id: ObjectId, run_id: &str, until: DateTime) -> Result<(), AppError> {
+    db.collection::<TranscriptDoc>(COLL)
+        .update_one(
+            doc! { "_id": file_id, "runId": run_id, "open": true, "status": "running" },
+            doc! { "$set": { "status": "queued", "updatedAt": until } },
+        )
+        .await
+        .map(|_| ())
+        .map_err(|e| AppError::Internal(format!("trả lượt chép lời về hàng đợi: {e}")))
+}
+
 /// Id mọi file của lượt `run_id` (mọi trạng thái).
 pub async fn run_file_ids(db: &Database, user_id: &str, run_id: &str) -> Result<std::collections::HashSet<ObjectId>, AppError> {
     let read = |e: mongodb::error::Error| AppError::Internal(format!("đọc file của lượt: {e}"));
@@ -760,6 +773,39 @@ mod tests {
         let mut still_queued = foreign;
         still_queued.insert("status", "queued");
         assert_eq!(coll.count_documents(still_queued).await.expect("đếm"), 2);
+        coll.delete_many(scope).await.expect("dọn");
+    }
+
+    /// Worker trả file của lượt đang chạy ở vòng khác về hàng đợi: file chờ tới hạn mới được nhận lại; file lượt kia đã
+    /// chép xong thì giữ nguyên. `cargo test busy_run_file -- --ignored`.
+    #[tokio::test]
+    #[ignore]
+    async fn busy_run_file_is_requeued_but_finished_file_is_kept_on_real_mongo() {
+        let uri = std::env::var("TRANSCRIPT_TEST_MONGO_URI").expect("TRANSCRIPT_TEST_MONGO_URI");
+        let db_name = std::env::var("TRANSCRIPT_TEST_DB_NAME").expect("TRANSCRIPT_TEST_DB_NAME");
+        let db = crate::db::connect(&uri, &db_name).await.expect("kết nối Mongo");
+        ensure_indexes(&db).await.expect("index");
+        let user = format!("selftest-{}", uuid::Uuid::new_v4());
+        let coll = db.collection::<bson::Document>(COLL);
+        let (busy, finished) = (ObjectId::new(), ObjectId::new());
+        assert!(enqueue(&db, busy, &user, "r-busy", "m", Billing::Own(Vendor::OpenAi), 0).await.expect("xếp"));
+        let scope = doc! { "userId": &user };
+        let claimed = claim_next_in(&db, scope.clone()).await.expect("nhận").expect("có lượt");
+        assert_eq!(claimed.id, busy);
+        let until = DateTime::from_millis(DateTime::now().timestamp_millis() + 60_000);
+        requeue_claimed(&db, busy, "r-busy", until).await.expect("trả về hàng đợi");
+        let stored = coll.find_one(doc! { "_id": busy }).await.expect("đọc").expect("có");
+        assert_eq!(stored.get_str("status"), Ok("queued"));
+        assert!(claim_next_in(&db, scope.clone()).await.expect("nhận").is_none(), "chưa tới hạn thì chưa nhận lại");
+
+        coll.insert_one(doc! { "_id": finished, "userId": &user, "status": "done", "progress": 1.0, "runId": "r-done",
+                               "model": "m", "chargedS": 0_i64, "open": false, "tenantId": PRIMARY_ID,
+                               "updatedAt": DateTime::now() })
+            .await
+            .expect("lượt xong");
+        requeue_claimed(&db, finished, "r-done", until).await.expect("không lỗi");
+        let kept = coll.find_one(doc! { "_id": finished }).await.expect("đọc").expect("có");
+        assert_eq!(kept.get_str("status"), Ok("done"), "lượt đã đóng không bị xếp lại");
         coll.delete_many(scope).await.expect("dọn");
     }
 

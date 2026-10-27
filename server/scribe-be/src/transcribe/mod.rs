@@ -36,13 +36,14 @@ use axum::response::{IntoResponse, Response};
 use axum::{Extension, Json};
 use chunking::Sentence;
 use futures_util::{stream, StreamExt};
-use mongodb::bson::{doc, oid::ObjectId};
+use mongodb::bson::{doc, oid::ObjectId, DateTime};
 use serde::Deserialize;
 use serde_json::{json, Value};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::sync::Notify;
+use tokio::sync::{Mutex, Notify};
 
 /// Số mảnh gọi OpenAI cùng lúc trong một file.
 const PARALLEL: usize = 4;
@@ -751,35 +752,81 @@ pub async fn start_worker(state: AppState) {
         Ok(_) => {}
         Err(e) => tracing::warn!("xếp lại chép lời dở lỗi: {e:?}"),
     }
-    tokio::spawn(async move {
-        loop {
+    let running = Arc::new(Mutex::new(HashSet::new()));
+    for _ in 0..state.config.transcribe_concurrency {
+        tokio::spawn(worker_loop(state.clone(), running.clone()));
+    }
+}
+
+/// Lượt (`runId`) đang chạy ở các vòng worker của tiến trình này.
+type RunningRuns = Arc<Mutex<HashSet<String>>>;
+
+/// Thời gian một file chờ trước khi được nhận lại, khi lượt của nó đang chạy ở vòng khác.
+const BUSY_RUN_RETRY_MS: i64 = 5_000;
+
+/// Một vòng hàng đợi; [`start_worker`] chạy `TRANSCRIBE_CONCURRENCY` vòng song song.
+///
+/// Một lượt chỉ chạy ở một vòng. Lượt cả phiên ElevenLabs tự gom các file khác của nó
+/// ([`transcript::claim_run_members`]); với OpenAI các file của phiên chép lần lượt. Vì vậy vòng nhận phải file
+/// của lượt đang chạy thì trả file đó về hàng đợi. Nhận lượt và kiểm danh sách nằm dưới cùng một khoá, để hai vòng
+/// không cùng bắt đầu một lượt.
+async fn worker_loop(state: AppState, running: RunningRuns) {
+    loop {
+        let claimed = {
+            let mut busy = running.lock().await;
             match transcript::claim_next(&state.db).await {
+                Ok(Some(t)) if busy.contains(&t.run_id) => Claim::Busy(t),
                 Ok(Some(t)) => {
-                    let (file_id, run_id, user_id) = (t.id, t.run_id.clone(), t.user_id.clone());
-                    let st = state.clone();
-                    // Panic trong một lượt không được giết vòng hàng đợi. Lượt cả phiên có nhiều file: đóng hết, không
-                    // chỉ file worker đã nhận (các file khác sẽ kẹt `running` tới lần khởi động sau).
-                    if let Err(e) = tokio::spawn(async move { run(&st, &t).await }).await {
-                        tracing::error!(file = %file_id, "chép lời panic: {e}");
-                        match transcript::fail_open_run(&state.db, &user_id, &run_id, INTERNAL_ERROR).await {
-                            Ok(_) => {}
-                            Err(e) => {
-                                tracing::error!(file = %file_id, "đóng lượt sau panic lỗi: {e:?}");
-                                record(&state.db, file_id, &run_id, Outcome::Failed(INTERNAL_ERROR)).await;
-                            }
+                    busy.insert(t.run_id.clone());
+                    Claim::Run(t)
+                }
+                Ok(None) => Claim::Empty,
+                Err(e) => Claim::Error(e),
+            }
+        };
+        match claimed {
+            Claim::Run(t) => {
+                // Còn lượt chờ thì đánh thức một vòng đang rảnh, khỏi đợi hết 5 giây.
+                state.transcriber.wake.notify_one();
+                let (file_id, run_id, user_id) = (t.id, t.run_id.clone(), t.user_id.clone());
+                let st = state.clone();
+                // Panic trong một lượt không được giết vòng hàng đợi. Lượt cả phiên có nhiều file: đóng hết, không
+                // chỉ file worker đã nhận (các file khác sẽ kẹt `running` tới lần khởi động sau).
+                if let Err(e) = tokio::spawn(async move { run(&st, &t).await }).await {
+                    tracing::error!(file = %file_id, "chép lời panic: {e}");
+                    match transcript::fail_open_run(&state.db, &user_id, &run_id, INTERNAL_ERROR).await {
+                        Ok(_) => {}
+                        Err(e) => {
+                            tracing::error!(file = %file_id, "đóng lượt sau panic lỗi: {e:?}");
+                            record(&state.db, file_id, &run_id, Outcome::Failed(INTERNAL_ERROR)).await;
                         }
                     }
                 }
-                Ok(None) => {
-                    let _ = tokio::time::timeout(Duration::from_secs(5), state.transcriber.wake.notified()).await;
-                }
-                Err(e) => {
-                    tracing::error!("lấy lượt chép lời lỗi: {e}");
-                    tokio::time::sleep(Duration::from_secs(2)).await;
+                running.lock().await.remove(&run_id);
+            }
+            Claim::Busy(t) => {
+                let until = DateTime::from_millis(DateTime::now().timestamp_millis() + BUSY_RUN_RETRY_MS);
+                if let Err(e) = transcript::requeue_claimed(&state.db, t.id, &t.run_id, until).await {
+                    tracing::error!(file = %t.id, "trả file của lượt đang chạy về hàng đợi lỗi: {e:?}");
                 }
             }
+            Claim::Empty => {
+                let _ = tokio::time::timeout(Duration::from_secs(5), state.transcriber.wake.notified()).await;
+            }
+            Claim::Error(e) => {
+                tracing::error!("lấy lượt chép lời lỗi: {e}");
+                tokio::time::sleep(Duration::from_secs(2)).await;
+            }
         }
-    });
+    }
+}
+
+enum Claim {
+    Run(transcript::TranscriptDoc),
+    /// File thuộc lượt đang chạy ở vòng khác.
+    Busy(transcript::TranscriptDoc),
+    Empty,
+    Error(mongodb::error::Error),
 }
 
 /// Người dùng thấy câu này khi một lượt dừng vì lỗi lập trình (panic).
