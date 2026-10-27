@@ -1,6 +1,6 @@
 /*
  * What Scribe derives from brand.config.json (the rules and the generator
- * are tested in @shared-next/brand): the committed generated files are
+ * are tested in @achoo254/brand): the committed generated files are
  * current, the iPhone app's effective Capacitor config is pinned, the
  * Android app's id and launcher resources follow the brand, the brand
  * colours are the tokens, and web/vite-brand.ts links and serves the
@@ -11,7 +11,7 @@ import {
 	formatGenerated,
 	generateManifests,
 	iconSourceHashes,
-} from "@shared-next/brand/build";
+} from "@achoo254/brand/build";
 import { describe, expect, it } from "vitest";
 import capacitorConfig from "../capacitor.config.js";
 import {

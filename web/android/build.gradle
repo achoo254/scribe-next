@@ -2,7 +2,7 @@
 
 buildscript {
     // Kotlin for the app's own plugins (app/src/main/java/com/hoandat/scribe), same version as
-    // @shared-next/capacitor-system-auth.
+    // @achoo254/capacitor-system-auth.
     ext.kotlin_version = '2.2.20'
     repositories {
         google()

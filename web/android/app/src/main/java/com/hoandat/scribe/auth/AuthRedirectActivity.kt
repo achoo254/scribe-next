@@ -6,7 +6,7 @@ import android.os.Bundle
 
 /**
  * Target of `com.hoandat.scribe:/auth/callback` when the browser has no Auth Tab (Custom Tabs fallback,
- * as RedirectActivity of @shared-next/capacitor-system-auth). Hands the URL to [HoandatAuthPlugin],
+ * as RedirectActivity of @achoo254/capacitor-system-auth). Hands the URL to [HoandatAuthPlugin],
  * then brings the app back to the front, which also closes the Custom Tab sitting above it.
  */
 class AuthRedirectActivity : Activity() {

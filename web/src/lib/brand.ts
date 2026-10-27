@@ -3,7 +3,7 @@
  * fields without a schema validator (Ajv is blocked by the CSP); the full
  * schema runs at build time (pnpm brand:gen, vite-brand.ts, check:brand).
  */
-import { defineBrand } from "@shared-next/brand";
+import { defineBrand } from "@achoo254/brand";
 import brandConfig from "../../brand.config.json";
 
 const brand = defineBrand(brandConfig);

@@ -1,6 +1,6 @@
 /*
  * Brand assets of the web app, derived from brand.config.json and the brand
- * SVGs through @shared-next/brand, so a rebrand is "edit the brand files,
+ * SVGs through @achoo254/brand, so a rebrand is "edit the brand files,
  * pnpm brand:gen, rebuild":
  *
  * - index.html: %APP_NAME% in the title, plus the description, favicon.ico,
@@ -33,8 +33,8 @@ import {
 	loadBrandConfig,
 	svgManifestIcons,
 	webIconFiles,
-} from "@shared-next/brand/build";
-import { primaryOrigin } from "@shared-next/brand/hosts";
+} from "@achoo254/brand/build";
+import { primaryOrigin } from "@achoo254/brand/hosts";
 import type { Plugin } from "vite";
 
 /** web/, where brand.config.json and the icon paths inside it are rooted. */

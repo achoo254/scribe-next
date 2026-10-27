@@ -28,7 +28,7 @@ import {
 	rmSync,
 	writeFileSync,
 } from "node:fs";
-import type { IconRenderer } from "@shared-next/brand/build";
+import type { IconRenderer } from "@achoo254/brand/build";
 
 /** Where the Android resources live, relative to web/. */
 export const ANDROID_RES_DIR = "android/app/src/main/res/";

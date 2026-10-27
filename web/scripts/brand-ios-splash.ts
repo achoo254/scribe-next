@@ -4,7 +4,7 @@
  * three files are written with the same pixels. Written only when web/ios/ exists.
  */
 import { existsSync, writeFileSync } from "node:fs";
-import type { IconRenderer } from "@shared-next/brand/build";
+import type { IconRenderer } from "@achoo254/brand/build";
 
 /** Where the splash image set lives, relative to web/. */
 export const IOS_SPLASH_DIR = "ios/App/App/Assets.xcassets/Splash.imageset/";

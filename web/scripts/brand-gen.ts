@@ -1,6 +1,6 @@
 /**
  * `pnpm run brand:gen`: validates brand.config.json against the
- * @shared-next/brand schema and writes what the platforms derive from it to
+ * @achoo254/brand schema and writes what the platforms derive from it to
  * brand/generated/: the web manifest, capacitor.json (spread by
  * capacitor.config.ts) and the PNG/ICO icons drawn from the brand SVGs with
  * the Chromium of @playwright/test, plus the Android launcher icons, splash
@@ -10,8 +10,8 @@
  * generated: it ships as is.
  */
 import { readFileSync } from "node:fs";
+import { chromiumRenderer, writeBrandFiles } from "@achoo254/brand/build";
 import { chromium } from "@playwright/test";
-import { chromiumRenderer, writeBrandFiles } from "@shared-next/brand/build";
 import {
 	BRAND_GENERATED_DIR,
 	BRAND_ROOT,

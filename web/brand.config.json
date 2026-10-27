@@ -1,5 +1,5 @@
 {
-	"$schema": "./node_modules/@shared-next/brand/brand.config.schema.json",
+	"$schema": "./node_modules/@achoo254/brand/brand.config.schema.json",
 	"appName": "Scribe",
 	"shortName": "Scribe",
 	"description": "Ghi âm, cắt tệp và chép lời tiếng Việt trên web và điện thoại.",

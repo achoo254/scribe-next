@@ -34,7 +34,7 @@ import java.lang.ref.WeakReference
  * `com.hoandat.scribe:/auth/callback` back. The backend then redeems the code with the verifier and
  * nonce, sets the session cookie and returns a device token kept in [SecureStore] ([SessionAuth]).
  *
- * The browser part follows @shared-next/capacitor-system-auth v0.3.0 (SystemAuthPlugin.kt, compiled
+ * The browser part follows @achoo254/capacitor-system-auth (shared-next tag v0.3.0) (SystemAuthPlugin.kt, compiled
  * in Localman's CI), copied on purpose rather than depended on: a Capacitor plugin cannot call another
  * plugin's method from Kotlin, and using SystemAuth from JS would move the verifier into the WebView.
  * Auth Tab when the default browser supports it (the result comes back as an activity result);
