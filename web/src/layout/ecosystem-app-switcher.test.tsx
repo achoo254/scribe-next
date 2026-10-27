@@ -31,7 +31,7 @@ describe("EcosystemAppSwitcher", () => {
 			`https://chat.hoandat.com/?${UTM}`,
 			`https://localman.hoandat.com/?${UTM}`,
 			`https://tunnel.hoandat.com/?${UTM}`,
-			`https://auth.hoandat.com/account?${UTM}`,
+			`https://tieude.hoandat.com/?${UTM}`,			`https://auth.hoandat.com/account?${UTM}`,
 		]);
 		expect(within(panel).getByText("Quản lý tài khoản")).toBeVisible();
 	});
