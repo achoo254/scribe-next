@@ -62,9 +62,11 @@ app trên máy, không chỉ Scribe.
 
 ## 1. Luật cứng (vi phạm = sự cố thật)
 
-1. **Mặc định CHỈ ĐỌC.** Deploy, `systemctl restart|stop scribe-be`, thay binary/FE, sửa systemd unit hay nginx
-   conf, ghi Mongo, `mongorestore`, xoá file trong `/opt/scribe-be/data` ⟹ chỉ làm khi user yêu cầu **tường minh
-   cho chính lần đó**. Không tự đề xuất deploy prod vào "việc còn lại".
+1. **Mặc định CHỈ ĐỌC, trừ deploy.** Sửa systemd unit, ghi Mongo, `mongorestore`, xoá file trong
+   `/opt/scribe-be/data`, đổi tệp bí mật ⟹ chỉ làm khi user yêu cầu **tường minh cho chính lần đó**.
+   **Deploy không cần hỏi** (user bỏ luật duyệt từng lần, 28/10/2026): deploy chuẩn theo tài liệu của repo (build, thay binary/FE, `systemctl restart scribe-be`, file include
+   nginx của Scribe qua `nginx -t`)
+   được làm khi commit đã qua đủ kiểm tra; trước đó sao lưu, sau đó kiểm trên site thật và báo user kết quả.
 2. **Chỉ chạm thứ của Scribe.** Chỉ `systemctl … scribe-be`; không đụng service/pm2 của app khác; không reload
    nginx khi chưa `nginx -t`; chỉ THÊM server block của Scribe, không sửa vhost khác.
 3. **DB `scribe` nằm trên mongod CHUNG cổng 27017** (cùng các db của app khác). Chỉ truy vấn db `scribe` qua
@@ -185,7 +187,7 @@ chưa (đúng db `scribe` chứ không phải db khác trên cùng mongod, đún
 nguồn đó có thật sự ghi loại sự kiện này không (chunk upload thành công chỉ log mức debug; `/api/health` không log).
 Báo phép đo đã làm trước, rồi mới tới kết quả. Còn mắt xích chưa đo thì gọi là giả thuyết.
 
-## 6. Khi chuẩn bị thao tác GHI (chỉ khi user đã yêu cầu tường minh)
+## 6. Khi chuẩn bị thao tác GHI (deploy theo luật 1; thao tác ghi khác chỉ khi user đã yêu cầu tường minh)
 
 - **Trước deploy:** `cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace`,
   `cd web && pnpm run lint && pnpm run typecheck && pnpm run check:tokens && pnpm test` sạch; `git status` sạch, đã push.

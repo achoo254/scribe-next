@@ -318,7 +318,7 @@ nginx gắn bộ header bảo mật cho mọi response của Scribe (FE, `/asset
 
 **Lưu ý Cloudflare:** CSP chặn mọi script mà Cloudflare tự chèn, trừ Web Analytics: `script-src` cho `https://static.cloudflareinsights.com` (beacon) và `connect-src` cho `https://cloudflareinsights.com` (nơi beacon gửi số liệu); trang quyền riêng tư ghi rõ trang web dùng Cloudflare Web Analytics, không đặt cookie. Bật tính năng khác như vậy (Rocket Loader…) cho `scribe.hoandat.com` thì phải thêm origin của nó vào CSP trước.
 
-**Deploy lên `.65` — CẦN USER DUYỆT trước khi chạy** (đổi cấu hình nginx shared của prod). Từ máy deploy, `KEY` như §Deploy:
+**Deploy lên `.65`** (đổi cấu hình nginx của Scribe trên máy dùng chung: luôn `nginx -t` trước khi reload). Từ máy deploy, `KEY` như §Deploy:
 
 ```bash
 # 1) Đẩy file include + vhost (thư mục /etc/nginx/scribe/ tạo lần đầu)
