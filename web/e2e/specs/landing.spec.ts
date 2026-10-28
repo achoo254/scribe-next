@@ -10,9 +10,9 @@ import {
 const GUEST = apiFixtures({ user: null });
 
 /*
- * The landing page against its screenshots, with axe. Where its links lead,
- * its footer and the redirect of a signed-in user are locked by
- * src/routes.test.tsx.
+ * The landing page (the shared shell of @achoo254/app-shell around Scribe's
+ * body) against its screenshots, with axe. Where its links lead, its footer
+ * and the redirect of a signed-in user are locked by src/routes.test.tsx.
  */
 
 test.describe("landing page", () => {
@@ -30,10 +30,9 @@ test.describe("landing page", () => {
 					name: "Nói. Nhận bản chép lời.",
 				}),
 			).toBeVisible();
-			const art = page.getByTestId("landing-hero-art");
-			await expect
-				.poll(() => art.evaluate((img: HTMLImageElement) => img.naturalWidth))
-				.toBeGreaterThan(0);
+			await expect(page.getByTestId("sign-in-cta")).toHaveText(
+				"Đăng nhập bằng hoandat.com",
+			);
 			await fontsReady(page);
 			// No horizontal scroll at any width the projects use.
 			expect(

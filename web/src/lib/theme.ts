@@ -1,57 +1,37 @@
-export type ThemePreference = "light" | "dark" | "system";
-
-/** Must match the inline bootstrap script in index.html. */
-export const THEME_STORAGE_KEY = "scribe-theme";
-
-export function isThemePreference(value: unknown): value is ThemePreference {
-	return value === "light" || value === "dark" || value === "system";
-}
-
-/** Reads the saved preference; storage may be unavailable (privacy mode). */
-export function readThemePreference(): ThemePreference {
-	try {
-		const stored = window.localStorage.getItem(THEME_STORAGE_KEY);
-		return isThemePreference(stored) ? stored : "system";
-	} catch {
-		return "system";
-	}
-}
-
-const listeners = new Set<() => void>();
-
-/** Notifies `listener` when the preference changes (every theme switch). */
-export function subscribeThemePreference(listener: () => void): () => void {
-	listeners.add(listener);
-	return () => {
-		listeners.delete(listener);
-	};
-}
-
-/**
- * Applies the preference to <html data-theme>. "system" removes the
- * attribute so tokens.css follows `prefers-color-scheme`.
+/*
+ * The theme is the shared choice of every hoandat.com app
+ * (@achoo254/app-shell: the `hd_theme` cookie on the root domain, this
+ * WebView's storage in the native shells). The footer switches, signed in
+ * or not, write it; this module keeps the page and the browser chrome on it.
  */
-export function applyThemePreference(
-	preference: ThemePreference,
-	root: HTMLElement = document.documentElement,
-): void {
-	if (preference === "system") {
-		delete root.dataset.theme;
-	} else {
-		root.dataset.theme = preference;
-	}
-	try {
-		window.localStorage.setItem(THEME_STORAGE_KEY, preference);
-	} catch {
-		// Storage unavailable: the choice still applies for this page view.
-	}
-	for (const listener of listeners) listener();
+import {
+	type PreferenceOptions,
+	type ThemePreference,
+	applyTheme,
+	readPreferences,
+	subscribePreferences,
+	writePreference,
+} from "@achoo254/app-shell/preferences";
+import { PRIMARY_TENANT_DOMAIN } from "./brand";
+import { LEGACY_THEME_KEY } from "./theme-bootstrap";
+
+export type { ThemePreference };
+
+/** Where Scribe reads and writes the shared choices. */
+export const PREFERENCE_OPTIONS: PreferenceOptions = {
+	domain: PRIMARY_TENANT_DOMAIN,
+	legacyThemeKey: LEGACY_THEME_KEY,
+};
+
+/** Stores `theme` for every app and applies it to this page. */
+export function pickTheme(theme: ThemePreference): void {
+	writePreference("theme", theme, PREFERENCE_OPTIONS);
+	applyTheme(theme);
 }
 
 /**
  * Copies the resolved `--c-bg` token into <meta name="theme-color"> so the
- * browser chrome (iOS status bar, Android toolbar) matches the page. Runs
- * at startup, on every theme switch and when the OS scheme changes.
+ * browser chrome (iOS status bar, Android toolbar) matches the page.
  */
 export function syncThemeColor(
 	root: HTMLElement = document.documentElement,
@@ -61,15 +41,23 @@ export function syncThemeColor(
 	if (meta && background) meta.setAttribute("content", background);
 }
 
-/** Keeps theme-color in sync from now on; returns the cleanup. */
-export function watchThemeColor(): () => void {
+/**
+ * From now on, applies the stored theme whenever it changes (a switch on
+ * this page, or another app's choice noticed when the page comes back into
+ * view) and keeps theme-color in sync, also when the OS scheme changes.
+ * Returns the cleanup.
+ */
+export function watchTheme(): () => void {
 	syncThemeColor();
 	const media = window.matchMedia("(prefers-color-scheme: dark)");
-	const onChange = (): void => syncThemeColor();
-	media.addEventListener("change", onChange);
-	const unsubscribe = subscribeThemePreference(onChange);
+	const onSchemeChange = (): void => syncThemeColor();
+	media.addEventListener("change", onSchemeChange);
+	const unsubscribe = subscribePreferences(() => {
+		applyTheme(readPreferences(PREFERENCE_OPTIONS).theme);
+		syncThemeColor();
+	});
 	return () => {
-		media.removeEventListener("change", onChange);
+		media.removeEventListener("change", onSchemeChange);
 		unsubscribe();
 	};
 }

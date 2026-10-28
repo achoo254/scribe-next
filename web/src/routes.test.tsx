@@ -158,7 +158,7 @@ describe("app routes", () => {
 		expect(auth.stateMounts).toBe(1);
 	});
 
-	it("shows a visitor the landing page at /, whose calls to action open /login", async () => {
+	it("shows a visitor the landing page at /, built from the shared shell", async () => {
 		auth.signedIn = false;
 		const router = renderAt("/");
 		expect(
@@ -169,28 +169,42 @@ describe("app routes", () => {
 		).toBeInTheDocument();
 		expect(router.state.location.pathname).toBe("/");
 		expect(auth.stateMounts).toBe(0);
-		expect(screen.getByRole("link", { name: "Đăng nhập" })).toHaveAttribute(
-			"href",
-			"/login",
-		);
-		const starts = screen.getAllByRole("link", { name: "Bắt đầu miễn phí" });
-		expect(starts).toHaveLength(2);
-		for (const start of starts) expect(start).toHaveAttribute("href", "/login");
-		expect(screen.getByRole("link", { name: "Xem tính năng" })).toHaveAttribute(
+		for (const id of [
+			"public-header",
+			"hero",
+			"sign-in-card",
+			"public-footer",
+		]) {
+			expect(document.querySelector(`[data-id="${id}"]`), id).not.toBeNull();
+		}
+		// One call to action: the shared card's, straight to the backend sign-in.
+		expect(
+			screen.getByRole("link", { name: "Đăng nhập bằng hoandat.com" }),
+		).toHaveAttribute("href", "/api/auth/login");
+		expect(screen.queryByText(/Bắt đầu|Tạo tài khoản/)).toBeNull();
+		expect(
+			screen.getByRole("heading", {
+				level: 2,
+				name: "Thử với cuộc họp tiếp theo",
+			}),
+		).toBeInTheDocument();
+		expect(screen.getByRole("link", { name: "Tính năng" })).toHaveAttribute(
 			"href",
 			"#features",
 		);
 		expect(
 			screen.getByRole("link", { name: "Một app của hoandat.com" }),
 		).toHaveAttribute("href", "https://hoandat.com");
-		// The footer is the account app's: language, privacy policy, terms.
 		const footer = document.querySelector<HTMLElement>(
 			'[data-id="public-footer"]',
 		);
 		if (!footer) throw new Error("no public footer");
 		expect(
-			within(footer).getByRole("link", { name: "Tiếng Việt" }),
-		).toHaveAttribute("aria-current", "true");
+			within(footer).getByRole("button", { name: "Tiếng Việt" }),
+		).toHaveAttribute("aria-pressed", "true");
+		expect(
+			within(footer).getByRole("group", { name: "Giao diện" }),
+		).toBeInTheDocument();
 		expect(
 			within(footer).getByRole("link", { name: "Quyền riêng tư" }),
 		).toHaveAttribute("href", "/privacy");
@@ -200,6 +214,22 @@ describe("app routes", () => {
 		await userEvent.click(screen.getByRole("link", { name: "Đăng nhập" }));
 		expect(await screen.findByText("login")).toBeInTheDocument();
 		expect(router.state.location.pathname).toBe("/login");
+	});
+
+	it("shows the landing in the visitor's language", async () => {
+		auth.signedIn = false;
+		document.cookie = "hd_lang=en; Path=/";
+		renderAt("/");
+		expect(
+			await screen.findByRole("heading", {
+				level: 1,
+				name: "Talk. Get the transcript.",
+			}),
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole("link", { name: "Sign in with hoandat.com" }),
+		).toBeInTheDocument();
+		expect(document.documentElement.lang).toBe("en");
 	});
 
 	it("keeps the sign-in card at /login for a visitor", async () => {
@@ -217,12 +247,17 @@ describe("app routes", () => {
 		expect(screen.queryByText("Nói. Nhận bản chép lời.")).toBeNull();
 	});
 
-	it("takes a visitor in the iPhone or Android app from / straight to /login", async () => {
+	it("shows a visitor in the iPhone or Android app the same landing page", async () => {
 		auth.signedIn = false;
 		vi.stubGlobal("Capacitor", { isNativePlatform: () => true });
 		const router = renderAt("/");
-		expect(await screen.findByText("login")).toBeInTheDocument();
-		expect(router.state.location.pathname).toBe("/login");
+		expect(
+			await screen.findByRole("heading", {
+				level: 1,
+				name: "Nói. Nhận bản chép lời.",
+			}),
+		).toBeInTheDocument();
+		expect(router.state.location.pathname).toBe("/");
 	});
 
 	it("opens the legal pages without signing in, every other page goes to /login", async () => {

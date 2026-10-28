@@ -3,11 +3,11 @@
  * from localman-next, which owns the same design system).
  *
  * 1. Literal scan: `src/` and `index.html` must not contain colour literals
- *    (hex, rgb()/hsl()/…) or raw px spacing; those live only in
- *    src/styles/tokens.css. Allowlist and ignore marker are documented in
+ *    (hex, rgb()/hsl()/…) or raw px spacing; those live only in the
+ *    tokens of @achoo254/app-shell. Allowlist and ignore marker are documented in
  *    scripts/check-tokens/scan-literals.ts.
  * 2. Token consistency: the OS-preference dark block and the forced dark
- *    block in tokens.css must stay identical.
+ *    block in tokens.css must stay identical (the package tests this too).
  * 3. Contrast: main text/background pairs meet WCAG 4.5:1 (UI parts 3:1) in
  *    light and dark; APCA Lc is printed as an advisory value.
  *
@@ -26,9 +26,9 @@ import {
 	type LiteralViolation,
 	findLiteralViolations,
 } from "./check-tokens/scan-literals.js";
+import { TOKENS_FILE } from "./check-tokens/tokens-file.js";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const TOKENS_FILE = path.join(ROOT, "src/styles/tokens.css");
 const WEB_SRC = path.join(ROOT, "src");
 const EXTRA_FILES = [path.join(ROOT, "index.html")];
 const SCANNED_EXTENSIONS = new Set([".ts", ".tsx", ".css"]);
@@ -47,10 +47,7 @@ async function listSourceFiles(dir: string): Promise<string[]> {
 
 async function scanLiterals(): Promise<LiteralViolation[]> {
 	const sources = await listSourceFiles(WEB_SRC);
-	const files = [
-		...sources.filter((file) => file !== TOKENS_FILE),
-		...EXTRA_FILES,
-	].sort();
+	const files = [...sources, ...EXTRA_FILES].sort();
 	const results = await Promise.all(
 		files.map(async (file) =>
 			findLiteralViolations(
@@ -76,7 +73,7 @@ async function main(): Promise<number> {
 	if (violations.length > 0) {
 		failed = true;
 		console.error(
-			`✗ ${violations.length} design-token bypass(es) in web (use a token from src/styles/tokens.css):`,
+			`✗ ${violations.length} design-token bypass(es) in web (use a token from @achoo254/app-shell/tokens.css):`,
 		);
 		for (const v of violations) {
 			console.error(`  ${v.file}:${v.line}  [${v.rule}]  ${v.match}`);

@@ -15,6 +15,7 @@
 		"check-tokens/**/*.ts",
 		"brand-gen.ts",
 		"brand-android.ts",
-		"brand.test.ts"
+		"brand.test.ts",
+		"theme-bootstrap.test.ts"
 	]
 }

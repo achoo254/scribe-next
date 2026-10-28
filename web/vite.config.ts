@@ -3,7 +3,8 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
-import { defineConfig, loadEnv } from "vite";
+import { type Plugin, defineConfig, loadEnv } from "vite";
+import { THEME_BOOTSTRAP_SCRIPT } from "./src/lib/theme-bootstrap";
 import { brandAssets } from "./vite-brand";
 
 const ENV_SUBDIR = join(
@@ -65,6 +66,29 @@ function vendorChunk(id: string): string | undefined {
 	return VENDOR_CHUNKS.find(([, pattern]) => pattern.test(name))?.[0];
 }
 
+/** Placeholder in index.html for the inline theme script. */
+const THEME_BOOTSTRAP_MARKER = "<!--theme-bootstrap-->";
+
+/**
+ * Puts the shared theme script (src/lib/theme-bootstrap.ts) inline in the
+ * <head>, before the stylesheet, so `data-theme` is set before first paint.
+ * The CSP allows exactly this text by its hash (scripts/theme-bootstrap.test.ts).
+ */
+function themeBootstrap(): Plugin {
+	return {
+		name: "scribe-theme-bootstrap",
+		transformIndexHtml(html) {
+			if (!html.includes(THEME_BOOTSTRAP_MARKER)) {
+				throw new Error(`index.html lost ${THEME_BOOTSTRAP_MARKER}`);
+			}
+			return html.replace(
+				THEME_BOOTSTRAP_MARKER,
+				`<script>${THEME_BOOTSTRAP_SCRIPT}</script>`,
+			);
+		},
+	};
+}
+
 /** True for `https://host[:port]` with nothing after the origin. */
 function isHttpOrigin(value: string): boolean {
 	try {
@@ -114,7 +138,7 @@ export default defineConfig(({ command, mode }) => {
 	}
 	return {
 		envDir,
-		plugins: [react(), tailwindcss(), brandAssets()],
+		plugins: [react(), tailwindcss(), brandAssets(), themeBootstrap()],
 		server: {
 			port: 5173,
 			strictPort: true,

@@ -1,7 +1,8 @@
 /* Copied from localman-next apps/web/src/components/layout/app-footer.tsx.
    Scribe changes: the IdP account links instead of the landing, Docs
    and feedback form (Scribe has none); the theme switch moved here from
-   the top bar; no language switcher (one language); clears the iPhone
+   the top bar (it stores the shared hoandat.com choice, lib/theme.ts); no
+   language switcher (the signed-in app is Vietnamese only); clears the iPhone
    home indicator (safe-area-inset-bottom); links to the privacy policy and
    terms (wrapping under the account links on phones). */
 import { IconExternalLink } from "@tabler/icons-react";
@@ -65,7 +66,7 @@ export function AppFooter() {
 						data-id="app-footer-home"
 						className={FOOTER_LINK}
 					>
-						{t("layout.publicChrome.ecosystem")}
+						{t("layout.footer.ecosystem")}
 					</a>
 					<LegalLinks linkClassName={FOOTER_LINK} />
 				</div>

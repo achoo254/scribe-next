@@ -1,16 +1,15 @@
 /**
- * Languages of the Scribe UI. Stands in for `@localman/shared/constants`
- * in the files copied from localman-next: Vietnamese is the only language
- * and the source of every key, so there is no language switcher yet.
+ * Languages of the Scribe UI: the languages of the shared signed-out shell
+ * (@achoo254/app-shell), so the footer switch and Scribe's own texts always
+ * offer the same choices. Vietnamese is the source of every key and the
+ * only language of the signed-in app; English covers the signed-out pages
+ * (`messages/en/dictionary.ts`).
  */
-export type Locale = "vi";
+import { SHELL_LOCALES, type ShellLocale } from "@achoo254/app-shell";
+
+export type Locale = ShellLocale;
 
 export const DEFAULT_LOCALE: Locale = "vi";
 
-/** Every language of the UI, in the order the language switcher lists them. */
-export const LOCALES: readonly Locale[] = ["vi"];
-
-/** Each language's name in that language (the switcher's labels). */
-export const LOCALE_NAMES: Readonly<Record<Locale, string>> = {
-	vi: "Tiếng Việt",
-};
+/** Every language of the UI, in the order the language switch lists them. */
+export const LOCALES: readonly Locale[] = SHELL_LOCALES;

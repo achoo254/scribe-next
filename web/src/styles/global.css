@@ -1,8 +1,11 @@
-/* Global stylesheet: Tailwind + design tokens (same system as localman-next)
-   + base rules. No colour literal or raw spacing px lives here — everything
-   resolves to a custom property from ./tokens.css (enforced by check:tokens). */
+/* Global stylesheet: Tailwind + the design tokens and the signed-out shell
+   of every hoandat.com app (@achoo254/app-shell: tokens.css is the source of
+   the tokens, app-shell.css styles only its own `shell-*` classes) + base
+   rules. No colour literal or raw spacing px lives here — everything
+   resolves to a custom property from the tokens (enforced by check:tokens). */
 @import "tailwindcss";
-@import "./tokens.css";
+@import "@achoo254/app-shell/tokens.css";
+@import "@achoo254/app-shell/app-shell.css";
 
 /* Self-hosted fonts (latin, latin-ext, vietnamese), declared by hand so
    Vietnamese pages do not also download the latin-ext files. See the
@@ -188,18 +191,6 @@
 	);
 }
 
-/* Signature 100px grid of the ecosystem's sign-in screens, drawn with the
-   --c-grid token (same rules as the body of localman-next and the
-   hoandat-auth pages). Scribe uses it on the sign-in page only. */
-@utility grid-backdrop {
-	background-color: var(--c-bg);
-	background-image:
-		linear-gradient(var(--c-grid) 1px, transparent 1px),
-		linear-gradient(90deg, var(--c-grid) 1px, transparent 1px);
-	background-size: var(--grid-size) var(--grid-size);
-	background-position: -1px -1px;
-}
-
 /* Skeleton placeholder (components/ui/skeleton.tsx): a static muted block
    that reads on both themes. `skeleton-shimmer` adds the moving highlight;
    components apply it as `motion-safe:skeleton-shimmer`, so reduced motion
@@ -314,7 +305,7 @@
 	}
 }
 
-/* Reduced motion: tokens.css already collapses --dur-* to 1ms; this also
+/* Reduced motion: the tokens already collapse --dur-* to 1ms; this also
    catches animations/transitions that do not read the tokens. */
 @media (prefers-reduced-motion: reduce) {
 	*,

@@ -1,6 +1,5 @@
 // @vitest-environment node
 import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
 	apcaLc,
@@ -10,6 +9,7 @@ import {
 	wcagRatio,
 } from "./contrast.js";
 import { resolveThemes } from "./parse-tokens.js";
+import { TOKENS_FILE } from "./tokens-file.js";
 
 describe("colour maths", () => {
 	it("parses short and long hex", () => {
@@ -54,10 +54,7 @@ describe("evaluatePairs", () => {
 	});
 
 	it("passes every main pair of the real tokens in light and dark", () => {
-		const css = readFileSync(
-			fileURLToPath(new URL("../../src/styles/tokens.css", import.meta.url)),
-			"utf8",
-		);
+		const css = readFileSync(TOKENS_FILE, "utf8");
 		const themes = resolveThemes(css);
 		const failures = [
 			...evaluatePairs("light", themes.light),

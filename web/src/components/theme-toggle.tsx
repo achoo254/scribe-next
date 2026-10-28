@@ -1,13 +1,12 @@
+import { useThemePreference as useSharedThemePreference } from "@achoo254/app-shell";
 import { IconDeviceDesktop, IconMoon, IconSun } from "@tabler/icons-react";
-import { useSyncExternalStore } from "react";
 import { useT } from "../i18n/i18n-context";
 import type { MessageKey } from "../i18n/message-types";
 import { cn } from "../lib/cn";
 import {
+	PREFERENCE_OPTIONS,
 	type ThemePreference,
-	applyThemePreference,
-	readThemePreference,
-	subscribeThemePreference,
+	pickTheme,
 } from "../lib/theme";
 
 const OPTIONS = [
@@ -21,8 +20,11 @@ const OPTIONS = [
 }>;
 
 /**
- * Light / dark / system switch that sets `data-theme` on <html>, the same
- * control as localman-next. "system" follows `prefers-color-scheme`.
+ * Light / dark / system switch of the signed-in footer, the same control as
+ * localman-next. It reads and writes the shared choice of every hoandat.com
+ * app (`lib/theme.ts`), the one the footer of the signed-out pages
+ * (@achoo254/app-shell `ThemeSwitch`) sets. "system" follows
+ * `prefers-color-scheme`.
  */
 export function ThemeToggle({ "data-id": dataId }: { "data-id"?: string }) {
 	const t = useT();
@@ -42,7 +44,7 @@ export function ThemeToggle({ "data-id": dataId }: { "data-id"?: string }) {
 					aria-pressed={preference === value}
 					title={t(label)}
 					data-id={dataId ? `${dataId}-${value}` : undefined}
-					onClick={() => applyThemePreference(value)}
+					onClick={() => pickTheme(value)}
 					className={cn(
 						"inline-flex size-8 cursor-pointer items-center justify-center rounded-sm transition-colors pointer-coarse:size-11",
 						preference === value
@@ -58,7 +60,7 @@ export function ThemeToggle({ "data-id": dataId }: { "data-id"?: string }) {
 }
 
 function useThemePreference(): ThemePreference {
-	return useSyncExternalStore(subscribeThemePreference, readThemePreference);
+	return useSharedThemePreference(PREFERENCE_OPTIONS);
 }
 
 /**
@@ -81,7 +83,7 @@ export function ThemeCycleButton({
 			data-id={dataId}
 			aria-label={label}
 			title={label}
-			onClick={() => applyThemePreference(next.value)}
+			onClick={() => pickTheme(next.value)}
 			className={cn(
 				"inline-flex size-11 cursor-pointer items-center justify-center rounded-md border border-border bg-surface text-muted transition-colors hover:text-fg",
 				className,

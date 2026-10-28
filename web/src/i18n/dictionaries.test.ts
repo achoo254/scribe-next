@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { en } from "./messages/en/dictionary";
 import { vi as messages } from "./messages/vi/dictionary";
 
 /*
@@ -82,5 +83,43 @@ describe("vi dictionary", () => {
 				expect(placeholders(text), leaf.key).toEqual(placeholders(first));
 			}
 		}
+	});
+});
+
+/** Namespaces English translates: the signed-out pages' (`messages/en`). */
+const TRANSLATED = ["landing", "login"] as const;
+
+describe("en dictionary", () => {
+	const vietnameseLetter =
+		/[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i;
+
+	it("translates the signed-out pages with the placeholders of Vietnamese", () => {
+		for (const namespace of TRANSLATED) {
+			const source = leaves(messages[namespace], namespace);
+			const translated = new Map(
+				leaves(en[namespace], namespace).map((leaf) => [leaf.key, leaf]),
+			);
+			expect([...translated.keys()].sort()).toEqual(
+				source.map((leaf) => leaf.key).sort(),
+			);
+			for (const leaf of source) {
+				const texts = translated.get(leaf.key)?.texts ?? [];
+				for (const text of texts) {
+					expect(text.trim(), leaf.key).not.toBe("");
+					expect(vietnameseLetter.test(text), `${leaf.key}: ${text}`).toBe(
+						false,
+					);
+					expect(placeholders(text), leaf.key).toEqual(
+						placeholders(leaf.texts[0] ?? ""),
+					);
+				}
+			}
+		}
+		expect(en.layout.skipLink).toBe("Skip to main content");
+	});
+
+	it("keeps Vietnamese for the signed-in app and the legal texts", () => {
+		expect(en.legal).toBe(messages.legal);
+		expect(en.record).toBe(messages.record);
 	});
 });

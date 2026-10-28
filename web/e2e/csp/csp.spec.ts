@@ -62,18 +62,18 @@ test(
 );
 
 test(
-	"the landing's hero art is a file this origin serves (img-src 'self')",
+	"the shared header's app mark is a file this origin serves (img-src 'self')",
 	SMOKE,
 	async ({ page }) => {
 		await watchViolations(page);
 		await stubApi(page, apiFixtures({ user: null }));
 		await page.goto("/");
-		const art = page.getByTestId("landing-hero-art");
-		await expect(art).toBeVisible();
+		const mark = page.getByTestId("public-home").locator("img");
+		await expect(mark).toBeVisible();
 		await expect
-			.poll(() => art.evaluate((img: HTMLImageElement) => img.naturalWidth))
+			.poll(() => mark.evaluate((img: HTMLImageElement) => img.naturalWidth))
 			.toBeGreaterThan(0);
-		expect(await art.getAttribute("src")).toMatch(/^\/assets\//);
+		expect(await mark.getAttribute("src")).toMatch(/^\/assets\//);
 		expect(await violations(page)).toEqual([]);
 	},
 );

@@ -10,15 +10,13 @@ function CloseLabel() {
 }
 
 describe("I18nProvider", () => {
-	it("gives components the Vietnamese texts and marks the page language", () => {
-		document.documentElement.lang = "";
+	it("gives components the Vietnamese texts", () => {
 		render(
 			<I18nProvider>
 				<CloseLabel />
 			</I18nProvider>,
 		);
 		expect(screen.getByText("Đóng")).toBeInTheDocument();
-		expect(document.documentElement.lang).toBe("vi");
 		expect(activeTranslator().t("ui.toast.region")).toBe("Thông báo");
 	});
 

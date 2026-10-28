@@ -46,7 +46,7 @@ export const BRAND_GENERATED_DIR = new URL("brand/generated/", BRAND_ROOT);
 /** URL path of the SVG favicon (a copy of the brand icon). */
 const FAVICON_SVG = "favicon.svg";
 
-/** Optional schema fields Scribe needs (src/styles/tokens.css colours). */
+/** Optional schema fields Scribe needs (the colours of the design tokens). */
 const BRAND_REQUIRE = ["colors.primary", "colors.backgroundDark"] as const;
 
 export type ScribeBrand = BrandConfigWith<(typeof BRAND_REQUIRE)[number]>;

@@ -1,6 +1,7 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup } from "@testing-library/react";
 import { afterEach } from "vitest";
+import { clearPreferences } from "./preferences";
 
 /*
  * jsdom has no PointerEvent; without it Testing Library's pointer events
@@ -43,6 +44,19 @@ class TestRequest extends NodeRequest {
 	}
 }
 globalThis.Request = TestRequest;
+
+/*
+ * jsdom reports an English browser (en-US). The signed-out pages follow the
+ * device's language, so tests run on a Vietnamese one, like most visitors;
+ * the English pages are tested by setting `hd_lang`.
+ */
+if (typeof window !== "undefined") {
+	Object.defineProperty(window.navigator, "language", {
+		value: "vi-VN",
+		configurable: true,
+	});
+	afterEach(clearPreferences);
+}
 
 afterEach(() => {
 	cleanup();

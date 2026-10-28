@@ -1,7 +1,8 @@
 /**
- * Public landing at `/` for visitors who are not signed in. Every feature
- * named here exists in the app today; the plan limits repeat the public
- * terms (`legal.terms.plans`), so change both together.
+ * Public landing at `/` for visitors who are not signed in: Scribe's body
+ * between the shared header and footer (@achoo254/app-shell). Every
+ * feature named here exists in the app today; the plan limits repeat the
+ * public terms (`legal.terms.plans`), so change both together.
  */
 export const landing = {
 	nav: {
@@ -12,14 +13,14 @@ export const landing = {
 		eyebrow: "Ghi âm và chép lời tiếng Việt",
 		title: "Nói. Nhận bản chép lời.",
 		lede: "Scribe ghi âm ngay trên trình duyệt hoặc iPhone, cắt tệp audio, video dài thành từng đoạn, rồi chép lời tiếng Việt theo từng người nói để bạn tìm, sửa và tải về.",
-		start: "Bắt đầu miễn phí",
-		features: "Xem tính năng",
-		note: "Đăng nhập bằng tài khoản {idpName} (Google hoặc GitHub).",
+	},
+	signIn: {
+		title: "Thử với cuộc họp tiếp theo",
+		body: "Gói miễn phí có 200 MB lưu trữ; tệp tự xoá sau 7 ngày, nên hãy tải về bản bạn cần giữ.",
 	},
 	features: {
 		eyebrow: "Tính năng",
 		title: "Một chỗ cho cả cuộc họp",
-		lead: "Từ lúc bấm ghi tới khi có biên bản, mọi bước nằm trong một ứng dụng.",
 		record: {
 			title: "Ghi âm trên web và iPhone",
 			body: "Ghi micro, hoặc âm thanh và màn hình máy tính ngay trên trình duyệt. Trên iPhone, Scribe vẫn ghi khi bạn khoá màn hình.",
@@ -54,9 +55,5 @@ export const landing = {
 				body: "Bấm Chép lời, rồi đọc, sửa, tìm và tải về khi xong.",
 			},
 		},
-	},
-	cta: {
-		title: "Thử với cuộc họp tiếp theo",
-		body: "Gói miễn phí có 200 MB lưu trữ; tệp tự xoá sau 7 ngày, nên hãy tải về bản bạn cần giữ.",
 	},
 } as const;

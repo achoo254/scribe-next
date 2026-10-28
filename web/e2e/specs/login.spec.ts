@@ -20,7 +20,7 @@ test.describe("login page", () => {
 			await page.goto("/login");
 
 			await expect(
-				page.getByRole("button", { name: "Đăng nhập" }),
+				page.getByRole("link", { name: "Đăng nhập bằng hoandat.com" }),
 			).toBeVisible();
 			await fontsReady(page);
 			await expect(page).toHaveScreenshot(`login-${scheme}.png`, {
@@ -47,7 +47,7 @@ test.describe("login page", () => {
 		async ({ page }) => {
 			const api = await stubApi(page, GUEST);
 			await page.goto("/login");
-			await page.getByTestId("login-submit").click();
+			await page.getByTestId("sign-in-cta").click();
 
 			await expect(page).toHaveURL(/\/api\/auth\/login$/);
 			expect(api.requests).toContain("GET /api/auth/login");

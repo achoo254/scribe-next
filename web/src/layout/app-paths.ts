@@ -7,6 +7,8 @@ export const PATHS = {
 	/** Public: no sign-in needed (App Store privacy and terms URLs). */
 	privacy: "/privacy",
 	terms: "/terms",
+	/** Public: the sign-in card, for visitors only. */
+	login: "/login",
 } as const;
 
 /**

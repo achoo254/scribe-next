@@ -10,13 +10,10 @@
 		<meta name="theme-color" content="" />
 		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
 		<title>%APP_NAME% · Ghi âm và chép lời tiếng Việt</title>
-		<script>
-			// Apply the saved theme before first paint (key: THEME_STORAGE_KEY in src/lib/theme.ts).
-			try {
-				var theme = localStorage.getItem("scribe-theme");
-				if (theme === "light" || theme === "dark") document.documentElement.dataset.theme = theme;
-			} catch (error) {}
-		</script>
+		<!-- Applies the shared theme choice before first paint: the inline
+		     script of @achoo254/app-shell (src/lib/theme-bootstrap.ts), put
+		     here by vite.config.ts. Its sha256 is in the CSP. -->
+		<!--theme-bootstrap-->
 	</head>
 	<body>
 		<div id="app"></div>

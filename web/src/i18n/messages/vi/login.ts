@@ -1,9 +1,10 @@
-/** Sign-in page (`/login`). */
+/**
+ * Sign-in page (`/login`) and the sign-in card of the landing. The call to
+ * action and the note under it are the shared shell's (@achoo254/app-shell).
+ */
 export const login = {
 	title: "Đăng nhập",
 	subtitle: "Ghi âm, cắt file và chép lời bằng tài khoản {idpName}.",
-	submit: "Đăng nhập bằng {idpName}",
-	note: "Dùng tài khoản {idpName} (Google hoặc GitHub).",
 	sessionCheck: "Đang kiểm tra phiên đăng nhập…",
 	noSession: "Đăng nhập xong nhưng máy chủ chưa nhận phiên — thử lại.",
 	/** Codes the backend appends to /login?error=… */

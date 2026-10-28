@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { Link } from "react-router";
 import { cardClassName } from "../components/ui/card";
-import { useI18n } from "../i18n/i18n-context";
+import { I18nContext, VIETNAMESE, useI18n } from "../i18n/i18n-context";
 import type { MessageKey, ParamValue, ParamsOf } from "../i18n/message-types";
 import { type TagRenderers, renderRich } from "../i18n/rich-text";
 import type { Translate } from "../i18n/translate";
@@ -159,17 +159,26 @@ export function renderLegalBody(text: string): ReactNode {
 
 /**
  * Privacy policy or terms of use, public (no sign-in): Vietnamese, then a
- * short English summary. Signed in, it renders inside the app shell;
- * otherwise inside `PublicLayout`.
+ * short English summary. The Vietnamese text is the one that applies, so
+ * it stays Vietnamese when a visitor picks English in the footer. Signed
+ * in, it renders inside the app shell; otherwise inside `PublicLayout`.
  */
 export function LegalPage({ doc }: { doc: LegalDoc }) {
+	return (
+		<I18nContext value={VIETNAMESE}>
+			<LegalDocument doc={doc} />
+		</I18nContext>
+	);
+}
+
+function LegalDocument({ doc }: { doc: LegalDoc }) {
 	const { t, formatDate } = useI18n();
 	const idpName = useIdpName();
 	const text = (key: LegalKey) => legalText(t, key, idpName);
 	const page = DOCS[doc];
 	const contact = SUPPORT_EMAIL ?? t("legal.contactFallback", { idpName });
 	return (
-		<article data-id={`legal-${doc}`} className="grid gap-4">
+		<article data-id={`legal-${doc}`} lang="vi" className="grid gap-4">
 			<PageHeader
 				title={text(page.title)}
 				description={t("legal.effective", {

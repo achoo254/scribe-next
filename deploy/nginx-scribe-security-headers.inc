@@ -17,7 +17,8 @@ add_header Referrer-Policy "strict-origin-when-cross-origin" always;
 add_header Permissions-Policy "camera=(), geolocation=(), microphone=(self), display-capture=(self)" always;
 # CSP — lập từ những gì app thực sự dùng (web/src + web/dist):
 # - script-src: bundle Vite từ 'self' + hash của script inline áp theme trước first paint
-#   (web/index.html). Sửa script đó thì hash đổi: pnpm run test:e2e:csp báo vi phạm, cập nhật hash.
+#   (themeBootstrapScript của @achoo254/app-shell, web/src/lib/theme-bootstrap.ts, vite.config.ts chèn vào
+#   web/index.html). Nâng gói hay đổi tuỳ chọn thì hash đổi: web/scripts/theme-bootstrap.test.ts báo hash mới.
 #   Thêm https://static.cloudflareinsights.com: beacon Cloudflare Web Analytics mà Cloudflare tự chèn
 #   (không đặt cookie; trang quyền riêng tư ghi rõ), nó gửi số liệu về https://cloudflareinsights.com
 #   (connect-src).
@@ -27,4 +28,4 @@ add_header Permissions-Policy "camera=(), geolocation=(), microphone=(self), dis
 #   stream media /api/files/…, font tự host, icon — đều cùng origin; img-src thêm data: cho logo app nhúng sẵn trong @achoo254/app-switcher; IdP (auth.hoandat.com) chỉ là điều hướng, không phải fetch.
 # - form-action 'self': form của app đều xử lý bằng JS (onSubmit), không post ra ngoài.
 # - frame-ancestors 'none': không cho trang nào nhúng Scribe trong iframe (clickjacking).
-add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'sha256-xm6mYjbQROrwta3dXJ1qt/VXzqssPzi4affxRPKBh3g=' https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://cloudflareinsights.com; media-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'" always;
+add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'sha256-kKT5wUsif6Y66KSGxvIhYtNhx78+w6iqb/Ys6pcFocQ=' https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://cloudflareinsights.com; media-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'" always;

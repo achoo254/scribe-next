@@ -40,17 +40,15 @@ import {
 	iosSplashSvg,
 } from "./brand-ios-splash.js";
 import { resolveThemes } from "./check-tokens/parse-tokens.js";
+import { TOKENS_FILE } from "./check-tokens/tokens-file.js";
 
 const brand = loadScribeBrand();
 const generated = (name: string) =>
 	readFileSync(new URL(name, BRAND_GENERATED_DIR), "utf8");
 
 describe("brand.config.json", () => {
-	it("uses the colours of src/styles/tokens.css", () => {
-		const css = readFileSync(
-			new URL("src/styles/tokens.css", BRAND_ROOT),
-			"utf8",
-		);
+	it("uses the colours of the design tokens", () => {
+		const css = readFileSync(TOKENS_FILE, "utf8");
 		const themes = resolveThemes(css);
 		expect(brand.colors.primary).toBe(themes.light.get("--c-primary-solid"));
 		expect(brand.colors.background).toBe(themes.light.get("--c-bg"));

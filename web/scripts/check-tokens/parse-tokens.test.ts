@@ -1,12 +1,12 @@
 // @vitest-environment node
 import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
 	diffDarkBlocks,
 	parseTokenBlocks,
 	resolveThemes,
 } from "./parse-tokens.js";
+import { TOKENS_FILE } from "./tokens-file.js";
 
 const SAMPLE = `
 /* header with { braces } inside a comment */
@@ -59,10 +59,7 @@ describe("resolveThemes", () => {
 	});
 
 	it("parses the real tokens.css with identical dark blocks", () => {
-		const css = readFileSync(
-			fileURLToPath(new URL("../../src/styles/tokens.css", import.meta.url)),
-			"utf8",
-		);
+		const css = readFileSync(TOKENS_FILE, "utf8");
 		const themes = resolveThemes(css);
 		expect(themes.light.get("--c-primary")).toBe("#6550b9");
 		expect(themes.dark.get("--c-primary")).toBe("#baa7ff");

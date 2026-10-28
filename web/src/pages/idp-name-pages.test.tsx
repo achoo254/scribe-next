@@ -16,17 +16,17 @@ vi.mock("../lib/legal", async (importOriginal) => ({
 }));
 
 /*
- * The sign-in page and the legal pages name the account people sign in
- * with by the IdP's tenant name: the default first, then what
+ * Scribe's texts on the sign-in page and the legal pages name the account
+ * people sign in with by the IdP's tenant name: the default first, then what
  * `GET /api/idp` says (read once per page load, here in the middle).
  */
 describe("pages naming the sign-in account", () => {
 	it("use the default, then the backend's name", async () => {
 		renderWithProviders(<LoginPage />);
 		expect(
-			await screen.findByRole("button", {
-				name: "Đăng nhập bằng hoandat.com",
-			}),
+			await screen.findByText(
+				"Ghi âm, cắt file và chép lời bằng tài khoản hoandat.com.",
+			),
 		).toBeVisible();
 
 		const { fetcher } = fakeFetch({
@@ -34,16 +34,14 @@ describe("pages naming the sign-in account", () => {
 		});
 		await act(() => loadIdpName(fetcher));
 		expect(
-			screen.getByRole("button", { name: "Đăng nhập bằng Acme" }),
-		).toBeVisible();
-		expect(
 			screen.getByText("Ghi âm, cắt file và chép lời bằng tài khoản Acme."),
 		).toBeVisible();
 		expect(
-			screen.getByText("Dùng tài khoản Acme (Google hoặc GitHub)."),
-		).toBeVisible();
-		expect(
 			screen.getByText(/Tài khoản Acme vẫn còn ở auth\.hoandat\.com\./),
+		).toBeVisible();
+		// The call to action is the shared card's: every app names the root domain.
+		expect(
+			screen.getByRole("link", { name: "Đăng nhập bằng hoandat.com" }),
 		).toBeVisible();
 	});
 

@@ -1,16 +1,13 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
-import { THEME_STORAGE_KEY } from "../lib/theme";
+import { clearPreferences } from "../test/preferences";
 import { ThemeCycleButton, ThemeToggle } from "./theme-toggle";
 
-afterEach(() => {
-	delete document.documentElement.dataset.theme;
-	window.localStorage.clear();
-});
+afterEach(clearPreferences);
 
 describe("ThemeToggle", () => {
-	it("starts on 'system' and switches data-theme on <html>", async () => {
+	it("starts on 'system', switches data-theme on <html> and stores the shared choice", async () => {
 		render(<ThemeToggle data-id="theme" />);
 		expect(
 			screen.getByRole("button", { name: "Theo hệ điều hành" }),
@@ -20,7 +17,7 @@ describe("ThemeToggle", () => {
 			screen.getByRole("button", { name: "Giao diện tối" }),
 		);
 		expect(document.documentElement.dataset.theme).toBe("dark");
-		expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBe("dark");
+		expect(document.cookie).toContain("hd_theme=dark");
 		expect(
 			screen.getByRole("button", { name: "Giao diện tối" }),
 		).toHaveAttribute("aria-pressed", "true");
@@ -29,6 +26,14 @@ describe("ThemeToggle", () => {
 			screen.getByRole("button", { name: "Theo hệ điều hành" }),
 		);
 		expect(document.documentElement.dataset.theme).toBeUndefined();
+	});
+
+	it("keeps the theme picked before the shared choice existed", () => {
+		window.localStorage.setItem("scribe-theme", "dark");
+		render(<ThemeToggle />);
+		expect(
+			screen.getByRole("button", { name: "Giao diện tối" }),
+		).toHaveAttribute("aria-pressed", "true");
 	});
 
 	it("the one-button form moves light → dark → system", async () => {
