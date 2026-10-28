@@ -1,4 +1,6 @@
 import { activeTranslator } from "../i18n/active-translator";
+import { DEFAULT_LOCALE } from "../i18n/locales";
+import { serverErrorText } from "./server-errors";
 /**
  * The one way the app talks to the backend. Paths start with `/api/`; on
  * the web they stay relative (same origin as nginx), in a native shell they
@@ -95,24 +97,27 @@ export function apiUrl(path: string, base: string = apiBase()): string {
 }
 
 /**
- * Reads `{ error, code? }` (and the quota numbers) from a failed response;
- * the backend's text is Vietnamese.
+ * Reads `{ error, code? }` (and the quota numbers) from a failed response.
+ * The backend's text is Vietnamese: a Vietnamese page shows it as sent; a
+ * page in another language words the refusal itself (`serverErrorText`),
+ * else shows the request's translated `fallback`.
  */
 async function errorFrom(res: Response, fallback: string): Promise<ApiError> {
 	const body: unknown = await res.json().catch(() => null);
-	if (typeof body !== "object" || body === null) {
-		return new ApiError(res.status, fallback);
+	const translator = activeTranslator();
+	const record = typeof body === "object" && body !== null ? body : {};
+	const error = field(record, "error");
+	const rawCode = field(record, "code");
+	const code = typeof rawCode === "string" && rawCode ? rawCode : null;
+	const quota = quotaOf(record);
+	let message = fallback;
+	if (translator.locale !== DEFAULT_LOCALE) {
+		message =
+			serverErrorText(translator.t, res.status, code, quota) ?? fallback;
+	} else if (typeof error === "string" && error.length > 0) {
+		message = error;
 	}
-	const error = field(body, "error");
-	const code = field(body, "code");
-	return new ApiError(
-		res.status,
-		typeof error === "string" && error.length > 0 ? error : fallback,
-		{
-			code: typeof code === "string" && code ? code : null,
-			quota: quotaOf(body),
-		},
-	);
+	return new ApiError(res.status, message, { code, quota });
 }
 
 export interface ApiRequest extends Omit<RequestInit, "body"> {

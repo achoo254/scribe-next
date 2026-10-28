@@ -46,7 +46,7 @@ const FEATURES = [
  * Android apps: Scribe's hero beside the shared sign-in card (the page's
  * one call to action), its features and the three steps, in the shared
  * signed-out frame (@achoo254/app-shell). Signed-in users never see it
- * (`/` takes them to the app). Renders under `PublicI18nProvider`.
+ * (`/` takes them to the app).
  */
 export function LandingPage() {
 	const { t } = useI18n();

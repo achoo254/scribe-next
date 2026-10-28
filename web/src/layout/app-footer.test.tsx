@@ -1,11 +1,17 @@
 import { render as renderNode, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import type { ReactElement } from "react";
 import { MemoryRouter } from "react-router";
 import { describe, expect, it } from "vitest";
+import { I18nProvider } from "../i18n/i18n-provider";
 import { AppFooter } from "./app-footer";
 
 function render(ui: ReactElement) {
-	return renderNode(<MemoryRouter>{ui}</MemoryRouter>);
+	return renderNode(
+		<I18nProvider>
+			<MemoryRouter>{ui}</MemoryRouter>
+		</I18nProvider>,
+	);
 }
 
 describe("AppFooter", () => {
@@ -47,5 +53,57 @@ describe("AppFooter", () => {
 		expect(
 			within(theme).getByRole("button", { name: "Giao diện tối" }),
 		).toBeVisible();
+	});
+
+	it("holds the shared language switch next to the theme switch", async () => {
+		render(<AppFooter />);
+		const switches = screen
+			.getByRole("contentinfo")
+			.querySelector<HTMLElement>('[data-id="app-footer-switches"]');
+		if (!switches) throw new Error("no footer switches");
+		const language = within(switches).getByRole("group", { name: "Ngôn ngữ" });
+		expect(
+			within(language).getByRole("button", { name: "Tiếng Việt" }),
+		).toHaveAttribute("aria-pressed", "true");
+		expect(within(language).queryByRole("button", { name: "中文" })).toBeNull();
+		expect(
+			within(switches).getByRole("group", { name: "Giao diện" }),
+		).toBeInTheDocument();
+
+		await userEvent.click(
+			within(language).getByRole("button", { name: "English" }),
+		);
+		expect(document.cookie).toContain("hd_lang=en");
+		expect(document.documentElement.lang).toBe("en");
+		expect(
+			await screen.findByRole("link", { name: "An app from hoandat.com" }),
+		).toHaveAttribute("href", "https://hoandat.com");
+		expect(
+			within(switches).getByRole("group", { name: "Language" }),
+		).toBeInTheDocument();
+		expect(
+			within(switches).getByRole("group", { name: "Theme" }),
+		).toBeVisible();
+	});
+
+	it("speaks the language chosen in another hoandat.com app", () => {
+		document.cookie = "hd_lang=en; Path=/";
+		render(<AppFooter />);
+		expect(
+			screen.getByRole("navigation", { name: "Legal" }),
+		).toBeInTheDocument();
+		expect(screen.getByRole("link", { name: "Privacy" })).toHaveAttribute(
+			"href",
+			"/privacy",
+		);
+	});
+
+	it("ignores a Chinese choice Scribe cannot speak", () => {
+		document.cookie = "hd_lang=zh-CN; Path=/";
+		render(<AppFooter />);
+		expect(screen.getByRole("button", { name: "Tiếng Việt" })).toHaveAttribute(
+			"aria-pressed",
+			"true",
+		);
 	});
 });

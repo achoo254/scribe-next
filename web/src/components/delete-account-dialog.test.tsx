@@ -90,7 +90,8 @@ describe("DeleteAccountDialog", () => {
 		expect(auth.forgetDeletedAccount).toHaveBeenCalledTimes(1);
 		const call = calls.find((c) => c.method === "POST");
 		expect(call?.url).toMatch(/\/api\/me\/delete$/);
-		expect(call?.body).toEqual({ confirm: "xóa" });
+		// The backend's own word, whatever was typed (it matched the dialog's).
+		expect(call?.body).toEqual({ confirm: "XOÁ" });
 	});
 
 	it("signs out with 'pending' when the server still finishes the deletion", async () => {
@@ -151,10 +152,19 @@ describe("DeleteAccountDialog", () => {
 describe("confirmMatches", () => {
 	it("accepts XOÁ however it is typed, nothing else", () => {
 		for (const ok of ["XOÁ", "xoá", "Xóa", "xoa", " XOA "]) {
-			expect(confirmMatches(ok), ok).toBe(true);
+			expect(confirmMatches(ok, "XOÁ"), ok).toBe(true);
 		}
 		for (const bad of ["", "xo", "xoá tài khoản", "delete"]) {
-			expect(confirmMatches(bad), bad).toBe(false);
+			expect(confirmMatches(bad, "XOÁ"), bad).toBe(false);
+		}
+	});
+
+	it("accepts the English word on an English page", () => {
+		for (const ok of ["DELETE", "delete", " Delete "]) {
+			expect(confirmMatches(ok, "DELETE"), ok).toBe(true);
+		}
+		for (const bad of ["xoá", "delet", "delete account"]) {
+			expect(confirmMatches(bad, "DELETE"), bad).toBe(false);
 		}
 	});
 });

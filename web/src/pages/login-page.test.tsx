@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { RouterProvider, createMemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -77,6 +77,27 @@ describe("LoginPage", () => {
 			await screen.findByRole("link", { name: "Đăng nhập bằng hoandat.com" }),
 		);
 		expect(auth.login).toHaveBeenCalledTimes(1);
+		expect(router.state.location.pathname).toBe("/");
+	});
+
+	it("shows the call to action busy while the system browser is open", async () => {
+		let finish: () => void = () => undefined;
+		auth.login.mockImplementationOnce(
+			() =>
+				new Promise<undefined>((resolve) => {
+					finish = () => resolve(undefined);
+				}),
+		);
+		const router = renderAt("/login");
+		const cta = await screen.findByRole("link", {
+			name: "Đăng nhập bằng hoandat.com",
+		});
+		expect(cta).not.toHaveAttribute("aria-busy");
+		await userEvent.click(cta);
+		expect(cta).toHaveAttribute("aria-busy", "true");
+		await userEvent.click(cta);
+		expect(auth.login).toHaveBeenCalledTimes(1);
+		await act(async () => finish());
 		expect(router.state.location.pathname).toBe("/");
 	});
 

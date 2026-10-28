@@ -13,6 +13,11 @@ export const legal = {
 	},
 	contactFallback: "người vận hành Scribe qua tài khoản {idpName}",
 	englishTitle: "English summary",
+	/** Shown on the translated (English) page only, above the text. */
+	authoritative: {
+		title: "Về bản dịch",
+		body: "Văn bản tiếng Anh là bản dịch để tiện đọc. Bản tiếng Việt là bản có hiệu lực; nếu hai bản khác nhau, bản tiếng Việt được áp dụng.",
+	},
 	privacy: {
 		title: "Chính sách quyền riêng tư",
 		intro:

@@ -1,5 +1,4 @@
 import { Navigate, Outlet, useMatches } from "react-router";
-import { PublicI18nProvider } from "../i18n/public-i18n";
 import { LandingPage } from "../pages/landing/landing-page";
 import { ScribePublicPage } from "./scribe-public-page";
 
@@ -17,7 +16,13 @@ function hasHandleFlag(handle: unknown, flag: "public" | "landing"): boolean {
 	);
 }
 
-function PublicRoute() {
+/**
+ * What a visitor sees on the signed-in route tree: the landing page at `/`
+ * (on the web and in the iPhone and Android apps alike), the public pages
+ * (privacy, terms) in the shared signed-out frame; any other URL goes to
+ * /login.
+ */
+export function PublicLayout() {
 	const matches = useMatches();
 	if (matches.some((match) => hasHandleFlag(match.handle, "landing"))) {
 		return <LandingPage />;
@@ -29,19 +34,5 @@ function PublicRoute() {
 		<ScribePublicPage>
 			<Outlet />
 		</ScribePublicPage>
-	);
-}
-
-/**
- * What a visitor sees on the signed-in route tree, in the visitor's
- * language: the landing page at `/` (on the web and in the iPhone and
- * Android apps alike), the public pages (privacy, terms) in the shared
- * signed-out frame; any other URL goes to /login.
- */
-export function PublicLayout() {
-	return (
-		<PublicI18nProvider>
-			<PublicRoute />
-		</PublicI18nProvider>
 	);
 }

@@ -1,14 +1,17 @@
 /* Copied from localman-next apps/web/src/components/layout/app-footer.tsx.
    Scribe changes: the IdP account links instead of the landing, Docs
    and feedback form (Scribe has none); the theme switch moved here from
-   the top bar (it stores the shared hoandat.com choice, lib/theme.ts); no
-   language switcher (the signed-in app is Vietnamese only); clears the iPhone
-   home indicator (safe-area-inset-bottom); links to the privacy policy and
-   terms (wrapping under the account links on phones). */
+   the top bar (it stores the shared hoandat.com choice, lib/theme.ts) and
+   sits with the shared language switch (@achoo254/app-shell), as in the
+   signed-out footer; clears the iPhone home indicator
+   (safe-area-inset-bottom); links to the privacy policy and terms. */
+import { LanguageSwitch } from "@achoo254/app-shell";
 import { IconExternalLink } from "@tabler/icons-react";
 import { ThemeCycleButton, ThemeToggle } from "../components/theme-toggle";
-import { useT } from "../i18n/i18n-context";
-import { ECOSYSTEM_HOME_URL } from "../lib/brand";
+import { useI18n } from "../i18n/i18n-context";
+import { followStoredLocale } from "../i18n/i18n-provider";
+import { LOCALES } from "../i18n/locales";
+import { ECOSYSTEM_HOME_URL, PRIMARY_TENANT_DOMAIN } from "../lib/brand";
 import { IDP_ACCOUNT_URL, IDP_APPS_URL } from "../lib/idp";
 import { useIdpName } from "../lib/idp-name";
 import { LegalLinks } from "./legal-links";
@@ -17,11 +20,12 @@ const FOOTER_LINK =
 	"inline-flex min-h-11 cursor-pointer items-center gap-1 whitespace-nowrap rounded-sm font-mono font-semibold text-primary underline-offset-4 hover:underline";
 
 /**
- * Page footer: IdP account pages, then "Một app của hoandat.com", privacy
- * and terms (the same row as the public footer), and the theme switch.
+ * Page footer: the language and theme switches together (their own row on
+ * phones, on the right from `sm`), then the IdP account pages, "Một app
+ * của hoandat.com", privacy and terms.
  */
 export function AppFooter() {
-	const t = useT();
+	const { locale, t } = useI18n();
 	const idpName = useIdpName();
 	const links = [
 		{
@@ -36,7 +40,26 @@ export function AppFooter() {
 			data-id="app-footer"
 			className="border-border-subtle border-t pt-1 pb-[calc(var(--space-1)+env(safe-area-inset-bottom))] text-[0.8125rem] text-muted sm:pt-4 sm:pb-[calc(var(--space-4)+env(safe-area-inset-bottom))]"
 		>
-			<div className="mx-auto flex w-full max-w-page items-center justify-between gap-3 px-gutter">
+			<div className="mx-auto flex w-full max-w-page flex-col gap-1 px-gutter sm:flex-row-reverse sm:items-center sm:justify-between sm:gap-3">
+				<div
+					data-id="app-footer-switches"
+					className="flex flex-wrap items-center gap-2 pt-2 sm:pt-0"
+				>
+					<LanguageSwitch
+						locale={locale}
+						locales={LOCALES}
+						domain={PRIMARY_TENANT_DOMAIN}
+						onLocaleChange={followStoredLocale}
+					/>
+					{/* Phones get one button so both switches fit on one row. */}
+					<ThemeCycleButton
+						data-id="app-footer-theme-cycle"
+						className="sm:hidden"
+					/>
+					<div className="hidden sm:block">
+						<ThemeToggle data-id="app-footer-theme" />
+					</div>
+				</div>
 				<div className="flex min-w-0 flex-wrap items-center gap-x-3 sm:gap-x-4">
 					<nav
 						aria-label={t("layout.footer.links")}
@@ -69,14 +92,6 @@ export function AppFooter() {
 						{t("layout.footer.ecosystem")}
 					</a>
 					<LegalLinks linkClassName={FOOTER_LINK} />
-				</div>
-				{/* Phones get one button so the theme switch stays on the first row. */}
-				<ThemeCycleButton
-					data-id="app-footer-theme-cycle"
-					className="sm:hidden"
-				/>
-				<div className="hidden sm:block">
-					<ThemeToggle data-id="app-footer-theme" />
 				</div>
 			</div>
 		</footer>

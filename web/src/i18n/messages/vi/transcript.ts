@@ -5,8 +5,8 @@ export const transcript = {
 	progress: "Đang chép lời… {percent}%",
 	status: {
 		running: "Đang chép {done}/{sent}",
-		failed: "Lỗi {count} đoạn",
-		untranscribed: "Còn {count} đoạn chưa chép",
+		failed: { other: "Lỗi {count} đoạn" },
+		untranscribed: { other: "Còn {count} đoạn chưa chép" },
 		done: "Đã chép xong",
 	},
 	transcribe: {
@@ -64,7 +64,7 @@ export const transcript = {
 		rerunQuestion: "Bỏ phần đã sửa ở {segments} đoạn ({sentences} câu)?",
 		rerunBody:
 			"Chép lại cả bản ghi thay mọi câu bằng bản chép mới. Muốn giữ phần đã sửa, hãy chép lại từng đoạn trong trang Lời đã chép.",
-		rerunNamesQuestion: "Đặt lại tên {count} người nói đã đổi?",
+		rerunNamesQuestion: { other: "Đặt lại tên {count} người nói đã đổi?" },
 	},
 	segment: {
 		none: "Đoạn này chưa chép lời.",
@@ -171,15 +171,15 @@ export const transcript = {
 		deleteBody:
 			"Phần chữ và phần đã sửa sẽ mất. Audio vẫn còn trong Lịch sử ghi.",
 		deleted: "Đã xoá bản chép lời “{name}”",
-		unsent: "Còn {count} đoạn chưa chép.",
-		sendRest: "Chép {count} đoạn còn lại",
+		unsent: { other: "Còn {count} đoạn chưa chép." },
+		sendRest: { other: "Chép {count} đoạn còn lại" },
 		missing: "Thiếu đoạn {number}",
 		playing: "Đang ở đoạn {number}",
 		rerunTitle: "Chép lại đoạn",
-		rerunQuestion: "Bỏ {count} câu đã sửa ở đoạn {number}?",
+		rerunQuestion: { other: "Bỏ {count} câu đã sửa ở đoạn {number}?" },
 		rerunBody: "Đoạn này sẽ về câu máy mới; các đoạn khác giữ phần đã sửa.",
 		rerunAllTitle: "Chép lại cả phiên",
-		rerunAllQuestion: "Bỏ {count} câu đã sửa trong cả phiên?",
+		rerunAllQuestion: { other: "Bỏ {count} câu đã sửa trong cả phiên?" },
 		rerunAllBody:
 			"Phiên ghi iPhone được chép lại cả phiên trong một lần để nhãn người nói thống nhất, nên mọi đoạn về câu máy mới.",
 	},

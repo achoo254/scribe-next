@@ -11,6 +11,7 @@ import { activeTranslator } from "../../i18n/active-translator";
  * level changes every frame and has its own `getLevel()`/`subscribeLevel()`.
  */
 import { apiJson, errorMessage } from "../../lib/api";
+import { formatLocalDateTime } from "../../lib/format";
 import {
 	type Capture,
 	captureSources,
@@ -101,7 +102,7 @@ export class Recorder {
 		this.set({ ...IDLE, starting: true });
 		this.interruptNote = null;
 		const name = activeTranslator().t("recorder.defaultName", {
-			date: new Date().toLocaleString("vi-VN"),
+			date: formatLocalDateTime(new Date()),
 		});
 		try {
 			// Media first, inside the click's user activation: on iOS WebKit

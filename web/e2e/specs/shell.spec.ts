@@ -113,7 +113,15 @@ for (const scheme of COLOR_SCHEMES) {
 			await expect(
 				legal.getByRole("link", { name: "Điều khoản" }),
 			).toHaveAttribute("href", "/terms");
-			// Phones get the one-button theme switch next to the account links.
+			// Language and theme sit together, as in the signed-out footer.
+			const switches = footer.getByTestId("app-footer-switches");
+			await expect(
+				switches.getByRole("group", { name: "Ngôn ngữ" }),
+			).toBeVisible();
+			await expect(
+				switches.getByRole("button", { name: "Tiếng Việt" }),
+			).toHaveAttribute("aria-pressed", "true");
+			// Phones get the one-button theme switch next to the language switch.
 			if (isMobile) {
 				await expect(
 					footer.getByRole("button", { name: /— bấm để đổi$/ }),
@@ -158,6 +166,43 @@ test(
 		await page.getByRole("link", { name: "Scribe, về trang Ghi âm" }).click();
 		await expect(page).toHaveURL(/\/record$/);
 		await expect(page.getByTestId("record")).toBeVisible();
+	},
+);
+
+test(
+	"the footer switch turns the signed-in app into English",
+	SMOKE,
+	async ({ page, isMobile }) => {
+		await preparePage(page, "light");
+		const api = await stubApi(page);
+		await openApp(page, isMobile);
+
+		const footer = page.getByTestId("app-footer");
+		await footer.getByRole("button", { name: "English" }).click();
+		await expect(page.locator("html")).toHaveAttribute("lang", "en");
+		const nav = page
+			.getByTestId("topbar")
+			.getByRole("navigation", { name: "Sections" });
+		await expect(nav.getByRole("link")).toHaveText([
+			"Record",
+			"Split",
+			"Transcripts",
+		]);
+		await expect(page.getByTestId("history")).toContainText(
+			"Recording history",
+		);
+		await expect(
+			footer.getByRole("button", { name: "English" }),
+		).toHaveAttribute("aria-pressed", "true");
+		// The choice is the shared one: a reload keeps it.
+		await page.reload();
+		await expect(
+			page
+				.getByTestId("topbar")
+				.getByRole("link", { name: "Scribe, go to Record" }),
+		).toBeVisible();
+		expect(await seriousA11yViolations(page)).toEqual([]);
+		expect(api.unexpected).toEqual([]);
 	},
 );
 

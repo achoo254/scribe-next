@@ -1,7 +1,8 @@
 import type { ReactNode } from "react";
 import { Link } from "react-router";
 import { cardClassName } from "../components/ui/card";
-import { I18nContext, VIETNAMESE, useI18n } from "../i18n/i18n-context";
+import { useI18n } from "../i18n/i18n-context";
+import { DEFAULT_LOCALE } from "../i18n/locales";
 import type { MessageKey, ParamValue, ParamsOf } from "../i18n/message-types";
 import { type TagRenderers, renderRich } from "../i18n/rich-text";
 import type { Translate } from "../i18n/translate";
@@ -158,27 +159,21 @@ export function renderLegalBody(text: string): ReactNode {
 }
 
 /**
- * Privacy policy or terms of use, public (no sign-in): Vietnamese, then a
- * short English summary. The Vietnamese text is the one that applies, so
- * it stays Vietnamese when a visitor picks English in the footer. Signed
- * in, it renders inside the app shell; otherwise inside `PublicLayout`.
+ * Privacy policy or terms of use, public (no sign-in), in the language on
+ * screen. The Vietnamese text is the one that applies: it ends with a short
+ * English summary, and a translation opens with a note saying the
+ * Vietnamese version prevails. Signed in, it renders inside the app shell;
+ * otherwise inside `PublicLayout`.
  */
 export function LegalPage({ doc }: { doc: LegalDoc }) {
-	return (
-		<I18nContext value={VIETNAMESE}>
-			<LegalDocument doc={doc} />
-		</I18nContext>
-	);
-}
-
-function LegalDocument({ doc }: { doc: LegalDoc }) {
-	const { t, formatDate } = useI18n();
+	const { locale, t, formatDate } = useI18n();
+	const translated = locale !== DEFAULT_LOCALE;
 	const idpName = useIdpName();
 	const text = (key: LegalKey) => legalText(t, key, idpName);
 	const page = DOCS[doc];
 	const contact = SUPPORT_EMAIL ?? t("legal.contactFallback", { idpName });
 	return (
-		<article data-id={`legal-${doc}`} lang="vi" className="grid gap-4">
+		<article data-id={`legal-${doc}`} className="grid gap-4">
 			<PageHeader
 				title={text(page.title)}
 				description={t("legal.effective", {
@@ -191,6 +186,22 @@ function LegalDocument({ doc }: { doc: LegalDoc }) {
 					"grid gap-6 px-5 py-6 text-[0.9375rem] text-fg leading-relaxed sm:px-8",
 				)}
 			>
+				{translated ? (
+					<section
+						id="translation"
+						data-id="legal-authoritative"
+						aria-labelledby="translation-title"
+						className="grid gap-2 border-border-subtle border-b pb-6"
+					>
+						<h2
+							id="translation-title"
+							className="m-0 font-bold font-mono text-base"
+						>
+							{t("legal.authoritative.title")}
+						</h2>
+						<p className="m-0 text-muted">{t("legal.authoritative.body")}</p>
+					</section>
+				) : null}
 				<p className="m-0">{renderRich(text(page.intro), LINK_TAGS)}</p>
 				{page.sections.map(([id, title, body]) => (
 					<section
@@ -220,17 +231,22 @@ function LegalDocument({ doc }: { doc: LegalDoc }) {
 						{renderRich(t("legal.contact.body", { contact }), LINK_TAGS)}
 					</p>
 				</section>
-				<section
-					id="english"
-					lang="en"
-					aria-labelledby="english-title"
-					className="grid gap-2 border-border-subtle border-t pt-6"
-				>
-					<h2 id="english-title" className="m-0 font-bold font-mono text-base">
-						{t("legal.englishTitle")}
-					</h2>
-					<p className="m-0 text-muted">{text(page.english)}</p>
-				</section>
+				{translated ? null : (
+					<section
+						id="english"
+						lang="en"
+						aria-labelledby="english-title"
+						className="grid gap-2 border-border-subtle border-t pt-6"
+					>
+						<h2
+							id="english-title"
+							className="m-0 font-bold font-mono text-base"
+						>
+							{t("legal.englishTitle")}
+						</h2>
+						<p className="m-0 text-muted">{text(page.english)}</p>
+					</section>
+				)}
 			</div>
 			<LegalLinks />
 		</article>

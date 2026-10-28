@@ -1,4 +1,8 @@
 import { afterEach, describe, expect, it } from "vitest";
+import { setActiveTranslator } from "../i18n/active-translator";
+import { VIETNAMESE } from "../i18n/i18n-context";
+import { en } from "../i18n/messages/en/dictionary";
+import { createTranslator } from "../i18n/translate";
 import { fakeFetch, jsonResponse } from "../test/fake-fetch";
 import {
 	ApiError,
@@ -13,6 +17,7 @@ import {
 
 afterEach(() => {
 	Reflect.deleteProperty(globalThis, "Capacitor");
+	setActiveTranslator(VIETNAMESE);
 });
 
 describe("API base", () => {
@@ -159,5 +164,94 @@ describe("nativeSafeBody", () => {
 			fetcher,
 		);
 		expect(sent[0]).toBeInstanceOf(File);
+	});
+});
+
+describe("apiFetch on an English page", () => {
+	const english = (): void => setActiveTranslator(createTranslator("en", en));
+
+	it("words a coded refusal in English instead of the backend's Vietnamese", async () => {
+		english();
+		const { fetcher } = fakeFetch({
+			"POST /api/transcripts": jsonResponse(
+				{
+					error: "Không đủ phút chép lời: tháng này đã dùng 120/120 phút.",
+					code: "QUOTA_EXCEEDED",
+					usedMinutes: 120,
+					limitMinutes: 120,
+					retryAt: "2026-11-01T00:00:00+07:00",
+				},
+				403,
+			),
+		});
+		await expect(
+			apiFetch("/api/transcripts", { method: "POST" }, fetcher),
+		).rejects.toMatchObject({
+			status: 403,
+			code: "QUOTA_EXCEEDED",
+			message:
+				"Not enough transcription minutes: you've used 120/120 minutes this month.",
+		});
+	});
+
+	it("says when a limit opens again, in English", async () => {
+		english();
+		const { fetcher } = fakeFetch({
+			"POST /api/x": jsonResponse(
+				{
+					error:
+						"Tài khoản mới dùng được chép lời miễn phí từ 09:00 ngày 29/10.",
+					code: "ACCOUNT_TOO_NEW",
+					usedMinutes: 0,
+					limitMinutes: 0,
+					retryAt: "2026-10-29T02:00:00Z",
+				},
+				403,
+			),
+		});
+		await expect(
+			apiFetch("/api/x", { method: "POST" }, fetcher),
+		).rejects.toMatchObject({
+			message: "New accounts can use free transcription from 09:00, Oct 29.",
+		});
+	});
+
+	it("words a full storage (413) without a code", async () => {
+		english();
+		const { fetcher } = fakeFetch({
+			"POST /api/upload/init": jsonResponse(
+				{ error: "Đã hết dung lượng" },
+				413,
+			),
+		});
+		await expect(
+			apiFetch("/api/upload/init", { method: "POST" }, fetcher),
+		).rejects.toMatchObject({
+			status: 413,
+			message: expect.stringContaining("your storage is full"),
+		});
+	});
+
+	it("shows the request's English fallback for any other refusal", async () => {
+		english();
+		const { fetcher } = fakeFetch({
+			"PATCH /api/x": jsonResponse({ error: "tên quá dài" }, 400),
+		});
+		await expect(
+			apiFetch(
+				"/api/x",
+				{ method: "PATCH", fallbackError: "Couldn't rename" },
+				fetcher,
+			),
+		).rejects.toMatchObject({ status: 400, message: "Couldn't rename" });
+	});
+
+	it("keeps the backend's text on a Vietnamese page", async () => {
+		const { fetcher } = fakeFetch({
+			"PATCH /api/x": jsonResponse({ error: "tên quá dài" }, 400),
+		});
+		await expect(
+			apiFetch("/api/x", { method: "PATCH" }, fetcher),
+		).rejects.toMatchObject({ message: "tên quá dài" });
 	});
 });

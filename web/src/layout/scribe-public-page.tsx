@@ -8,11 +8,11 @@ import type { ReactNode } from "react";
 import { Link, useLocation } from "react-router";
 import scribeMark from "../../brand/scribe-mark-128.webp";
 import { useI18n } from "../i18n/i18n-context";
+import { followStoredLocale } from "../i18n/i18n-provider";
+import { LOCALES } from "../i18n/locales";
 import { APP_NAME, PRIMARY_TENANT_DOMAIN } from "../lib/brand";
-import { cn } from "../lib/cn";
 import { LEGACY_THEME_KEY } from "../lib/theme-bootstrap";
 import { PATHS } from "./app-paths";
-import { MAIN_ID, SkipLink } from "./skip-link";
 
 /** What the shared shell shows of Scribe: name, root domain, AI mark. */
 export const SHELL_BRAND: ShellBrand = {
@@ -27,16 +27,11 @@ const RouterLink: ShellLinkComponent = ({ href, ...rest }) => (
 );
 
 /**
- * The language switch stores the choice itself (`hd_lang`);
- * `PublicI18nProvider` re-renders the page in it, so nothing is left to do.
- */
-function followStoredLocale(): void {}
-
-/**
  * A signed-out page of Scribe: the shared header, footer (language and
  * theme switches, ecosystem and legal links) and frame of every
- * hoandat.com app (@achoo254/app-shell), around Scribe's own body. Must
- * render under `PublicI18nProvider`, which gives it the visitor's language.
+ * hoandat.com app (@achoo254/app-shell), around Scribe's own body: the
+ * shell also gives it the skip link and `<main id="main">`. In the
+ * language of `I18nProvider`.
  */
 export function ScribePublicPage({
 	children,
@@ -52,33 +47,21 @@ export function ScribePublicPage({
 	const { locale } = useI18n();
 	const { pathname } = useLocation();
 	return (
-		<>
-			<SkipLink />
-			<PublicPage
-				brand={SHELL_BRAND}
-				locale={locale}
-				onLocaleChange={followStoredLocale}
-				signInHref={PATHS.login}
-				signInCurrent={pathname === PATHS.login}
-				navLinks={navLinks}
-				privacyHref={PATHS.privacy}
-				termsHref={PATHS.terms}
-				legacyThemeKey={LEGACY_THEME_KEY}
-				linkComponent={RouterLink}
-				layout={layout}
-			>
-				{/* The skip link's target: the shell's <main> has no id. */}
-				<div
-					id={MAIN_ID}
-					tabIndex={-1}
-					className={cn(
-						"w-full focus:outline-none",
-						layout === "center" && "grid justify-items-center",
-					)}
-				>
-					{children}
-				</div>
-			</PublicPage>
-		</>
+		<PublicPage
+			brand={SHELL_BRAND}
+			locale={locale}
+			locales={LOCALES}
+			onLocaleChange={followStoredLocale}
+			signInHref={PATHS.login}
+			signInCurrent={pathname === PATHS.login}
+			navLinks={navLinks}
+			privacyHref={PATHS.privacy}
+			termsHref={PATHS.terms}
+			legacyThemeKey={LEGACY_THEME_KEY}
+			linkComponent={RouterLink}
+			layout={layout}
+		>
+			{children}
+		</PublicPage>
 	);
 }

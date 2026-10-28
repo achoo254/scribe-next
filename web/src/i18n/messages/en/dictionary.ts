@@ -1,18 +1,39 @@
 import type { Messages } from "../../message-types";
-import { vi } from "../vi/dictionary";
+import { account } from "./account";
+import { chat } from "./chat";
+import { common } from "./common";
+import { errors } from "./errors";
+import { keys } from "./keys";
 import { landing } from "./landing";
+import { layout } from "./layout";
+import { legal } from "./legal";
 import { login } from "./login";
+import { record } from "./record";
+import { recorder } from "./recorder";
+import { search } from "./search";
+import { split } from "./split";
+import { transcript } from "./transcript";
+import { ui } from "./ui";
 
 /**
- * English: the signed-out pages only (landing, sign-in, the skip link of
- * their layout), where the shared shell offers the language switch. Every
- * other namespace is the Vietnamese one: the signed-in app and the legal
- * texts are Vietnamese whatever the visitor picked (the legal pages carry
- * their own English summary).
+ * English: every key of the Vietnamese source, signed in or not. The legal
+ * texts are a full translation; their Vietnamese version is the one that
+ * applies (`legal.authoritative`).
  */
 export const en: Messages = {
-	...vi,
+	account,
+	chat,
+	common,
+	errors,
+	keys,
 	landing,
+	layout,
+	legal,
 	login,
-	layout: { ...vi.layout, skipLink: "Skip to main content" },
+	record,
+	recorder,
+	search,
+	split,
+	transcript,
+	ui,
 };

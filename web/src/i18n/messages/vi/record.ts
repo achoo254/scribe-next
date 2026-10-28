@@ -77,7 +77,7 @@ export const record = {
 	},
 	groups: {
 		expiresSoon: "sắp tự xoá",
-		expiresIn: "tự xoá sau {days} ngày",
+		expiresIn: { other: "tự xoá sau {count} ngày" },
 		iphoneSession: "Bản ghi trên iPhone",
 		today: "Hôm nay",
 		yesterday: "Hôm qua",

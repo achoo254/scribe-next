@@ -1,5 +1,9 @@
 import { activeTranslator } from "../../i18n/active-translator";
-import { formatTimeOfDay } from "../../lib/format";
+import {
+	formatLocalDate,
+	formatTimeOfDay,
+	formatWeekday,
+} from "../../lib/format";
 import { transcriptKey } from "../transcript-docs/transcript-docs-api";
 import type { ManagedFile, RecordingItem } from "./files-api";
 
@@ -13,9 +17,9 @@ export interface DatedItem {
 
 export interface DayGroup<T extends DatedItem = RecordingItem> {
 	key: string;
-	/** "Hôm nay", "Hôm qua", else the weekday ("Thứ Sáu"). */
+	/** "Hôm nay", "Hôm qua", else the weekday ("Thứ Sáu"), in the UI language. */
 	label: string;
-	/** "23/10/2026". */
+	/** "23/10/2026" (en "Oct 23, 2026"). */
 	dateLabel: string;
 	/** Local midnight of the day; the archive range is [from, to). */
 	from: number;
@@ -23,10 +27,6 @@ export interface DayGroup<T extends DatedItem = RecordingItem> {
 	/** Sum of the items' durations, seconds. */
 	durationS: number;
 	items: T[];
-}
-
-function capitalize(text: string): string {
-	return text.charAt(0).toLocaleUpperCase("vi-VN") + text.slice(1);
 }
 
 /** "Hôm nay" / "Hôm qua" for the two latest days, the weekday before that. */
@@ -45,7 +45,7 @@ function dayLabel(from: number, date: Date, now: number): string {
 	).getTime();
 	if (from === todayFrom) return t("record.groups.today");
 	if (from === yesterdayFrom) return t("record.groups.yesterday");
-	return capitalize(date.toLocaleDateString("vi-VN", { weekday: "long" }));
+	return formatWeekday(date);
 }
 
 /**
@@ -71,11 +71,7 @@ export function groupByDay<T extends DatedItem>(
 			group = {
 				key,
 				label: dayLabel(from, date, now),
-				dateLabel: date.toLocaleDateString("vi-VN", {
-					day: "2-digit",
-					month: "2-digit",
-					year: "numeric",
-				}),
+				dateLabel: formatLocalDate(date),
 				from,
 				// Next local midnight (not +24h: DST days are 23 or 25 hours).
 				to: new Date(y, m, d + 1).getTime(),
@@ -115,7 +111,7 @@ export function expiryLabel(days: number | null): string {
 	if (days === null) return "";
 	const { t } = activeTranslator();
 	if (days <= 0) return t("record.groups.expiresSoon");
-	return t("record.groups.expiresIn", { days });
+	return t("record.groups.expiresIn", { count: days });
 }
 
 /** Three days or less: highlighted so the user downloads in time. */
@@ -265,10 +261,5 @@ export function sessionTitle(
 	if (Number.isNaN(date.getTime())) return iphoneSession;
 	const time = formatTimeOfDay(createdAt);
 	if (!withDate) return `${iphoneSession} ${time}`;
-	const day = date.toLocaleDateString("vi-VN", {
-		day: "2-digit",
-		month: "2-digit",
-		year: "numeric",
-	});
-	return `${iphoneSession} ${time} ${day}`;
+	return `${iphoneSession} ${time} ${formatLocalDate(date)}`;
 }

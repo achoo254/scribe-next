@@ -56,7 +56,7 @@ export function DeleteAccountDialog({
 		setWorking(true);
 		setError(null);
 		try {
-			const result = await deleteAccount(typed);
+			const result = await deleteAccount();
 			// Signed out: the app goes to /login, which says the account is gone.
 			await forgetDeletedAccount(result.complete ? "done" : "pending");
 		} catch (cause) {
@@ -70,7 +70,7 @@ export function DeleteAccountDialog({
 	}
 
 	const word = t("account.delete.confirmWord");
-	const ready = confirmMatches(typed) && !busy;
+	const ready = confirmMatches(typed, word) && !busy;
 
 	return (
 		<Modal

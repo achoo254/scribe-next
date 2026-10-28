@@ -34,7 +34,10 @@ export function ScribeSignInCard({
 	const navigate = useNavigate();
 	const [params] = useSearchParams();
 	const [failure, setFailure] = useState("");
+	// The ref blocks a second tap before React re-renders; the state shows
+	// the call to action as busy while the system browser is open.
 	const busy = useRef(false);
+	const [pending, setPending] = useState(false);
 	// The code, not its text, is the state: the text follows the language.
 	const error = failure || loginErrorFromCode(params.get("error"));
 
@@ -42,6 +45,7 @@ export function ScribeSignInCard({
 		// The native sign-in waits on the system browser: one at a time.
 		if (busy.current) return;
 		busy.current = true;
+		setPending(true);
 		setFailure("");
 		try {
 			await login();
@@ -50,6 +54,7 @@ export function ScribeSignInCard({
 			setFailure(loginErrorMessage(cause));
 		} finally {
 			busy.current = false;
+			setPending(false);
 		}
 	}
 
@@ -59,6 +64,7 @@ export function ScribeSignInCard({
 			locale={locale}
 			signInHref={apiUrl(WEB_LOGIN_PATH)}
 			onSignIn={() => void signIn()}
+			pending={pending}
 			title={title}
 			description={description}
 			headingLevel={headingLevel}
