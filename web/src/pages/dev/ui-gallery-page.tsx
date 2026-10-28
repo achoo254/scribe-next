@@ -1,7 +1,7 @@
+import { ThemeSwitch } from "@achoo254/app-shell";
 import { IconInbox, IconMicrophone, IconTrash } from "@tabler/icons-react";
 import { useState } from "react";
 import { BrandMark, Wordmark } from "../../components/brand/wordmark";
-import { ThemeToggle } from "../../components/theme-toggle";
 import { Alert } from "../../components/ui/alert";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
@@ -24,11 +24,15 @@ import {
 } from "../../components/ui/tabs";
 import { useToast } from "../../components/ui/toast";
 import { Tooltip } from "../../components/ui/tooltip";
+import { useI18n } from "../../i18n/i18n-context";
+import { PRIMARY_TENANT_DOMAIN } from "../../lib/brand";
+import { LEGACY_THEME_KEY } from "../../lib/theme-bootstrap";
 
 type Unit = "minutes" | "megabytes" | "parts";
 
 /** Development-only page listing every primitive, to review both themes. */
 export function UiGalleryPage() {
+	const { locale } = useI18n();
 	const toast = useToast();
 	const [checked, setChecked] = useState(true);
 	const [unit, setUnit] = useState<Unit>("minutes");
@@ -45,7 +49,11 @@ export function UiGalleryPage() {
 					<BrandMark size={32} />
 					<Wordmark />
 				</span>
-				<ThemeToggle data-id="ui-gallery-theme" />
+				<ThemeSwitch
+					locale={locale}
+					domain={PRIMARY_TENANT_DOMAIN}
+					legacyThemeKey={LEGACY_THEME_KEY}
+				/>
 			</header>
 
 			<Card className="grid gap-4 p-6">

@@ -10,7 +10,6 @@ import {
 	applyTheme,
 	readPreferences,
 	subscribePreferences,
-	writePreference,
 } from "@achoo254/app-shell/preferences";
 import { PRIMARY_TENANT_DOMAIN } from "./brand";
 import { LEGACY_THEME_KEY } from "./theme-bootstrap";
@@ -22,12 +21,6 @@ export const PREFERENCE_OPTIONS: PreferenceOptions = {
 	domain: PRIMARY_TENANT_DOMAIN,
 	legacyThemeKey: LEGACY_THEME_KEY,
 };
-
-/** Stores `theme` for every app and applies it to this page. */
-export function pickTheme(theme: ThemePreference): void {
-	writePreference("theme", theme, PREFERENCE_OPTIONS);
-	applyTheme(theme);
-}
 
 /**
  * Copies the resolved `--c-bg` token into <meta name="theme-color"> so the

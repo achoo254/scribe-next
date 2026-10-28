@@ -50,9 +50,7 @@ describe("AppFooter", () => {
 		render(<AppFooter />);
 		const footer = screen.getByRole("contentinfo");
 		const theme = within(footer).getByRole("group", { name: "Giao diện" });
-		expect(
-			within(theme).getByRole("button", { name: "Giao diện tối" }),
-		).toBeVisible();
+		expect(within(theme).getByRole("button", { name: "Tối" })).toBeVisible();
 	});
 
 	it("holds the shared language switch next to the theme switch", async () => {

@@ -1,19 +1,17 @@
 /* Copied from localman-next apps/web/src/components/layout/app-footer.tsx.
    Scribe changes: the IdP account links instead of the landing, Docs
-   and feedback form (Scribe has none); the theme switch moved here from
-   the top bar (it stores the shared hoandat.com choice, lib/theme.ts) and
-   sits with the shared language switch (@achoo254/app-shell), as in the
-   signed-out footer; clears the iPhone home indicator
+   and feedback form (Scribe has none); the language and theme switches
+   of @achoo254/app-shell, the same ones as in the signed-out footer; clears the iPhone home indicator
    (safe-area-inset-bottom); links to the privacy policy and terms. */
-import { LanguageSwitch } from "@achoo254/app-shell";
+import { LanguageSwitch, ThemeSwitch } from "@achoo254/app-shell";
 import { IconExternalLink } from "@tabler/icons-react";
-import { ThemeCycleButton, ThemeToggle } from "../components/theme-toggle";
 import { useI18n } from "../i18n/i18n-context";
 import { followStoredLocale } from "../i18n/i18n-provider";
 import { LOCALES } from "../i18n/locales";
 import { ECOSYSTEM_HOME_URL, PRIMARY_TENANT_DOMAIN } from "../lib/brand";
 import { IDP_ACCOUNT_URL, IDP_APPS_URL } from "../lib/idp";
 import { useIdpName } from "../lib/idp-name";
+import { LEGACY_THEME_KEY } from "../lib/theme-bootstrap";
 import { LegalLinks } from "./legal-links";
 
 const FOOTER_LINK =
@@ -51,14 +49,11 @@ export function AppFooter() {
 						domain={PRIMARY_TENANT_DOMAIN}
 						onLocaleChange={followStoredLocale}
 					/>
-					{/* Phones get one button so both switches fit on one row. */}
-					<ThemeCycleButton
-						data-id="app-footer-theme-cycle"
-						className="sm:hidden"
+					<ThemeSwitch
+						locale={locale}
+						domain={PRIMARY_TENANT_DOMAIN}
+						legacyThemeKey={LEGACY_THEME_KEY}
 					/>
-					<div className="hidden sm:block">
-						<ThemeToggle data-id="app-footer-theme" />
-					</div>
 				</div>
 				<div className="flex min-w-0 flex-wrap items-center gap-x-3 sm:gap-x-4">
 					<nav

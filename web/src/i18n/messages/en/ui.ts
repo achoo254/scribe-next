@@ -1,15 +1,8 @@
 import type { SourceMessages, Translation } from "../../message-types";
 
-/** English of `vi/ui.ts`. Theme words match the shared shell's. */
+/** English of `vi/ui.ts`. */
 export const ui: Translation<SourceMessages["ui"]> = {
 	loading: "Loading…",
-	theme: {
-		legend: "Theme",
-		light: "Light theme",
-		dark: "Dark theme",
-		system: "Match system",
-		cycle: "{current}, press to change",
-	},
 	usage: {
 		region: "Plan and usage",
 		plan: { free: "Free plan", plus: "Plus plan" },
