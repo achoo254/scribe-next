@@ -384,7 +384,7 @@ class RealtimeTranscriber(
             "quota_exceeded" -> {
                 Log.w(TAG, "realtime quota_exceeded: ${message.optString("error")}")
                 quotaExceeded = true
-                end("Đã dùng hết giờ chép lời của tháng này — chép trực tiếp dừng, bản ghi vẫn tiếp tục.")
+                end("Hệ thống đã dùng hết giờ chép lời chung — chép trực tiếp dừng, bản ghi vẫn tiếp tục.")
             }
             "committed_transcript", "warning", "commit_throttled", "insufficient_audio_activity" -> Unit
             else -> {

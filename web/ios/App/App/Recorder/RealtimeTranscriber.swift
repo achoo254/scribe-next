@@ -435,7 +435,7 @@ final class RealtimeTranscriber: @unchecked Sendable {
         case "quota_exceeded":
             log.warning("realtime quota_exceeded: \(message["error"] as? String ?? "", privacy: .public)")
             quotaExceeded = true
-            end(error: "Đã dùng hết giờ chép lời của tháng này — chép trực tiếp dừng, bản ghi vẫn tiếp tục.")
+            end(error: "Hệ thống đã dùng hết giờ chép lời chung — chép trực tiếp dừng, bản ghi vẫn tiếp tục.")
         case "committed_transcript", "warning", "commit_throttled", "insufficient_audio_activity":
             break
         default:
