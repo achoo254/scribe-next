@@ -1,6 +1,6 @@
 import { screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { CurrentUser } from "../auth/auth-api";
+import type { CurrentUser, Transcription } from "../auth/auth-api";
 import { fakeFetch, jsonResponse } from "../test/fake-fetch";
 import { renderWithProviders } from "../test/render-with-providers";
 import { UsageCard, usageTone } from "./usage-card";
@@ -12,6 +12,15 @@ vi.mock("../auth/auth-context", () => ({
 
 const MB = 1024 * 1024;
 
+const FREE_MONTH: Transcription = {
+	plan: "free",
+	usedMinutes: 5,
+	limitMinutes: 120,
+	resetsAt: "2026-10-31T17:00:00Z",
+	capReached: false,
+	daily: { usedMinutes: 28, limitMinutes: 30 },
+};
+
 const FREE: CurrentUser = {
 	email: "a@b.c",
 	canTranscribe: true,
@@ -22,15 +31,16 @@ const FREE: CurrentUser = {
 		maxFileBytes: 200 * MB,
 		retentionDays: 7,
 	},
-	transcription: {
-		plan: "free",
-		usedMinutes: 5,
-		limitMinutes: 120,
-		resetsAt: "2026-10-31T17:00:00Z",
-		capReached: false,
-		daily: { usedMinutes: 28, limitMinutes: 30 },
-	},
+	transcription: FREE_MONTH,
 };
+
+/** Free account whose service has `minutes` of shared transcription hours left. */
+function withSharedLeft(minutes: number): CurrentUser {
+	return {
+		...FREE,
+		transcription: { ...FREE_MONTH, sharedLeftMinutes: minutes },
+	};
+}
 
 function renderCard(user: CurrentUser, usageBytes: number, quotaBytes: number) {
 	auth.user = user;
@@ -134,5 +144,24 @@ describe("UsageCard", () => {
 		);
 		expect(screen.queryByText("Chép lời tháng này")).toBeNull();
 		expect(screen.queryByText("Hôm nay")).toBeNull();
+	});
+	it("warns when the service's shared hours are fewer than the account's minutes left", async () => {
+		renderCard(withSharedLeft(78), 0, 200 * MB);
+		const card = await screen.findByRole("region", { name: "Gói và mức dùng" });
+		expect(card).toHaveTextContent("chỉ còn khoảng 78 phút");
+	});
+
+	it("says the shared hours are used up while the account still has minutes", async () => {
+		renderCard(withSharedLeft(0), 0, 200 * MB);
+		const card = await screen.findByRole("region", { name: "Gói và mức dùng" });
+		expect(card).toHaveTextContent(
+			"Hệ thống đã dùng hết giờ chép lời chung của tháng này, mở lại ngày 1/11.",
+		);
+	});
+
+	it("stays quiet while the shared hours outlast the account's minutes", async () => {
+		renderCard(withSharedLeft(500), 0, 200 * MB);
+		const card = await screen.findByRole("region", { name: "Gói và mức dùng" });
+		expect(card).not.toHaveTextContent("giờ chép lời chung");
 	});
 });

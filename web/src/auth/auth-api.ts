@@ -13,6 +13,11 @@ export interface Transcription {
 	/** Transcription is paused for everyone (server key unusable). */
 	paused?: boolean;
 	/**
+	 * Minutes left this month on the transcription hours the whole service
+	 * shares (ElevenLabs); null when the provider has no such limit.
+	 */
+	sharedLeftMinutes?: number | null;
+	/**
 	 * An iPhone session is transcribed as a whole (one request, consistent
 	 * speakers): send every segment and show the minutes of the session.
 	 */

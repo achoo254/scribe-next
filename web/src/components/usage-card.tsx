@@ -125,6 +125,12 @@ export function UsageCard() {
 	// Transcription on the user's own key: Scribe's minutes do not apply.
 	const minutes = own?.transcribe ? null : (user?.transcription ?? null);
 	const reset = formatDayMonth(minutes?.resetsAt);
+	// The shared hours only matter once they are fewer than the account's own minutes left.
+	const sharedLeft = minutes?.sharedLeftMinutes ?? null;
+	const sharedShort =
+		minutes !== null &&
+		sharedLeft !== null &&
+		sharedLeft < minutes.limitMinutes - minutes.usedMinutes;
 	const storageFull =
 		storage.quotaBytes > 0 && storage.usageBytes >= storage.quotaBytes;
 
@@ -219,6 +225,16 @@ export function UsageCard() {
 			{minutes?.paused ? (
 				<p className="m-0 text-warning-text text-xs">
 					{t("transcript.quota.paused")}
+				</p>
+			) : null}
+			{sharedShort && sharedLeft === 0 ? (
+				<p data-id="usage-shared-out" className="m-0 text-error-text text-xs">
+					{t("ui.usage.sharedOut", { date: reset ?? "" })}
+				</p>
+			) : null}
+			{sharedShort && sharedLeft !== null && sharedLeft > 0 ? (
+				<p data-id="usage-shared-low" className="m-0 text-warning-text text-xs">
+					{t("ui.usage.sharedLow", { count: sharedLeft })}
 				</p>
 			) : null}
 			{minutes?.capReached ? (

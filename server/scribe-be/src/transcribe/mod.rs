@@ -219,7 +219,7 @@ async fn billable_seconds(state: &AppState, f: &file::FileDoc) -> Result<i64, Ap
 /// Hết giờ ElevenLabs của tháng (trần `ELEVENLABS_MONTHLY_HOURS` hoặc ElevenLabs báo hết quota): mở lại đầu tháng sau.
 pub(crate) fn hours_exhausted_message(now: chrono::DateTime<chrono::Utc>) -> String {
     let reset = usage::next_reset(now).with_timezone(&usage::vietnam());
-    format!("Đã dùng hết giờ chép lời của tháng này, mở lại ngày 1/{:02}.", chrono::Datelike::month(&reset))
+    format!("Hệ thống đã dùng hết giờ chép lời chung của tháng này, mở lại ngày 1/{:02}.", chrono::Datelike::month(&reset))
 }
 
 /// Chép bằng ElevenLabs mà sổ giờ tháng không còn đủ `need` giây (hoặc ElevenLabs đã báo hết quota): lỗi 403 kèm ngày
@@ -1150,9 +1150,9 @@ mod tests {
     #[test]
     fn hours_message_names_the_first_of_next_month_in_vietnam_time() {
         let at = |s: &str| s.parse::<chrono::DateTime<chrono::Utc>>().expect("giờ");
-        assert_eq!(hours_exhausted_message(at("2026-10-17T05:00:00Z")), "Đã dùng hết giờ chép lời của tháng này, mở lại ngày 1/11.");
+        assert_eq!(hours_exhausted_message(at("2026-10-17T05:00:00Z")), "Hệ thống đã dùng hết giờ chép lời chung của tháng này, mở lại ngày 1/11.");
         // 31/12 23:30 giờ Việt Nam vẫn là tháng 12 ⟹ mở lại 1/01.
-        assert_eq!(hours_exhausted_message(at("2026-12-31T16:30:00Z")), "Đã dùng hết giờ chép lời của tháng này, mở lại ngày 1/01.");
+        assert_eq!(hours_exhausted_message(at("2026-12-31T16:30:00Z")), "Hệ thống đã dùng hết giờ chép lời chung của tháng này, mở lại ngày 1/01.");
     }
 
     #[test]

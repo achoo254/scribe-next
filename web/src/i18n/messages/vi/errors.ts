@@ -64,7 +64,8 @@ export const errors = {
 		tooLongForFree:
 			"Gói miễn phí chép tối đa {limit} phút mỗi ngày, các bản ghi đã chọn dài {used} phút. Chọn ít bản ghi hơn.",
 		accountTooNew: "Tài khoản mới dùng được chép lời miễn phí từ {time}.",
-		providerHours: "Đã dùng hết giờ chép lời của tháng này, mở lại lúc {time}.",
+		providerHours:
+			"Hệ thống đã dùng hết giờ chép lời chung của tháng này, mở lại lúc {time}.",
 		notTranscribed: "Bản ghi chưa có đoạn nào chép lời xong. Chép lời trước.",
 		confirmRequired: "Gõ từ xác nhận để xoá tài khoản.",
 		chatLinkDisabled: "Liên kết chat chưa được bật trên máy chủ này.",
