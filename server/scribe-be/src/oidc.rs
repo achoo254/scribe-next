@@ -31,8 +31,8 @@ pub struct Discovery {
     pub userinfo_endpoint: Option<String>,
 }
 
-/// Hồ sơ từ `userinfo`: hoandat-auth chỉ đưa `email`/`email_verified`/`name` ra đây với code flow, không
-/// đưa vào ID token.
+/// Hồ sơ từ `userinfo`: hoandat-auth chỉ đưa `email`/`email_verified`/`name`/`picture` ra đây với code flow,
+/// không đưa vào ID token.
 #[derive(Debug, Deserialize)]
 struct UserInfo {
     sub: String,
@@ -42,6 +42,21 @@ struct UserInfo {
     email_verified: bool,
     #[serde(default)]
     name: Option<String>,
+    #[serde(default)]
+    picture: Option<String>,
+}
+
+/// Dài nhất của URL ảnh đại diện được lưu; ảnh Google/GitHub ngắn hơn nhiều.
+const PICTURE_MAX_LEN: usize = 2048;
+
+/// URL ảnh đại diện từ IdP, chỉ khi là `https:` hợp lệ và không quá dài: web đặt nó vào `<img src>`.
+fn https_picture(value: Option<String>) -> Option<String> {
+    let value = value?.trim().to_string();
+    if value.len() > PICTURE_MAX_LEN {
+        return None;
+    }
+    let url = reqwest::Url::parse(&value).ok()?;
+    (url.scheme() == "https" && url.host_str().is_some()).then_some(value)
 }
 
 /// Claim cần từ ID token.
@@ -54,6 +69,9 @@ pub struct IdClaims {
     pub email_verified: bool,
     #[serde(default)]
     pub name: Option<String>,
+    /// Ảnh đại diện (URL `https:`); `identify` bỏ giá trị khác.
+    #[serde(default)]
+    pub picture: Option<String>,
     #[serde(default)]
     pub nonce: Option<String>,
     /// Phiên ở IdP (có khi client bật back-channel logout).
@@ -292,7 +310,7 @@ impl Oidc {
     }
 
     /// Danh tính của một lần đăng nhập/làm mới: xác minh ID token (`nonce` khi đăng nhập), rồi lấy email,
-    /// trạng thái xác minh và tên từ `userinfo` bằng access token đi kèm. `sub` của hai nguồn phải khớp.
+    /// trạng thái xác minh, tên và ảnh từ `userinfo` bằng access token đi kèm. `sub` của hai nguồn phải khớp.
     pub async fn identify(
         &self,
         http: &reqwest::Client,
@@ -324,6 +342,7 @@ impl Oidc {
         claims.email = info.email;
         claims.email_verified = info.email_verified;
         claims.name = info.name.or(claims.name);
+        claims.picture = https_picture(info.picture.or(claims.picture.take()));
         Ok(claims)
     }
 
@@ -415,7 +434,8 @@ mod tests {
         let me = |headers: axum::http::HeaderMap| async move {
             let own = headers.get("authorization").and_then(|v| v.to_str().ok()) == Some("Bearer at-1");
             let sub = if own { "acc_1" } else { "acc_2" };
-            Json(json!({ "sub": sub, "email": "a@b.vn", "email_verified": true, "name": "A" }))
+            Json(json!({ "sub": sub, "email": "a@b.vn", "email_verified": true, "name": "A",
+                        "picture": "https://lh3.googleusercontent.com/a/p1" }))
         };
         let jwks = json!({ "keys": [{ "kty": "EC", "crv": "P-256", "kid": "k1", "alg": "ES256", "use": "sig", "x": x, "y": y }] });
         let app = Router::new()
@@ -482,6 +502,7 @@ mod tests {
         let tokens = |at: &str| TokenSet { id_token: id_token.clone(), access_token: at.into(), refresh_token: None };
         let who = oidc.identify(&http, &tokens("at-1"), "scribe-web", Some("n1")).await.expect("hợp lệ");
         assert_eq!((who.sub.as_str(), who.email.as_deref(), who.email_verified, who.name.as_deref()), ("acc_1", Some("a@b.vn"), true, Some("A")));
+        assert_eq!(who.picture.as_deref(), Some("https://lh3.googleusercontent.com/a/p1"));
         // Access token của tài khoản khác: từ chối.
         assert!(oidc.identify(&http, &tokens("at-2"), "scribe-web", Some("n1")).await.is_err());
     }
@@ -511,6 +532,19 @@ mod tests {
         let no_event = sign(&idp, Some("logout+jwt"), "k1", token(now(), json!({ "events": {} })));
         assert!(oidc.verify_logout_token(&http, &no_event, "scribe-web").await.is_err(), "thiếu event");
         assert!(oidc.verify_logout_token(&http, &good, "scribe-mobile").await.is_err(), "sai aud");
+    }
+
+    #[test]
+    fn only_https_pictures_are_kept() {
+        let keep = |v: &str| https_picture(Some(v.into()));
+        assert_eq!(keep(" https://avatars.githubusercontent.com/u/1?v=4 ").as_deref(), Some("https://avatars.githubusercontent.com/u/1?v=4"));
+        assert_eq!(keep("http://lh3.googleusercontent.com/a/p1"), None);
+        assert_eq!(keep("javascript:alert(1)"), None);
+        assert_eq!(keep("data:image/png;base64,AAAA"), None);
+        assert_eq!(keep("không phải url"), None);
+        assert_eq!(keep(""), None);
+        assert_eq!(keep(&format!("https://x.vn/{}", "a".repeat(PICTURE_MAX_LEN))), None);
+        assert_eq!(https_picture(None), None);
     }
 
     #[test]

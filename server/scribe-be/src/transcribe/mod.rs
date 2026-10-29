@@ -1160,6 +1160,8 @@ mod tests {
         let created: chrono::DateTime<chrono::Utc> = "2026-10-16T05:00:00Z".parse().expect("giờ");
         let profile = |created_at: Option<chrono::DateTime<chrono::Utc>>| user::Profile {
             email: "a@x.vn".into(),
+            name: None,
+            picture: None,
             plan: None,
             plan_until: None,
             created_at: created_at.map(|c| mongodb::bson::DateTime::from_millis(c.timestamp_millis())),

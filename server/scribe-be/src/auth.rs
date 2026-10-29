@@ -137,7 +137,7 @@ async fn admit(state: &AppState, claims: &crate::oidc::IdClaims) -> Result<Strin
         audit::record(state, None, "auth.login_denied", doc! { "email": email });
         return Err(AppError::Forbidden("email không có quyền truy cập".into()));
     }
-    let (user_id, linked) = user::find_or_link(&state.db, &claims.sub, email, claims.name.as_deref()).await?;
+    let (user_id, linked) = user::find_or_link(&state.db, &claims.sub, email, claims.name.as_deref(), claims.picture.as_deref()).await?;
     if linked {
         audit::record(state, Some(&user_id), "auth.link", doc! { "email": email });
     }
@@ -562,6 +562,9 @@ pub async fn me(
     };
     Ok(Json(json!({
         "email": profile.email,
+        // Tên và ảnh IdP cho menu tài khoản; `null` tới lần đăng nhập kế tiếp của user cũ.
+        "name": profile.name,
+        "picture": profile.picture,
         "canTranscribe": can_transcribe,
         "plan": plan_info,
         "transcription": transcription,

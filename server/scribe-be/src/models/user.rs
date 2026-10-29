@@ -64,19 +64,23 @@ fn command_code(e: &MongoError) -> Option<i32> {
 }
 
 /// Tài khoản IdP `sub` → `_id` user (hex). Đã có `idpSub` thì dùng; chưa có thì gắn vào user cũ (thời Firebase) cùng
-/// email — nguyên tử, chỉ doc chưa có `idpSub` — rồi mới tạo mới. Người gọi bảo đảm email đã xác minh. Trả (id, đã gắn
-/// user cũ?).
+/// email — nguyên tử, chỉ doc chưa có `idpSub` — rồi mới tạo mới. Người gọi bảo đảm email đã xác minh. Tên và ảnh
+/// lấy lại từ IdP mỗi lần đăng nhập (IdP không gửi thì xoá). Trả (id, đã gắn user cũ?).
 pub async fn find_or_link(
     db: &Database,
     sub: &str,
     email: &str,
     name: Option<&str>,
+    picture: Option<&str>,
 ) -> Result<(String, bool), AppError> {
     let coll = db.collection::<Document>(COLL);
-    let name_bson = name.map(|n| Bson::String(n.to_string())).unwrap_or(Bson::Null);
+    let text = |v: Option<&str>| v.map(|v| Bson::String(v.to_string())).unwrap_or(Bson::Null);
+    let (name_bson, picture_bson) = (text(name), text(picture));
     let fail = |e: MongoError| AppError::Internal(format!("mongo user: {e}"));
     let identity = doc! { "tenantId": PRIMARY_ID, "idpSub": sub };
-    let refresh = doc! { "$set": { "email": email, "name": name_bson.clone(), "lastLoginAt": DateTime::now() } };
+    let refresh = doc! { "$set": {
+        "email": email, "name": name_bson.clone(), "picture": picture_bson.clone(), "lastLoginAt": DateTime::now(),
+    } };
     if let Some(d) = coll
         .find_one_and_update(identity.clone(), refresh.clone())
         .return_document(ReturnDocument::After)
@@ -94,7 +98,10 @@ pub async fn find_or_link(
                 "idpSub": { "$exists": false },
                 "email": { "$regex": pattern, "$options": "i" },
             },
-            doc! { "$set": { "idpSub": sub, "email": email, "name": name_bson.clone(), "lastLoginAt": DateTime::now() } },
+            doc! { "$set": {
+                "idpSub": sub, "email": email, "name": name_bson.clone(), "picture": picture_bson.clone(),
+                "lastLoginAt": DateTime::now(),
+            } },
         )
         .return_document(ReturnDocument::After)
         .await
@@ -108,6 +115,7 @@ pub async fn find_or_link(
             "idpSub": sub,
             "email": email,
             "name": name_bson,
+            "picture": picture_bson,
             "createdAt": DateTime::now(),
             "lastLoginAt": DateTime::now(),
         })
@@ -138,9 +146,13 @@ pub async fn find_id_by_sub(db: &Database, sub: &str) -> Result<Option<String>, 
     Ok(d.and_then(|d| d.get_object_id("_id").ok().map(|o| o.to_hex())))
 }
 
-/// Email + gói chép lời của user (gói hết hạn do `plan::effective` xử lý).
+/// Email, tên, ảnh + gói chép lời của user (gói hết hạn do `plan::effective` xử lý).
 pub struct Profile {
     pub email: String,
+    /// Tên hiển thị từ IdP; user chưa đăng nhập lại từ khi Scribe lưu tên thì không có.
+    pub name: Option<String>,
+    /// URL ảnh đại diện (`https:`) từ IdP, như `name`.
+    pub picture: Option<String>,
     pub plan: Option<String>,
     pub plan_until: Option<DateTime>,
     /// Lúc tạo tài khoản; user rất cũ không có trường này (coi như đã lâu).
@@ -156,11 +168,13 @@ pub async fn find_profile(db: &Database, user_id: &str) -> Result<Option<Profile
     let doc = db
         .collection::<Document>(COLL)
         .find_one(doc! { "_id": oid })
-        .projection(doc! { "email": 1, "plan": 1, "planUntil": 1, "createdAt": 1, "blocked": 1, "deletingAt": 1 })
+        .projection(doc! { "email": 1, "name": 1, "picture": 1, "plan": 1, "planUntil": 1, "createdAt": 1, "blocked": 1, "deletingAt": 1 })
         .await
         .map_err(|e| AppError::Internal(format!("mongo find user: {e}")))?;
     Ok(doc.map(|d| Profile {
         email: d.get_str("email").unwrap_or_default().to_string(),
+        name: d.get_str("name").ok().map(str::to_string),
+        picture: d.get_str("picture").ok().map(str::to_string),
         plan: d.get_str("plan").ok().map(str::to_string),
         plan_until: d.get_datetime("planUntil").ok().copied(),
         created_at: d.get_datetime("createdAt").ok().copied(),
@@ -301,17 +315,26 @@ mod tests {
             .inserted_id;
 
         // Lần đầu đăng nhập IdP: gắn vào user cũ (email khác hoa thường), giữ nguyên `_id`.
-        let (id, linked) = find_or_link(&db, &format!("acc_{tag}"), &email, None).await.expect("gắn");
+        let (id, linked) = find_or_link(&db, &format!("acc_{tag}"), &email, None, None).await.expect("gắn");
         assert!(linked);
         assert_eq!(Some(id.clone()), old.as_object_id().map(|o| o.to_hex()));
-        // Lần sau: theo `idpSub`.
-        assert_eq!(find_or_link(&db, &format!("acc_{tag}"), &email, None).await.expect("lại"), (id.clone(), false));
+        // Lần sau: theo `idpSub`; tên và ảnh mới của IdP được lưu, IdP thôi gửi thì xoá.
+        let picture = "https://lh3.googleusercontent.com/a/p1";
+        assert_eq!(
+            find_or_link(&db, &format!("acc_{tag}"), &email, Some("Minh Anh"), Some(picture)).await.expect("lại"),
+            (id.clone(), false)
+        );
+        let profile = find_profile(&db, &id).await.expect("đọc").expect("có");
+        assert_eq!((profile.name.as_deref(), profile.picture.as_deref()), (Some("Minh Anh"), Some(picture)));
+        assert_eq!(find_or_link(&db, &format!("acc_{tag}"), &email, None, None).await.expect("lại"), (id.clone(), false));
+        let profile = find_profile(&db, &id).await.expect("đọc").expect("có");
+        assert_eq!((profile.name, profile.picture), (None, None));
         // Tài khoản IdP khác cùng email không chiếm được user đã gắn: tạo user mới.
-        let (other, linked) = find_or_link(&db, &format!("acc2_{tag}"), &email, None).await.expect("khác");
+        let (other, linked) = find_or_link(&db, &format!("acc2_{tag}"), &email, None, None).await.expect("khác");
         assert!(!linked);
         assert_ne!(other, id);
         // Nhiều user mới không có `firebaseUid` không đụng index unique.
-        let (third, _) = find_or_link(&db, &format!("acc3_{tag}"), &format!("n3-{tag}@x.vn"), None).await.expect("mới");
+        let (third, _) = find_or_link(&db, &format!("acc3_{tag}"), &format!("n3-{tag}@x.vn"), None, None).await.expect("mới");
         assert_eq!(find_id_by_sub(&db, &format!("acc3_{tag}")).await.expect("tìm"), Some(third.clone()));
 
         // User mới có `createdAt`; khoá rồi mở khoá.
