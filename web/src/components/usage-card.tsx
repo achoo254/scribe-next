@@ -127,6 +127,9 @@ export function UsageCard() {
 	const reset = formatDayMonth(minutes?.resetsAt);
 	// The shared hours only matter once they are fewer than the account's own minutes left.
 	const sharedLeft = minutes?.sharedLeftMinutes ?? null;
+	const sharedReset = formatDayMonth(
+		minutes?.sharedResetsAt ?? minutes?.resetsAt,
+	);
 	const sharedShort =
 		minutes !== null &&
 		sharedLeft !== null &&
@@ -229,7 +232,7 @@ export function UsageCard() {
 			) : null}
 			{sharedShort && sharedLeft === 0 ? (
 				<p data-id="usage-shared-out" className="m-0 text-error-text text-xs">
-					{t("ui.usage.sharedOut", { date: reset ?? "" })}
+					{t("ui.usage.sharedOut", { date: sharedReset ?? "" })}
 				</p>
 			) : null}
 			{sharedShort && sharedLeft !== null && sharedLeft > 0 ? (

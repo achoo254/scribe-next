@@ -183,6 +183,12 @@ fn elevenlabs_monthly_seconds(raw: Option<&str>) -> i64 {
     (hours.unwrap_or(DEFAULT_ELEVENLABS_MONTHLY_HOURS) * 3600.0).round() as i64
 }
 
+/// `ELEVENLABS_RESET_DAY` (1–28): ngày trong tháng ElevenLabs gia hạn credit; sổ giờ ElevenLabs và dấu hết quota tính
+/// theo kỳ bắt đầu từ ngày đó (giờ Việt Nam). Thiếu, sai dạng hoặc ngoài 1–28 thì là 1 (theo tháng dương lịch).
+fn elevenlabs_reset_day(raw: Option<&str>) -> u32 {
+    raw.and_then(|v| v.trim().parse::<u32>().ok()).filter(|d| (1..=28).contains(d)).unwrap_or(1)
+}
+
 /// Số lượt chép lời chạy cùng lúc, mặc định 3 (chủ dự án chốt 27/10/2026 theo đo đạc: máy .65 còn dư RAM/CPU, gói
 /// ElevenLabs Starter cho 12 request đồng thời). Trần 12 theo gói đó; 1 = chạy lần lượt như trước.
 const DEFAULT_TRANSCRIBE_CONCURRENCY: usize = 3;
@@ -351,6 +357,8 @@ pub struct Config {
     pub elevenlabs_key_path: Option<String>,
     /// Trần giây audio ElevenLabs mỗi tháng (`ELEVENLABS_MONTHLY_HOURS`).
     pub elevenlabs_monthly_seconds: i64,
+    /// Ngày gia hạn credit ElevenLabs mỗi tháng (`ELEVENLABS_RESET_DAY`): mốc kỳ của sổ giờ ElevenLabs.
+    pub elevenlabs_reset_day: u32,
     /// Số lượt chép lời chạy cùng lúc (`TRANSCRIBE_CONCURRENCY`).
     pub transcribe_concurrency: usize,
     /// Nhà cung cấp chép trực tiếp trên iPhone (`REALTIME_PROVIDER`).
@@ -432,6 +440,7 @@ impl Config {
             transcribe_provider: Provider::from_build(),
             elevenlabs_key_path: option_env!("ELEVENLABS_KEY_PATH").filter(|p| !p.is_empty()).map(str::to_string),
             elevenlabs_monthly_seconds: elevenlabs_monthly_seconds(option_env!("ELEVENLABS_MONTHLY_HOURS")),
+            elevenlabs_reset_day: elevenlabs_reset_day(option_env!("ELEVENLABS_RESET_DAY")),
             transcribe_concurrency: transcribe_concurrency(option_env!("TRANSCRIBE_CONCURRENCY")),
             realtime_provider: Provider::realtime_from_build(),
             transcribe_open: matches!(option_env!("TRANSCRIBE_OPEN"), Some("1" | "true")),
@@ -580,6 +589,11 @@ mod tests {
         assert_eq!(elevenlabs_monthly_seconds(Some("-1")), 90_000);
         assert_eq!(elevenlabs_monthly_seconds(Some("x")), 90_000);
         assert_eq!(elevenlabs_monthly_seconds(Some("0")), 0);
+        assert_eq!(elevenlabs_reset_day(None), 1);
+        assert_eq!(elevenlabs_reset_day(Some(" 17 ")), 17);
+        assert_eq!(elevenlabs_reset_day(Some("0")), 1);
+        assert_eq!(elevenlabs_reset_day(Some("31")), 1);
+        assert_eq!(elevenlabs_reset_day(Some("x")), 1);
     }
 
     #[test]

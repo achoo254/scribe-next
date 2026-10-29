@@ -216,10 +216,11 @@ async fn billable_seconds(state: &AppState, f: &file::FileDoc) -> Result<i64, Ap
     Ok(duration.ceil() as i64)
 }
 
-/// Hết giờ ElevenLabs của tháng (trần `ELEVENLABS_MONTHLY_HOURS` hoặc ElevenLabs báo hết quota): mở lại đầu tháng sau.
-pub(crate) fn hours_exhausted_message(now: chrono::DateTime<chrono::Utc>) -> String {
-    let reset = usage::next_reset(now).with_timezone(&usage::vietnam());
-    format!("Hệ thống đã dùng hết giờ chép lời chung của tháng này, mở lại ngày 1/{:02}.", chrono::Datelike::month(&reset))
+/// Hết giờ ElevenLabs của kỳ (trần `ELEVENLABS_MONTHLY_HOURS` hoặc ElevenLabs báo hết quota): mở lại lúc `reset`, đầu
+/// kỳ sau ([`usage::provider_next_reset`]).
+pub(crate) fn hours_exhausted_message(reset: chrono::DateTime<chrono::Utc>) -> String {
+    let reset = reset.with_timezone(&usage::vietnam());
+    format!("Hệ thống đã dùng hết giờ chép lời chung, mở lại ngày {}.", reset.format("%-d/%m"))
 }
 
 /// Chép bằng ElevenLabs mà sổ giờ tháng không còn đủ `need` giây (hoặc ElevenLabs đã báo hết quota): lỗi 403 kèm ngày
@@ -228,23 +229,25 @@ async fn check_provider_hours(state: &AppState, need: i64, now: chrono::DateTime
     if state.transcriber.provider() != Provider::ElevenLabs {
         return Ok(());
     }
-    let month = usage::month_key(now);
+    let day = state.config.elevenlabs_reset_day;
+    let period = usage::provider_period(now, day);
     let limit = state.config.elevenlabs_monthly_seconds;
-    let used = usage::provider_seconds(&state.db, &month).await?;
-    if usage::provider_exhausted(&state.db, &month).await? || used + need > limit {
-        return Err(provider_hours_error(used, limit, now));
+    let used = usage::provider_seconds(&state.db, &period).await?;
+    if usage::provider_exhausted(&state.db, &period).await? || used + need > limit {
+        return Err(provider_hours_error(used, limit, usage::provider_next_reset(now, day)));
     }
     Ok(())
 }
 
-/// Lỗi 403 `PROVIDER_HOURS`: sổ giờ ElevenLabs của tháng đã đầy (`used`/`limit` giây) hoặc ElevenLabs báo hết quota.
-pub(crate) fn provider_hours_error(used: i64, limit: i64, now: chrono::DateTime<chrono::Utc>) -> AppError {
+/// Lỗi 403 `PROVIDER_HOURS`: sổ giờ ElevenLabs của kỳ đã đầy (`used`/`limit` giây) hoặc ElevenLabs báo hết quota; mở
+/// lại lúc `reset`.
+pub(crate) fn provider_hours_error(used: i64, limit: i64, reset: chrono::DateTime<chrono::Utc>) -> AppError {
     AppError::Quota {
         code: "PROVIDER_HOURS",
-        message: hours_exhausted_message(now),
+        message: hours_exhausted_message(reset),
         used_minutes: usage::used_minutes(used),
         limit_minutes: limit / 60,
-        retry_at: Some(usage::next_reset(now).to_rfc3339()),
+        retry_at: Some(reset.to_rfc3339()),
     }
 }
 
@@ -1148,11 +1151,11 @@ mod tests {
     }
 
     #[test]
-    fn hours_message_names_the_first_of_next_month_in_vietnam_time() {
+    fn hours_message_names_the_renewal_day_in_vietnam_time() {
         let at = |s: &str| s.parse::<chrono::DateTime<chrono::Utc>>().expect("giờ");
-        assert_eq!(hours_exhausted_message(at("2026-10-17T05:00:00Z")), "Hệ thống đã dùng hết giờ chép lời chung của tháng này, mở lại ngày 1/11.");
-        // 31/12 23:30 giờ Việt Nam vẫn là tháng 12 ⟹ mở lại 1/01.
-        assert_eq!(hours_exhausted_message(at("2026-12-31T16:30:00Z")), "Hệ thống đã dùng hết giờ chép lời chung của tháng này, mở lại ngày 1/01.");
+        // 17/11 00:00 giờ Việt Nam = 16/11 17:00 UTC.
+        assert_eq!(hours_exhausted_message(at("2026-11-16T17:00:00Z")), "Hệ thống đã dùng hết giờ chép lời chung, mở lại ngày 17/11.");
+        assert_eq!(hours_exhausted_message(at("2026-12-31T17:00:00Z")), "Hệ thống đã dùng hết giờ chép lời chung, mở lại ngày 1/01.");
     }
 
     #[test]

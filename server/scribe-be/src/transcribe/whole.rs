@@ -332,10 +332,13 @@ async fn send_kept(
         out.done.extend(live.iter().map(|(i, _)| (*i, Vec::new())));
         return;
     }
-    // Trần giờ ElevenLabs của tháng: giữ chỗ nguyên tử trước khi gửi, quyết toán theo số ElevenLabs tính. Key riêng
-    // không dùng sổ này (`need` = 0 ⟹ mọi bước giữ/hoàn/chỉnh của sổ giờ đều không đổi gì).
+    // Trần giờ ElevenLabs của kỳ (từ ngày ElevenLabs gia hạn credit): giữ chỗ nguyên tử trước khi gửi, quyết toán
+    // theo số ElevenLabs tính. Key riêng không dùng sổ này (`need` = 0 ⟹ mọi bước giữ/hoàn/chỉnh của sổ giờ đều không
+    // đổi gì).
     let now = chrono::Utc::now();
-    let month = usage::month_key(now);
+    let reset_day = state.config.elevenlabs_reset_day;
+    let month = usage::provider_period(now, reset_day);
+    let reopens = usage::provider_next_reset(now, reset_day);
     let sent_s: i64 = live.iter().map(|(_, d)| d.ceil() as i64).sum();
     let need = if own_key { 0 } else { sent_s };
     let limit = state.config.elevenlabs_monthly_seconds;
@@ -348,7 +351,7 @@ async fn send_kept(
     match reserved {
         Ok(true) => {}
         Ok(false) => {
-            out.error = Some(super::hours_exhausted_message(now));
+            out.error = Some(super::hours_exhausted_message(reopens));
             return;
         }
         Err(e) => {
@@ -395,7 +398,7 @@ async fn send_kept(
             }
             out.error = Some(if marks_server_quota(&e, own_key) {
                 report_quota_exhausted(state, &month).await;
-                super::hours_exhausted_message(now)
+                super::hours_exhausted_message(reopens)
             } else {
                 e
             });
@@ -615,16 +618,16 @@ async fn refund_provider(db: &mongodb::Database, month: &str, need: i64, run_id:
     usage::release_provider_hold(db, run_id).await;
 }
 
-/// ElevenLabs báo hết quota tháng: đánh dấu tháng (chặn gửi tới tháng sau hoặc tới khi quản trị gỡ bằng
+/// ElevenLabs báo hết quota: đánh dấu kỳ `month` của sổ giờ (chặn gửi tới kỳ sau hoặc tới khi quản trị gỡ bằng
 /// `admin elevenlabs-quota --clear`), ghi audit và báo chủ sản phẩm một lần. Không phải key hỏng: không ngắt chép lời.
 pub(crate) async fn report_quota_exhausted(state: &AppState, month: &str) {
     if usage::mark_provider_exhausted(&state.db, month).await {
-        tracing::error!(month, "ElevenLabs báo hết quota tháng — dừng gửi tới tháng sau");
+        tracing::error!(month, "ElevenLabs báo hết quota — dừng gửi tới kỳ sau");
         audit::record(state, None, "transcript.provider_quota", doc! { "month": month });
         crate::notify::send(
             state,
             format!(
-                "ElevenLabs báo hết quota tháng {month}; chép lời dừng tới tháng sau. Nạp thêm credit rồi chạy \
+                "ElevenLabs báo hết quota kỳ {month}; chép lời dừng tới ngày gia hạn kế tiếp. Nạp thêm credit rồi chạy \
                  `scribe-be admin elevenlabs-quota --clear` để mở lại."
             ),
         );

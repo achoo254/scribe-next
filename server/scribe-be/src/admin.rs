@@ -161,7 +161,9 @@ async fn show_usage(config: &Config, db: &Database, args: &[String]) -> Result<V
         "freePool": { "usedMinutes": current.free_pool_seconds / 60, "limitMinutes": limits.free_pool_seconds / 60 },
         "total": { "usedMinutes": current.total_seconds / 60, "limitMinutes": limits.monthly_cap_seconds / 60 },
     });
-    out["elevenlabs"] = provider_hours(config, db, &month).await?;
+    // `--month` cũng là khoá kỳ sổ giờ; không có thì là kỳ ElevenLabs hiện tại (có thể lệch tháng dương lịch).
+    let period = flag(args, "--month").map(str::to_string).unwrap_or_else(|| current_period(config));
+    out["elevenlabs"] = provider_hours(config, db, &period).await?;
     if let Some(id) = &user_id {
         out["user"] = json!({ "userId": id, "usedMinutes": current.user_seconds / 60 });
     }
@@ -171,7 +173,12 @@ async fn show_usage(config: &Config, db: &Database, args: &[String]) -> Result<V
     Ok(out)
 }
 
-/// Sổ giờ ElevenLabs của tháng: đã dùng, trần, và ElevenLabs đã báo hết quota chưa.
+/// Kỳ sổ giờ ElevenLabs đang chạy (từ ngày gia hạn `ELEVENLABS_RESET_DAY`).
+fn current_period(config: &Config) -> String {
+    usage::provider_period(Utc::now(), config.elevenlabs_reset_day)
+}
+
+/// Sổ giờ ElevenLabs của kỳ `month`: đã dùng, trần, ElevenLabs đã báo hết quota chưa và lúc kỳ sau bắt đầu.
 async fn provider_hours(config: &Config, db: &Database, month: &str) -> Result<Value, String> {
     let used = usage::provider_seconds(db, month).await.map_err(err)?;
     let exhausted = usage::provider_exhausted(db, month).await.map_err(err)?;
@@ -181,12 +188,15 @@ async fn provider_hours(config: &Config, db: &Database, month: &str) -> Result<V
         "usedHours": hours(used),
         "limitHours": hours(config.elevenlabs_monthly_seconds),
         "quotaExhausted": exhausted,
+        "period": month,
+        "nextResetAt": usage::provider_next_reset(Utc::now(), config.elevenlabs_reset_day).to_rfc3339(),
     }))
 }
 
-/// Xem sổ giờ ElevenLabs; `--clear` gỡ dấu "hết quota tháng" sau khi đã nạp thêm credit.
+/// Xem sổ giờ ElevenLabs của kỳ (`--month` = khoá kỳ, mặc định kỳ đang chạy); `--clear` gỡ dấu "hết quota" sau khi đã
+/// nạp thêm credit.
 async fn elevenlabs_quota(config: &Config, db: &Database, args: &[String]) -> Result<Value, String> {
-    let month = flag(args, "--month").map(str::to_string).unwrap_or_else(|| usage::month_key(Utc::now()));
+    let month = flag(args, "--month").map(str::to_string).unwrap_or_else(|| current_period(config));
     let mut out = json!({ "month": month });
     if args.iter().any(|a| a == "--clear") {
         let cleared = usage::clear_provider_exhausted(db, &month).await.map_err(err)?;

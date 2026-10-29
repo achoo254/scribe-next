@@ -38,7 +38,12 @@ const FREE: CurrentUser = {
 function withSharedLeft(minutes: number): CurrentUser {
 	return {
 		...FREE,
-		transcription: { ...FREE_MONTH, sharedLeftMinutes: minutes },
+		transcription: {
+			...FREE_MONTH,
+			sharedLeftMinutes: minutes,
+			// 17/11 00:00 giờ Việt Nam: ngày ElevenLabs gia hạn, không phải ngày 1.
+			sharedResetsAt: "2026-11-16T17:00:00Z",
+		},
 	};
 }
 
@@ -155,7 +160,7 @@ describe("UsageCard", () => {
 		renderCard(withSharedLeft(0), 0, 200 * MB);
 		const card = await screen.findByRole("region", { name: "Gói và mức dùng" });
 		expect(card).toHaveTextContent(
-			"Hệ thống đã dùng hết giờ chép lời chung của tháng này, mở lại ngày 1/11.",
+			"Hệ thống đã dùng hết giờ chép lời chung, mở lại ngày 17/11.",
 		);
 	});
 

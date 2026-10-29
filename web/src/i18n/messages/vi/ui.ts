@@ -22,10 +22,10 @@ export const ui = {
 		},
 		sharedLow: {
 			other:
-				"Giờ chép lời chung của hệ thống tháng này chỉ còn khoảng {count} phút, có thể hết trước phút của gói bạn.",
+				"Giờ chép lời chung của hệ thống chỉ còn khoảng {count} phút tới ngày gia hạn, có thể hết trước phút của gói bạn.",
 		},
 		sharedOut:
-			"Hệ thống đã dùng hết giờ chép lời chung của tháng này, mở lại ngày {date}. Phút của gói bạn vẫn được giữ.",
+			"Hệ thống đã dùng hết giờ chép lời chung, mở lại ngày {date}. Phút của gói bạn vẫn được giữ.",
 		storageFull:
 			"Đã đầy dung lượng: xoá bớt bản ghi hoặc tệp để ghi và tải lên tiếp.",
 	},

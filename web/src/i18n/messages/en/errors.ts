@@ -61,7 +61,7 @@ export const errors: Translation<SourceMessages["errors"]> = {
 			"The free plan transcribes up to {limit} minutes a day; the selected recordings are {used} minutes long. Choose fewer recordings.",
 		accountTooNew: "New accounts can use free transcription from {time}.",
 		providerHours:
-			"The service has used up this month's shared transcription hours. Available again at {time}.",
+			"The service has used up its shared transcription hours. Available again at {time}.",
 		notTranscribed:
 			"No part of this recording is transcribed yet. Transcribe it first.",
 		confirmRequired: "Type the confirmation word to delete your account.",

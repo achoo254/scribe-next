@@ -203,11 +203,12 @@ enum Refused {
     ProviderHours,
 }
 
-/// Giữ chỗ theo bậc lớn nhất còn vừa, trên sổ phút (sổ quy theo USD theo `price.cost`) và sổ giờ ElevenLabs (theo
-/// `price.el`, trần `el_limit`). Bị chặn ở mọi bậc thì trả lý do của bậc nhỏ nhất.
+/// Giữ chỗ theo bậc lớn nhất còn vừa, trên sổ phút (sổ quy theo USD theo `price.cost`) và sổ giờ ElevenLabs kỳ
+/// `el_period` (theo `price.el`, trần `el_limit`). Bị chặn ở mọi bậc thì trả lý do của bậc nhỏ nhất.
 async fn reserve_window(
     db: &Database,
     charge: &Charge,
+    el_period: &str,
     user_limit: i64,
     limits: &TranscribeLimits,
     price: Price,
@@ -221,7 +222,7 @@ async fn reserve_window(
             continue;
         }
         let el = weighted(need, price.el);
-        let hours = if el > 0 { usage::reserve_provider(db, &charge.month, el, el_limit).await } else { Ok(true) };
+        let hours = if el > 0 { usage::reserve_provider(db, el_period, el, el_limit).await } else { Ok(true) };
         match hours {
             Ok(true) => return Ok(Ok(need)),
             Ok(false) => last = Refused::ProviderHours,
@@ -235,14 +236,14 @@ async fn reserve_window(
     Ok(Err(last))
 }
 
-/// Hoàn trọn phần một token đã giữ trên mọi sổ.
-async fn refund(db: &Database, charge: &Charge, reserved: i64, price: Price, why: &str) {
+/// Hoàn trọn phần một token đã giữ trên mọi sổ (sổ giờ ElevenLabs của kỳ `el_period`).
+async fn refund(db: &Database, charge: &Charge, el_period: &str, reserved: i64, price: Price, why: &str) {
     if let Err(e) = usage::settle_priced(db, charge, -reserved, -weighted(reserved, price.cost)).await {
         tracing::error!(reserved, "hoàn phút chép trực tiếp ({why}) lỗi: {e:?}");
     }
     let el = weighted(reserved, price.el);
     if el > 0 {
-        if let Err(e) = usage::settle_provider(db, &charge.month, -el).await {
+        if let Err(e) = usage::settle_provider(db, el_period, -el).await {
             tracing::error!(el, "hoàn giờ ElevenLabs của chép trực tiếp ({why}) lỗi: {e:?}");
         }
     }
@@ -307,14 +308,16 @@ pub async fn token(
     let charge = Charge::new(&user.0, plan, now);
     let price = price(provider, state.config.transcribe_provider);
     let el_limit = state.config.elevenlabs_monthly_seconds;
-    // ElevenLabs đã báo hết quota tháng: không giữ chỗ, không xin token.
-    if price.el > 0.0 && usage::provider_exhausted(&state.db, &charge.month).await? {
-        return Err(hours_blocked(&state, &user.0, &charge.month, el_limit, now).await);
+    let el_period = usage::provider_period(now, state.config.elevenlabs_reset_day);
+    let reopens = usage::provider_next_reset(now, state.config.elevenlabs_reset_day);
+    // ElevenLabs đã báo hết quota kỳ này: không giữ chỗ, không xin token.
+    if price.el > 0.0 && usage::provider_exhausted(&state.db, &el_period).await? {
+        return Err(hours_blocked(&state, &user.0, &el_period, el_limit, reopens).await);
     }
     let user_limit = plan.limit_seconds(&limits);
-    let reserved = match reserve_window(&state.db, &charge, user_limit, &limits, price, el_limit).await? {
+    let reserved = match reserve_window(&state.db, &charge, &el_period, user_limit, &limits, price, el_limit).await? {
         Ok(seconds) => seconds,
-        Err(Refused::ProviderHours) => return Err(hours_blocked(&state, &user.0, &charge.month, el_limit, now).await),
+        Err(Refused::ProviderHours) => return Err(hours_blocked(&state, &user.0, &el_period, el_limit, reopens).await),
         Err(Refused::Books(blocked)) => {
             let used_s = usage::blocked_usage(&state.db, &charge, &blocked).await?;
             audit::record(&state, Some(&user.0), "realtime.blocked", doc! { "reason": format!("{blocked:?}") });
@@ -330,10 +333,10 @@ pub async fn token(
     let minted = match minted {
         Ok(minted) => minted,
         Err(e) => {
-            refund(&state.db, &charge, reserved, price, "không cấp được token").await;
+            refund(&state.db, &charge, &el_period, reserved, price, "không cấp được token").await;
             if e == elevenlabs::QUOTA_EXHAUSTED {
-                transcribe::report_quota_exhausted(&state, &charge.month).await;
-                return Err(hours_blocked(&state, &user.0, &charge.month, el_limit, now).await);
+                transcribe::report_quota_exhausted(&state, &el_period).await;
+                return Err(hours_blocked(&state, &user.0, &el_period, el_limit, reopens).await);
             }
             if openai::is_key_broken(&e) || elevenlabs::is_key_broken(&e) {
                 report_key_broken(&state, provider, &charge.month, &e).await;
@@ -359,9 +362,10 @@ pub async fn token(
         el_ratio: price.el,
         byok: None,
         key_nonce: None,
+        el_period: Some(el_period.clone()),
     };
     if let Err(e) = realtime_token::insert(&state.db, &doc).await {
-        refund(&state.db, &charge, reserved, price, "không ghi được token").await;
+        refund(&state.db, &charge, &el_period, reserved, price, "không ghi được token").await;
         return Err(e);
     }
     transcribe::note_cap_levels(&state, &charge.month).await;
@@ -376,11 +380,12 @@ pub async fn token(
     Ok(Json(token_reply(&minted, &doc.id, reserved, provider)))
 }
 
-/// Sổ giờ ElevenLabs của tháng đã đầy hoặc ElevenLabs báo hết quota: ghi audit, trả lỗi `PROVIDER_HOURS`.
-async fn hours_blocked(state: &AppState, user_id: &str, month: &str, limit: i64, now: chrono::DateTime<chrono::Utc>) -> AppError {
+/// Sổ giờ ElevenLabs của kỳ `period` đã đầy hoặc ElevenLabs báo hết quota: ghi audit, trả lỗi `PROVIDER_HOURS` mở lại
+/// lúc `reopens`.
+async fn hours_blocked(state: &AppState, user_id: &str, period: &str, limit: i64, reopens: chrono::DateTime<chrono::Utc>) -> AppError {
     audit::record(state, Some(user_id), "realtime.blocked", doc! { "reason": "ProviderHours" });
-    let used = usage::provider_seconds(&state.db, month).await.unwrap_or(limit);
-    transcribe::provider_hours_error(used, limit, now)
+    let used = usage::provider_seconds(&state.db, period).await.unwrap_or(limit);
+    transcribe::provider_hours_error(used, limit, reopens)
 }
 
 /// Token cấp bằng key riêng của người dùng (`own`: ElevenLabs hoặc OpenAI). Không giữ chỗ; app vẫn không stream quá
@@ -424,6 +429,7 @@ async fn own_token(state: &AppState, user_id: &str, session_id: Option<String>, 
         el_ratio: 0.0,
         byok: Some(own.code().into()),
         key_nonce: Some(key_nonce),
+        el_period: None,
     };
     realtime_token::insert(&state.db, &doc).await?;
     let details = doc! { "tokenId": &doc.id, "sessionId": session_id, "seconds": reserved, "provider": &doc.provider, "byok": true };
@@ -507,7 +513,7 @@ pub async fn settle_report(db: &Database, user_id: &str, token_id: &str, seconds
     }
     let el_delta = t.el_s(sent) - t.el_s(t.charged_s);
     if el_delta != 0 {
-        if let Err(e) = usage::settle_provider(db, &t.month, el_delta).await {
+        if let Err(e) = usage::settle_provider(db, t.el_period(), el_delta).await {
             tracing::error!(token = %t.id, "quyết toán giờ ElevenLabs của chép trực tiếp lỗi: {e:?}");
         }
     }
@@ -558,7 +564,7 @@ pub async fn report_usage(
             }
             Some(t) => {
                 audit::record(&state, Some(&user.0), "realtime.provider_quota", doc! { "tokenId": &t.id });
-                transcribe::report_quota_exhausted(&state, &t.month).await;
+                transcribe::report_quota_exhausted(&state, t.el_period()).await;
             }
             None => {}
         }
@@ -712,6 +718,7 @@ mod tests {
             el_ratio: 0.0,
             byok: byok.map(str::to_string),
             key_nonce: key_nonce.map(str::to_string),
+            el_period: None,
         };
         assert_eq!(own_key_nonce(&token(Some("elevenlabs"), Some(&hex))), Some(nonce.to_vec()));
         // Token cũ không có nonce: không đánh dấu key nào (không đoán là key hiện tại).
@@ -820,6 +827,7 @@ mod tests {
             el_ratio: 0.0,
             byok: Some("elevenlabs".into()),
             key_nonce: Some(realtime_token::nonce_hex(&old.nonce)),
+            el_period: None,
         };
         let fresh = crypto::seal(&secret, &user, "elevenlabs", "sk_test_new_key_000002").expect("mã hoá");
         store::save(&db, &user, Vendor::ElevenLabs, &fresh, "0002").await.expect("lưu key mới");
@@ -854,11 +862,11 @@ mod tests {
         };
         let openai_price = Price { cost: 1.0, el: 0.0 };
         // Hạn mức 1000 giây: 600 rồi 300 (còn 100 ⟹ bậc 60), rồi chặn hẳn ở 960/1000.
-        let a = reserve_window(&db, &charge, 1_000, &limits, openai_price, 0).await.expect("giữ");
-        let b = reserve_window(&db, &charge, 1_000, &limits, openai_price, 0).await.expect("giữ");
-        let c = reserve_window(&db, &charge, 1_000, &limits, openai_price, 0).await.expect("giữ");
+        let a = reserve_window(&db, &charge, &month, 1_000, &limits, openai_price, 0).await.expect("giữ");
+        let b = reserve_window(&db, &charge, &month, 1_000, &limits, openai_price, 0).await.expect("giữ");
+        let c = reserve_window(&db, &charge, &month, 1_000, &limits, openai_price, 0).await.expect("giữ");
         assert_eq!((a, b, c), (Ok(600), Ok(300), Ok(60)));
-        let blocked = reserve_window(&db, &charge, 1_000, &limits, openai_price, 0).await.expect("giữ");
+        let blocked = reserve_window(&db, &charge, &month, 1_000, &limits, openai_price, 0).await.expect("giữ");
         assert_eq!(blocked, Err(Refused::Books(Blocked::UserQuota)));
         assert_eq!(usage::month_usage(&db, &user, &month).await.expect("đọc").user_seconds, 960);
         assert_eq!(usage::provider_seconds(&db, &month).await.expect("giờ"), 0, "OpenAI không đụng sổ giờ ElevenLabs");
@@ -880,6 +888,7 @@ mod tests {
             el_ratio: price.el,
             byok: None,
             key_nonce: None,
+            el_period: None,
         };
         let later = DateTime::from_millis(DateTime::now().timestamp_millis() + 3_600_000);
         let id_a = format!("{user}-a");
@@ -905,16 +914,16 @@ mod tests {
         let el_price = price(Provider::ElevenLabs, Provider::ElevenLabs);
         let el_user = format!("{user}-el");
         let el_charge = Charge { user_id: el_user.clone(), month: month.clone(), free_pool: true, day: Some(month.clone()) };
-        let first = reserve_window(&db, &el_charge, 5_000, &limits, el_price, 1_500).await.expect("giữ");
+        let first = reserve_window(&db, &el_charge, &month, 5_000, &limits, el_price, 1_500).await.expect("giữ");
         assert_eq!(first, Ok(600));
         let used = usage::month_usage(&db, &el_user, &month).await.expect("đọc");
         assert_eq!(used.user_seconds, 600);
         assert_eq!(used.free_pool_seconds, 611 + 1064);
         assert_eq!(usage::provider_seconds(&db, &month).await.expect("giờ"), 1064);
-        let second = reserve_window(&db, &el_charge, 5_000, &limits, el_price, 1_500).await.expect("giữ");
+        let second = reserve_window(&db, &el_charge, &month, 5_000, &limits, el_price, 1_500).await.expect("giữ");
         assert_eq!(second, Ok(120));
         assert_eq!(usage::provider_seconds(&db, &month).await.expect("giờ"), 1064 + 213);
-        let full = reserve_window(&db, &el_charge, 5_000, &limits, el_price, 1_300).await.expect("giữ");
+        let full = reserve_window(&db, &el_charge, &month, 5_000, &limits, el_price, 1_300).await.expect("giữ");
         assert_eq!(full, Err(Refused::ProviderHours));
         assert_eq!(usage::month_usage(&db, &el_user, &month).await.expect("đọc").user_seconds, 720, "sổ phút được trả lại");
 
@@ -940,7 +949,7 @@ mod tests {
 
         // Hoàn trọn khi không cấp được token: mọi sổ về như trước.
         let hours_before = usage::provider_seconds(&db, &month).await.expect("giờ");
-        refund(&db, &el_charge, 120, el_price, "thử").await;
+        refund(&db, &el_charge, &month, 120, el_price, "thử").await;
         assert_eq!(usage::provider_seconds(&db, &month).await.expect("giờ"), hours_before - 213);
         assert_eq!(usage::month_usage(&db, &el_user, &month).await.expect("đọc").user_seconds, 600);
 

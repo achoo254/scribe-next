@@ -533,16 +533,19 @@ pub async fn me(
         } else {
             Value::Null
         };
-        // Sổ giờ ElevenLabs dùng chung cả server: thẻ mức dùng báo khi nó còn ít hơn phút của tài khoản.
-        let shared_left = if state.transcriber.provider() == crate::config::Provider::ElevenLabs {
-            let left = if usage::provider_exhausted(&state.db, &month).await? {
+        // Sổ giờ ElevenLabs dùng chung cả server, theo kỳ gia hạn của ElevenLabs: thẻ mức dùng báo khi nó còn ít hơn
+        // phút của tài khoản.
+        let (shared_left, shared_resets) = if state.transcriber.provider() == crate::config::Provider::ElevenLabs {
+            let day = state.config.elevenlabs_reset_day;
+            let period = usage::provider_period(now, day);
+            let left = if usage::provider_exhausted(&state.db, &period).await? {
                 0
             } else {
-                state.config.elevenlabs_monthly_seconds - usage::provider_seconds(&state.db, &month).await?
+                state.config.elevenlabs_monthly_seconds - usage::provider_seconds(&state.db, &period).await?
             };
-            json!(left.max(0) / 60)
+            (json!(left.max(0) / 60), json!(usage::provider_next_reset(now, day).to_rfc3339()))
         } else {
-            Value::Null
+            (Value::Null, Value::Null)
         };
         json!({
             "plan": plan.name(),
@@ -554,6 +557,7 @@ pub async fn me(
             "capReached": pool_full || used.total_seconds >= limits.monthly_cap_seconds,
             "paused": !state.transcriber.ready(),
             "sharedLeftMinutes": shared_left,
+            "sharedResetsAt": shared_resets,
             // Chép cả phiên iPhone trong một request (ElevenLabs): web gửi mọi đoạn và hiện số phút cả phiên.
             "wholeSession": state.transcriber.provider() == crate::config::Provider::ElevenLabs,
         })

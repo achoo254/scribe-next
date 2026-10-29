@@ -65,7 +65,7 @@ export const errors = {
 			"Gói miễn phí chép tối đa {limit} phút mỗi ngày, các bản ghi đã chọn dài {used} phút. Chọn ít bản ghi hơn.",
 		accountTooNew: "Tài khoản mới dùng được chép lời miễn phí từ {time}.",
 		providerHours:
-			"Hệ thống đã dùng hết giờ chép lời chung của tháng này, mở lại lúc {time}.",
+			"Hệ thống đã dùng hết giờ chép lời chung, mở lại lúc {time}.",
 		notTranscribed: "Bản ghi chưa có đoạn nào chép lời xong. Chép lời trước.",
 		confirmRequired: "Gõ từ xác nhận để xoá tài khoản.",
 		chatLinkDisabled: "Liên kết chat chưa được bật trên máy chủ này.",

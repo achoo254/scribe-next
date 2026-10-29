@@ -58,6 +58,10 @@ pub struct TokenDoc {
     /// dùng vừa nhập lại. Không phải bí mật (nonce nằm cạnh bản mã).
     #[serde(rename = "keyNonce", default)]
     pub key_nonce: Option<String>,
+    /// Kỳ sổ giờ ElevenLabs đã giữ chỗ (`usage::provider_period`): quyết toán và hoàn vào đúng kỳ đó, kể cả khi báo cáo
+    /// tới sau ngày gia hạn. Token cũ không có trường này thì là `month`.
+    #[serde(rename = "elPeriod", default)]
+    pub el_period: Option<String>,
 }
 
 /// Nonce ra hex (ghi vào token).
@@ -95,6 +99,11 @@ impl TokenDoc {
     /// Giây trên sổ quy theo USD của `seconds` giây audio.
     pub fn cost_s(&self, seconds: i64) -> i64 {
         weighted(seconds, self.cost_ratio)
+    }
+
+    /// Kỳ sổ giờ ElevenLabs của token.
+    pub fn el_period(&self) -> &str {
+        self.el_period.as_deref().unwrap_or(&self.month)
     }
 
     /// Giây trên sổ giờ ElevenLabs của `seconds` giây audio.

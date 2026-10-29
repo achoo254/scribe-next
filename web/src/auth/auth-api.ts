@@ -17,6 +17,8 @@ export interface Transcription {
 	 * shares (ElevenLabs); null when the provider has no such limit.
 	 */
 	sharedLeftMinutes?: number | null;
+	/** When those shared hours renew (ISO): the provider's billing day, not the 1st. */
+	sharedResetsAt?: string | null;
 	/**
 	 * An iPhone session is transcribed as a whole (one request, consistent
 	 * speakers): send every segment and show the minutes of the session.

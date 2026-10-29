@@ -56,6 +56,33 @@ pub fn next_reset(now: ChronoDateTime<Utc>) -> ChronoDateTime<Utc> {
         .with_timezone(&Utc)
 }
 
+/// Kỳ của sổ giờ ElevenLabs chứa `now`: kỳ bắt đầu lúc 0 giờ (giờ Việt Nam) ngày `reset_day` và có khoá là tháng
+/// `YYYY-MM` của ngày bắt đầu đó. `reset_day` = 1 thì trùng [`month_key`].
+pub fn provider_period(now: ChronoDateTime<Utc>, reset_day: u32) -> String {
+    let local = now.with_timezone(&vietnam());
+    let (year, month) = match local.month() {
+        _ if local.day() >= reset_day => (local.year(), local.month()),
+        1 => (local.year() - 1, 12),
+        m => (local.year(), m - 1),
+    };
+    format!("{year:04}-{month:02}")
+}
+
+/// Lúc kỳ sổ giờ ElevenLabs kế tiếp bắt đầu (0 giờ giờ Việt Nam ngày `reset_day`) — ngày ElevenLabs gia hạn credit.
+pub fn provider_next_reset(now: ChronoDateTime<Utc>, reset_day: u32) -> ChronoDateTime<Utc> {
+    let local = now.with_timezone(&vietnam());
+    let (year, month) = match local.month() {
+        _ if local.day() < reset_day => (local.year(), local.month()),
+        12 => (local.year() + 1, 1),
+        m => (local.year(), m + 1),
+    };
+    vietnam()
+        .with_ymd_and_hms(year, month, reset_day, 0, 0, 0)
+        .single()
+        .expect("ngày 1–28 luôn hợp lệ")
+        .with_timezone(&Utc)
+}
+
 fn user_doc(user_id: &str, month: &str) -> String {
     format!("u:{user_id}:{month}")
 }
@@ -479,6 +506,23 @@ mod tests {
         assert_eq!(month_key(at("2026-10-31T17:00:00Z")), "2026-11");
         assert_eq!(next_reset(at("2026-10-16T04:00:00Z")), at("2026-10-31T17:00:00Z"));
         assert_eq!(next_reset(at("2026-12-20T00:00:00Z")), at("2026-12-31T17:00:00Z"));
+    }
+
+    #[test]
+    fn provider_periods_start_on_the_elevenlabs_renewal_day() {
+        // 17/11 00:00 giờ VN = 16/11 17:00 UTC.
+        assert_eq!(provider_period(at("2026-10-29T08:00:00Z"), 17), "2026-10");
+        assert_eq!(provider_period(at("2026-11-16T16:59:59Z"), 17), "2026-10");
+        assert_eq!(provider_period(at("2026-11-16T17:00:00Z"), 17), "2026-11");
+        assert_eq!(provider_period(at("2027-01-05T00:00:00Z"), 17), "2026-12");
+        assert_eq!(provider_next_reset(at("2026-10-29T08:00:00Z"), 17), at("2026-11-16T17:00:00Z"));
+        assert_eq!(provider_next_reset(at("2026-11-10T00:00:00Z"), 17), at("2026-11-16T17:00:00Z"));
+        assert_eq!(provider_next_reset(at("2026-12-20T00:00:00Z"), 17), at("2027-01-16T17:00:00Z"));
+        // Ngày 1: trùng tháng dương lịch.
+        for now in ["2026-10-31T16:30:00Z", "2026-10-31T17:00:00Z", "2026-12-20T00:00:00Z"] {
+            assert_eq!(provider_period(at(now), 1), month_key(at(now)));
+            assert_eq!(provider_next_reset(at(now), 1), next_reset(at(now)));
+        }
     }
 
     /// Trên Mongo thật (DB dev): `TRANSCRIPT_TEST_MONGO_URI=… TRANSCRIPT_TEST_DB_NAME=… cargo test

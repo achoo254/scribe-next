@@ -29,12 +29,12 @@ export const ui: Translation<SourceMessages["ui"]> = {
 			},
 		},
 		sharedLow: {
-			one: "The service's shared transcription hours have about {count} minute left this month, which may run out before your plan's minutes.",
+			one: "The service's shared transcription hours have about {count} minute left until they renew, which may run out before your plan's minutes.",
 			other:
-				"The service's shared transcription hours have about {count} minutes left this month, which may run out before your plan's minutes.",
+				"The service's shared transcription hours have about {count} minutes left until they renew, which may run out before your plan's minutes.",
 		},
 		sharedOut:
-			"The service has used up this month's shared transcription hours; they reopen on {date}. Your plan's minutes are kept.",
+			"The service has used up its shared transcription hours; they reopen on {date}. Your plan's minutes are kept.",
 		storageFull:
 			"Storage is full: delete some recordings or files to keep recording and uploading.",
 	},
