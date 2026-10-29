@@ -10,8 +10,7 @@ export const chat: Translation<SourceMessages["chat"]> = {
 		unlink: "Unlink chat",
 		unlinked: "Chat unlinked",
 		unlinkFailed: "Couldn't unlink chat",
-		linkedSince: "Chat linked at {time}",
-		linkedWith: "Linked with {name}",
+		unlinkFrom: "Unlink chat ({name})",
 	},
 	dialog: {
 		title: "Link chat.hoandat.com",

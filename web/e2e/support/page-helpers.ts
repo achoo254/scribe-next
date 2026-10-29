@@ -1,5 +1,5 @@
 import AxeBuilder from "@axe-core/playwright";
-import type { Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import { FIXED_NOW } from "./api-stubs";
 
 export const COLOR_SCHEMES = ["light", "dark"] as const;
@@ -95,4 +95,17 @@ export async function seriousA11yViolations(
 			impact: violation.impact ?? null,
 			targets: violation.nodes.slice(0, 3).map((node) => node.target.join(" ")),
 		}));
+}
+
+/** The trigger (`<summary>`) of the shared account menu in the top bar. */
+export function accountTrigger(page: Page): Locator {
+	return page.getByTestId("topbar-account");
+}
+
+/** An item (button or link) of the open account menu by its name. */
+export function accountMenuItem(page: Page, name: string | RegExp): Locator {
+	const menu = page.getByTestId("account-menu");
+	return menu
+		.getByRole("button", { name })
+		.or(menu.getByRole("link", { name }));
 }

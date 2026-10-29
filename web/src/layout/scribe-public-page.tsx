@@ -22,7 +22,7 @@ export const SHELL_BRAND: ShellBrand = {
 };
 
 /** Scribe's own paths go through the router, without a reload. */
-const RouterLink: ShellLinkComponent = ({ href, ...rest }) => (
+export const RouterLink: ShellLinkComponent = ({ href, ...rest }) => (
 	<Link to={href} {...rest} />
 );
 

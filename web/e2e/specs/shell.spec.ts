@@ -8,6 +8,8 @@ import {
 import {
 	COLOR_SCHEMES,
 	SMOKE,
+	accountMenuItem,
+	accountTrigger,
 	fontsReady,
 	preparePage,
 	seriousA11yViolations,
@@ -28,12 +30,6 @@ async function openApp(page: Page, native: boolean): Promise<void> {
 	);
 	await expect(page.getByTestId("usage")).toBeVisible();
 	await fontsReady(page);
-}
-
-function accountTrigger(page: Page) {
-	return page.getByRole("button", {
-		name: `${SIGNED_IN_USER.email} · Tài khoản`,
-	});
 }
 
 for (const scheme of COLOR_SCHEMES) {
@@ -69,17 +65,17 @@ for (const scheme of COLOR_SCHEMES) {
 			await openApp(page, isMobile);
 
 			await accountTrigger(page).click();
-			const menu = page.getByRole("menu");
-			await expect(menu).toBeVisible();
+			const menu = page.getByTestId("account-menu");
+			await expect(accountMenuItem(page, "Đăng xuất")).toBeVisible();
 			await expect(menu).toContainText(SIGNED_IN_USER.email);
-			await expect(menu.getByRole("menuitem")).toHaveText([
-				"Tài khoản hoandat.com, mở trang hoandat.com ở thẻ mới",
-				"Ứng dụng, mở trang hoandat.com ở thẻ mới",
+			await expect(menu.locator(".shell-account-item")).toHaveText([
 				"Key riêng",
 				"Liên kết chat.hoandat.com",
 				"Quyền riêng tư",
 				"Điều khoản",
 				"Xoá tài khoản",
+				"Email, mở trang tài khoản hoandat.com ở tab mới",
+				"Phương thức đăng nhập, mở trang tài khoản hoandat.com ở tab mới",
 				"Đăng xuất",
 			]);
 			await expect(page).toHaveScreenshot(`account-menu-${scheme}.png`);
@@ -227,7 +223,7 @@ test.describe("sign-out from the iOS app while recording", () => {
 		await expect(page.getByTestId("native-record-timer")).toBeVisible();
 
 		await accountTrigger(page).click();
-		await page.getByRole("menuitem", { name: "Đăng xuất" }).click();
+		await accountMenuItem(page, "Đăng xuất").click();
 		const dialog = page.getByRole("dialog", { name: "Đăng xuất" });
 		await expect(dialog).toContainText(
 			"Bản ghi đang chạy sẽ dừng; phần đã ghi vẫn được lưu.",

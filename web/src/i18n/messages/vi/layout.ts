@@ -9,10 +9,6 @@ export const layout = {
 		split: "Cắt file",
 		transcript: "Lời đã chép",
 	},
-	accountMenu: {
-		trigger: "{email} · Tài khoản",
-		signOut: "Đăng xuất",
-	},
 	idpMenu: {
 		account: "Tài khoản {idpName}",
 		apps: "Ứng dụng",

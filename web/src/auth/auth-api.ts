@@ -39,6 +39,10 @@ export interface PlanInfo {
 
 export interface CurrentUser {
 	email: string;
+	/** Display name from the IdP; null until the next sign-in, missing from older backends. */
+	name?: string | null;
+	/** IdP picture URL (https), like `name`; the menu shows the initial without it. */
+	picture?: string | null;
 	/** May transcribe recordings (backend allowlist). */
 	canTranscribe?: boolean;
 	/** Missing from older backends. */

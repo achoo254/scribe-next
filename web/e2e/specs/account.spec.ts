@@ -1,9 +1,11 @@
-import { type Page, expect, test } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import { SIGNED_IN_USER, apiFixtures, stubApi } from "../support/api-stubs";
 import { nativeCalls, stubNativeShell } from "../support/capacitor-stub";
 import {
 	COLOR_SCHEMES,
 	SMOKE,
+	accountMenuItem,
+	accountTrigger,
 	fontsReady,
 	preparePage,
 	seriousA11yViolations,
@@ -19,12 +21,6 @@ import {
 
 const GUEST = apiFixtures({ user: null });
 
-function accountTrigger(page: Page) {
-	return page.getByRole("button", {
-		name: `${SIGNED_IN_USER.email} · Tài khoản`,
-	});
-}
-
 for (const scheme of COLOR_SCHEMES) {
 	test(`privacy policy for a visitor in ${scheme}`, async ({ page }) => {
 		await preparePage(page, scheme);
@@ -37,7 +33,7 @@ for (const scheme of COLOR_SCHEMES) {
 				name: "Chính sách quyền riêng tư",
 			}),
 		).toBeVisible();
-		await expect(policy).toContainText("Có hiệu lực từ 26/10/2026");
+		await expect(policy).toContainText("Có hiệu lực từ 29/10/2026");
 		await expect(
 			policy.getByRole("heading", { level: 2, name: "Bên xử lý dữ liệu" }),
 		).toBeVisible();
@@ -70,7 +66,7 @@ test(
 		await page.goto("/record");
 		await expect(page.getByTestId("usage")).toBeVisible();
 		await accountTrigger(page).click();
-		await page.getByRole("menuitem", { name: "Xoá tài khoản" }).click();
+		await accountMenuItem(page, "Xoá tài khoản").click();
 		const dialog = page.getByRole("dialog", { name: "Xoá tài khoản Scribe" });
 		await expect(dialog).toContainText(
 			`Xoá vĩnh viễn tài khoản Scribe của ${SIGNED_IN_USER.email}?`,

@@ -1,8 +1,13 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CurrentUser } from "../auth/auth-api";
+import {
+	accountMenuItems,
+	accountTrigger,
+	openAccountMenu,
+} from "../test/account-menu";
 import { fakeFetch, jsonResponse } from "../test/fake-fetch";
 import { TestProviders } from "../test/test-providers";
 import type { SessionActivity } from "./session-activity";
@@ -20,6 +25,8 @@ const { IDLE_ACTIVITY } = await import("./session-activity");
 
 const USER: CurrentUser = {
 	email: "minh.anh@example.com",
+	name: "Minh Anh",
+	picture: "https://lh3.googleusercontent.com/a/p1",
 	canTranscribe: true,
 };
 
@@ -60,17 +67,19 @@ function renderControls(
 	return { beforeSignOut, calls: fake.calls };
 }
 
-async function openMenu() {
-	screen
-		.getByRole("button", { name: "minh.anh@example.com · Tài khoản" })
-		.focus();
-	await userEvent.keyboard("{Enter}");
-	return screen.findByRole("menu");
+const openMenu = () => openAccountMenu();
+
+/** An item (button or link) of the open menu by its accessible name. */
+function item(menu: HTMLElement, name: string | RegExp): HTMLElement {
+	return (
+		within(menu).queryByRole("button", { name }) ??
+		within(menu).getByRole("link", { name })
+	);
 }
 
 async function chooseSignOut() {
-	await openMenu();
-	await userEvent.click(screen.getByRole("menuitem", { name: "Đăng xuất" }));
+	const menu = await openMenu();
+	await userEvent.click(item(menu, "Đăng xuất"));
 }
 
 afterEach(() => {
@@ -80,23 +89,42 @@ afterEach(() => {
 });
 
 describe("account menu", () => {
-	it("shows the email and lists the entries in order", async () => {
+	it("shows the IdP picture and name, then the email and the entries in order", async () => {
 		renderControls();
+		const trigger = accountTrigger();
+		expect(trigger).toHaveAttribute("aria-label", "Minh Anh · Tài khoản");
+		expect(trigger.querySelector("img")).toHaveAttribute(
+			"src",
+			"https://lh3.googleusercontent.com/a/p1",
+		);
 		const menu = await openMenu();
 		expect(menu).toHaveTextContent("minh.anh@example.com");
-		const items = screen
-			.getAllByRole("menuitem")
-			.map((item) => item.getAttribute("data-id"));
-		expect(items).toEqual([
-			"account-menu-account",
-			"account-menu-apps",
+		expect(accountMenuItems(menu)).toEqual([
 			"account-menu-keys",
 			"account-menu-chat-link",
 			"account-menu-privacy",
 			"account-menu-terms",
 			"account-menu-delete",
-			"topbar-logout",
+			"account-menu-idp-email",
+			"account-menu-idp-sign-in",
+			"account-menu-sign-out",
 		]);
+	});
+
+	it("draws the initial of the email when the backend has no name or picture yet", () => {
+		renderControls(undefined, undefined, {
+			user: { email: USER.email, canTranscribe: true },
+		});
+		const trigger = accountTrigger();
+		expect(trigger).toHaveAttribute(
+			"aria-label",
+			"minh.anh@example.com · Tài khoản",
+		);
+		expect(trigger.querySelector("img")).toBeNull();
+		expect(trigger.querySelector("[data-initial]")).toHaveAttribute(
+			"data-initial",
+			"M",
+		);
 	});
 
 	it.each([
@@ -104,23 +132,21 @@ describe("account menu", () => {
 		["Điều khoản", "/terms"],
 	])("opens '%s' inside the app", async (label, path) => {
 		renderControls();
-		await openMenu();
-		await userEvent.click(screen.getByRole("menuitem", { name: label }));
+		const menu = await openMenu();
+		await userEvent.click(item(menu, label));
 		expect(await screen.findByText(`trang ${path}`)).toBeInTheDocument();
 	});
 
 	it("opens 'Xoá tài khoản', which waits while a recording runs", async () => {
 		renderControls({ ...IDLE_ACTIVITY, recording: true });
-		await openMenu();
-		await userEvent.click(
-			screen.getByRole("menuitem", { name: "Xoá tài khoản" }),
-		);
+		const menu = await openMenu();
+		await userEvent.click(item(menu, "Xoá tài khoản"));
 		const dialog = await screen.findByRole("dialog", {
 			name: "Xoá tài khoản Scribe",
 		});
 		expect(dialog).toHaveTextContent("Dừng ghi và chờ tải xong");
 		expect(
-			screen.getByRole("button", { name: "Xoá tài khoản" }),
+			within(dialog).getByRole("button", { name: "Xoá tài khoản" }),
 		).toBeDisabled();
 	});
 
@@ -138,8 +164,8 @@ describe("account menu", () => {
 				}),
 			},
 		});
-		await openMenu();
-		await user.click(screen.getByRole("menuitem", { name: "Key riêng" }));
+		const menu = await openAccountMenu(user);
+		await user.click(item(menu, "Key riêng"));
 		expect(
 			await screen.findByRole("dialog", { name: "Key riêng" }),
 		).toBeVisible();
@@ -153,13 +179,13 @@ describe("account menu", () => {
 			user: { email: USER.email, canTranscribe: false },
 			routes: {},
 		});
-		await openMenu();
-		expect(screen.queryByRole("menuitem", { name: /chat/ })).toBeNull();
+		const menu = await openMenu();
+		expect(within(menu).queryByRole("button", { name: /chat/ })).toBeNull();
 		expect(calls).toEqual([]);
 	});
 
 	it("offers no linking when the server takes no links", async () => {
-		renderControls(undefined, undefined, {
+		const { calls } = renderControls(undefined, undefined, {
 			routes: {
 				"GET /api/chat/link": jsonResponse({
 					linked: false,
@@ -168,10 +194,11 @@ describe("account menu", () => {
 				}),
 			},
 		});
-		await waitFor(async () => {
-			const menu = await openMenu();
-			expect(menu).not.toHaveTextContent("Liên kết chat.hoandat.com");
-		});
+		await waitFor(() => expect(calls).toHaveLength(1));
+		const menu = await openMenu();
+		await waitFor(() =>
+			expect(menu).not.toHaveTextContent("Liên kết chat.hoandat.com"),
+		);
 	});
 
 	it("polls after the deep link opened until the link is confirmed in chat", async () => {
@@ -193,12 +220,8 @@ describe("account menu", () => {
 				}),
 			},
 		});
-		await openMenu();
-		await userEvent.click(
-			await screen.findByRole("menuitem", {
-				name: "Liên kết chat.hoandat.com",
-			}),
-		);
+		const menu = await openMenu();
+		await userEvent.click(item(menu, "Liên kết chat.hoandat.com"));
 		const open = await screen.findByRole("button", {
 			name: /^Mở chat/,
 		});
@@ -228,12 +251,9 @@ describe("account menu", () => {
 				}),
 			},
 		});
-		await openMenu();
-		await userEvent.click(
-			await screen.findByRole("menuitem", {
-				name: "Liên kết chat.hoandat.com",
-			}),
-		);
+		const menu = await openMenu();
+		await userEvent.click(item(menu, "Liên kết chat.hoandat.com"));
+		expect(menu.open).toBe(false);
 		const dialog = await screen.findByRole("dialog", {
 			name: "Liên kết chat.hoandat.com",
 		});
@@ -251,7 +271,7 @@ describe("account menu", () => {
 		);
 	});
 
-	it("re-reads the link when the window gets the focus back", async () => {
+	it("re-reads the link when the window gets the focus back, names the chat and unlinks", async () => {
 		const { calls } = renderControls(undefined, undefined, {
 			routes: {
 				"GET /api/chat/link": [
@@ -270,29 +290,46 @@ describe("account menu", () => {
 		window.dispatchEvent(new Event("focus"));
 		await waitFor(() => expect(calls).toHaveLength(2));
 		const menu = await openMenu();
-		expect(menu).toHaveTextContent("Đã liên kết với An Nguyễn");
-		expect(menu).toHaveTextContent("Đã liên kết chat lúc 09:30 16/10");
 		await userEvent.click(
-			await screen.findByRole("menuitem", { name: "Gỡ liên kết chat" }),
+			await within(menu).findByRole("button", {
+				name: "Gỡ liên kết chat (An Nguyễn)",
+			}),
 		);
 		expect(await screen.findByText("Đã gỡ liên kết chat")).toBeInTheDocument();
 		expect(calls.map((call) => call.method)).toContain("DELETE");
 	});
 
 	it.each([
-		["Tài khoản hoandat\\.com", "https://auth.hoandat.com/account"],
-		["Ứng dụng", "https://auth.hoandat.com/account#account-apps"],
-	])("opens '%s' of the IdP in a new tab", async (label, url) => {
+		["Email", "https://auth.hoandat.com/account#account-email"],
+		[
+			"Phương thức đăng nhập",
+			"https://auth.hoandat.com/account#account-sign-in",
+		],
+	])("links '%s' of the IdP account in a new tab", async (label, url) => {
+		renderControls();
+		const menu = await openMenu();
+		const link = within(menu).getByRole("link", {
+			// jsdom puts a space before the sr-only suffix; browsers do not.
+			name: new RegExp(
+				`^${label} ?, mở trang tài khoản hoandat\\.com ở tab mới$`,
+			),
+		});
+		expect(link).toHaveAttribute("href", url);
+		expect(link).toHaveAttribute("target", "_blank");
+		expect(menu).toHaveTextContent("Tài khoản hoandat.com · mở tab mới");
+	});
+
+	it("opens the IdP pages in the system browser inside the native app", async () => {
+		vi.stubGlobal("Capacitor", { isNativePlatform: () => true });
 		const open = vi.spyOn(window, "open").mockReturnValue(null);
 		renderControls();
-		await openMenu();
-		await userEvent.click(
-			screen.getByRole("menuitem", {
-				// jsdom puts a space before the sr-only suffix; browsers do not.
-				name: new RegExp(`^${label} ?, mở trang hoandat\\.com ở thẻ mới$`),
-			}),
+		const menu = await openMenu();
+		await userEvent.click(within(menu).getByRole("link", { name: /^Email/ }));
+		expect(open).toHaveBeenCalledWith(
+			"https://auth.hoandat.com/account#account-email",
+			"_blank",
+			"noopener,noreferrer",
 		);
-		expect(open).toHaveBeenCalledWith(url, "_blank", "noopener,noreferrer");
 	});
 
 	it("signs out at once when nothing is running", async () => {

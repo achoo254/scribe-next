@@ -3,6 +3,8 @@ import { REJECTED_KEY, SIGNED_IN_USER, stubApi } from "../support/api-stubs";
 import { stubNativeShell } from "../support/capacitor-stub";
 import {
 	COLOR_SCHEMES,
+	accountMenuItem,
+	accountTrigger,
 	fontsReady,
 	preparePage,
 	seriousA11yViolations,
@@ -20,10 +22,8 @@ async function openKeys(page: Page, native: boolean): Promise<void> {
 	await page.goto("/");
 	await expect(page.getByTestId("usage")).toBeVisible();
 	await fontsReady(page);
-	await page
-		.getByRole("button", { name: `${SIGNED_IN_USER.email} · Tài khoản` })
-		.click();
-	await page.getByRole("menuitem", { name: "Key riêng" }).click();
+	await accountTrigger(page).click();
+	await accountMenuItem(page, "Key riêng").click();
 	await expect(page.getByRole("dialog", { name: "Key riêng" })).toBeVisible();
 }
 

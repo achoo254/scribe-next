@@ -1,7 +1,8 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { RouterProvider, createMemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { openAccountMenu } from "../test/account-menu";
 import { fakeFetch, jsonResponse } from "../test/fake-fetch";
 import { TestProviders } from "../test/test-providers";
 
@@ -82,10 +83,9 @@ describe("AppShell", () => {
 	it("asks before signing out while a recording runs, saves it, then signs out", async () => {
 		auth.recording = true;
 		renderShell();
-		screen.getByRole("button", { name: "a@b.c · Tài khoản" }).focus();
-		await userEvent.keyboard("{Enter}");
+		const menu = await openAccountMenu();
 		await userEvent.click(
-			await screen.findByRole("menuitem", { name: "Đăng xuất" }),
+			within(menu).getByRole("button", { name: "Đăng xuất" }),
 		);
 		await userEvent.click(
 			await screen.findByRole("button", { name: "Vẫn đăng xuất" }),
@@ -99,10 +99,9 @@ describe("AppShell", () => {
 
 	it("signs out without asking when nothing runs", async () => {
 		renderShell();
-		screen.getByRole("button", { name: "a@b.c · Tài khoản" }).focus();
-		await userEvent.keyboard("{Enter}");
+		const menu = await openAccountMenu();
 		await userEvent.click(
-			await screen.findByRole("menuitem", { name: "Đăng xuất" }),
+			within(menu).getByRole("button", { name: "Đăng xuất" }),
 		);
 		expect(await screen.findByText("trang đăng nhập")).toBeInTheDocument();
 		expect(auth.stop).not.toHaveBeenCalled();

@@ -14,7 +14,6 @@ import type { CurrentUser } from "../auth/auth-api";
 import { BrandMark, Wordmark } from "../components/brand/wordmark";
 import { buttonClassName } from "../components/ui/button";
 import { useT } from "../i18n/i18n-context";
-import { isNativeShell } from "../lib/api";
 import { cn } from "../lib/cn";
 import { AccountControls } from "./account-controls";
 import { PATHS } from "./app-paths";
@@ -116,7 +115,6 @@ export function AppHeader({ user }: AppHeaderProps) {
 						user={user}
 						activity={session.activity}
 						beforeSignOut={session.stopRecordings}
-						compact={isNativeShell()}
 					/>
 				</div>
 			</div>

@@ -12,10 +12,6 @@ export const layout: Translation<SourceMessages["layout"]> = {
 		split: "Split",
 		transcript: "Transcripts",
 	},
-	accountMenu: {
-		trigger: "{email} · Account",
-		signOut: "Sign out",
-	},
 	idpMenu: {
 		account: "{idpName} account",
 		apps: "Apps",

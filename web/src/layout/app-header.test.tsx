@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter, useLocation } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CurrentUser } from "../auth/auth-api";
+import { accountTrigger } from "../test/account-menu";
 import { fakeFetch, jsonResponse } from "../test/fake-fetch";
 import { TestProviders } from "../test/test-providers";
 
@@ -56,9 +57,7 @@ describe("AppHeader", () => {
 	it("puts the app switcher right before the account menu", () => {
 		renderHeader();
 		const switcher = screen.getByRole("button", { name: "Chuyển ứng dụng" });
-		const account = screen.getByRole("button", {
-			name: "minh.anh@example.com · Tài khoản",
-		});
+		const account = accountTrigger();
 		expect(
 			switcher.compareDocumentPosition(account) &
 				Node.DOCUMENT_POSITION_FOLLOWING,
@@ -113,10 +112,13 @@ describe("AppHeader", () => {
 
 	it("puts the account menu on the right and no sign-out button in the bar", () => {
 		renderHeader();
-		expect(
-			screen.getByRole("button", { name: "minh.anh@example.com · Tài khoản" }),
-		).toBeVisible();
-		expect(screen.queryByRole("button", { name: "Đăng xuất" })).toBeNull();
+		expect(accountTrigger()).toHaveAttribute(
+			"aria-label",
+			"minh.anh@example.com · Tài khoản",
+		);
+		// Sign-out sits in the closed account menu, not in the bar.
+		const signOut = screen.getByRole("button", { name: "Đăng xuất" });
+		expect(signOut.closest("details")).not.toHaveAttribute("open");
 		expect(screen.queryByRole("group", { name: "Giao diện" })).toBeNull();
 	});
 });

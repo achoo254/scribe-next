@@ -4,7 +4,7 @@
  */
 
 /** Day the current privacy policy and terms took effect (ISO). */
-export const LEGAL_EFFECTIVE_DATE = "2026-10-26T00:00:00+07:00";
+export const LEGAL_EFFECTIVE_DATE = "2026-10-29T00:00:00+07:00";
 
 /** Email address of a build value, or null when it is not one. */
 export function supportEmailOf(value: string | undefined): string | null {

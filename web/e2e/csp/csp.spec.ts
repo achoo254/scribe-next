@@ -1,6 +1,11 @@
 import { type Page, expect, test } from "@playwright/test";
 import { SIGNED_IN_USER, apiFixtures, stubApi } from "../support/api-stubs";
-import { SMOKE, fontsReady } from "../support/page-helpers";
+import {
+	SMOKE,
+	accountMenuItem,
+	accountTrigger,
+	fontsReady,
+} from "../support/page-helpers";
 import { loadSecurityHeaders } from "./security-headers";
 
 /*
@@ -89,12 +94,47 @@ test(
 			await expect(page.getByTestId("usage")).toBeVisible();
 			await fontsReady(page);
 		}
-		// Radix menus insert a <style> element (style-src).
-		await page
-			.getByRole("button", { name: `${SIGNED_IN_USER.email} · Tài khoản` })
-			.click();
-		await expect(page.getByRole("menu")).toBeVisible();
+		await accountTrigger(page).click();
+		await expect(accountMenuItem(page, "Đăng xuất")).toBeVisible();
 		expect(await violations(page)).toEqual([]);
 		expect(api.unexpected).toEqual([]);
 	},
 );
+
+/** A 1×1 PNG, served for the IdP avatar hosts. */
+const AVATAR_PNG = Buffer.from(
+	"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+	"base64",
+);
+
+for (const picture of [
+	"https://lh3.googleusercontent.com/a/scribe-e2e=s96-c",
+	"https://avatars.githubusercontent.com/u/1?v=4",
+]) {
+	test(
+		`the account menu shows the IdP picture from ${new URL(picture).host} (img-src)`,
+		SMOKE,
+		async ({ page }) => {
+			await watchViolations(page);
+			await stubApi(
+				page,
+				apiFixtures({
+					user: { ...SIGNED_IN_USER, name: "Minh Anh", picture },
+				}),
+			);
+			// After stubApi, whose catch-all aborts every other origin.
+			await page.route(picture, (route) =>
+				route.fulfill({ contentType: "image/png", body: AVATAR_PNG }),
+			);
+			await page.goto("/record");
+			const avatar = accountTrigger(page).locator("img");
+			await expect(avatar).toHaveAttribute("src", picture);
+			await expect
+				.poll(() =>
+					avatar.evaluate((img: HTMLImageElement) => img.naturalWidth),
+				)
+				.toBeGreaterThan(0);
+			expect(await violations(page)).toEqual([]);
+		},
+	);
+}

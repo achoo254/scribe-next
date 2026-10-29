@@ -114,7 +114,7 @@ Khớp `web/ios/App/App/PrivacyInfo.xcprivacy` và `/privacy`. **Không theo dõ
 
 | Nhóm App Store Connect | Loại | Ghi chú |
 |---|---|---|
-| Contact Info | Name | Tên hiển thị từ tài khoản hoandat.com |
+| Contact Info | Name | Tên hiển thị từ tài khoản hoandat.com (kèm đường dẫn ảnh đại diện IdP, hiện ở menu tài khoản; Scribe không tải hay lưu ảnh) |
 | Contact Info | Email Address | Email tài khoản hoandat.com |
 | User Content | Audio Data | Bản ghi, tệp âm thanh tải lên; gửi ElevenLabs để chép lời |
 | User Content | Photos or Videos | Video người dùng tự chọn hoặc quay để tải lên |
