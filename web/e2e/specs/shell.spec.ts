@@ -117,19 +117,9 @@ for (const scheme of COLOR_SCHEMES) {
 			await expect(
 				switches.getByRole("button", { name: "Tiếng Việt" }),
 			).toHaveAttribute("aria-pressed", "true");
-			// Phones get the one-button theme switch next to the language switch.
-			if (isMobile) {
-				await expect(
-					footer.getByRole("button", { name: /— bấm để đổi$/ }),
-				).toBeVisible();
-				await expect(
-					footer.getByRole("group", { name: "Giao diện" }),
-				).toBeHidden();
-			} else {
-				await expect(
-					footer.getByRole("group", { name: "Giao diện" }),
-				).toBeVisible();
-			}
+			await expect(
+				switches.getByRole("group", { name: "Giao diện" }),
+			).toBeVisible();
 			await expect(footer).toHaveScreenshot(`footer-${scheme}.png`);
 			expect(await seriousA11yViolations(page)).toEqual([]);
 			expect(api.unexpected).toEqual([]);
