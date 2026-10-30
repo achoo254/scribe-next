@@ -1,0 +1,15 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <!-- Recording notification in Simplified Chinese; terms follow web/src/i18n/messages/zh-CN. -->
+    <string name="recording_channel">录制</string>
+    <string name="recording_channel_description">Scribe 正在录制时显示的通知，锁屏时也会显示。</string>
+    <string name="recording_title">Scribe 正在录制</string>
+    <string name="recording_text">点按“标记”记下重要时刻</string>
+    <string name="recording_paused_title">Scribe 已暂停</string>
+    <string name="recording_paused_text">点按“继续录制”以继续</string>
+    <string name="recording_pause">暂停</string>
+    <string name="recording_resume">继续录制</string>
+    <string name="recording_bookmark">标记</string>
+    <string name="recording_stop">停止</string>
+    <string name="recording_bookmarked">已标记 %1$s</string>
+</resources>

@@ -10,6 +10,7 @@ import android.os.Looper
 import android.util.Log
 import com.getcapacitor.JSArray
 import com.getcapacitor.JSObject
+import com.hoandat.scribe.R
 import com.hoandat.scribe.auth.SessionAuth
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -247,7 +248,7 @@ class RecorderEngine private constructor(private val app: Context) {
             return
         }
         listener?.emit("bookmarkAdded", JSObject.fromJSONObject(bookmark.toJson()))
-        feedback = "Đã đánh dấu ${clock(bookmark.positionS)}"
+        feedback = app.getString(R.string.recording_bookmarked, clock(bookmark.positionS))
         refreshNotification()
         main.removeCallbacks(clearFeedback)
         main.postDelayed(clearFeedback, FEEDBACK_MS)

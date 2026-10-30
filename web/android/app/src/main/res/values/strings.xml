@@ -5,7 +5,7 @@
     <string name="package_name">com.hoandat.scribe</string>
     <string name="custom_url_scheme">com.hoandat.scribe</string>
 
-    <!-- Recording notification (the app speaks Vietnamese only, like the web app). -->
+    <!-- Recording notification; values-zh-rCN translates it, other languages keep Vietnamese. -->
     <string name="recording_channel">Ghi âm</string>
     <string name="recording_channel_description">Thông báo khi Scribe đang ghi âm, kể cả lúc khoá màn hình.</string>
     <string name="recording_title">Scribe đang ghi</string>
@@ -16,4 +16,6 @@
     <string name="recording_resume">Ghi tiếp</string>
     <string name="recording_bookmark">Đánh dấu</string>
     <string name="recording_stop">Dừng</string>
+    <!-- Shown for 3 seconds after a bookmark; %1$s is the recording clock, e.g. 12:34. -->
+    <string name="recording_bookmarked">Đã đánh dấu %1$s</string>
 </resources>
