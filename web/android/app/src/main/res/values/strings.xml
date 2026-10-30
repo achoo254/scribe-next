@@ -1,9 +1,10 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">Scribe</string>
-    <string name="title_activity_main">Scribe</string>
-    <string name="package_name">com.hoandat.scribe</string>
-    <string name="custom_url_scheme">com.hoandat.scribe</string>
+    <!-- Brand name and identifiers: the same in every language. -->
+    <string name="app_name" translatable="false">Scribe</string>
+    <string name="title_activity_main" translatable="false">Scribe</string>
+    <string name="package_name" translatable="false">com.hoandat.scribe</string>
+    <string name="custom_url_scheme" translatable="false">com.hoandat.scribe</string>
 
     <!-- Recording notification; values-zh-rCN translates it, other languages keep Vietnamese. -->
     <string name="recording_channel">Ghi âm</string>
