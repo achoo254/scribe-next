@@ -124,7 +124,7 @@ pub fn read_update(raw: Value) -> (Option<i64>, Result<Update, String>) {
 }
 
 /// Lỗi thứ `failures` liên tiếp có đáng cảnh báo không. Lần lỗi đầu chỉ ghi info: đường từ máy này ra Cloudflare tới
-/// chat.hoandat.com thỉnh thoảng rớt một kết nối (treo tới hết 65 giây chờ, reset, hoặc 502/520 lúc chat deploy), và lần
+/// chat.hoandat.com (khi không đặt `NOTIFY_BOT_RESOLVE`) thỉnh thoảng rớt một kết nối (treo tới hết 65 giây chờ, reset, hoặc 502/520 lúc chat deploy), và lần
 /// thử lại sau 1 giây trên kết nối mới luôn được. Thời gian chờ không phải nguyên nhân: poll chờ 50 giây (trần
 /// `LongPollMax` của chat), client chờ 65 giây, nginx của chat đọc 65 giây, `WriteTimeout` của chat 60 giây, Cloudflare
 /// 100 giây. Lỗi từ lần thứ hai liên tiếp mới là sự cố thật: cảnh báo.
@@ -170,7 +170,7 @@ async fn run(state: AppState) {
             return;
         }
     };
-    let api = BotApi::new(&state.http, &state.config.notify_bot_api, &token);
+    let api = BotApi::new(&state.bot_http, &state.config.notify_bot_api, &token);
     let mut offset = loop {
         match chat_link::load_offset(&state.db).await {
             Ok(o) => break o,

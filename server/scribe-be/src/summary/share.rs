@@ -249,7 +249,7 @@ pub async fn share(
     let stale = stored.source_hash != super::source_hash(&super::build_input(&loaded.timed_sentences()));
     let text = format_message(&title, when.as_deref(), stored, &transcript_url(&state.config.public_url, &key), stale);
 
-    let sent = BotApi::new(&state.http, &state.config.notify_bot_api, &token).send(chat_id, &text, true).await;
+    let sent = BotApi::new(&state.bot_http, &state.config.notify_bot_api, &token).send(chat_id, &text, true).await;
     let (result, unlink_code) = after_send(sent);
     if let Some(code) = unlink_code {
         // Chỉ gỡ khi vẫn là chat vừa gửi: không gỡ liên kết mới vừa chen vào.

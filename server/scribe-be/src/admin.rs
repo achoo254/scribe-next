@@ -33,7 +33,8 @@ pub async fn run(config: &Config, db: &Database, args: &[String]) -> Result<Valu
         "unblock" => block(db, rest, false).await,
         "shorten-free-retention" => shorten_free_retention(db, args.iter().any(|a| a == "--apply")).await,
         "notify-test" => {
-            crate::notify::deliver(&reqwest::Client::new(), config, "Thử kênh báo động của Scribe.").await?;
+            let http = crate::notify::bot_client(reqwest::Client::builder(), config)?;
+            crate::notify::deliver(&http, config, "Thử kênh báo động của Scribe.").await?;
             Ok(json!({ "sent": true }))
         }
         _ => Err(usage_text()),

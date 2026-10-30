@@ -88,12 +88,21 @@ async fn main() {
     // Keepalive mặc định của reqwest (15 s + 3 lần thăm dò mỗi 15 s) cắt kết nối sau ~1 phút mạng chập chờn. ElevenLabs
     // im lặng vài phút khi chép bản ghi dài, và mạng ra ngoài của box prod hay chập buổi tối: lượt chép hỏng với "quá
     // thời gian chờ" dù chưa tới hạn của request. Nới ra ~5,5 phút; mỗi request vẫn có `timeout` riêng.
-    let http = reqwest::Client::builder()
-        .tcp_keepalive(std::time::Duration::from_secs(30))
-        .tcp_keepalive_interval(std::time::Duration::from_secs(30))
-        .tcp_keepalive_retries(10)
-        .build()
-        .expect("dựng reqwest client");
+    let http_builder = || {
+        reqwest::Client::builder()
+            .tcp_keepalive(std::time::Duration::from_secs(30))
+            .tcp_keepalive_interval(std::time::Duration::from_secs(30))
+            .tcp_keepalive_retries(10)
+    };
+    let http = http_builder().build().expect("dựng reqwest client");
+    // Bot API chat.hoandat.com: `NOTIFY_BOT_RESOLVE` sai dạng thì dừng ngay, không chạy với đường đi khác ý định.
+    let bot_http = match notify::bot_client(http_builder(), &config) {
+        Ok(client) => client,
+        Err(e) => {
+            tracing::error!("{e}");
+            std::process::exit(1);
+        }
+    };
 
     // Index của files/jobs/transcripts/audit (nền, lỗi chỉ log). Index transcript_docs, transcript_sentences,
     // users và phiên đăng nhập tạo riêng, chờ xong và chặn khởi động nếu lỗi.
@@ -173,6 +182,7 @@ async fn main() {
         config: Arc::new(config),
         db,
         http,
+        bot_http,
         oidc: Arc::new(oidc::Oidc::new(&oidc_issuer)),
         oidc_web_secret: Arc::new(oidc_web_secret),
         session_cache: Arc::default(),

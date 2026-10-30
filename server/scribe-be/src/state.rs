@@ -13,6 +13,8 @@ pub struct AppState {
     pub config: Arc<Config>,
     pub db: Database,
     pub http: reqwest::Client,
+    /// Client riêng cho Bot API chat.hoandat.com (long-poll, gửi tin, báo động): theo `NOTIFY_BOT_RESOLVE` nếu có.
+    pub bot_http: reqwest::Client,
     /// Client OIDC của hoandat-auth (discovery + JWKS cache).
     pub oidc: Arc<Oidc>,
     /// Secret client web (đọc từ tệp lúc khởi động, không nhúng binary).
@@ -42,6 +44,7 @@ impl AppState {
             config: Arc::new(config),
             db,
             http: reqwest::Client::new(),
+            bot_http: reqwest::Client::new(),
             oidc_web_secret: Arc::new(String::new()),
             session_cache: Arc::default(),
             session_key: Arc::new(vec![7u8; 32]),

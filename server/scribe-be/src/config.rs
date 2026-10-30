@@ -369,6 +369,9 @@ pub struct Config {
     /// Báo chủ sản phẩm qua bot chat.hoandat.com: gốc Bot API, tệp token bot (600) và chat id. Thiếu token
     /// hoặc chat id thì chỉ log.
     pub notify_bot_api: String,
+    /// `NOTIFY_BOT_RESOLVE`: địa chỉ IP thay DNS cho host của `notify_bot_api` (vd `127.0.0.1` khi chat chạy cùng máy:
+    /// đi thẳng nginx nội bộ, không qua Cloudflare; TLS và Host vẫn là tên miền). Trống = phân giải DNS như thường.
+    pub notify_bot_resolve: Option<String>,
     pub notify_bot_token_path: Option<String>,
     pub notify_chat_id: Option<String>,
     pub summary_limits: SummaryLimits,
@@ -468,6 +471,7 @@ impl Config {
                 option_env!("TRANSCRIBE_FREE_DELAY_HOURS"),
             ),
             notify_bot_api: option_env!("NOTIFY_BOT_API").unwrap_or("https://chat.hoandat.com/bot/v1").trim_end_matches('/').to_string(),
+            notify_bot_resolve: option_env!("NOTIFY_BOT_RESOLVE").map(str::trim).filter(|r| !r.is_empty()).map(str::to_string),
             notify_bot_token_path: option_env!("NOTIFY_BOT_TOKEN_PATH").filter(|p| !p.is_empty()).map(str::to_string),
             notify_chat_id: option_env!("NOTIFY_CHAT_ID").filter(|c| !c.is_empty()).map(str::to_string),
             summary_limits: SummaryLimits::from_parts([

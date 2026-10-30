@@ -49,7 +49,7 @@ impl BotProfile {
             tracing::warn!("liên kết chat: {e}");
             AppError::Unavailable("Liên kết chat chưa sẵn sàng.".into())
         })?;
-        let name = BotApi::new(&state.http, &state.config.notify_bot_api, &token).username().await.map_err(|e| {
+        let name = BotApi::new(&state.bot_http, &state.config.notify_bot_api, &token).username().await.map_err(|e| {
             tracing::warn!("liên kết chat: hỏi username bot lỗi: {e}");
             AppError::Unavailable("Không liên lạc được chat.hoandat.com, thử lại sau.".into())
         })?;
