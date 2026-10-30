@@ -1,6 +1,6 @@
 # Scribe — hồ sơ App Store (bản nháp)
 
-Bản nháp để dán vào App Store Connect khi tài khoản Apple Developer được duyệt. Cách tạo app, key và tải build: [ios-app.md](../ios-app.md#phát-hành-testflight--app-store). Ngôn ngữ chính của trang App Store: **Tiếng Việt**; thêm bản **English (U.S.)** bằng các dòng tiếng Anh dưới đây.
+Bản nháp để dán vào App Store Connect khi tài khoản Apple Developer được duyệt. Cách tạo app, key và tải build: [ios-app.md](../ios-app.md#phát-hành-testflight--app-store). Ngôn ngữ chính của trang App Store: **Tiếng Việt**; thêm bản **English (U.S.)** bằng các dòng tiếng Anh dưới đây và bản **Chinese (Simplified)** bằng mục [Tiếng Trung giản thể](#tiếng-trung-giản-thể-chinese-simplified).
 
 Ký tự đếm bằng số ký tự Unicode (App Store Connect đếm như vậy); số trong ngoặc là độ dài thật.
 
@@ -93,6 +93,49 @@ Sign in with a hoandat.com account. Ask everyone's permission before you record.
 VI (95): `ghi âm,chép lời,biên bản,cuộc họp,họp,phiên âm,chuyển giọng nói,dịch,tóm tắt,tiếng Việt,ghi chú`
 
 EN (94): `transcribe,transcription,recorder,meeting,minutes,notes,vietnamese,translate,summary,dictation`
+
+### Tiếng Trung giản thể (Chinese, Simplified)
+
+Bản địa hoá **Chinese (Simplified)** trong App Store Connect (thêm ngôn ngữ ở trang app → App Information). Từ ngữ theo giao diện web `web/src/i18n/messages/zh-CN/` (录制, 录音, 转写, 文字稿, 会议纪要, 标记, xưng 你). Lời chép vẫn là tiếng Việt; biên bản, câu trả lời của Hỏi Scribe và bản dịch theo ngôn ngữ giao diện, nên có tiếng Trung. App có `zh-Hans.lproj` (lời xin quyền, màn hình khoá) nên trang App Store liệt kê tiếng Trung.
+
+| Trường | Giá trị |
+|---|---|
+| Tên (≤ 30) | `Scribe – 会议录音与转写` (16) |
+| Phụ đề (≤ 30) | `越南语会议转写与中文纪要` (12) |
+| Văn bản quảng bá (≤ 170) | `锁屏时也能录制会议，把越南语转写成带发言人的文字稿，自动生成会议纪要，可用中文提问，并把文字稿翻译成中文或英文。` (56) |
+| Từ khoá (≤ 100) | `录音,转写,会议纪要,会议记录,开会,越南语,语音转文字,翻译,总结,笔记,听写` (40) |
+
+Mô tả:
+
+```
+Scribe 在 iPhone 上录制会议，并为你把越南语转写成文字。
+
+录制不中断
+• 锁屏或切换到其他应用时继续录制。
+• 按片段录制并随录随传，中途关闭应用也不会丢失已录制的内容。
+• 在锁屏界面或用耳机标记重要时刻。
+• 实时转写：开会时文字即时出现。
+
+文字稿和会议纪要
+• 越南语文字稿带有时间点和发言人；点按任一句即可回听该片段。
+• 自动生成会议纪要：摘要、决定、待办事项、负责人和截止日期，可用中文撰写。
+• 修改句子、为发言人命名，导出为 TXT、SRT、VTT、Markdown 或 Word。
+
+随时找回
+• 在所有录音中搜索，越南语带不带声调符号都能搜到。
+• 用自然的语言向 Scribe 提问，回答附带出处，方便回听。
+• 在越南语、英语和中文之间翻译文字稿，逐句对照查看。
+
+隐私
+• 无广告，无跟踪。
+• 文件在 7 天（免费版）或 14 天（Plus 版）后自动删除。
+• 可在应用内删除账号及全部数据。
+• 可使用你自己的 API 密钥（OpenAI、Gemini、Claude、ElevenLabs）。
+
+使用 hoandat.com 账号登录。录音前请先征得所有人的同意。
+```
+
+Ảnh chụp: dùng bộ ảnh tiếng Việt hiện có (giao diện app có thể đổi sang tiếng Trung nhưng `screenshots:app-store` chưa chụp bản tiếng Trung).
 
 ## Phân loại độ tuổi (Age Rating)
 
