@@ -5,6 +5,7 @@
 //! retry_after}}`; rẽ nhánh theo HTTP status và `error.code`, không theo `description`. Token chỉ đi qua
 //! header `Authorization`; lỗi không chứa URL hay token.
 
+use crate::lang::Lang;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::time::Duration;
@@ -48,6 +49,16 @@ pub struct User {
     pub name: Option<String>,
     #[serde(default)]
     pub username: Option<String>,
+    /// Ngôn ngữ giao diện chat của người này (`vi` | `en` | `zh-CN`); chat bỏ trống khi chưa biết.
+    #[serde(default)]
+    pub language_code: Option<String>,
+}
+
+impl User {
+    /// Ngôn ngữ giao diện chat, khi là mã Scribe biết (mã lạ coi như không biết).
+    pub fn lang(&self) -> Option<Lang> {
+        self.language_code.as_deref().and_then(Lang::parse)
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -250,6 +261,21 @@ mod tests {
         assert_eq!((cb.id.as_str(), cb.data.as_deref()), ("cb1", Some("link:t")));
         let m = cb.message.expect("tin");
         assert_eq!((m.chat.id, m.seq), (12, Some(40)));
+    }
+
+    #[test]
+    fn senders_carry_their_chat_language_when_known() {
+        let from = |extra: Value| {
+            let mut raw = json!({ "id": 3, "is_bot": false, "name": "A" });
+            raw.as_object_mut().expect("object").extend(extra.as_object().expect("object").clone());
+            serde_json::from_value::<User>(raw).expect("đọc user")
+        };
+        assert_eq!(from(json!({ "language_code": "zh-CN" })).lang(), Some(Lang::Zh));
+        assert_eq!(from(json!({ "language_code": "en" })).lang(), Some(Lang::En));
+        assert_eq!(from(json!({ "language_code": "vi" })).lang(), Some(Lang::Vi));
+        assert_eq!(from(json!({})).lang(), None, "chat chưa biết thì bỏ trống");
+        assert_eq!(from(json!({ "language_code": "fr" })).lang(), None);
+        assert_eq!(from(json!({ "language_code": null })).lang(), None);
     }
 
     #[test]

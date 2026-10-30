@@ -12,8 +12,8 @@ pub use crate::models::chat_link::TokenOwner;
 use mongodb::bson::{doc, Document};
 use std::future::Future;
 
-/// Chữ bot viết trong luồng liên kết, theo ngôn ngữ của token ([`TokenOwner::lang`]). Lúc chưa đọc được token (không
-/// có token, token lạ, `/unlink`) bot chưa biết người gửi là ai nên viết tiếng Việt.
+/// Chữ bot viết trong luồng liên kết, theo [`reply_lang`]: ngôn ngữ lưu trong token ([`TokenOwner::lang`]), không có
+/// thì ngôn ngữ giao diện chat của người gửi (`from.language_code`), cuối cùng tiếng Việt.
 #[derive(Debug, PartialEq)]
 pub struct Texts {
     pub linked: &'static str,
@@ -90,6 +90,13 @@ const ZH: Texts = Texts {
     pressed_failed: "无法关联。",
     pressed_linked: "已关联。",
 };
+
+/// Ngôn ngữ bot trả lời một người. `stored` = ngôn ngữ lưu cùng token (người đó chọn trong Scribe lúc tạo đường dẫn,
+/// nên được ưu tiên và giữ cả luồng liên kết một ngôn ngữ); `chat` = ngôn ngữ giao diện chat của người gửi, dùng khi
+/// Scribe chưa biết người đó (không có token, token lạ/hết hạn, nút cũ, `/unlink`) hoặc token không lưu ngôn ngữ.
+pub fn reply_lang(stored: Option<Lang>, chat: Option<Lang>) -> Lang {
+    stored.or(chat).unwrap_or_default()
+}
 
 pub fn texts(lang: Lang) -> &'static Texts {
     match lang {
@@ -177,17 +184,19 @@ pub fn mask_email(email: &str) -> String {
     }
 }
 
-/// `/start <token>`: hỏi lại trước khi liên kết.
-pub async fn on_start(store: &impl Store, chat_id: i64, token: Option<&str>) -> Vec<Effect> {
-    let Some(token) = token else { return vec![reply(chat_id, VI.guide)] };
+/// `/start <token>` từ người dùng có ngôn ngữ giao diện chat `chat_lang`: hỏi lại trước khi liên kết.
+pub async fn on_start(store: &impl Store, chat_id: i64, token: Option<&str>, chat_lang: Option<Lang>) -> Vec<Effect> {
+    let unknown = texts(reply_lang(None, chat_lang));
+    let Some(token) = token else { return vec![reply(chat_id, unknown.guide)] };
     let TokenOwner { user_id, lang } = match store.bind_token(token, chat_id).await {
         Ok(Some(owner)) => owner,
-        Ok(None) => return vec![reply(chat_id, VI.guide)],
+        Ok(None) => return vec![reply(chat_id, unknown.guide)],
         Err(e) => {
             tracing::warn!("liên kết chat: gắn token lỗi: {e:?}");
-            return vec![reply(chat_id, VI.later)];
+            return vec![reply(chat_id, unknown.later)];
         }
     };
+    let lang = reply_lang(lang, chat_lang);
     let words = texts(lang);
     let account = match store.account(&user_id).await {
         Ok(Some(a)) => a,
@@ -218,42 +227,45 @@ pub struct Press<'a> {
     pub data: &'a str,
     /// Tên trên chat của người bấm (đã làm sạch), lưu cùng liên kết.
     pub chat_name: Option<&'a str>,
+    /// Ngôn ngữ giao diện chat của người bấm.
+    pub chat_lang: Option<Lang>,
 }
 
 /// Lần bấm nút trên tin hỏi xác nhận.
 pub async fn on_press(store: &impl Store, press: Press<'_>) -> Vec<Effect> {
-    let Press { callback_id, chat_id, seq, data, chat_name } = press;
+    let Press { callback_id, chat_id, seq, data, chat_name, chat_lang } = press;
     let clear = seq.map(|seq| Effect::ClearButtons { chat_id, seq });
+    let unknown = texts(reply_lang(None, chat_lang));
     if let Some(token) = data.strip_prefix(CANCEL_PREFIX) {
-        // Token đã hết hạn hay đã bị bỏ thì không còn biết ngôn ngữ: tiếng Việt.
+        // Token đã hết hạn hay đã bị bỏ thì không còn ngôn ngữ lưu: theo ngôn ngữ chat.
         let lang = store.drop_token(token, chat_id).await.unwrap_or_else(|e| {
             tracing::warn!("liên kết chat: huỷ token lỗi: {e:?}");
             None
         });
-        let words = texts(lang.unwrap_or_default());
+        let words = texts(reply_lang(lang, chat_lang));
         let mut out = vec![answer(callback_id, words.pressed_cancel)];
         out.extend(clear);
         out.push(reply(chat_id, words.cancelled));
         return out;
     }
     let Some(token) = data.strip_prefix(CONFIRM_PREFIX) else {
-        return vec![answer(callback_id, VI.stale_button)];
+        return vec![answer(callback_id, unknown.stale_button)];
     };
     let TokenOwner { user_id, lang } = match store.take_token(token, chat_id).await {
         Ok(Some(owner)) => owner,
         Ok(None) => {
-            let mut out = vec![answer(callback_id, VI.stale_button)];
+            let mut out = vec![answer(callback_id, unknown.stale_button)];
             out.extend(clear);
-            out.push(reply(chat_id, VI.guide));
+            out.push(reply(chat_id, unknown.guide));
             return out;
         }
         // Token chưa bị dùng: bấm lại nút được.
         Err(e) => {
             tracing::warn!("liên kết chat: dùng token lỗi: {e:?}");
-            return vec![answer(callback_id, VI.later)];
+            return vec![answer(callback_id, unknown.later)];
         }
     };
-    let words = texts(lang);
+    let words = texts(reply_lang(lang, chat_lang));
     // Từ đây token đã bị dùng: lỗi thì phải tạo đường dẫn mới.
     let failed = |text: &str| {
         let mut out = vec![answer(callback_id, words.pressed_failed)];
@@ -288,12 +300,14 @@ pub async fn on_press(store: &impl Store, press: Press<'_>) -> Vec<Effect> {
     out
 }
 
-/// `/unlink` trong chat: gỡ mọi tài khoản đang liên kết tới chat này. Lệnh không mang token nên bot trả lời tiếng Việt.
-pub async fn on_unlink(store: &impl Store, chat_id: i64) -> Vec<Effect> {
+/// `/unlink` trong chat: gỡ mọi tài khoản đang liên kết tới chat này. Lệnh không mang token nên bot trả lời theo ngôn
+/// ngữ giao diện chat của người gửi.
+pub async fn on_unlink(store: &impl Store, chat_id: i64, chat_lang: Option<Lang>) -> Vec<Effect> {
+    let words = texts(reply_lang(None, chat_lang));
     match store.unlink_chat(chat_id).await {
-        Ok(users) if users.is_empty() => vec![reply(chat_id, VI.not_linked)],
+        Ok(users) if users.is_empty() => vec![reply(chat_id, words.not_linked)],
         Ok(users) => {
-            let mut out = vec![reply(chat_id, VI.unlinked)];
+            let mut out = vec![reply(chat_id, words.unlinked)];
             out.extend(users.into_iter().map(|user_id| Effect::Audit {
                 user_id,
                 action: "chat.unlink",
@@ -303,7 +317,7 @@ pub async fn on_unlink(store: &impl Store, chat_id: i64) -> Vec<Effect> {
         }
         Err(e) => {
             tracing::warn!("liên kết chat: gỡ theo /unlink lỗi: {e:?}");
-            vec![reply(chat_id, VI.later)]
+            vec![reply(chat_id, words.later)]
         }
     }
 }
@@ -321,8 +335,8 @@ mod tests {
         users: Mutex<HashMap<String, (Account, Option<i64>)>>,
         names: Mutex<HashMap<String, Option<String>>>,
         fail: bool,
-        /// Ngôn ngữ của mọi token giả.
-        lang: Lang,
+        /// Ngôn ngữ lưu trong mọi token giả.
+        lang: Option<Lang>,
     }
 
     impl Fake {
@@ -377,7 +391,7 @@ mod tests {
             let mut tokens = self.tokens.lock().expect("khoá");
             if tokens.get(token).is_some_and(|(_, bound)| *bound == Some(chat_id)) {
                 tokens.remove(token);
-                return Ok(Some(self.lang));
+                return Ok(self.lang);
             }
             Ok(None)
         }
@@ -409,7 +423,7 @@ mod tests {
     }
 
     fn press<'a>(callback_id: &'a str, chat_id: i64, seq: Option<i64>, data: &'a str) -> Press<'a> {
-        Press { callback_id, chat_id, seq, data, chat_name: None }
+        Press { callback_id, chat_id, seq, data, chat_name: None, chat_lang: None }
     }
 
     fn texts(effects: &[Effect]) -> Vec<(i64, &str)> {
@@ -433,20 +447,20 @@ mod tests {
     #[tokio::test]
     async fn start_only_asks_and_does_not_link() {
         let store = Fake::with(&[("tok", "u1")], &[("u1", "an@inet.vn", false, None)]);
-        let effects = on_start(&store, 12, Some("tok")).await;
+        let effects = on_start(&store, 12, Some("tok"), None).await;
         let [Effect::Reply { chat_id: 12, text, buttons }] = effects.as_slice() else { panic!("{effects:?}") };
         assert!(text.contains("a***@inet.vn"));
         assert_eq!(buttons, &vec![("Xác nhận liên kết".into(), "link:tok".into()), ("Huỷ".into(), "cancel:tok".into())]);
         assert_eq!(store.chat_of("u1"), None, "/start chưa được liên kết");
         // Chat khác dùng lại token đã gắn: không hỏi, không liên kết.
-        assert_eq!(texts(&on_start(&store, 99, Some("tok")).await), vec![(99, VI.guide)]);
-        assert_eq!(texts(&on_start(&store, 12, None).await), vec![(12, VI.guide)]);
+        assert_eq!(texts(&on_start(&store, 99, Some("tok"), None).await), vec![(99, VI.guide)]);
+        assert_eq!(texts(&on_start(&store, 12, None, None).await), vec![(12, VI.guide)]);
     }
 
     #[tokio::test]
     async fn confirm_from_the_same_chat_links_and_mentions_unlink() {
         let store = Fake::with(&[("tok", "u1")], &[("u1", "an@inet.vn", false, Some(7))]);
-        on_start(&store, 12, Some("tok")).await;
+        on_start(&store, 12, Some("tok"), None).await;
         // Bấm từ chat khác (không thể với nút thật, nhưng callback giả mạo): không liên kết.
         let other = on_press(&store, press("cb0", 99, Some(1), "link:tok")).await;
         assert_eq!(store.chat_of("u1"), Some(7));
@@ -467,14 +481,14 @@ mod tests {
     #[tokio::test]
     async fn relinking_the_same_chat_does_not_notify_it() {
         let store = Fake::with(&[("tok", "u1")], &[("u1", "an@inet.vn", false, Some(12))]);
-        on_start(&store, 12, Some("tok")).await;
+        on_start(&store, 12, Some("tok"), None).await;
         assert_eq!(texts(&on_press(&store, press("cb", 12, None, "link:tok")).await), vec![(12, VI.linked)]);
     }
 
     #[tokio::test]
     async fn cancel_drops_the_pending_token() {
         let store = Fake::with(&[("tok", "u1")], &[("u1", "an@inet.vn", false, None)]);
-        on_start(&store, 12, Some("tok")).await;
+        on_start(&store, 12, Some("tok"), None).await;
         let effects = on_press(&store, press("cb", 12, Some(5), "cancel:tok")).await;
         assert_eq!(texts(&effects), vec![(12, VI.cancelled)]);
         assert!(effects.contains(&Effect::ClearButtons { chat_id: 12, seq: 5 }));
@@ -486,7 +500,7 @@ mod tests {
     #[tokio::test]
     async fn blocked_accounts_are_not_linked() {
         let store = Fake::with(&[("tok", "u1")], &[("u1", "an@inet.vn", true, None)]);
-        assert_eq!(texts(&on_start(&store, 12, Some("tok")).await), vec![(12, VI.blocked)]);
+        assert_eq!(texts(&on_start(&store, 12, Some("tok"), None).await), vec![(12, VI.blocked)]);
         assert_eq!(texts(&on_press(&store, press("cb", 12, None, "link:tok")).await), vec![(12, VI.blocked)]);
         assert_eq!(store.chat_of("u1"), None);
     }
@@ -494,7 +508,7 @@ mod tests {
     #[tokio::test]
     async fn failures_before_the_token_is_used_say_retry_later() {
         let store = Fake { fail: true, ..Fake::with(&[("tok", "u1")], &[("u1", "an@inet.vn", false, None)]) };
-        assert_eq!(texts(&on_start(&store, 12, Some("tok")).await), vec![(12, VI.later)]);
+        assert_eq!(texts(&on_start(&store, 12, Some("tok"), None).await), vec![(12, VI.later)]);
         assert_eq!(on_press(&store, press("cb", 12, None, "link:tok")).await, vec![answer("cb", VI.later)]);
     }
 
@@ -523,7 +537,7 @@ mod tests {
             }
         }
         let store = LinkFails(Fake::with(&[("tok", "u1")], &[("u1", "an@inet.vn", false, None)]));
-        on_start(&store, 12, Some("tok")).await;
+        on_start(&store, 12, Some("tok"), None).await;
         let effects = on_press(&store, press("cb", 12, None, "link:tok")).await;
         assert_eq!(texts(&effects), vec![(12, VI.retry_new)]);
         assert!(VI.retry_new.contains("Tạo đường dẫn mới trong Scribe"));
@@ -532,30 +546,80 @@ mod tests {
     #[tokio::test]
     async fn unlink_command_removes_every_account_of_the_chat() {
         let store = Fake::with(&[], &[("u1", "a@x.vn", false, Some(12)), ("u2", "b@x.vn", false, Some(13))]);
-        let effects = on_unlink(&store, 12).await;
+        let effects = on_unlink(&store, 12, None).await;
         assert_eq!(texts(&effects), vec![(12, VI.unlinked)]);
         assert!(effects.iter().any(|e| matches!(e, Effect::Audit { action: "chat.unlink", user_id, .. } if user_id == "u1")));
         assert_eq!((store.chat_of("u1"), store.chat_of("u2")), (None, Some(13)));
-        assert_eq!(texts(&on_unlink(&store, 12).await), vec![(12, VI.not_linked)]);
+        assert_eq!(texts(&on_unlink(&store, 12, None).await), vec![(12, VI.not_linked)]);
     }
 
     #[tokio::test]
     async fn a_chinese_link_is_answered_in_chinese() {
-        let store = Fake { lang: Lang::Zh, ..Fake::with(&[("tok", "u1"), ("t2", "u1")], &[("u1", "an@inet.vn", false, Some(7))]) };
-        let effects = on_start(&store, 12, Some("tok")).await;
+        let store = Fake { lang: Some(Lang::Zh), ..Fake::with(&[("tok", "u1"), ("t2", "u1")], &[("u1", "an@inet.vn", false, Some(7))]) };
+        let effects = on_start(&store, 12, Some("tok"), None).await;
         let [Effect::Reply { text, buttons, .. }] = effects.as_slice() else { panic!("{effects:?}") };
         assert!(text.starts_with("将这个聊天关联到 Scribe 账号 a***@inet.vn？") && text.contains("“确认关联”"), "{text}");
         assert_eq!(buttons, &vec![("确认关联".into(), "link:tok".into()), ("取消".into(), "cancel:tok".into())]);
         let effects = on_press(&store, press("cb", 12, None, "link:tok")).await;
         assert_eq!(effects[0], answer("cb", ZH.pressed_linked));
         assert_eq!(texts(&effects), vec![(12, ZH.linked), (7, ZH.moved)]);
-        on_start(&store, 12, Some("t2")).await;
+        on_start(&store, 12, Some("t2"), None).await;
         let effects = on_press(&store, press("cb", 12, None, "cancel:t2")).await;
         assert_eq!(effects[0], answer("cb", ZH.pressed_cancel));
         assert_eq!(texts(&effects), vec![(12, ZH.cancelled)]);
-        // Không còn token để biết ngôn ngữ: tiếng Việt.
+        // Không còn token để biết ngôn ngữ, chat không cho biết ngôn ngữ giao diện: tiếng Việt.
         assert_eq!(texts(&on_press(&store, press("cb", 12, None, "link:tok")).await), vec![(12, VI.guide)]);
-        assert_eq!(texts(&on_unlink(&store, 12).await), vec![(12, VI.unlinked)]);
+        assert_eq!(texts(&on_unlink(&store, 12, None).await), vec![(12, VI.unlinked)]);
+    }
+
+    #[tokio::test]
+    async fn without_a_known_user_the_bot_answers_in_the_chat_language() {
+        let store = Fake::with(&[], &[("u1", "a@x.vn", false, Some(12))]);
+        let en = Some(Lang::En);
+        assert_eq!(texts(&on_start(&store, 12, None, en).await), vec![(12, EN.guide)]);
+        assert_eq!(texts(&on_start(&store, 12, Some("het-han"), Some(Lang::Zh)).await), vec![(12, ZH.guide)]);
+        let stale = on_press(&store, Press { chat_lang: en, ..press("cb", 12, Some(4), "link:het-han") }).await;
+        assert_eq!(stale[0], answer("cb", EN.stale_button));
+        assert_eq!(texts(&stale), vec![(12, EN.guide)]);
+        assert_eq!(on_press(&store, Press { chat_lang: en, ..press("cb", 12, None, "rác") }).await, vec![answer("cb", EN.stale_button)]);
+        let cancel = on_press(&store, Press { chat_lang: en, ..press("cb", 12, None, "cancel:het-han") }).await;
+        assert_eq!(cancel[0], answer("cb", EN.pressed_cancel));
+        assert_eq!(texts(&on_unlink(&store, 12, Some(Lang::Zh)).await), vec![(12, ZH.unlinked)]);
+        assert_eq!(texts(&on_unlink(&store, 12, en).await), vec![(12, EN.not_linked)]);
+        let failing = Fake { fail: true, ..Fake::default() };
+        assert_eq!(texts(&on_start(&failing, 12, Some("tok"), en).await), vec![(12, EN.later)]);
+        assert_eq!(on_press(&failing, Press { chat_lang: en, ..press("cb", 12, None, "link:tok") }).await, vec![answer("cb", EN.later)]);
+    }
+
+    #[tokio::test]
+    async fn the_language_saved_with_the_link_wins_over_the_chat_language() {
+        let store = Fake { lang: Some(Lang::Zh), ..Fake::with(&[("tok", "u1")], &[("u1", "an@inet.vn", false, None)]) };
+        let effects = on_start(&store, 12, Some("tok"), Some(Lang::En)).await;
+        let [Effect::Reply { buttons, .. }] = effects.as_slice() else { panic!("{effects:?}") };
+        assert_eq!(buttons[0].0, ZH.confirm_button);
+        let effects = on_press(&store, Press { chat_lang: Some(Lang::En), ..press("cb", 12, None, "link:tok") }).await;
+        assert_eq!(texts(&effects), vec![(12, ZH.linked)]);
+    }
+
+    #[tokio::test]
+    async fn a_link_without_a_saved_language_follows_the_chat_language() {
+        let store = Fake::with(&[("tok", "u1"), ("t2", "u1")], &[("u1", "an@inet.vn", false, None)]);
+        let effects = on_start(&store, 12, Some("tok"), Some(Lang::En)).await;
+        let [Effect::Reply { text, buttons, .. }] = effects.as_slice() else { panic!("{effects:?}") };
+        assert!(text.starts_with("Link this chat"), "{text}");
+        assert_eq!(buttons[0].0, EN.confirm_button);
+        let effects = on_press(&store, Press { chat_lang: Some(Lang::En), ..press("cb", 12, None, "link:tok") }).await;
+        assert_eq!(texts(&effects), vec![(12, EN.linked)]);
+        on_start(&store, 12, Some("t2"), None).await;
+        let effects = on_press(&store, Press { chat_lang: Some(Lang::Zh), ..press("cb", 12, None, "cancel:t2") }).await;
+        assert_eq!(texts(&effects), vec![(12, ZH.cancelled)]);
+    }
+
+    #[test]
+    fn reply_language_prefers_the_saved_one_then_the_chat_then_vietnamese() {
+        assert_eq!(reply_lang(Some(Lang::Zh), Some(Lang::En)), Lang::Zh);
+        assert_eq!(reply_lang(None, Some(Lang::En)), Lang::En);
+        assert_eq!(reply_lang(None, None), Lang::Vi);
     }
 
     #[test]

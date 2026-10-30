@@ -12,6 +12,7 @@ use super::bot::{BotApi, BotError, Update, User};
 use super::flow::{self, Account, Effect, Store};
 use crate::audit;
 use crate::error::AppError;
+use crate::lang::Lang;
 use crate::models::{chat_link, user};
 use crate::notify;
 use crate::state::AppState;
@@ -68,12 +69,13 @@ pub fn chat_name(user: &User) -> Option<String> {
         .or_else(|| user.username.as_deref().and_then(clean).map(|u| format!("@{u}")))
 }
 
-/// Việc cần xử lý của một update, đã lọc: chỉ chat riêng, người thật, tin chưa quá cũ.
+/// Việc cần xử lý của một update, đã lọc: chỉ chat riêng, người thật, tin chưa quá cũ. `lang` = ngôn ngữ giao diện
+/// chat của người gửi (`from.language_code`), khi chat cho biết.
 #[derive(Debug, PartialEq)]
 pub enum Event<'a> {
-    Start { chat_id: i64, token: Option<&'a str> },
-    Unlink { chat_id: i64 },
-    Press { callback_id: &'a str, chat_id: i64, seq: Option<i64>, data: &'a str, chat_name: Option<String> },
+    Start { chat_id: i64, token: Option<&'a str>, lang: Option<Lang> },
+    Unlink { chat_id: i64, lang: Option<Lang> },
+    Press { callback_id: &'a str, chat_id: i64, seq: Option<i64>, data: &'a str, chat_name: Option<String>, lang: Option<Lang> },
 }
 
 /// Đọc update thành việc cần làm ở thời điểm `now` (giây Unix). Loại khác, nhóm, bot, tin cũ → `None`.
@@ -90,24 +92,27 @@ pub fn event_of(update: &Update, now: i64) -> Option<Event<'_>> {
             seq: msg.seq,
             data: cb.data.as_deref()?,
             chat_name: chat_name(from),
+            lang: from.lang(),
         });
     }
     let msg = update.message.as_ref()?;
-    if msg.chat.kind != "private" || msg.from.as_ref().is_none_or(|f| f.is_bot) {
+    let from = msg.from.as_ref().filter(|f| !f.is_bot)?;
+    if msg.chat.kind != "private" {
         return None;
     }
+    let lang = from.lang();
     if msg.date.is_some_and(|date| now - date > MAX_MESSAGE_AGE_S) {
         return None;
     }
     let text = msg.text.as_deref()?;
     if is_unlink(text) {
-        return Some(Event::Unlink { chat_id: msg.chat.id });
+        return Some(Event::Unlink { chat_id: msg.chat.id, lang });
     }
     let token = match parse_start(text)? {
         Start::Bare => None,
         Start::Token(token) => Some(token),
     };
-    Some(Event::Start { chat_id: msg.chat.id, token })
+    Some(Event::Start { chat_id: msg.chat.id, token, lang })
 }
 
 /// `update_id` của một phần tử thô và update đã đọc (lỗi = sai dạng, chỉ bỏ update đó).
@@ -241,10 +246,10 @@ async fn handle(state: &AppState, api: &BotApi<'_>, update: &Update) {
     let Some(event) = event_of(update, chrono::Utc::now().timestamp()) else { return };
     let store = Mongo(&state.db);
     let effects = match event {
-        Event::Start { chat_id, token } => flow::on_start(&store, chat_id, token).await,
-        Event::Unlink { chat_id } => flow::on_unlink(&store, chat_id).await,
-        Event::Press { callback_id, chat_id, seq, data, chat_name } => {
-            let press = flow::Press { callback_id, chat_id, seq, data, chat_name: chat_name.as_deref() };
+        Event::Start { chat_id, token, lang } => flow::on_start(&store, chat_id, token, lang).await,
+        Event::Unlink { chat_id, lang } => flow::on_unlink(&store, chat_id, lang).await,
+        Event::Press { callback_id, chat_id, seq, data, chat_name, lang } => {
+            let press = flow::Press { callback_id, chat_id, seq, data, chat_name: chat_name.as_deref(), chat_lang: lang };
             flow::on_press(&store, press).await
         }
     };
@@ -299,9 +304,10 @@ mod tests {
             update(serde_json::json!({ "update_id": 1, "message": { "chat": { "id": 12, "type": kind }, "seq": 3,
                 "date": date, "from": { "id": 3, "is_bot": is_bot, "name": "A" }, "text": text } }))
         };
-        assert_eq!(event_of(&msg("private", false, now - 5, "/start tok"), now), Some(Event::Start { chat_id: 12, token: Some("tok") }));
-        assert_eq!(event_of(&msg("private", false, now, "/start"), now), Some(Event::Start { chat_id: 12, token: None }));
-        assert_eq!(event_of(&msg("private", false, now, "/unlink"), now), Some(Event::Unlink { chat_id: 12 }));
+        let start = |token| Some(Event::Start { chat_id: 12, token, lang: None });
+        assert_eq!(event_of(&msg("private", false, now - 5, "/start tok"), now), start(Some("tok")));
+        assert_eq!(event_of(&msg("private", false, now, "/start"), now), start(None));
+        assert_eq!(event_of(&msg("private", false, now, "/unlink"), now), Some(Event::Unlink { chat_id: 12, lang: None }));
         assert_eq!(event_of(&msg("group", false, now, "/start tok"), now), None);
         assert_eq!(event_of(&msg("private", true, now, "/start tok"), now), None);
         assert_eq!(event_of(&msg("private", false, now, "xin chào"), now), None);
@@ -314,8 +320,27 @@ mod tests {
             "message": { "chat": { "id": 12, "type": "private" }, "seq": 40, "date": 0 } } }));
         assert_eq!(
             event_of(&press, now),
-            Some(Event::Press { callback_id: "cb", chat_id: 12, seq: Some(40), data: "link:tok", chat_name: Some("A".into()) })
+            Some(Event::Press { callback_id: "cb", chat_id: 12, seq: Some(40), data: "link:tok", chat_name: Some("A".into()), lang: None })
         );
+    }
+
+    #[test]
+    fn events_carry_the_sender_chat_language() {
+        let now = 1_000_000;
+        let msg = |text: &str, language: serde_json::Value| {
+            update(serde_json::json!({ "update_id": 1, "message": { "chat": { "id": 12, "type": "private" }, "date": now,
+                "from": { "id": 3, "is_bot": false, "name": "A", "language_code": language }, "text": text } }))
+        };
+        let zh = msg("/start", serde_json::json!("zh-CN"));
+        assert_eq!(event_of(&zh, now), Some(Event::Start { chat_id: 12, token: None, lang: Some(Lang::Zh) }));
+        let en = msg("/unlink", serde_json::json!("en"));
+        assert_eq!(event_of(&en, now), Some(Event::Unlink { chat_id: 12, lang: Some(Lang::En) }));
+        let odd = msg("/start", serde_json::json!("fr"));
+        assert_eq!(event_of(&odd, now), Some(Event::Start { chat_id: 12, token: None, lang: None }));
+        let press = update(serde_json::json!({ "update_id": 2, "callback": { "id": "cb", "data": "x",
+            "from": { "id": 3, "is_bot": false, "language_code": "vi" },
+            "message": { "chat": { "id": 12, "type": "private" }, "date": 0 } } }));
+        assert!(matches!(event_of(&press, now), Some(Event::Press { lang: Some(Lang::Vi), .. })));
     }
 
     #[test]
@@ -324,6 +349,7 @@ mod tests {
             is_bot: false,
             name: name.map(str::to_string),
             username: username.map(str::to_string),
+            language_code: None,
         };
         assert_eq!(chat_name(&user(Some("  An Nguyễn "), Some("an"))), Some("An Nguyễn".into()));
         assert_eq!(chat_name(&user(Some(" \n "), Some("an_ng"))), Some("@an_ng".into()));

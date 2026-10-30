@@ -7,7 +7,7 @@
 //!   mà chỉ gắn token với chat đầu tiên gửi nó ([`bind_token`], chờ xác nhận); nút "Xác nhận" từ đúng
 //!   chat đó mới dùng token ([`take_token`] = xoá, nên một token chỉ liên kết được một lần). Chờ xác nhận
 //!   hết hạn cùng token. `lang` = ngôn ngữ giao diện lúc tạo đường dẫn: bot trả lời các bước liên kết bằng ngôn ngữ
-//!   đó (token cũ không có ⟹ tiếng Việt).
+//!   đó (token cũ không có ⟹ theo ngôn ngữ giao diện chat của người gửi, rồi tiếng Việt).
 //! - `kv` doc `chat_link.offset`: offset long-poll đã xử lý, để khởi động lại không xử lý lại update.
 
 use crate::error::AppError;
@@ -137,11 +137,12 @@ pub async fn unlink(db: &Database, user_id: &str, only_chat: Option<i64>) -> Res
 #[derive(Debug, Clone, PartialEq)]
 pub struct TokenOwner {
     pub user_id: String,
-    pub lang: Lang,
+    /// Ngôn ngữ lưu cùng token; `None` với token cũ không lưu hoặc mã lạ.
+    pub lang: Option<Lang>,
 }
 
-fn lang_of(token: &Document) -> Lang {
-    token.get_str("lang").ok().and_then(Lang::parse).unwrap_or_default()
+fn lang_of(token: &Document) -> Option<Lang> {
+    token.get_str("lang").ok().and_then(Lang::parse)
 }
 
 fn owner_of(token: &Document) -> Option<TokenOwner> {
@@ -206,12 +207,12 @@ pub async fn take_token(db: &Database, token: &str, chat_id: i64) -> Result<Opti
     }))
 }
 
-/// Nút "Huỷ" từ `chat_id`: bỏ token đã gắn với chat này. Trả ngôn ngữ của token khi đã bỏ.
+/// Nút "Huỷ" từ `chat_id`: bỏ token đã gắn với chat này. Trả ngôn ngữ lưu trong token khi đã bỏ và token có lưu.
 pub async fn drop_token(db: &Database, token: &str, chat_id: i64) -> Result<Option<Lang>, AppError> {
     db.collection::<Document>(TOKENS)
         .find_one_and_delete(doc! { "_id": hash_token(token), "chatId": chat_id })
         .await
-        .map(|d| d.as_ref().map(lang_of))
+        .map(|d| d.as_ref().and_then(lang_of))
         .map_err(|e| AppError::Internal(format!("huỷ token liên kết: {e}")))
 }
 
@@ -253,11 +254,11 @@ mod tests {
     }
 
     #[test]
-    fn tokens_without_a_language_answer_in_vietnamese() {
+    fn tokens_without_a_language_leave_it_open() {
         let owner = owner_of(&doc! { "userId": "u1", "lang": "zh-CN" });
-        assert_eq!(owner, Some(TokenOwner { user_id: "u1".into(), lang: Lang::Zh }));
-        assert_eq!(owner_of(&doc! { "userId": "u1" }).map(|o| o.lang), Some(Lang::Vi));
-        assert_eq!(lang_of(&doc! { "lang": "xx" }), Lang::Vi);
+        assert_eq!(owner, Some(TokenOwner { user_id: "u1".into(), lang: Some(Lang::Zh) }));
+        assert_eq!(owner_of(&doc! { "userId": "u1" }).map(|o| o.lang), Some(None));
+        assert_eq!(lang_of(&doc! { "lang": "xx" }), None);
         assert_eq!(owner_of(&doc! { "lang": "en" }), None);
     }
 
@@ -282,7 +283,7 @@ mod tests {
 
         let old = create_token(&db, &user, Lang::Vi).await.expect("token cũ");
         let token = create_token(&db, &user, Lang::Zh).await.expect("token");
-        let owner = Some(TokenOwner { user_id: user.clone(), lang: Lang::Zh });
+        let owner = Some(TokenOwner { user_id: user.clone(), lang: Some(Lang::Zh) });
         assert_eq!(bind_token(&db, &old, 1).await.expect("cũ"), None, "token mới phải huỷ token cũ");
         assert_eq!(take_token(&db, &token, 1).await.expect("chưa gắn"), None, "chưa /start thì chưa xác nhận được");
         assert_eq!(bind_token(&db, &token, 1).await.expect("gắn"), owner);
