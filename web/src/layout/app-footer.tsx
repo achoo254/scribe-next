@@ -18,9 +18,10 @@ const FOOTER_LINK =
 	"inline-flex min-h-11 cursor-pointer items-center gap-1 whitespace-nowrap rounded-sm font-mono font-semibold text-primary underline-offset-4 hover:underline";
 
 /**
- * Page footer: the language and theme switches together (their own row on
- * phones, on the right from `sm`), then the IdP account pages, "Một app
- * của hoandat.com", privacy and terms.
+ * Page footer, laid out like the shared public footer: the language and
+ * theme switches on one centred row (three languages leave no room for the
+ * links beside them), then the IdP account pages, "Một app của
+ * hoandat.com", privacy and terms on the row below.
  */
 export function AppFooter() {
 	const { locale, t } = useI18n();
@@ -38,10 +39,10 @@ export function AppFooter() {
 			data-id="app-footer"
 			className="border-border-subtle border-t pt-1 pb-[calc(var(--space-1)+env(safe-area-inset-bottom))] text-[0.8125rem] text-muted sm:pt-4 sm:pb-[calc(var(--space-4)+env(safe-area-inset-bottom))]"
 		>
-			<div className="mx-auto flex w-full max-w-page flex-col gap-1 px-gutter sm:flex-row-reverse sm:items-center sm:justify-between sm:gap-3">
+			<div className="mx-auto flex w-full max-w-page flex-col items-center gap-1 px-gutter sm:gap-2">
 				<div
 					data-id="app-footer-switches"
-					className="flex flex-wrap items-center gap-2 pt-2 sm:pt-0"
+					className="flex flex-wrap items-center justify-center gap-2 pt-2 sm:pt-0"
 				>
 					<LanguageSwitch
 						locale={locale}
@@ -55,7 +56,7 @@ export function AppFooter() {
 						legacyThemeKey={LEGACY_THEME_KEY}
 					/>
 				</div>
-				<div className="flex min-w-0 flex-wrap items-center gap-x-3 sm:gap-x-4">
+				<div className="flex min-w-0 flex-wrap items-center justify-center gap-x-3 sm:gap-x-4">
 					<nav
 						aria-label={t("layout.footer.links")}
 						className="flex min-w-0 items-center gap-3 sm:gap-4"
