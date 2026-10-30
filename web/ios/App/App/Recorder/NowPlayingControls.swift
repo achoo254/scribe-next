@@ -123,6 +123,12 @@ final class NowPlayingControls {
     /// How long "Đã đánh dấu 12:34" stays in the title.
     private static let feedbackSeconds: TimeInterval = 3
 
+    /// Lock-screen text in the phone's language: zh-Hans.lproj/Localizable.strings
+    /// translates it, every other language keeps the Vietnamese default.
+    private static func text(_ key: String, _ vietnamese: String) -> String {
+        NSLocalizedString(key, value: vietnamese, comment: "")
+    }
+
     private var tokens: [(MPRemoteCommand, Any)] = []
     private var lastBookmark: Date?
     private var lastPauseToggle: Date?
@@ -207,7 +213,7 @@ final class NowPlayingControls {
         if let lastBookmark, now.timeIntervalSince(lastBookmark) < Self.bookmarkDebounce { return .success }
         lastBookmark = now
         guard let position = action() else { return .commandFailed }
-        feedback = "Đã đánh dấu \(Self.clock(position))"
+        feedback = String(format: Self.text("nowPlaying.bookmarked", "Đã đánh dấu %@"), Self.clock(position))
         feedbackReset?.cancel()
         let reset = DispatchWorkItem { [weak self] in
             self?.feedback = nil
@@ -223,10 +229,12 @@ final class NowPlayingControls {
     /// while paused.
     private func publish() {
         MPNowPlayingInfoCenter.default().nowPlayingInfo = [
-            MPMediaItemPropertyTitle: feedback ?? (paused ? "Scribe đã tạm dừng" : "Scribe đang ghi"),
+            MPMediaItemPropertyTitle: feedback ?? (paused
+                ? Self.text("nowPlaying.paused", "Scribe đã tạm dừng")
+                : Self.text("nowPlaying.recording", "Scribe đang ghi")),
             MPMediaItemPropertyArtist: paused
-                ? "Bấm ▶ để ghi tiếp"
-                : "Bấm ⏸ để tạm dừng · ⏩ để đánh dấu",
+                ? Self.text("nowPlaying.hint.paused", "Bấm ▶ để ghi tiếp")
+                : Self.text("nowPlaying.hint.recording", "Bấm ⏸ để tạm dừng · ⏩ để đánh dấu"),
             MPNowPlayingInfoPropertyElapsedPlaybackTime: elapsed,
             MPNowPlayingInfoPropertyPlaybackRate: paused ? 0.0 : 1.0,
             MPNowPlayingInfoPropertyMediaType: MPNowPlayingInfoMediaType.audio.rawValue,

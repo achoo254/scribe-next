@@ -1,0 +1,6 @@
+/* Lock-screen (Now Playing) texts while recording; NowPlayingControls.swift holds the Vietnamese defaults. */
+"nowPlaying.recording" = "Scribe 正在录制";
+"nowPlaying.paused" = "Scribe 已暂停";
+"nowPlaying.bookmarked" = "已标记 %@";
+"nowPlaying.hint.recording" = "按 ⏸ 暂停 · ⏩ 添加标记";
+"nowPlaying.hint.paused" = "按 ▶ 继续录制";

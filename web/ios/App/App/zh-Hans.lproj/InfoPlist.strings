@@ -1,0 +1,4 @@
+/* Simplified Chinese permission prompts; Info.plist holds the Vietnamese originals. */
+"NSCameraUsageDescription" = "当你选择拍摄视频并上传转写时，Scribe 会使用相机。";
+"NSMicrophoneUsageDescription" = "Scribe 使用麦克风录制会议，锁屏时也会继续录制。录音会上传到你的 Scribe 账号，用于保存和转写。";
+"NSPhotoLibraryAddUsageDescription" = "当你在共享菜单中选择“存储视频”时，Scribe 会将录音或视频存储到照片图库。";
