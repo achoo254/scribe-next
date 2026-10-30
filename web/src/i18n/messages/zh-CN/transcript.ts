@@ -30,6 +30,7 @@ export const transcript: Translation<SourceMessages["transcript"]> = {
 		languages: {
 			en: "英语",
 			vi: "越南语",
+			"zh-CN": "简体中文",
 		},
 		view: {
 			legend: "显示",

@@ -1,4 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
+import { setActiveTranslator } from "../../i18n/active-translator";
+import { VIETNAMESE } from "../../i18n/i18n-context";
+import { zhCN } from "../../i18n/messages/zh-CN/dictionary";
+import { createTranslator } from "../../i18n/translate";
 import { ApiError } from "../../lib/api";
 import { fakeFetch, jsonResponse } from "../../test/fake-fetch";
 import {
@@ -12,11 +16,16 @@ import {
 	renameTranscript,
 	saveSegmentTexts,
 	shareSummary,
+	startTranslation,
 	transcriptKey,
 } from "./transcript-docs-api";
 
 const KEY = "s:6ad09d56-a5e5";
 const PATH = "/api/transcript-docs/s%3A6ad09d56-a5e5";
+
+afterEach(() => {
+	setActiveTranslator(VIETNAMESE);
+});
 
 describe("transcript-docs api", () => {
 	it("builds the key the backend groups by", () => {
@@ -105,10 +114,34 @@ describe("transcript-docs api", () => {
 			"POST",
 			"DELETE",
 		]);
+		expect(calls[0]?.body).toEqual({ lang: "vi" });
 		expect(calls[2]?.body).toEqual({
 			id: "65a1b2c3d4e5f60718293a4b",
 			at: 12.5,
 		});
+	});
+
+	it("asks for minutes and translations in Chinese", async () => {
+		setActiveTranslator(createTranslator("zh-CN", zhCN));
+		const { fetcher, calls } = fakeFetch({
+			[`POST ${PATH}/summary`]: jsonResponse({
+				summary: "摘要。",
+				lang: "zh-CN",
+			}),
+			[`POST ${PATH}/translation`]: jsonResponse({
+				lang: "zh-CN",
+				status: "running",
+				done: 0,
+				total: 3,
+				error: null,
+			}),
+		});
+		expect((await createSummary(KEY, fetcher)).lang).toBe("zh-CN");
+		expect((await startTranslation(KEY, "zh-CN", fetcher)).lang).toBe("zh-CN");
+		expect(calls.map((call) => call.body)).toEqual([
+			{ lang: "zh-CN" },
+			{ lang: "zh-CN" },
+		]);
 	});
 
 	it("keeps the code of a refused share", async () => {

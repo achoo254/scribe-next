@@ -29,6 +29,7 @@ export const transcript = {
 		languages: {
 			en: "Tiếng Anh",
 			vi: "Tiếng Việt",
+			"zh-CN": "Tiếng Trung (giản thể)",
 		},
 		view: {
 			legend: "Chế độ xem",

@@ -33,6 +33,7 @@ export const transcript: Translation<SourceMessages["transcript"]> = {
 		languages: {
 			en: "English",
 			vi: "Vietnamese",
+			"zh-CN": "Chinese (Simplified)",
 		},
 		view: {
 			legend: "View",

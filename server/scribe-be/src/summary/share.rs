@@ -1,12 +1,14 @@
 //! Gửi biên bản tới chat riêng của người dùng với bot Scribe trên chat.hoandat.com (markdown của Bot API,
 //! xem `chat-next/spec/bot-api/format.md`). Chỉ chat đã liên kết qua deep link (`chat_link`), không bao
 //! giờ vào nhóm. Tài khoản bị khoá không gửi được. Biên bản đã cũ (chữ đã đổi sau lúc tóm tắt) vẫn gửi
-//! được, kèm dòng nhắc. Audit không ghi nội dung.
+//! được, kèm dòng nhắc. Đầu đề và chữ cố định của tin theo ngôn ngữ của biên bản ([`StoredSummary::lang`]), để cả
+//! tin một ngôn ngữ. Audit không ghi nội dung.
 
 use crate::audit;
 use crate::auth::UserId;
 use crate::chat_link::bot::{BotApi, BotError};
 use crate::error::AppError;
+use crate::lang::Lang;
 use crate::models::transcript_doc::StoredSummary;
 use crate::models::{chat_link, user};
 use crate::notify;
@@ -61,20 +63,84 @@ fn truncate(text: &str, max: usize) -> String {
     format!("{}…", cut.trim_end())
 }
 
-/// Dòng nhắc khi biên bản viết từ chữ cũ hơn chữ hiện tại.
-const STALE_NOTE: &str = "(biên bản có thể đã cũ)";
+/// Chữ cố định của tin biên bản trong một ngôn ngữ.
+struct Words {
+    summary: &'static str,
+    decisions: &'static str,
+    actions: &'static str,
+    /// Đứng trước hạn của việc ("hạn thứ Sáu").
+    due: &'static str,
+    open: &'static str,
+    /// Dòng nhắc khi biên bản viết từ chữ cũ hơn chữ hiện tại.
+    stale: &'static str,
+    /// Tên bản ghi khi phiên không có tiêu đề (kèm giờ nếu biết).
+    recording: &'static str,
+    /// Giờ bắt đầu phiên (chrono), giờ Việt Nam.
+    when: &'static str,
+}
 
-/// Tin nhắn biên bản. Quá dài thì rút gọn tóm tắt và bớt mục cuối, kèm dòng "còn N mục" trỏ về Scribe.
+fn words(lang: Lang) -> &'static Words {
+    const VI: Words = Words {
+        summary: "Tóm tắt",
+        decisions: "Quyết định",
+        actions: "Việc cần làm",
+        due: "hạn",
+        open: "Mở trên Scribe",
+        stale: "(biên bản có thể đã cũ)",
+        recording: "Bản ghi",
+        when: "%H:%M ngày %d/%m/%Y",
+    };
+    const EN: Words = Words {
+        summary: "Summary",
+        decisions: "Decisions",
+        actions: "Action items",
+        due: "due",
+        open: "Open in Scribe",
+        stale: "(these minutes may be out of date)",
+        recording: "Recording",
+        when: "%H:%M, %b %-d, %Y",
+    };
+    // Thuật ngữ khớp bản tiếng Trung của web (`web/src/i18n/messages/zh-CN`).
+    const ZH: Words = Words {
+        summary: "摘要",
+        decisions: "决定",
+        actions: "待办事项",
+        due: "截止",
+        open: "在 Scribe 中打开",
+        stale: "（会议纪要可能已过时）",
+        recording: "录音",
+        when: "%Y年%-m月%-d日 %H:%M",
+    };
+    match lang {
+        Lang::Vi => &VI,
+        Lang::En => &EN,
+        Lang::Zh => &ZH,
+    }
+}
+
+/// Dòng cuối khi phải bớt `n` mục cho vừa tin.
+fn more_items(lang: Lang, n: usize) -> String {
+    match lang {
+        Lang::Vi => format!("… còn {n} mục, xem đủ trên Scribe."),
+        Lang::En => format!("… {n} more, see them all in Scribe."),
+        Lang::Zh => format!("… 还有 {n} 项，请在 Scribe 中查看全部。"),
+    }
+}
+
+/// Tin nhắn biên bản, chữ cố định theo ngôn ngữ của biên bản. Quá dài thì rút gọn tóm tắt và bớt mục cuối, kèm dòng
+/// "còn N mục" trỏ về Scribe.
 pub fn format_message(title: &str, when: Option<&str>, stored: &StoredSummary, url: &str, stale: bool) -> String {
+    let lang = stored.language();
+    let w = words(lang);
     let mut head = format!("*{}*\n", escape(title));
     if let Some(when) = when {
         head.push_str(&format!("{}\n", escape(when)));
     }
     if stale {
-        head.push_str(&format!("_{}_\n", escape(STALE_NOTE)));
+        head.push_str(&format!("_{}_\n", escape(w.stale)));
     }
-    head.push_str(&format!("\n*Tóm tắt*\n{}\n", escape(&truncate(&stored.summary, MAX_SUMMARY_CHARS))));
-    let footer = format!("\n[Mở trên Scribe]({url})");
+    head.push_str(&format!("\n*{}*\n{}\n", w.summary, escape(&truncate(&stored.summary, MAX_SUMMARY_CHARS))));
+    let footer = format!("\n[{}]({url})", w.open);
 
     let decisions: Vec<String> =
         stored.decisions.iter().map(|d| format!("• \\[{}\\] {}", clock(d.at), escape(&d.text))).collect();
@@ -83,7 +149,7 @@ pub fn format_message(title: &str, when: Option<&str>, stored: &StoredSummary, u
         .iter()
         .map(|a| {
             let mut line = format!("• \\[{}\\] {}", clock(a.at), escape(&a.text));
-            let who = [a.owner.as_deref().map(escape), a.due.as_deref().map(|d| format!("hạn {}", escape(d)))];
+            let who = [a.owner.as_deref().map(escape), a.due.as_deref().map(|d| format!("{} {}", w.due, escape(d)))];
             let who: Vec<String> = who.into_iter().flatten().collect();
             if !who.is_empty() {
                 line.push_str(&format!(" — {}", who.join(", ")));
@@ -97,7 +163,7 @@ pub fn format_message(title: &str, when: Option<&str>, stored: &StoredSummary, u
     let mut body = String::new();
     let mut used = 0;
     let mut omitted = 0;
-    for (heading, lines) in [("Quyết định", &decisions), ("Việc cần làm", &actions)] {
+    for (heading, lines) in [(w.decisions, &decisions), (w.actions, &actions)] {
         if lines.is_empty() {
             continue;
         }
@@ -119,15 +185,15 @@ pub fn format_message(title: &str, when: Option<&str>, stored: &StoredSummary, u
         body.push_str(&section);
     }
     if omitted > 0 {
-        body.push_str(&format!("\n… còn {omitted} mục, xem đủ trên Scribe.\n"));
+        body.push_str(&format!("\n{}\n", more_items(lang, omitted)));
     }
     format!("{head}{body}{footer}")
 }
 
-/// Thời điểm bắt đầu phiên theo giờ Việt Nam, để đọc trong tin.
-fn vn_when(created_at: Option<&str>) -> Option<String> {
+/// Thời điểm bắt đầu phiên theo giờ Việt Nam, viết theo `lang` để đọc trong tin.
+fn vn_when(created_at: Option<&str>, lang: Lang) -> Option<String> {
     let at = chrono::DateTime::parse_from_rfc3339(created_at?).ok()?;
-    Some(at.with_timezone(&crate::models::usage::vietnam()).format("%H:%M ngày %d/%m/%Y").to_string())
+    Some(at.with_timezone(&crate::models::usage::vietnam()).format(words(lang).when).to_string())
 }
 
 fn conflict(code: &'static str, message: &str) -> AppError {
@@ -177,8 +243,9 @@ pub async fn share(
         tracing::warn!("gửi biên bản: {e}");
         AppError::Unavailable("Gửi sang chat chưa được bật trên máy chủ này.".into())
     })?;
-    let when = vn_when(loaded.created_at().as_deref());
-    let title = loaded.title(&key).or_else(|| when.as_ref().map(|w| format!("Bản ghi {w}"))).unwrap_or_else(|| "Bản ghi".into());
+    let recording = words(stored.language()).recording;
+    let when = vn_when(loaded.created_at().as_deref(), stored.language());
+    let title = loaded.title(&key).or_else(|| when.as_ref().map(|w| format!("{recording} {w}"))).unwrap_or_else(|| recording.into());
     let stale = stored.source_hash != super::source_hash(&super::build_input(&loaded.timed_sentences()));
     let text = format_message(&title, when.as_deref(), stored, &transcript_url(&state.config.public_url, &key), stale);
 
@@ -206,6 +273,7 @@ mod tests {
             model: "gpt-4.1-mini".into(),
             created_at: DateTime::now(),
             source_hash: "h".into(),
+            lang: "vi".into(),
             summary: "Bàn kế hoạch *quý 4* [nháp].".into(),
             decisions: (0..decisions).map(|i| Decision { text: format!("Quyết định {i}"), at: 61.0 + i as f64 }).collect(),
             actions: (0..actions)
@@ -248,6 +316,24 @@ mod tests {
     }
 
     #[test]
+    fn chinese_minutes_get_chinese_headings() {
+        let mut s = stored(1, 1);
+        s.lang = "zh-CN".into();
+        let text = format_message("周会", Some("2026年10月16日 09:00"), &s, "https://x/t", true);
+        assert_eq!(
+            text,
+            "*周会*\n2026年10月16日 09:00\n_（会议纪要可能已过时）_\n\n*摘要*\nBàn kế hoạch \\*quý 4\\* \\[nháp\\].\n\
+             \n*决定*\n• \\[1:01\\] Quyết định 0\n\
+             \n*待办事项*\n• \\[1:02:05\\] Việc 0\\_x — Lan, 截止 thứ Sáu\n\
+             \n[在 Scribe 中打开](https://x/t)"
+        );
+        s.lang = "en".into();
+        let en = format_message("T", None, &s, "u", false);
+        assert!(en.contains("*Summary*") && en.contains("*Action items*") && en.contains("due thứ Sáu"));
+        assert!(en.ends_with("[Open in Scribe](u)"));
+    }
+
+    #[test]
     fn a_bot_refusal_unlinks_and_reports_chat_blocked() {
         let (result, unlink) = after_send(Err(BotError::Forbidden("forbidden".into())));
         assert_eq!(unlink.as_deref(), Some("forbidden"));
@@ -272,11 +358,15 @@ mod tests {
         let text = format_message("T", None, &s, "https://x", true);
         assert!(text.chars().count() <= 4_000, "{}", text.chars().count());
         assert!(text.contains("… còn ") && text.ends_with("[Mở trên Scribe](https://x)"));
+        s.lang = "zh-CN".into();
+        assert!(format_message("T", None, &s, "https://x", true).contains("… 还有 "));
     }
 
     #[test]
     fn session_time_reads_in_vietnam_time() {
-        assert_eq!(vn_when(Some("2026-10-16T02:00:00Z")).as_deref(), Some("09:00 ngày 16/10/2026"));
-        assert_eq!(vn_when(None), None);
+        assert_eq!(vn_when(Some("2026-10-16T02:00:00Z"), Lang::Vi).as_deref(), Some("09:00 ngày 16/10/2026"));
+        assert_eq!(vn_when(Some("2026-10-16T02:00:00Z"), Lang::En).as_deref(), Some("09:00, Oct 16, 2026"));
+        assert_eq!(vn_when(Some("2026-10-06T02:00:00Z"), Lang::Zh).as_deref(), Some("2026年10月6日 09:00"));
+        assert_eq!(vn_when(None, Lang::Vi), None);
     }
 }

@@ -21,31 +21,8 @@ use std::collections::HashMap;
 
 const COLL: &str = "transcript_translations";
 
-/// Ngôn ngữ đích của bản dịch.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum Lang {
-    En,
-    Vi,
-}
-
-impl Lang {
-    pub const ALL: [Lang; 2] = [Lang::En, Lang::Vi];
-
-    pub fn parse(raw: &str) -> Option<Lang> {
-        match raw {
-            "en" => Some(Lang::En),
-            "vi" => Some(Lang::Vi),
-            _ => None,
-        }
-    }
-
-    pub fn code(self) -> &'static str {
-        match self {
-            Lang::En => "en",
-            Lang::Vi => "vi",
-        }
-    }
-}
+/// Ngôn ngữ đích của bản dịch (cùng bộ ngôn ngữ với giao diện).
+pub use crate::lang::Lang;
 
 /// Một câu đã dịch: băm chữ nguồn lúc dịch và bản dịch.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -267,15 +244,6 @@ pub async fn delete_orphans(db: &Database) -> Result<u64, AppError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn languages_parse_by_code() {
-        for lang in Lang::ALL {
-            assert_eq!(Lang::parse(lang.code()), Some(lang));
-        }
-        assert_eq!(Lang::parse("fr"), None);
-        assert_eq!(Lang::parse("EN"), None);
-    }
 
     /// Vòng đời trên Mongo thật (DB dev): `TRANSCRIPT_TEST_MONGO_URI=<uri> TRANSCRIPT_TEST_DB_NAME=<db>
     /// cargo test translations_lifecycle -- --ignored`. User giả riêng, tự dọn.

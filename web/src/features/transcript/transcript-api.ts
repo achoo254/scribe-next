@@ -1,4 +1,5 @@
 import { activeTranslator } from "../../i18n/active-translator";
+import { DEFAULT_LOCALE } from "../../i18n/locales";
 import { apiJson } from "../../lib/api";
 
 export type TranscriptStatus = "queued" | "running" | "done" | "failed";
@@ -88,12 +89,14 @@ export type ExportFormat = "txt" | "srt" | "vtt" | "md" | "docx";
 /**
  * Download path of the transcripts of `scope`, joined in recording order;
  * with `lang`, the stored translation into that language (one transcript only).
+ * The headings of a meeting document follow the translation, else the
+ * language on screen (`ui`, left out for Vietnamese, the server's default).
  */
 export function transcriptExportPath(
 	scope: ExportScope,
 	format: ExportFormat,
 	name: string,
-	lang?: "en" | "vi",
+	lang?: "en" | "vi" | "zh-CN",
 ): string {
 	const query = new URLSearchParams(
 		"session" in scope
@@ -101,5 +104,7 @@ export function transcriptExportPath(
 			: { ids: scope.fileIds.join(","), format, name },
 	);
 	if (lang) query.set("lang", lang);
+	const ui = activeTranslator().locale;
+	if (ui !== DEFAULT_LOCALE) query.set("ui", ui);
 	return `/api/transcripts/export?${query.toString()}`;
 }

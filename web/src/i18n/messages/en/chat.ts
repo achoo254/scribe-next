@@ -1,8 +1,9 @@
 import type { SourceMessages, Translation } from "../../message-types";
 
 /**
- * English of `vi/chat.ts`. The bot's confirm button is written by the
- * Scribe server in Vietnamese, so step 3 names it as the user will see it.
+ * English of `vi/chat.ts`. The Scribe server words the bot's linking steps
+ * in the language the link was made in, so step 3 names the English
+ * button.
  */
 export const chat: Translation<SourceMessages["chat"]> = {
 	menu: {
@@ -19,8 +20,7 @@ export const chat: Translation<SourceMessages["chat"]> = {
 		step1: "Press “Open chat” (your browser opens chat.hoandat.com).",
 		step2:
 			"Sign in if asked, then send /start in the chat with the Scribe bot.",
-		step3:
-			"The bot replies with your email: press “Xác nhận liên kết” (Confirm link).",
+		step3: "The bot replies with your email: press “Confirm link”.",
 		step4: "Come back here: Scribe notices by itself when the link is done.",
 		steps: "Steps to link",
 		expires: "The link works once and expires at {time}.",

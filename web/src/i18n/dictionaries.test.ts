@@ -103,11 +103,6 @@ const vietnameseLetter =
  */
 const VIETNAMESE_IN_ENGLISH: ReadonlyArray<{ key: string; reason: string }> = [
 	{
-		key: "chat.dialog.step3",
-		reason:
-			"names the bot's button, which the Scribe server writes in Vietnamese",
-	},
-	{
 		key: "search.page.placeholder",
 		reason: "an example search: the transcripts are Vietnamese speech",
 	},
@@ -197,11 +192,6 @@ const NOT_CHINESE: ReadonlyArray<{ key: string; reason: string }> = [
  * short: everything else the user reads is Chinese.
  */
 const VIETNAMESE_IN_CHINESE: ReadonlyArray<{ key: string; reason: string }> = [
-	{
-		key: "chat.dialog.step3",
-		reason:
-			"names the bot's button, which the Scribe server writes in Vietnamese",
-	},
 	{
 		key: "search.page.placeholder",
 		reason: "an example search: the transcripts are Vietnamese speech",

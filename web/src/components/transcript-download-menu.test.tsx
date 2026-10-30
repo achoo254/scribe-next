@@ -92,7 +92,7 @@ describe("TranscriptDownloadMenu", () => {
 				scope={{ session: "aaaaaaaa-1111" }}
 				name="Họp đầu tuần"
 				data-id="dl"
-				languages={["vi", "en"]}
+				languages={["zh-CN", "vi", "en"]}
 			/>,
 		);
 		await userEvent.click(
@@ -103,6 +103,7 @@ describe("TranscriptDownloadMenu", () => {
 			"Gốc",
 			"Tiếng Anh",
 			"Tiếng Việt",
+			"Tiếng Trung (giản thể)",
 		]);
 		expect(languages[0]).toHaveAttribute("aria-checked", "true");
 		await userEvent.click(languages[1] as HTMLElement);

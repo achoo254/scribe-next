@@ -13,6 +13,7 @@ pub mod poll;
 use crate::audit;
 use crate::auth::UserId;
 use crate::error::AppError;
+use crate::lang::LangBody;
 use crate::models::chat_link;
 use crate::notify;
 use crate::state::AppState;
@@ -103,8 +104,14 @@ pub async fn status(State(state): State<AppState>, Extension(user): Extension<Us
     Ok(Json(status_json(linked.as_ref(), link_enabled(&state.config))))
 }
 
-/// `POST /api/chat/link` — token một lần (hạn 10 phút) và đường dẫn để mở trên chat.hoandat.com.
-pub async fn create(State(state): State<AppState>, Extension(user): Extension<UserId>) -> Result<Json<Value>, AppError> {
+/// `POST /api/chat/link {lang?}` — token một lần (hạn 10 phút) và đường dẫn để mở trên chat.hoandat.com. `lang` (ngôn
+/// ngữ giao diện, mặc định `vi`) đi theo token: bot trả lời các bước liên kết bằng ngôn ngữ đó.
+pub async fn create(
+    State(state): State<AppState>,
+    Extension(user): Extension<UserId>,
+    body: Option<Json<LangBody>>,
+) -> Result<Json<Value>, AppError> {
+    let lang = LangBody::lang_of(body.as_deref())?;
     if !link_enabled(&state.config) {
         return Err(AppError::Coded {
             status: StatusCode::SERVICE_UNAVAILABLE,
@@ -116,7 +123,7 @@ pub async fn create(State(state): State<AppState>, Extension(user): Extension<Us
         return Err(AppError::TooManyRequests("tạo đường dẫn liên kết quá nhiều lần, thử lại sau".into()));
     }
     let username = state.chat_bot.username(&state).await?;
-    let token = chat_link::create_token(&state.db, &user.0).await?;
+    let token = chat_link::create_token(&state.db, &user.0, lang).await?;
     let expires = chrono::Utc::now() + chrono::Duration::minutes(chat_link::TOKEN_TTL_MINUTES);
     Ok(Json(json!({
         "url": deep_link(&state.config.notify_bot_api, &username, &token),

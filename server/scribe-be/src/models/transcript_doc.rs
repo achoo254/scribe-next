@@ -13,6 +13,7 @@
 //! và phần sửa cũ tự hết hiệu lực ([`effective_texts`]), không cần dọn đồng bộ.
 
 use crate::error::AppError;
+use crate::lang::Lang;
 use crate::models::user::is_duplicate_key;
 use futures_util::StreamExt;
 use mongodb::bson::{doc, oid::ObjectId, DateTime, Document};
@@ -49,7 +50,9 @@ pub struct Action {
     pub at: f64,
 }
 
-/// Biên bản đã lưu. `sourceHash` = băm chữ đầu vào: chữ hiện tại khác thì biên bản đã cũ.
+/// Biên bản đã lưu. `sourceHash` = băm chữ đầu vào: chữ hiện tại khác thì biên bản đã cũ. `lang` = ngôn ngữ biên bản
+/// được viết (ngôn ngữ giao diện của người bấm "Tóm tắt", mã như [`Lang::code`]); biên bản lưu trước khi có trường
+/// này đều là tiếng Việt.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct StoredSummary {
     pub model: String,
@@ -57,11 +60,24 @@ pub struct StoredSummary {
     pub created_at: DateTime,
     #[serde(rename = "sourceHash")]
     pub source_hash: String,
+    #[serde(default = "vietnamese")]
+    pub lang: String,
     pub summary: String,
     #[serde(default)]
     pub decisions: Vec<Decision>,
     #[serde(default)]
     pub actions: Vec<Action>,
+}
+
+fn vietnamese() -> String {
+    Lang::Vi.code().to_string()
+}
+
+impl StoredSummary {
+    /// Ngôn ngữ của biên bản; mã lạ (không xảy ra với dữ liệu server tự ghi) đọc như tiếng Việt.
+    pub fn language(&self) -> Lang {
+        Lang::parse(&self.lang).unwrap_or_default()
+    }
 }
 
 /// Dấu mốc người dùng bấm lúc ghi; `at` = giây tính từ đầu phiên.
@@ -655,6 +671,7 @@ mod tests {
             model: "m".into(),
             created_at: DateTime::now(),
             source_hash: "h".into(),
+            lang: "vi".into(),
             summary: "Tóm tắt".into(),
             decisions: vec![],
             actions: vec![],

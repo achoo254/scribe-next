@@ -60,6 +60,10 @@ export async function fetchChatLink(
 	};
 }
 
+/**
+ * A new link. The bot words the linking steps (and its confirm button) in
+ * the language on screen.
+ */
 export function startChatLink(
 	fetcher: typeof fetch = fetch,
 ): Promise<ChatLinkStart> {
@@ -67,6 +71,7 @@ export function startChatLink(
 		"/api/chat/link",
 		{
 			method: "POST",
+			json: { lang: activeTranslator().locale },
 			fallbackError: activeTranslator().t("errors.chat.link"),
 		},
 		fetcher,

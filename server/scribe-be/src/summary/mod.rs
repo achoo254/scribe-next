@@ -27,6 +27,7 @@ pub mod share;
 use crate::audit;
 use crate::auth::UserId;
 use crate::error::AppError;
+use crate::lang::{Lang, LangBody};
 use crate::models::transcript_doc::{self, Action, Decision, StoredSummary};
 use crate::models::summary::Feature;
 use crate::config::Vendor;
@@ -228,6 +229,7 @@ pub fn to_json(stored: &StoredSummary, current_hash: &str) -> Value {
     json!({
         "model": stored.model,
         "createdAt": stored.created_at.try_to_rfc3339_string().ok(),
+        "lang": stored.lang,
         "summary": stored.summary,
         "decisions": stored.decisions,
         "actions": stored.actions,
@@ -275,14 +277,20 @@ struct Job {
     hash: String,
     max_at: f64,
     text_key: TextKey,
+    /// Ngôn ngữ biên bản: ngôn ngữ giao diện của người bấm.
+    lang: Lang,
 }
 
-/// `POST /api/transcript-docs/{key}/summary` — tạo (hoặc tạo lại) biên bản của phiên.
+/// `POST /api/transcript-docs/{key}/summary {lang?}` — tạo (hoặc tạo lại) biên bản của phiên, viết bằng `lang`
+/// (ngôn ngữ giao diện: `vi` mặc định, `en`, `zh-CN`). Mỗi phiên giữ một biên bản: tạo lại thay bản cũ, kể cả khi
+/// đổi ngôn ngữ; đổi ngôn ngữ giao diện không tự viết lại biên bản (mỗi lượt tốn lượt ngày và chi phí).
 pub async fn create(
     State(state): State<AppState>,
     Extension(user): Extension<UserId>,
     Path(key): Path<String>,
+    body: Option<Json<LangBody>>,
 ) -> Result<Json<Value>, AppError> {
+    let lang = LangBody::lang_of(body.as_deref())?;
     let profile = user::find_profile(&state.db, &user.0)
         .await?
         .ok_or_else(|| AppError::Unauthorized("user không tồn tại".into()))?;
@@ -325,6 +333,7 @@ pub async fn create(
         chars,
         max_at: loaded.duration_s(),
         text_key,
+        lang,
     };
     // Task giữ `running` tới khi xong; handler bị huỷ thì task vẫn chạy hết.
     let task = tokio::spawn(run(state, job, running));
@@ -360,7 +369,7 @@ async fn run(state: AppState, job: Job, _running: RunningGuard) -> Result<Json<V
 
     // Từ đây phần giữ chỗ phải được quyết toán ở mọi đường ra.
     let model = job.text_key.model();
-    let call = llm::summarize(&state.http, &job.text_key.llm(), &job.input).await;
+    let call = llm::summarize(&state.http, &job.text_key.llm(), &job.input, job.lang).await;
     let cost_s = meter::settle(&state, &reservation, &call).await;
     let (input_tokens, output_tokens) = call.tokens();
     let draft = call.result.and_then(|c| c.draft);
@@ -381,6 +390,7 @@ async fn run(state: AppState, job: Job, _running: RunningGuard) -> Result<Json<V
         model: model.to_string(),
         created_at: DateTime::now(),
         source_hash: job.hash.clone(),
+        lang: job.lang.code().to_string(),
         summary,
         decisions,
         actions,
@@ -485,6 +495,7 @@ mod tests {
             model: "gpt-4.1-mini".into(),
             created_at: DateTime::from_millis(0),
             source_hash: "abc".into(),
+            lang: "zh-CN".into(),
             summary: "Tóm tắt".into(),
             decisions: vec![],
             actions: vec![Action { text: "Việc".into(), owner: None, due: None, at: 3.0 }],
@@ -494,6 +505,8 @@ mod tests {
         assert_eq!(v["stale"], json!(true));
         assert_eq!(v["actions"][0], json!({ "text": "Việc", "owner": null, "due": null, "at": 3.0 }));
         assert_eq!(v["createdAt"], json!("1970-01-01T00:00:00Z"));
+        assert_eq!(v["lang"], json!("zh-CN"));
+        assert_eq!(stored.language(), Lang::Zh);
     }
 
 }

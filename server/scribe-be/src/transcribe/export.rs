@@ -7,6 +7,7 @@
 //! ở chỗ đổi người nói; SRT thêm "Tên: " mỗi cue; VTT dùng thẻ giọng `<v Tên>`.
 
 use super::chunking::Sentence;
+use crate::lang::Lang;
 use crate::models::transcript_doc::{Bookmark, StoredSummary};
 use docx_rs::{Docx, Paragraph, Run, RunFonts, Style, StyleType};
 
@@ -95,6 +96,29 @@ pub const EN: Labels = Labels {
     bookmark: "Bookmark",
     transcript: "Transcript",
 };
+
+/// Thuật ngữ khớp bản tiếng Trung của web (`web/src/i18n/messages/zh-CN`).
+pub const ZH: Labels = Labels {
+    untitled: "文字稿",
+    duration: "时长",
+    summary: "摘要",
+    decisions: "决定",
+    actions: "待办事项",
+    owner: "负责人",
+    due: "截止",
+    bookmarks: "标记",
+    bookmark: "标记",
+    transcript: "文字稿",
+};
+
+/// Nhãn của tài liệu xuất theo ngôn ngữ.
+pub fn labels(lang: Lang) -> &'static Labels {
+    match lang {
+        Lang::En => &EN,
+        Lang::Vi => &VI,
+        Lang::Zh => &ZH,
+    }
+}
 
 /// Transcript của một file kèm mốc bắt đầu của file đó trong bản ghép.
 pub struct Part<'a> {
@@ -389,6 +413,7 @@ mod tests {
             model: "m".into(),
             created_at: DateTime::now(),
             source_hash: "h".into(),
+            lang: "vi".into(),
             summary: "Chốt giá và lịch giao hàng.\n\nCòn chờ báo giá vận chuyển.".into(),
             decisions: vec![Decision { text: "Giá 5 triệu".into(), at: 70.0 }],
             actions: vec![
@@ -573,6 +598,28 @@ mod tests {
         assert!(md.contains("- [00:30] Bookmark 2"));
         assert!(md.contains("[01:10] Price agreed at 5 million."));
         assert!(!md.contains("Lời chép") && !md.contains("Tóm tắt"));
+    }
+
+    #[test]
+    fn md_of_a_chinese_translation_uses_chinese_headings() {
+        let sentences = [s(70.0, 72.0, "价格定为五百万。")];
+        let parts = [Part { offset_s: 0.0, sentences: &sentences }];
+        let stored = summary();
+        let meeting = Meeting {
+            title: labels(Lang::Zh).untitled,
+            started: None,
+            duration_s: 75.0,
+            summary: Some(&stored),
+            bookmarks: &[],
+            labels: labels(Lang::Zh),
+        };
+        let md = to_md(&meeting, &parts);
+        for heading in ["# 文字稿", "## 摘要", "## 决定", "## 待办事项", "## 文字稿", "时长 01:15", "负责人: Lan; 截止: thứ Sáu"] {
+            assert!(md.contains(heading), "thiếu {heading:?}");
+        }
+        assert!(md.contains("[01:10] 价格定为五百万。"));
+        assert_eq!(labels(Lang::En), &EN);
+        assert_eq!(labels(Lang::Vi), &VI);
     }
 
     #[test]

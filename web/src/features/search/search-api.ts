@@ -61,7 +61,8 @@ export function searchTranscripts(
 }
 
 /**
- * Asks Scribe about every transcript, or only `key`. Refusals carry a code:
+ * Asks Scribe about every transcript, or only `key`; the answer comes in
+ * the language on screen. Refusals carry a code:
  * `ASK_DAILY_LIMIT` / `ASK_MONTHLY_LIMIT` / `CAP_REACHED` (403 with the
  * counts and `retryAt`), `NOT_TRANSCRIBED` (409).
  */
@@ -74,7 +75,11 @@ export function askScribe(
 		"/api/ask",
 		{
 			method: "POST",
-			json: key ? { question, key } : { question },
+			json: {
+				question,
+				...(key ? { key } : {}),
+				lang: activeTranslator().locale,
+			},
 			fallbackError: activeTranslator().t("errors.search.ask"),
 		},
 		fetcher,

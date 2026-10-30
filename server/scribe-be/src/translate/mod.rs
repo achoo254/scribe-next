@@ -146,7 +146,7 @@ pub struct LangReq {
 }
 
 fn parse_lang(raw: Option<&str>) -> Result<Lang, AppError> {
-    raw.and_then(Lang::parse).ok_or_else(|| AppError::BadRequest("ngôn ngữ chỉ nhận en hoặc vi".into()))
+    raw.and_then(Lang::parse).ok_or_else(|| AppError::BadRequest(crate::lang::UNKNOWN.into()))
 }
 
 /// `GET /api/transcript-docs/{key}/translation?lang=` — bản dịch khớp từng câu của màn hình đọc.

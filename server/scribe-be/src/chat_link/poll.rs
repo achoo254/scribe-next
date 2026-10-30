@@ -215,13 +215,13 @@ async fn run(state: AppState) {
 struct Mongo<'a>(&'a Database);
 
 impl Store for Mongo<'_> {
-    async fn bind_token(&self, token: &str, chat_id: i64) -> Result<Option<String>, AppError> {
+    async fn bind_token(&self, token: &str, chat_id: i64) -> Result<Option<flow::TokenOwner>, AppError> {
         chat_link::bind_token(self.0, token, chat_id).await
     }
-    async fn take_token(&self, token: &str, chat_id: i64) -> Result<Option<String>, AppError> {
+    async fn take_token(&self, token: &str, chat_id: i64) -> Result<Option<flow::TokenOwner>, AppError> {
         chat_link::take_token(self.0, token, chat_id).await
     }
-    async fn drop_token(&self, token: &str, chat_id: i64) -> Result<bool, AppError> {
+    async fn drop_token(&self, token: &str, chat_id: i64) -> Result<Option<crate::lang::Lang>, AppError> {
         chat_link::drop_token(self.0, token, chat_id).await
     }
     async fn account(&self, user_id: &str) -> Result<Option<Account>, AppError> {

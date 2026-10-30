@@ -6,10 +6,12 @@
 //!   (`_id`), hạn [`TOKEN_TTL_MINUTES`] phút; TTL index dọn doc hết hạn. `/start <token>` chưa liên kết
 //!   mà chỉ gắn token với chat đầu tiên gửi nó ([`bind_token`], chờ xác nhận); nút "Xác nhận" từ đúng
 //!   chat đó mới dùng token ([`take_token`] = xoá, nên một token chỉ liên kết được một lần). Chờ xác nhận
-//!   hết hạn cùng token.
+//!   hết hạn cùng token. `lang` = ngôn ngữ giao diện lúc tạo đường dẫn: bot trả lời các bước liên kết bằng ngôn ngữ
+//!   đó (token cũ không có ⟹ tiếng Việt).
 //! - `kv` doc `chat_link.offset`: offset long-poll đã xử lý, để khởi động lại không xử lý lại update.
 
 use crate::error::AppError;
+use crate::lang::Lang;
 use crate::session::hash_token;
 use mongodb::bson::{doc, oid::ObjectId, DateTime, Document};
 use mongodb::options::IndexOptions;
@@ -131,15 +133,39 @@ pub async fn unlink(db: &Database, user_id: &str, only_chat: Option<i64>) -> Res
         .map_err(|e| AppError::Internal(format!("gỡ liên kết chat: {e}")))
 }
 
-/// Tạo token mới cho user (token cũ chưa dùng của user bị huỷ). Trả token gốc — chỉ đi vào deep link.
-pub async fn create_token(db: &Database, user_id: &str) -> Result<String, AppError> {
+/// User của một token liên kết và ngôn ngữ để bot trả lời người đó.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TokenOwner {
+    pub user_id: String,
+    pub lang: Lang,
+}
+
+fn lang_of(token: &Document) -> Lang {
+    token.get_str("lang").ok().and_then(Lang::parse).unwrap_or_default()
+}
+
+fn owner_of(token: &Document) -> Option<TokenOwner> {
+    let user_id = token.get_str("userId").ok()?.to_string();
+    Some(TokenOwner { user_id, lang: lang_of(token) })
+}
+
+/// Tạo token mới cho user (token cũ chưa dùng của user bị huỷ), nhớ ngôn ngữ giao diện `lang`. Trả token gốc — chỉ
+/// đi vào deep link.
+pub async fn create_token(db: &Database, user_id: &str, lang: Lang) -> Result<String, AppError> {
     let coll = db.collection::<Document>(TOKENS);
     coll.delete_many(doc! { "userId": user_id })
         .await
         .map_err(|e| AppError::Internal(format!("huỷ token liên kết cũ: {e}")))?;
     let token = crate::session::random_token();
     let expires = DateTime::from_millis(DateTime::now().timestamp_millis() + TOKEN_TTL_MINUTES * 60_000);
-    coll.insert_one(doc! { "_id": hash_token(&token), "userId": user_id, "createdAt": DateTime::now(), "expiresAt": expires })
+    let token_doc = doc! {
+        "_id": hash_token(&token),
+        "userId": user_id,
+        "lang": lang.code(),
+        "createdAt": DateTime::now(),
+        "expiresAt": expires,
+    };
+    coll.insert_one(token_doc)
         .await
         .map_err(|e| AppError::Internal(format!("lưu token liên kết: {e}")))?;
     Ok(token)
@@ -152,7 +178,7 @@ pub fn token_fresh(expires_at: DateTime, now: DateTime) -> bool {
 
 /// `/start <token>` từ `chat_id`: gắn token còn hạn với chat này (chat đầu tiên gửi nó) và trả user của
 /// token. Token lạ, hết hạn hay đã gắn với chat khác → `None`. Chưa liên kết gì.
-pub async fn bind_token(db: &Database, token: &str, chat_id: i64) -> Result<Option<String>, AppError> {
+pub async fn bind_token(db: &Database, token: &str, chat_id: i64) -> Result<Option<TokenOwner>, AppError> {
     let filter = doc! {
         "_id": hash_token(token),
         "expiresAt": { "$gt": DateTime::now() },
@@ -163,12 +189,12 @@ pub async fn bind_token(db: &Database, token: &str, chat_id: i64) -> Result<Opti
         .find_one_and_update(filter, doc! { "$set": { "chatId": chat_id } })
         .await
         .map_err(|e| AppError::Internal(format!("gắn token liên kết: {e}")))?;
-    Ok(d.and_then(|d| d.get_str("userId").ok().map(str::to_string)))
+    Ok(d.as_ref().and_then(owner_of))
 }
 
 /// Nút "Xác nhận" từ `chat_id`: dùng token đã gắn với đúng chat này (xoá ngay, một lần) rồi trả user nếu
 /// còn hạn. Token lạ, đã dùng, hết hạn hay gắn với chat khác → `None`.
-pub async fn take_token(db: &Database, token: &str, chat_id: i64) -> Result<Option<String>, AppError> {
+pub async fn take_token(db: &Database, token: &str, chat_id: i64) -> Result<Option<TokenOwner>, AppError> {
     let d = db
         .collection::<Document>(TOKENS)
         .find_one_and_delete(doc! { "_id": hash_token(token), "chatId": chat_id })
@@ -176,16 +202,16 @@ pub async fn take_token(db: &Database, token: &str, chat_id: i64) -> Result<Opti
         .map_err(|e| AppError::Internal(format!("dùng token liên kết: {e}")))?;
     Ok(d.and_then(|d| {
         let fresh = d.get_datetime("expiresAt").is_ok_and(|exp| token_fresh(*exp, DateTime::now()));
-        fresh.then(|| d.get_str("userId").ok().map(str::to_string)).flatten()
+        fresh.then(|| owner_of(&d)).flatten()
     }))
 }
 
-/// Nút "Huỷ" từ `chat_id`: bỏ token đã gắn với chat này. `true` khi đã bỏ.
-pub async fn drop_token(db: &Database, token: &str, chat_id: i64) -> Result<bool, AppError> {
+/// Nút "Huỷ" từ `chat_id`: bỏ token đã gắn với chat này. Trả ngôn ngữ của token khi đã bỏ.
+pub async fn drop_token(db: &Database, token: &str, chat_id: i64) -> Result<Option<Lang>, AppError> {
     db.collection::<Document>(TOKENS)
-        .delete_one(doc! { "_id": hash_token(token), "chatId": chat_id })
+        .find_one_and_delete(doc! { "_id": hash_token(token), "chatId": chat_id })
         .await
-        .map(|r| r.deleted_count > 0)
+        .map(|d| d.as_ref().map(lang_of))
         .map_err(|e| AppError::Internal(format!("huỷ token liên kết: {e}")))
 }
 
@@ -227,6 +253,15 @@ mod tests {
     }
 
     #[test]
+    fn tokens_without_a_language_answer_in_vietnamese() {
+        let owner = owner_of(&doc! { "userId": "u1", "lang": "zh-CN" });
+        assert_eq!(owner, Some(TokenOwner { user_id: "u1".into(), lang: Lang::Zh }));
+        assert_eq!(owner_of(&doc! { "userId": "u1" }).map(|o| o.lang), Some(Lang::Vi));
+        assert_eq!(lang_of(&doc! { "lang": "xx" }), Lang::Vi);
+        assert_eq!(owner_of(&doc! { "lang": "en" }), None);
+    }
+
+    #[test]
     fn tokens_expire_at_their_deadline() {
         let exp = DateTime::from_millis(1_000_000);
         assert!(token_fresh(exp, DateTime::from_millis(999_999)));
@@ -245,25 +280,26 @@ mod tests {
         let db = crate::db::connect(&uri, &db_name).await.expect("kết nối Mongo");
         let user = format!("selftest-{}", uuid::Uuid::new_v4().simple());
 
-        let old = create_token(&db, &user).await.expect("token cũ");
-        let token = create_token(&db, &user).await.expect("token");
+        let old = create_token(&db, &user, Lang::Vi).await.expect("token cũ");
+        let token = create_token(&db, &user, Lang::Zh).await.expect("token");
+        let owner = Some(TokenOwner { user_id: user.clone(), lang: Lang::Zh });
         assert_eq!(bind_token(&db, &old, 1).await.expect("cũ"), None, "token mới phải huỷ token cũ");
         assert_eq!(take_token(&db, &token, 1).await.expect("chưa gắn"), None, "chưa /start thì chưa xác nhận được");
-        assert_eq!(bind_token(&db, &token, 1).await.expect("gắn"), Some(user.clone()));
-        assert_eq!(bind_token(&db, &token, 1).await.expect("gắn lại"), Some(user.clone()), "/start lại cùng chat");
+        assert_eq!(bind_token(&db, &token, 1).await.expect("gắn"), owner);
+        assert_eq!(bind_token(&db, &token, 1).await.expect("gắn lại"), owner, "/start lại cùng chat");
         assert_eq!(bind_token(&db, &token, 2).await.expect("chat khác"), None);
         assert_eq!(take_token(&db, &token, 2).await.expect("chat khác"), None);
-        assert_eq!(take_token(&db, &token, 1).await.expect("dùng"), Some(user.clone()));
+        assert_eq!(take_token(&db, &token, 1).await.expect("dùng"), owner);
         assert_eq!(take_token(&db, &token, 1).await.expect("dùng lại"), None);
         assert_eq!(bind_token(&db, "khong-co", 1).await.expect("lạ"), None);
 
-        let cancelled = create_token(&db, &user).await.expect("token");
+        let cancelled = create_token(&db, &user, Lang::Vi).await.expect("token");
         bind_token(&db, &cancelled, 1).await.expect("gắn");
-        assert!(!drop_token(&db, &cancelled, 2).await.expect("chat khác không huỷ được"));
-        assert!(drop_token(&db, &cancelled, 1).await.expect("huỷ"));
+        assert_eq!(drop_token(&db, &cancelled, 2).await.expect("chat khác không huỷ được"), None);
+        assert_eq!(drop_token(&db, &cancelled, 1).await.expect("huỷ"), Some(Lang::Vi));
         assert_eq!(take_token(&db, &cancelled, 1).await.expect("đã huỷ"), None);
 
-        let expired = create_token(&db, &user).await.expect("token");
+        let expired = create_token(&db, &user, Lang::Vi).await.expect("token");
         bind_token(&db, &expired, 1).await.expect("gắn");
         db.collection::<Document>(TOKENS)
             .update_one(doc! { "_id": hash_token(&expired) }, doc! { "$set": { "expiresAt": DateTime::from_millis(0) } })

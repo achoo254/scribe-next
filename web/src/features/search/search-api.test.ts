@@ -1,4 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
+import { setActiveTranslator } from "../../i18n/active-translator";
+import { VIETNAMESE } from "../../i18n/i18n-context";
+import { zhCN } from "../../i18n/messages/zh-CN/dictionary";
+import { createTranslator } from "../../i18n/translate";
 import { fakeFetch, jsonResponse } from "../../test/fake-fetch";
 import {
 	type AskReply,
@@ -29,6 +33,10 @@ const REPLY: AskReply = {
 	],
 };
 
+afterEach(() => {
+	setActiveTranslator(VIETNAMESE);
+});
+
 describe("search API", () => {
 	it("sends the query, the scope and the limit", async () => {
 		const fake = fakeFetch({
@@ -50,9 +58,20 @@ describe("search API", () => {
 		await askScribe("Giá?", undefined, fake.fetcher);
 		await askScribe("Giá?", "f:a", fake.fetcher);
 		expect(fake.calls.map((c) => c.body)).toEqual([
-			{ question: "Giá?" },
-			{ question: "Giá?", key: "f:a" },
+			{ question: "Giá?", lang: "vi" },
+			{ question: "Giá?", key: "f:a", lang: "vi" },
 		]);
+	});
+
+	it("asks for the answer in the language on screen", async () => {
+		setActiveTranslator(createTranslator("zh-CN", zhCN));
+		const fake = fakeFetch({ "POST /api/ask": jsonResponse(REPLY) });
+		await askScribe("价格？", "f:a", fake.fetcher);
+		expect(fake.calls[0]?.body).toEqual({
+			question: "价格？",
+			key: "f:a",
+			lang: "zh-CN",
+		});
 	});
 
 	it("cuts the answer at its citations; unknown numbers stay text", () => {

@@ -40,7 +40,7 @@ fn tool(name: &str, title: &str, description: &str, input: Value, open_world: bo
 
 /// `tools/list`: thứ tự cố định, như nhau với mọi token có `scribe:read`.
 pub fn definitions() -> Vec<Value> {
-    let lang = json!({ "type": "string", "enum": ["en", "vi"], "description": "Target language of the translation." });
+    let lang = json!({ "type": "string", "enum": ["en", "vi", "zh-CN"], "description": "Target language of the translation." });
     vec![
         tool(
             "scribe_list_transcripts",
@@ -108,14 +108,14 @@ pub fn definitions() -> Vec<Value> {
             "scribe_export_transcript",
             "Export a transcript",
             "The transcript as a file in one of the formats of the app's export: txt, srt, vtt, md (meeting notes with \
-             summary and bookmarks) or docx (returned as an embedded resource). lang=en|vi exports the saved translation \
+             summary and bookmarks) or docx (returned as an embedded resource). lang=en|vi|zh-CN exports the saved translation \
              instead of the original. Text formats are cut at 100,000 characters (say so in the result); read longer \
              transcripts with scribe_get_transcript.",
             object(
                 vec![
                     ("key", key()),
                     ("format", json!({ "type": "string", "enum": ["txt", "srt", "vtt", "md", "docx"], "default": "txt" })),
-                    ("lang", json!({ "type": "string", "enum": ["en", "vi"], "description": "Export the saved translation into this language." })),
+                    ("lang", json!({ "type": "string", "enum": ["en", "vi", "zh-CN"], "description": "Export the saved translation into this language." })),
                 ],
                 &["key"],
             ),

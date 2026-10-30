@@ -546,8 +546,10 @@ pub struct ExportQuery {
     session: Option<String>,
     format: Option<String>,
     name: Option<String>,
-    /// Xuất bản dịch (`en` | `vi`) thay cho chữ gốc; chỉ khi mọi file cùng một phiên.
+    /// Xuất bản dịch (`en` | `vi` | `zh-CN`) thay cho chữ gốc; chỉ khi mọi file cùng một phiên.
     lang: Option<String>,
+    /// Ngôn ngữ giao diện của người tải (mặc định `vi`): nhãn mục md/docx khi xuất chữ gốc.
+    ui: Option<String>,
 }
 
 fn parse_ids(raw: &str) -> Result<Vec<ObjectId>, AppError> {
@@ -589,8 +591,9 @@ pub async fn get(
 /// `GET /api/transcripts/export?ids=a,b&format=txt|srt|vtt|md|docx&name=…` — một tệp ghép các file theo
 /// thứ tự, mốc của file sau cộng dồn thời lượng các file trước. File chưa chép xong thì bỏ qua (mốc vẫn cộng).
 /// `md`/`docx` là tài liệu cuộc họp: kèm biên bản và dấu mốc khi mọi file thuộc cùng một phiên.
-/// `lang=en|vi`: câu thay bằng bản dịch đã lưu của phiên (câu chưa dịch giữ chữ gốc, câu có bản dịch cũ vẫn
-/// dùng bản dịch đó như màn hình đọc), nhãn mục md/docx theo ngôn ngữ, biên bản giữ nguyên ngôn ngữ gốc.
+/// `lang=en|vi|zh-CN`: câu thay bằng bản dịch đã lưu của phiên (câu chưa dịch giữ chữ gốc, câu có bản dịch cũ vẫn
+/// dùng bản dịch đó như màn hình đọc), nhãn mục md/docx theo ngôn ngữ, biên bản giữ nguyên ngôn ngữ gốc. Không có
+/// `lang` thì nhãn mục theo `ui=` (ngôn ngữ giao diện, mặc định tiếng Việt).
 pub async fn export(
     State(state): State<AppState>,
     Extension(user): Extension<UserId>,
@@ -599,9 +602,10 @@ pub async fn export(
     let format = export::Format::parse(q.format.as_deref().unwrap_or("txt"))
         .ok_or_else(|| AppError::BadRequest("định dạng chỉ nhận txt, srt, vtt, md hoặc docx".into()))?;
     let lang = match q.lang.as_deref().filter(|l| !l.is_empty()) {
-        Some(raw) => Some(Lang::parse(raw).ok_or_else(|| AppError::BadRequest("ngôn ngữ chỉ nhận en hoặc vi".into()))?),
+        Some(raw) => Some(Lang::parse(raw).ok_or_else(|| AppError::BadRequest(crate::lang::UNKNOWN.into()))?),
         None => None,
     };
+    let ui = crate::lang::from_request(q.ui.as_deref())?;
     let files = export_files(&state, &user.0, &q).await?;
     let ids: Vec<ObjectId> = files.iter().filter_map(|f| f.id).collect();
     let docs = transcript::list_owned(&state.db, &user.0, &ids).await?;
@@ -659,7 +663,7 @@ pub async fn export(
         return Err(AppError::NotFound("chưa có bản chép lời nào xong".into()));
     }
     let session_doc = session_key.and_then(|key| edits.get(key));
-    let labels = if lang == Some(Lang::En) { &export::EN } else { &export::VI };
+    let labels = export::labels(lang.unwrap_or(ui));
     // Tiêu đề người dùng đặt cho phiên, rồi tên client gửi (tên file ở dòng lịch sử ghi).
     let title = session_doc
         .and_then(|d| d.title.clone())

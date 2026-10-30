@@ -1,4 +1,5 @@
 import { activeTranslator } from "../../i18n/active-translator";
+import type { Locale } from "../../i18n/locales";
 import { apiFetch, apiJson } from "../../lib/api";
 import type { Sentence } from "../transcript/transcript-api";
 
@@ -67,6 +68,11 @@ export interface SummaryAction {
 export interface TranscriptMinutes {
 	model: string;
 	createdAt: string;
+	/**
+	 * Language the minutes are written in: the UI language of whoever made
+	 * them (absent from older backends, whose minutes are all Vietnamese).
+	 */
+	lang?: Locale;
 	summary: string;
 	decisions: SummaryDecision[];
 	actions: SummaryAction[];
@@ -82,7 +88,7 @@ export interface Bookmark {
 }
 
 /** Language a transcript is translated into. */
-export type TranslationLang = "en" | "vi";
+export type TranslationLang = "en" | "vi" | "zh-CN";
 
 /**
  * Latest translation run of one language. `failed` also covers a run cut
@@ -287,9 +293,10 @@ export async function deleteTranscript(
 }
 
 /**
- * Makes (or makes again) the minutes of the transcript. Refusals carry a
- * code: `NOT_TRANSCRIBED` (409), `SUMMARY_DAILY_LIMIT` / `CAP_REACHED`
- * (403, with the counts and `retryAt`).
+ * Makes (or makes again) the minutes of the transcript, written in the
+ * language on screen. Refusals carry a code: `NOT_TRANSCRIBED` (409),
+ * `SUMMARY_DAILY_LIMIT` / `CAP_REACHED` (403, with the counts and
+ * `retryAt`).
  */
 export function createSummary(
 	key: string,
@@ -299,6 +306,7 @@ export function createSummary(
 		docPath(key, "/summary"),
 		{
 			method: "POST",
+			json: { lang: activeTranslator().locale },
 			fallbackError: activeTranslator().t("errors.transcripts.summary"),
 		},
 		fetcher,

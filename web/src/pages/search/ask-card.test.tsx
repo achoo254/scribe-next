@@ -60,6 +60,7 @@ describe("AskCard", () => {
 		expect(calls[0]?.body).toEqual({
 			question: "Giá chốt bao nhiêu?",
 			key: "s:aaaaaaaa-1111",
+			lang: "vi",
 		});
 		await userEvent.click(chip);
 		expect(onCite).toHaveBeenCalledWith(REPLY.citations[0]);
