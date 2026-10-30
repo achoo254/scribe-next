@@ -12,6 +12,7 @@ mod error;
 mod files;
 mod idp_brand;
 mod jobs;
+mod mcp;
 mod models;
 mod notify;
 mod oidc;

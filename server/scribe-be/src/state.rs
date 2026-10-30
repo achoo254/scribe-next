@@ -31,3 +31,25 @@ pub struct AppState {
     /// Bí mật mã hoá key riêng của người dùng (`USER_KEYS_SECRET_PATH`); `None` = tính năng Key riêng tắt.
     pub user_keys: Option<Arc<crate::user_keys::crypto::Secret>>,
 }
+
+#[cfg(test)]
+impl AppState {
+    /// State cho test: `config`, database `db` (có thể chưa kết nối được), mọi phần khác rỗng như lúc chưa cấu hình.
+    pub fn for_tests(config: Config, db: Database) -> AppState {
+        let transcriber = Transcriber::load(&config);
+        AppState {
+            oidc: Arc::new(Oidc::new(&config.oidc_issuer)),
+            config: Arc::new(config),
+            db,
+            http: reqwest::Client::new(),
+            oidc_web_secret: Arc::new(String::new()),
+            session_cache: Arc::default(),
+            session_key: Arc::new(vec![7u8; 32]),
+            rate: Arc::new(RateLimiter::new()),
+            transcriber: Arc::new(transcriber),
+            summaries: Arc::default(),
+            chat_bot: Arc::default(),
+            user_keys: None,
+        }
+    }
+}

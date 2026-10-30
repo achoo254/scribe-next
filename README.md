@@ -20,6 +20,10 @@ Các ứng dụng dùng chung một backend:
 - **Env nằm ngoài repo.** [`scripts/env-dir.sh`](./scripts/env-dir.sh) in ra thư mục chứa env (dùng chung giữa các máy của chủ dự án); mẫu biến web ở [`web/.env.example`](./web/.env.example).
 - **Brand ở một file.** Tên, màu, icon, bundle id, URL scheme và mẫu host chỉ khai trong [`web/brand.config.json`](./web/brand.config.json), kiểm theo schema của gói dùng chung `@achoo254/brand` (repo `shared-next`; mã thương hiệu chỉ sửa ở đó rồi nâng tag). Asset sinh bằng `pnpm run brand:gen` trong `web/`; `pnpm run lint` chặn tên sản phẩm viết cứng và mã màu ngoài file token của gói `@achoo254/app-shell` (khung trang chưa đăng nhập dùng chung của các app hoandat.com). Icon app iPhone (AppIcon, vẽ bằng AI như icon brand) và tên trong `Info.plist` không sinh từ brand: AppIcon thay tay khi đổi icon ([docs/ios-app.md](./docs/ios-app.md)).
 
+## MCP cho công cụ AI
+
+Thêm `https://scribe.hoandat.com/mcp` vào công cụ AI (Claude Code: `claude mcp add --transport http scribe https://scribe.hoandat.com/mcp`) làm MCP server rồi duyệt quyền `scribe:read` ở trang consent của IdP. Tool **chỉ đọc**, với đúng quyền của tài khoản trong app: liệt kê bản ghi và tệp, đọc bản chép lời, biên bản, bản dịch, người nói, dấu mốc, xuất txt/srt/vtt/md/docx, tìm kiếm, xem gói và mức dùng. `scribe_ask` (hỏi đáp) tốn một lượt hỏi trong ngày như hỏi trong app. Không có tool tải lên, chép lời, sửa hay xoá. Quyết định: [ADR 0002](docs/decisions/0002-mcp-endpoint.md); mã ở [`server/scribe-be/src/mcp/`](server/scribe-be/src/mcp/).
+
 ## Chạy và kiểm tra
 
 - Dev local (nạp env, chạy backend rồi web): mục "Chạy dev local" của [docs/deploy-web-production.md](./docs/deploy-web-production.md).

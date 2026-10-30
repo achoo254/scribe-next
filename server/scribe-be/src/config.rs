@@ -416,17 +416,29 @@ impl Config {
         if !missing.is_empty() {
             return Err(format!("thiếu biến build bắt buộc: {}", missing.join(", ")));
         }
-        let get = |i: usize| required[i].1.unwrap_or_default().to_string();
-        Ok(Config {
+        let get = |i: usize| required[i].1.unwrap_or_default();
+        Ok(Self::with_required(get(0), get(1), get(2), get(3), get(4)))
+    }
+
+    /// Cấu hình từ các biến bắt buộc đã kiểm (theo thứ tự `DB_NAME`, `PUBLIC_URL`, `SESSION_KEY_PATH`, `DATA_DIR`,
+    /// `OIDC_WEB_CLIENT_SECRET_PATH`) cộng các biến tuỳ chọn nhúng lúc build.
+    fn with_required(
+        db_name: &str,
+        public_url: &str,
+        session_key_path: &str,
+        data_dir: &str,
+        oidc_web_client_secret_path: &str,
+    ) -> Self {
+        Config {
             port: option_env!("PORT").and_then(|p| p.parse().ok()).unwrap_or(8787),
             mongo_uri: option_env!("MONGO_URI")
                 .unwrap_or("mongodb://127.0.0.1:27017")
                 .to_string(),
-            db_name: get(0),
-            public_url: get(1).trim_end_matches('/').to_string(),
+            db_name: db_name.to_string(),
+            public_url: public_url.trim_end_matches('/').to_string(),
             oidc_issuer: option_env!("OIDC_ISSUER").unwrap_or("https://auth.hoandat.com").to_string(),
             oidc_web_client_id: option_env!("OIDC_WEB_CLIENT_ID").unwrap_or("scribe-web").to_string(),
-            oidc_web_client_secret_path: get(4),
+            oidc_web_client_secret_path: oidc_web_client_secret_path.to_string(),
             oidc_mobile_client_id: option_env!("OIDC_MOBILE_CLIENT_ID").unwrap_or("scribe-mobile").to_string(),
             oidc_mobile_redirect_uri: option_env!("OIDC_MOBILE_REDIRECT_URI")
                 .unwrap_or("com.hoandat.scribe:/auth/callback")
@@ -481,11 +493,19 @@ impl Config {
                 .map(|u| u.trim().trim_start_matches('@'))
                 .filter(|u| !u.is_empty())
                 .map(str::to_string),
-            session_key_path: get(2),
-            data_dir: get(3),
+            session_key_path: session_key_path.to_string(),
+            data_dir: data_dir.to_string(),
             ffmpeg_path: option_env!("FFMPEG_PATH").unwrap_or("ffmpeg").to_string(),
             ffprobe_path: option_env!("FFPROBE_PATH").unwrap_or("ffprobe").to_string(),
-        })
+        }
+    }
+
+    /// Cấu hình cho test: origin `public_url`, IdP `oidc_issuer`, đường dẫn tạm; còn lại như bản build không đặt biến.
+    #[cfg(test)]
+    pub fn for_tests(public_url: &str, oidc_issuer: &str) -> Self {
+        let mut config = Self::with_required("scribe_test", public_url, "/nonexistent/session-key", "/nonexistent/data", "/nonexistent/secret");
+        config.oidc_issuer = oidc_issuer.trim_end_matches('/').to_string();
+        config
     }
 
     /// Email của tài khoản này dùng được dù IdP chưa xác minh (chỉ `sub` có tên trong danh sách).

@@ -15,6 +15,30 @@ location /api/ {
     proxy_send_timeout 3600s;
 }
 
+# MCP cho công cụ AI (docs/decisions/0002-mcp-endpoint.md): POST JSON nhỏ (≤ 1 MiB, BE tự chặn), trả JSON; câu hỏi
+# `scribe_ask` có thể chờ model vài chục giây. BE tự đặt Cache-Control và kiểm Origin/token.
+location = /mcp {
+    proxy_pass http://127.0.0.1:8787;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto https;
+    client_max_body_size 2m;
+    proxy_read_timeout 180s;
+}
+
+# Protected Resource Metadata (RFC 9728) của /mcp: client MCP đọc trước khi đăng nhập ở IdP. Không có thì SPA
+# fallback trả index.html và client không tìm được máy chủ đăng nhập.
+location ^~ /.well-known/oauth-protected-resource {
+    proxy_pass http://127.0.0.1:8787;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto https;
+}
+
 # FE static (React dist) — SPA fallback về index.html.
 root /var/www/scribe/dist;
 

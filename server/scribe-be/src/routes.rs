@@ -91,8 +91,10 @@ pub fn build_router(state: AppState) -> Router {
     // web sống tiếp sau khi người dùng đã đăng xuất ở IdP.
     let backchannel = Router::new().route("/api/auth/backchannel-logout", post(auth::backchannel_logout));
 
+    // MCP cho công cụ AI: xác thực bằng access token IdP (không phiên), giới hạn tần suất theo tài khoản bên trong.
     let public = Router::new()
         .route("/api/health", get(health))
+        .merge(crate::mcp::router())
         .merge(auth_routes)
         .merge(exchange_routes)
         .merge(backchannel);

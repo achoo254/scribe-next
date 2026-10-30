@@ -78,7 +78,7 @@ Cloudflare (DNS proxied, SSL "Full")
 | systemd unit | `/etc/systemd/system/scribe-be.service` | `deploy/scribe-be.service` |
 | nginx vhost | `/etc/nginx/conf.d/scribe.conf` | `deploy/nginx-scribe.conf` |
 | nginx header bảo mật | `/etc/nginx/scribe/security-headers.inc` | `deploy/nginx-scribe-security-headers.inc` (§Header bảo mật) |
-| nginx phần chung (`/api/`, web tĩnh, `/assets/`) | `/etc/nginx/scribe/locations.inc` | `deploy/nginx-scribe-locations.inc` |
+| nginx phần chung (`/api/`, `/mcp`, `/.well-known/oauth-protected-resource*`, web tĩnh, `/assets/`) | `/etc/nginx/scribe/locations.inc` | `deploy/nginx-scribe-locations.inc` |
 | FE static | `/var/www/scribe/dist` | `web/` → `pnpm run build` → `web/dist` |
 
 ### Tệp bí mật trên server
@@ -155,6 +155,22 @@ Hai client trên IdP `https://auth.hoandat.com` (tenant duy nhất; đa tenant t
 - **Hồ sơ lấy từ `userinfo`:** với code flow, ID token của auth-next chỉ có `sub`; email, `email_verified`, tên lấy từ userinfo endpoint và `sub` của userinfo phải khớp ID token (`server/scribe-be/src/oidc.rs`). Email chưa xác minh thì từ chối.
 - **User cũ thời Firebase** được ghép theo email đã xác minh ở lần đăng nhập IdP đầu tiên (gắn `idpSub` vào user có `firebaseUid`), sau đó khoá theo `idpSub` (`server/scribe-be/src/models/user.rs`).
 - **Phiên** lưu trong Mongo, thu hồi được (`sessions`, `devices`, `auth_states`, `logout_jtis` — `server/scribe-be/src/models/session.rs`); cookie `__Host-scribe` trên https.
+
+### MCP cho công cụ AI
+
+Endpoint `https://scribe.hoandat.com/mcp` (chỉ đọc, [ADR 0002](./decisions/0002-mcp-endpoint.md)) nhận access token của IdP, không phiên:
+
+- **Không có biến build mới.** Resource là `PUBLIC_URL` + `/mcp`, IdP là `OIDC_ISSUER`; token được xác minh offline bằng JWKS mà BE đã tải cho đăng nhập.
+- **Thứ tự deploy:** auth-next phải có resource `https://scribe.hoandat.com/mcp` và scope `scribe:read` trước (auth-next `src/oidc/resources.ts`); deploy Scribe trước thì client MCP nhận `invalid_target` ở IdP.
+- **nginx:** `deploy/nginx-scribe-locations.inc` có hai location mới, `= /mcp` và `^~ /.well-known/oauth-protected-resource`, cùng proxy tới `127.0.0.1:8787`. Chép file vào `/etc/nginx/scribe/locations.inc`, `nginx -t`, `systemctl reload nginx`. Thiếu location thứ hai thì metadata rơi vào SPA fallback (trả `index.html`) và client MCP không tìm được IdP.
+- **Kiểm sau deploy:**
+
+```bash
+curl -s https://scribe.hoandat.com/.well-known/oauth-protected-resource/mcp   # JSON: resource .../mcp, authorization_servers [https://auth.hoandat.com], scopes_supported [scribe:read]
+curl -si -X POST https://scribe.hoandat.com/mcp -d '{}' | grep -i '^www-authenticate'   # 401, Bearer ... resource_metadata="https://scribe.hoandat.com/.well-known/oauth-protected-resource/mcp"
+curl -si https://scribe.hoandat.com/mcp | head -1   # 405 (không có luồng SSE)
+claude mcp add --transport http scribe https://scribe.hoandat.com/mcp   # rồi /mcp trong Claude Code: đăng nhập IdP, duyệt scribe:read, gọi scribe_list_transcripts
+```
 
 ### FE build env
 

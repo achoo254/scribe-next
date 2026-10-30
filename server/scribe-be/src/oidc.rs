@@ -1,6 +1,6 @@
 //! Client OIDC của hoandat-auth: discovery, JWKS (EC P-256 + RSA, chọn theo `kid`), xác minh ID token và
-//! logout token, đổi code, làm mới refresh token. Scribe chỉ dùng ID token lúc đăng nhập rồi cấp phiên
-//! riêng (`models::session`), không dùng access token của IdP.
+//! logout token, đổi code, làm mới refresh token. Scribe dùng ID token lúc đăng nhập rồi cấp phiên riêng
+//! (`models::session`); access token của IdP chỉ được nhận ở endpoint MCP (`mcp`).
 
 use crate::error::AppError;
 use jsonwebtoken::jwk::JwkSet;
@@ -95,6 +95,28 @@ pub struct LogoutClaims {
     pub events: Option<serde_json::Map<String, serde_json::Value>>,
     #[serde(default)]
     pub nonce: Option<serde_json::Value>,
+}
+
+/// Access token JWT của IdP cho một resource (RFC 9068): `sub` là tài khoản IdP, `scope` cách nhau bằng dấu cách.
+#[derive(Debug, Deserialize)]
+pub struct AccessClaims {
+    pub sub: String,
+    pub client_id: String,
+    #[serde(default)]
+    pub scope: String,
+}
+
+impl AccessClaims {
+    pub fn has_scope(&self, scope: &str) -> bool {
+        self.scope.split(' ').any(|s| s == scope)
+    }
+}
+
+/// Lý do access token bị từ chối: IdP chưa tải được khoá (tạm thời, 503) hay token sai (401).
+#[derive(Debug, PartialEq, Eq)]
+pub enum AccessTokenError {
+    Unavailable,
+    Invalid,
 }
 
 /// Token nhận từ IdP. Không `Debug` để khỏi in refresh token ra log.
@@ -241,6 +263,37 @@ impl Oidc {
         let many = claims.aud.as_array().is_some_and(|a| a.len() > 1);
         if many && claims.azp.as_deref() != Some(client_id) {
             return Err(AppError::Unauthorized("ID token không dành cho client này".into()));
+        }
+        Ok(claims)
+    }
+
+    /// Access token của IdP cho resource `audience` (vd `https://scribe.hoandat.com/mcp`): JWT ES256, `typ: at+jwt`,
+    /// đúng `iss`, `aud` chứa `audience`, còn hạn, có `sub` và `client_id`. Xác minh offline bằng JWKS đã cache.
+    pub async fn verify_access_token(
+        &self,
+        http: &reqwest::Client,
+        token: &str,
+        audience: &str,
+    ) -> Result<AccessClaims, AccessTokenError> {
+        let header = decode_header(token).map_err(|_| AccessTokenError::Invalid)?;
+        let typ_ok = header.typ.as_deref().is_some_and(|t| t.eq_ignore_ascii_case("at+jwt"));
+        if header.alg != Algorithm::ES256 || !typ_ok {
+            return Err(AccessTokenError::Invalid);
+        }
+        let kid = header.kid.ok_or(AccessTokenError::Invalid)?;
+        let key = self.key_for(http, &kid).await.map_err(|e| match e {
+            AppError::Unavailable(_) => AccessTokenError::Unavailable,
+            _ => AccessTokenError::Invalid,
+        })?;
+        let mut validation = Validation::new(Algorithm::ES256);
+        validation.set_audience(&[audience]);
+        validation.set_issuer(&[&self.issuer]);
+        validation.leeway = 30;
+        validation.required_spec_claims =
+            HashSet::from(["exp".to_string(), "aud".to_string(), "iss".to_string(), "sub".to_string()]);
+        let claims = decode::<AccessClaims>(token, &key, &validation).map_err(|_| AccessTokenError::Invalid)?.claims;
+        if claims.sub.is_empty() || claims.client_id.is_empty() {
+            return Err(AccessTokenError::Invalid);
         }
         Ok(claims)
     }
@@ -396,8 +449,9 @@ impl Oidc {
     }
 }
 
+/// IdP giả dùng chung cho test (cả test của endpoint MCP).
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use axum::routing::get;
     use axum::{Json, Router};
@@ -409,12 +463,12 @@ mod tests {
     use serde_json::json;
 
     /// IdP giả: discovery + JWKS với một khoá P-256 sinh lúc chạy test.
-    struct FakeIdp {
-        issuer: String,
+    pub(crate) struct FakeIdp {
+        pub(crate) issuer: String,
         key: EncodingKey,
     }
 
-    async fn fake_idp() -> FakeIdp {
+    pub(crate) async fn fake_idp() -> FakeIdp {
         let rng = SystemRandom::new();
         let pkcs8 = EcdsaKeyPair::generate_pkcs8(&ECDSA_P256_SHA256_FIXED_SIGNING, &rng).expect("sinh khoá");
         let pair = EcdsaKeyPair::from_pkcs8(&ECDSA_P256_SHA256_FIXED_SIGNING, pkcs8.as_ref(), &rng).expect("khoá");
@@ -446,14 +500,14 @@ mod tests {
         FakeIdp { issuer, key: EncodingKey::from_ec_der(pkcs8.as_ref()) }
     }
 
-    fn sign(idp: &FakeIdp, typ: Option<&str>, kid: &str, claims: serde_json::Value) -> String {
+    pub(crate) fn sign(idp: &FakeIdp, typ: Option<&str>, kid: &str, claims: serde_json::Value) -> String {
         let mut header = Header::new(Algorithm::ES256);
         header.kid = Some(kid.into());
         header.typ = typ.map(str::to_string);
         encode(&header, &claims, &idp.key).expect("ký")
     }
 
-    fn now() -> i64 {
+    pub(crate) fn now() -> i64 {
         chrono::Utc::now().timestamp()
     }
 
@@ -532,6 +586,38 @@ mod tests {
         let no_event = sign(&idp, Some("logout+jwt"), "k1", token(now(), json!({ "events": {} })));
         assert!(oidc.verify_logout_token(&http, &no_event, "scribe-web").await.is_err(), "thiếu event");
         assert!(oidc.verify_logout_token(&http, &good, "scribe-mobile").await.is_err(), "sai aud");
+    }
+
+    #[tokio::test]
+    async fn access_tokens_need_the_resource_audience_and_the_at_jwt_type() {
+        let idp = fake_idp().await;
+        let oidc = Oidc::new(&idp.issuer);
+        let http = reqwest::Client::new();
+        let aud = "https://scribe.example/mcp";
+        let claims = |aud: &str, exp: i64| {
+            json!({ "iss": idp.issuer, "aud": aud, "sub": "acc_1", "client_id": "c1", "scope": "scribe:read",
+                    "exp": exp, "iat": now() })
+        };
+        let good = sign(&idp, Some("at+jwt"), "k1", claims(aud, now() + 300));
+        let ok = oidc.verify_access_token(&http, &good, aud).await.expect("hợp lệ");
+        assert_eq!((ok.sub.as_str(), ok.client_id.as_str()), ("acc_1", "c1"));
+        assert!(ok.has_scope("scribe:read") && !ok.has_scope("scribe"));
+
+        let invalid = Err(AccessTokenError::Invalid);
+        let wrong_aud = sign(&idp, Some("at+jwt"), "k1", claims("https://chat.example/mcp", now() + 300));
+        assert_eq!(oidc.verify_access_token(&http, &wrong_aud, aud).await.map(|c| c.sub), invalid, "sai aud");
+        let id_token_typ = sign(&idp, Some("JWT"), "k1", claims(aud, now() + 300));
+        assert_eq!(oidc.verify_access_token(&http, &id_token_typ, aud).await.map(|c| c.sub), invalid, "sai typ");
+        let expired = sign(&idp, Some("at+jwt"), "k1", claims(aud, now() - 3600));
+        assert_eq!(oidc.verify_access_token(&http, &expired, aud).await.map(|c| c.sub), invalid, "hết hạn");
+        let mut no_client = claims(aud, now() + 300);
+        no_client["client_id"] = json!("");
+        let no_client = sign(&idp, Some("at+jwt"), "k1", no_client);
+        assert_eq!(oidc.verify_access_token(&http, &no_client, aud).await.map(|c| c.sub), invalid, "thiếu client_id");
+        let mut other_iss = claims(aud, now() + 300);
+        other_iss["iss"] = json!("https://other.example");
+        let other_iss = sign(&idp, Some("at+jwt"), "k1", other_iss);
+        assert_eq!(oidc.verify_access_token(&http, &other_iss, aud).await.map(|c| c.sub), invalid, "sai iss");
     }
 
     #[test]

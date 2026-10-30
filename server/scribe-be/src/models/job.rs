@@ -127,6 +127,25 @@ pub async fn get_owned(db: &Database, job_id: &str, user_id: &str) -> Result<Opt
         .map_err(|e| AppError::Internal(format!("find job: {e}")))
 }
 
+/// Job cắt của user, mới nhất trước, bỏ qua `skip` job đầu, tối đa `limit` job (chỉ đọc; quyền sở hữu như
+/// [`get_owned`]).
+pub async fn list_owned(db: &Database, user_id: &str, skip: u64, limit: i64) -> Result<Vec<Job>, AppError> {
+    let read = |e: mongodb::error::Error| AppError::Internal(format!("list jobs: {e}"));
+    let mut cur = db
+        .collection::<Job>(COLL)
+        .find(doc! { "userId": user_id })
+        .sort(doc! { "createdAt": -1, "_id": -1 })
+        .skip(skip)
+        .limit(limit)
+        .await
+        .map_err(read)?;
+    let mut out = Vec::new();
+    while let Some(j) = futures_util::StreamExt::next(&mut cur).await {
+        out.push(j.map_err(read)?);
+    }
+    Ok(out)
+}
+
 /// Claim job queued cũ nhất của tenant duy nhất → running (atomic, concurrency=1). Job mang `tenantId` khác không bao
 /// giờ được nhận. heartbeatAt để sweep stale.
 pub async fn claim_next(db: &Database) -> Result<Option<Job>, mongodb::error::Error> {
