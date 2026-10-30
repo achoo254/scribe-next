@@ -97,7 +97,7 @@ public class NativeFilesPlugin: CAPPlugin, CAPBridgedPlugin {
     @MainActor
     private func presentShareSheet(for file: URL, call: CAPPluginCall) {
         guard let controller = bridge?.viewController else {
-            call.reject("Không mở được bảng chia sẻ.", "NO_VIEW")
+            call.reject(localized("files.shareUnavailable", "Không mở được bảng chia sẻ."), "NO_VIEW")
             return
         }
         let sheet = UIActivityViewController(activityItems: [file], applicationActivities: nil)
@@ -119,20 +119,20 @@ public class NativeFilesPlugin: CAPPlugin, CAPBridgedPlugin {
             url.scheme == "https",
             url.host == Self.backendHost,
             url.path.hasPrefix("/api/")
-        else { throw FilesError(message: "Đường dẫn tải không hợp lệ.") }
+        else { throw FilesError(message: localized("files.badDownloadURL", "Đường dẫn tải không hợp lệ.")) }
         return url
     }
 
     private func download(_ url: URL) async throws -> (URL, URLResponse) {
         let (temp, response) = try await URLSession.shared.download(from: url)
         guard let http = response as? HTTPURLResponse else {
-            throw FilesError(message: "Máy chủ không trả lời.")
+            throw FilesError(message: localized("files.noResponse", "Máy chủ không trả lời."))
         }
         guard (200..<300).contains(http.statusCode) else {
             try? FileManager.default.removeItem(at: temp)
             throw FilesError(message: http.statusCode == 401
-                ? "Phiên đăng nhập đã hết — đăng nhập lại rồi thử lại."
-                : "Tải tệp thất bại (HTTP \(http.statusCode)).")
+                ? localized("files.sessionExpired", "Phiên đăng nhập đã hết — đăng nhập lại rồi thử lại.")
+                : localized("files.downloadFailed", "Tải tệp thất bại (HTTP %@).", String(http.statusCode)))
         }
         return (temp, response)
     }

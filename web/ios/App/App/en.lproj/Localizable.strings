@@ -1,0 +1,78 @@
+/* English native texts; the Vietnamese defaults live at the call sites (localized(key, vietnamese)). */
+
+/* Lock-screen (Now Playing) texts while recording. */
+"nowPlaying.recording" = "Scribe is recording";
+"nowPlaying.paused" = "Scribe is paused";
+"nowPlaying.bookmarked" = "Bookmarked %@";
+"nowPlaying.hint.recording" = "Press ⏸ to pause · ⏩ to bookmark";
+"nowPlaying.hint.paused" = "Press ▶ to resume recording";
+
+/* Sign-in and session. */
+"signIn.cancelled" = "The sign-in window was closed before finishing.";
+"signIn.badConfig" = "The sign-in configuration is invalid.";
+"signIn.badURL" = "The sign-in link is invalid.";
+"signIn.denied" = "You declined to sign in.";
+"signIn.failed" = "Sign-in failed (%@).";
+"signIn.stateMismatch" = "The sign-in response didn't match, try again.";
+"signIn.configFailed" = "Couldn't load the sign-in configuration";
+"signIn.configIncomplete" = "The sign-in configuration is missing fields.";
+"signIn.noResult" = "Sign-in returned no result.";
+"signIn.sheetFailed" = "Couldn't open the sign-in window.";
+"signIn.randomFailed" = "Couldn't generate a random code.";
+"session.exchangeFailed" = "The server didn't grant a sign-in session";
+"session.noDeviceToken" = "The server didn't return a device code.";
+"session.signOutFailed" = "Sign out";
+"session.none" = "There is no sign-in session to renew.";
+"session.refreshFailed" = "The server didn't renew the session";
+"account.deleted" = "The Scribe account was deleted.";
+"server.badURL" = "The server address is invalid.";
+
+/* Keychain secrets. */
+"secrets.badName" = "Invalid key name.";
+"secrets.noValue" = "The value is missing.";
+"secrets.keychain" = "Couldn't save to the Keychain.";
+
+/* Downloads and the share sheet. */
+"files.shareUnavailable" = "Couldn't open the share sheet.";
+"files.badDownloadURL" = "The download link is invalid.";
+"files.noResponse" = "The server didn't respond.";
+"files.sessionExpired" = "Your sign-in session has expired — sign in again and retry.";
+"files.downloadFailed" = "Download failed (HTTP %@).";
+
+/* Recording. */
+"recorder.micDenied" = "The app doesn't have microphone access — go to Settings → Scribe → Microphone to turn it on.";
+"recorder.resumeFailed" = "Couldn't resume recording after the pause: %@";
+"recorder.startFailed" = "Couldn't start recording: %@";
+"recorder.badFormat" = "The microphone format is invalid.";
+"recorder.resumedAfterInterruption" = "Recording resumed after an interruption (%@).";
+"recorder.interruptionResumeFailed" = "Couldn't resume recording after the interruption: %@";
+"recorder.noSessionFolder" = "There is no folder for this recording yet.";
+"recorder.oddFileFormat" = "The recording file has an unusual format (%@) — the server may not accept it.";
+"recorder.segmentOpenFailed" = "Couldn't open a new recording part: %@";
+"recorder.diskFullStopped" = "Couldn't write to the phone's storage (it may be full) — recording stopped, what was recorded is kept.";
+"recorder.diskWriteFailed" = "Couldn't write to the phone's storage — check the free space.";
+"recorder.pausedByCall" = "Paused: a call or another app is using the microphone.";
+"recorder.reason.mediaReset" = "the audio service restarted";
+"recorder.reason.configChange" = "the audio configuration changed";
+"recorder.reason.interruptionEnded" = "the call or interruption ended";
+"recorder.reason.routeChange" = "the audio device changed";
+"recorder.reason.silentMic" = "the microphone stopped sending audio";
+"recorder.noUser" = "The account information is missing.";
+"recorder.busy" = "Already recording.";
+"recorder.sessionCreateFailed" = "Couldn't create the recording: %@";
+"recorder.bookmarkUpdateFailed" = "Couldn't update the bookmark on the phone: %@";
+"recorder.bookmarkSaveFailed" = "Couldn't save the bookmark: %@";
+
+/* Live transcription. */
+"live.badURL" = "The live transcription address is invalid.";
+"live.quotaExhausted" = "The system has used up its shared transcription hours — live transcription stopped, the recording continues.";
+"live.sessionExpired" = "Your sign-in session has expired — live transcription stopped, the recording continues.";
+"live.badToken" = "The server returned an unreadable live transcription token.";
+"live.tokenFailed" = "Couldn't get a live transcription token (HTTP %@).";
+"live.connectionLost" = "Lost the connection to the server: %@";
+
+/* Uploads. */
+"upload.unreadableSegment" = "The recording part file can't be read.";
+"upload.chunkIncomplete" = "The uploaded chunk was not fully written";
+"upload.badURL" = "The link is invalid.";
+"upload.storageFull" = "Storage is full.";

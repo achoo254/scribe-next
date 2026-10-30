@@ -24,7 +24,7 @@ enum SessionAuth {
     /// The backend says the account behind this device was deleted (410 on refresh): what the phone still
     /// keeps for it (segments not uploaded, bookmarks) must go, never into a later account.
     struct AccountDeleted: LocalizedError {
-        var errorDescription: String? { "Tài khoản Scribe đã bị xoá." }
+        var errorDescription: String? { localized("account.deleted", "Tài khoản Scribe đã bị xoá.") }
     }
 
     struct AuthError: LocalizedError {
@@ -57,9 +57,9 @@ enum SessionAuth {
     static func exchange(code: String, verifier: String, nonce: String) async throws -> String {
         let json = try await post("/api/auth/native/exchange",
                                   ["code": code, "codeVerifier": verifier, "nonce": nonce],
-                                  failure: "Máy chủ không cấp phiên đăng nhập")
+                                  failure: localized("session.exchangeFailed", "Máy chủ không cấp phiên đăng nhập"))
         guard let token = json["deviceToken"] as? String else {
-            throw AuthError("Máy chủ không trả mã thiết bị.")
+            throw AuthError(localized("session.noDeviceToken", "Máy chủ không trả mã thiết bị."))
         }
         clear()
         Keychain.save(token, service: service, account: account)
@@ -69,7 +69,7 @@ enum SessionAuth {
     static func signOut() async {
         var body: [String: Any] = [:]
         if let token = deviceToken() { body["deviceToken"] = token }
-        _ = try? await post("/api/auth/logout", body, failure: "Đăng xuất")
+        _ = try? await post("/api/auth/logout", body, failure: localized("session.signOutFailed", "Đăng xuất"))
         clear()
     }
 
@@ -85,10 +85,10 @@ enum SessionAuth {
     }
 
     private static func renew(session: URLSession) async throws {
-        guard let token = deviceToken() else { throw AuthError("Chưa có phiên đăng nhập để làm mới.") }
+        guard let token = deviceToken() else { throw AuthError(localized("session.none", "Chưa có phiên đăng nhập để làm mới.")) }
         do {
             _ = try await post("/api/auth/native/refresh", ["deviceToken": token],
-                               session: session, failure: "Máy chủ không cấp lại phiên")
+                               session: session, failure: localized("session.refreshFailed", "Máy chủ không cấp lại phiên"))
         } catch let error as HTTPError where error.status == 409 {
             // Another renewal of this device is running (e.g. from the WebView): it sets the cookie.
             try await Task.sleep(nanoseconds: 2_000_000_000)
@@ -137,7 +137,7 @@ enum SessionAuth {
 
     static func post(_ path: String, _ body: [String: Any], session: URLSession = .shared,
                      failure: String) async throws -> [String: Any] {
-        guard let url = URL(string: backendOrigin + path) else { throw AuthError("Đường dẫn máy chủ không hợp lệ.") }
+        guard let url = URL(string: backendOrigin + path) else { throw AuthError(localized("server.badURL", "Đường dẫn máy chủ không hợp lệ.")) }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")

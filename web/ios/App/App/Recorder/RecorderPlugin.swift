@@ -160,7 +160,7 @@ public class RecorderPlugin: CAPPlugin, CAPBridgedPlugin {
     /// lost). `realtime: true` also streams the audio for a live transcript.
     @objc func start(_ call: CAPPluginCall) {
         guard let userKey = call.getString("userKey"), !userKey.isEmpty else {
-            call.reject("Thiếu thông tin tài khoản.", "NO_USER")
+            call.reject(localized("recorder.noUser", "Thiếu thông tin tài khoản."), "NO_USER")
             return
         }
         let minutes = call.getDouble("segmentMinutes") ?? 1
@@ -168,7 +168,7 @@ public class RecorderPlugin: CAPPlugin, CAPBridgedPlugin {
         let sessionId = UUID().uuidString.lowercased()
         Task { @MainActor in
             guard recorder.state == .idle else {
-                call.reject("Đang ghi rồi.", "BUSY")
+                call.reject(localized("recorder.busy", "Đang ghi rồi."), "BUSY")
                 return
             }
             self.userKey = userKey
@@ -185,7 +185,7 @@ public class RecorderPlugin: CAPPlugin, CAPBridgedPlugin {
                 recorder.start(sessionId: sessionId, dir: dir, segmentSeconds: minutes * 60)
                 call.resolve(["sessionId": sessionId])
             } catch {
-                call.reject("Không tạo được phiên ghi: \(error.localizedDescription)", "STORE")
+                call.reject(localized("recorder.sessionCreateFailed", "Không tạo được phiên ghi: %@", error.localizedDescription), "STORE")
             }
         }
     }
@@ -219,7 +219,7 @@ public class RecorderPlugin: CAPPlugin, CAPBridgedPlugin {
     /// report the open segment that was lost, and upload what is waiting.
     @objc func syncUploads(_ call: CAPPluginCall) {
         guard let userKey = call.getString("userKey"), !userKey.isEmpty else {
-            call.reject("Thiếu thông tin tài khoản.", "NO_USER")
+            call.reject(localized("recorder.noUser", "Thiếu thông tin tài khoản."), "NO_USER")
             return
         }
         Task { @MainActor in
@@ -269,7 +269,7 @@ public class RecorderPlugin: CAPPlugin, CAPBridgedPlugin {
     /// oldest first. They stay stored until acknowledged.
     @objc func takePendingBookmarks(_ call: CAPPluginCall) {
         guard let userKey = call.getString("userKey"), !userKey.isEmpty else {
-            call.reject("Thiếu thông tin tài khoản.", "NO_USER")
+            call.reject(localized("recorder.noUser", "Thiếu thông tin tài khoản."), "NO_USER")
             return
         }
         DispatchQueue.main.async {
@@ -280,7 +280,7 @@ public class RecorderPlugin: CAPPlugin, CAPBridgedPlugin {
     /// `{ userKey, ids }`: the web queue took care of these bookmarks.
     @objc func ackBookmarks(_ call: CAPPluginCall) {
         guard let userKey = call.getString("userKey"), !userKey.isEmpty else {
-            call.reject("Thiếu thông tin tài khoản.", "NO_USER")
+            call.reject(localized("recorder.noUser", "Thiếu thông tin tài khoản."), "NO_USER")
             return
         }
         let ids = Set((call.getArray("ids") ?? []).compactMap { $0 as? String })
@@ -289,7 +289,7 @@ public class RecorderPlugin: CAPPlugin, CAPBridgedPlugin {
                 try self.bookmarks.remove(ids: ids, userKey: userKey)
                 call.resolve()
             } catch {
-                call.reject("Không cập nhật được dấu mốc trên máy: \(error.localizedDescription)", "STORE")
+                call.reject(localized("recorder.bookmarkUpdateFailed", "Không cập nhật được dấu mốc trên máy: %@", error.localizedDescription), "STORE")
             }
         }
     }
@@ -359,7 +359,7 @@ public class RecorderPlugin: CAPPlugin, CAPBridgedPlugin {
         do {
             try bookmarks.append(bookmark, userKey: owner)
         } catch {
-            lastNotice = "Không lưu được dấu mốc: \(error.localizedDescription)"
+            lastNotice = localized("recorder.bookmarkSaveFailed", "Không lưu được dấu mốc: %@", error.localizedDescription)
             notifyListeners("notice", data: ["message": lastNotice])
             return nil
         }

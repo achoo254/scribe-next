@@ -31,6 +31,7 @@
 		9582B6832FE993A70072D4E8 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9582B6822FE993A50072D4E8 /* SceneDelegate.swift */; };
 		A1B2C3D40000000000000023 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = A1B2C3D40000000000000021 /* InfoPlist.strings */; };
 		A1B2C3D40000000000000024 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = A1B2C3D40000000000000022 /* Localizable.strings */; };
+		A1B2C3D40000000000000026 /* Localized.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D40000000000000025 /* Localized.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -60,6 +61,10 @@
 		958DCC722DB07C7200EA8C5F /* debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = debug.xcconfig; path = ../debug.xcconfig; sourceTree = SOURCE_ROOT; };
 		A1B2C3D4000000000000001F /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
 		A1B2C3D40000000000000020 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/Localizable.strings"; sourceTree = "<group>"; };
+		A1B2C3D40000000000000025 /* Localized.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Localized.swift; sourceTree = "<group>"; };
+		A1B2C3D40000000000000027 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/InfoPlist.strings; sourceTree = "<group>"; };
+		A1B2C3D40000000000000028 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/Localizable.strings; sourceTree = "<group>"; };
+		A1B2C3D40000000000000029 /* vi */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = vi; path = vi.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -109,6 +114,7 @@
 				A1B2C3D40000000000000004 /* NativeFilesPlugin.swift */,
 				A1B2C3D40000000000000002 /* HoandatAuthPlugin.swift */,
 				A1B2C3D40000000000000001 /* MainViewController.swift */,
+				A1B2C3D40000000000000025 /* Localized.swift */,
 				504EC30B1FED79650016851F /* Main.storyboard */,
 				504EC30E1FED79650016851F /* Assets.xcassets */,
 				504EC3101FED79650016851F /* LaunchScreen.storyboard */,
@@ -241,6 +247,7 @@
 				A1B2C3D40000000000000014 /* NativeFilesPlugin.swift in Sources */,
 				A1B2C3D40000000000000012 /* HoandatAuthPlugin.swift in Sources */,
 				A1B2C3D40000000000000011 /* MainViewController.swift in Sources */,
+				A1B2C3D40000000000000026 /* Localized.swift in Sources */,
 				9582B6832FE993A70072D4E8 /* SceneDelegate.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -268,6 +275,8 @@
 			isa = PBXVariantGroup;
 			children = (
 				A1B2C3D4000000000000001F /* zh-Hans */,
+				A1B2C3D40000000000000027 /* en */,
+				A1B2C3D40000000000000029 /* vi */,
 			);
 			name = InfoPlist.strings;
 			sourceTree = "<group>";
@@ -276,6 +285,7 @@
 			isa = PBXVariantGroup;
 			children = (
 				A1B2C3D40000000000000020 /* zh-Hans */,
+				A1B2C3D40000000000000028 /* en */,
 			);
 			name = Localizable.strings;
 			sourceTree = "<group>";

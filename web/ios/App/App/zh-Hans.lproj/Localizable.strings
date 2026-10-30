@@ -4,3 +4,73 @@
 "nowPlaying.bookmarked" = "已标记 %@";
 "nowPlaying.hint.recording" = "按 ⏸ 暂停 · ⏩ 添加标记";
 "nowPlaying.hint.paused" = "按 ▶ 继续录制";
+
+/* Sign-in and session. */
+"signIn.cancelled" = "登录窗口在完成前已关闭。";
+"signIn.badConfig" = "登录配置无效。";
+"signIn.badURL" = "登录链接无效。";
+"signIn.denied" = "你已拒绝登录。";
+"signIn.failed" = "登录失败（%@）。";
+"signIn.stateMismatch" = "登录响应不匹配，请重试。";
+"signIn.configFailed" = "无法获取登录配置";
+"signIn.configIncomplete" = "登录配置缺少字段。";
+"signIn.noResult" = "登录没有返回结果。";
+"signIn.sheetFailed" = "无法打开登录窗口。";
+"signIn.randomFailed" = "无法生成随机码。";
+"session.exchangeFailed" = "服务器未授予登录会话";
+"session.noDeviceToken" = "服务器未返回设备码。";
+"session.signOutFailed" = "退出登录";
+"session.none" = "没有可续期的登录会话。";
+"session.refreshFailed" = "服务器未续期会话";
+"account.deleted" = "该 Scribe 账号已被删除。";
+"server.badURL" = "服务器地址无效。";
+
+/* Keychain secrets. */
+"secrets.badName" = "密钥名称无效。";
+"secrets.noValue" = "缺少值。";
+"secrets.keychain" = "无法保存到钥匙串（Keychain）。";
+
+/* Downloads and the share sheet. */
+"files.shareUnavailable" = "无法打开共享菜单。";
+"files.badDownloadURL" = "下载链接无效。";
+"files.noResponse" = "服务器没有响应。";
+"files.sessionExpired" = "登录已过期——请重新登录后重试。";
+"files.downloadFailed" = "下载文件失败（HTTP %@）。";
+
+/* Recording. */
+"recorder.micDenied" = "应用没有麦克风权限——请前往“设置”→ Scribe →“麦克风”开启。";
+"recorder.resumeFailed" = "暂停后无法继续录制：%@";
+"recorder.startFailed" = "无法开始录制：%@";
+"recorder.badFormat" = "麦克风格式无效。";
+"recorder.resumedAfterInterruption" = "中断后已继续录制（%@）。";
+"recorder.interruptionResumeFailed" = "中断后无法继续录制：%@";
+"recorder.noSessionFolder" = "还没有这次录音的文件夹。";
+"recorder.oddFileFormat" = "录音文件格式异常（%@）——服务器可能不接受。";
+"recorder.segmentOpenFailed" = "无法打开新的录音片段：%@";
+"recorder.diskFullStopped" = "无法写入设备存储空间（可能已满）——录制已停止，已录制的部分会保留。";
+"recorder.diskWriteFailed" = "无法写入设备存储空间——请检查剩余空间。";
+"recorder.pausedByCall" = "已暂停：通话或其他应用正在使用麦克风。";
+"recorder.reason.mediaReset" = "音频服务已重启";
+"recorder.reason.configChange" = "音频配置已更改";
+"recorder.reason.interruptionEnded" = "通话或中断已结束";
+"recorder.reason.routeChange" = "音频设备已更改";
+"recorder.reason.silentMic" = "麦克风停止发送声音";
+"recorder.noUser" = "缺少账号信息。";
+"recorder.busy" = "正在录制。";
+"recorder.sessionCreateFailed" = "无法创建录音：%@";
+"recorder.bookmarkUpdateFailed" = "无法在设备上更新标记：%@";
+"recorder.bookmarkSaveFailed" = "无法保存标记：%@";
+
+/* Live transcription. */
+"live.badURL" = "实时转写地址无效。";
+"live.quotaExhausted" = "系统的共享转写时长已用完——实时转写已停止，录音会继续。";
+"live.sessionExpired" = "登录已过期——实时转写已停止，录音会继续。";
+"live.badToken" = "服务器返回的实时转写令牌无法读取。";
+"live.tokenFailed" = "无法获取实时转写令牌（HTTP %@）。";
+"live.connectionLost" = "与服务器的连接已断开：%@";
+
+/* Uploads. */
+"upload.unreadableSegment" = "无法读取录音片段文件。";
+"upload.chunkIncomplete" = "上传的分块没有完整写入";
+"upload.badURL" = "链接无效。";
+"upload.storageFull" = "存储空间已满。";

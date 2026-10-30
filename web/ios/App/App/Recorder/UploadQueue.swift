@@ -256,7 +256,7 @@ actor UploadQueue {
             return existing
         }
         guard let data = try? Data(contentsOf: pending.url), !data.isEmpty else {
-            throw Outcome.terminal("Tệp đoạn ghi không đọc được.")
+            throw Outcome.terminal(localized("upload.unreadableSegment", "Tệp đoạn ghi không đọc được."))
         }
 
         var serverSession = segment.serverSession
@@ -279,7 +279,7 @@ actor UploadQueue {
             let reply = try await json("POST", "/api/recordings/chunk?session=\(serverSession)&offset=\(offset)",
                                        raw: data.subdata(in: offset..<end))
             guard let written = reply["written"] as? Int, written >= end else {
-                throw Outcome.redo("chunk không ghi đủ dữ liệu")
+                throw Outcome.redo(localized("upload.chunkIncomplete", "chunk không ghi đủ dữ liệu"))
             }
             offset = end
         }
@@ -315,7 +315,7 @@ actor UploadQueue {
     private func json(_ method: String, _ path: String, body: [String: Any]? = nil,
                       raw: Data? = nil) async throws -> [String: Any] {
         guard let url = URL(string: SessionAuth.backendOrigin + path) else {
-            throw Outcome.terminal("Đường dẫn không hợp lệ.")
+            throw Outcome.terminal(localized("upload.badURL", "Đường dẫn không hợp lệ."))
         }
         var request = URLRequest(url: url, timeoutInterval: 60)
         request.httpMethod = method
@@ -344,7 +344,7 @@ actor UploadQueue {
         switch status {
         case 200..<300: return reply ?? [:]
         case 401: throw Outcome.unauthorized
-        case 413: throw Outcome.quotaFull(backendMessage ?? "Hết dung lượng lưu trữ.")
+        case 413: throw Outcome.quotaFull(backendMessage ?? localized("upload.storageFull", "Hết dung lượng lưu trữ."))
         case 400, 403, 404:
             guard let message = backendMessage else { throw Outcome.transient("HTTP \(status) không từ máy chủ ứng dụng") }
             if status == 403 { throw Outcome.terminal(message) }

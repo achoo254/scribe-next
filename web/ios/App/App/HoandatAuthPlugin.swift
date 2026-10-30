@@ -27,7 +27,7 @@ public class HoandatAuthPlugin: CAPPlugin, CAPBridgedPlugin, ASWebAuthentication
                 let email = try await signIn()
                 call.resolve(["email": email])
             } catch let error as ASWebAuthenticationSessionError where error.code == .canceledLogin {
-                call.reject("Cửa sổ đăng nhập đã đóng trước khi hoàn tất.", "CANCELLED")
+                call.reject(localized("signIn.cancelled", "Cửa sổ đăng nhập đã đóng trước khi hoàn tất."), "CANCELLED")
             } catch {
                 call.reject(error.localizedDescription, "SIGN_IN_FAILED")
             }
@@ -61,7 +61,7 @@ public class HoandatAuthPlugin: CAPPlugin, CAPBridgedPlugin, ASWebAuthentication
         let nonce = try Self.randomURLSafe(16)
         guard var components = URLComponents(string: config.authorizationEndpoint),
               let scheme = URL(string: config.redirectUri)?.scheme
-        else { throw SessionAuth.AuthError("Cấu hình đăng nhập không hợp lệ.") }
+        else { throw SessionAuth.AuthError(localized("signIn.badConfig", "Cấu hình đăng nhập không hợp lệ.")) }
         components.queryItems = [
             URLQueryItem(name: "client_id", value: config.clientId),
             URLQueryItem(name: "redirect_uri", value: config.redirectUri),
@@ -72,30 +72,30 @@ public class HoandatAuthPlugin: CAPPlugin, CAPBridgedPlugin, ASWebAuthentication
             URLQueryItem(name: "state", value: state),
             URLQueryItem(name: "nonce", value: nonce),
         ]
-        guard let authURL = components.url else { throw SessionAuth.AuthError("Đường dẫn đăng nhập không hợp lệ.") }
+        guard let authURL = components.url else { throw SessionAuth.AuthError(localized("signIn.badURL", "Đường dẫn đăng nhập không hợp lệ.")) }
 
         let callback = try await presentSession(url: authURL, scheme: scheme)
         let items = URLComponents(url: callback, resolvingAgainstBaseURL: false)?.queryItems ?? []
         let value = { (name: String) in items.first(where: { $0.name == name })?.value }
         if let error = value("error") {
-            throw SessionAuth.AuthError(error == "access_denied" ? "Bạn đã từ chối đăng nhập." : "Đăng nhập thất bại (\(error)).")
+            throw SessionAuth.AuthError(error == "access_denied" ? localized("signIn.denied", "Bạn đã từ chối đăng nhập.") : localized("signIn.failed", "Đăng nhập thất bại (%@).", error))
         }
         guard value("state") == state, let code = value("code") else {
-            throw SessionAuth.AuthError("Phản hồi đăng nhập không khớp, thử lại.")
+            throw SessionAuth.AuthError(localized("signIn.stateMismatch", "Phản hồi đăng nhập không khớp, thử lại."))
         }
         return try await SessionAuth.exchange(code: code, verifier: verifier, nonce: nonce)
     }
 
     private func loadConfig() async throws -> NativeConfig {
         guard let url = URL(string: "\(SessionAuth.backendOrigin)/api/auth/native/config") else {
-            throw SessionAuth.AuthError("Đường dẫn máy chủ không hợp lệ.")
+            throw SessionAuth.AuthError(localized("server.badURL", "Đường dẫn máy chủ không hợp lệ."))
         }
-        let json = try await SessionAuth.sendJSON(URLRequest(url: url), failure: "Không lấy được cấu hình đăng nhập")
+        let json = try await SessionAuth.sendJSON(URLRequest(url: url), failure: localized("signIn.configFailed", "Không lấy được cấu hình đăng nhập"))
         guard let endpoint = json["authorizationEndpoint"] as? String,
               let clientId = json["clientId"] as? String,
               let redirectUri = json["redirectUri"] as? String,
               let scope = json["scope"] as? String
-        else { throw SessionAuth.AuthError("Cấu hình đăng nhập thiếu trường.") }
+        else { throw SessionAuth.AuthError(localized("signIn.configIncomplete", "Cấu hình đăng nhập thiếu trường.")) }
         return NativeConfig(authorizationEndpoint: endpoint, clientId: clientId, redirectUri: redirectUri, scope: scope)
     }
 
@@ -108,7 +108,7 @@ public class HoandatAuthPlugin: CAPPlugin, CAPBridgedPlugin, ASWebAuthentication
                 } else if let callbackURL {
                     continuation.resume(returning: callbackURL)
                 } else {
-                    continuation.resume(throwing: SessionAuth.AuthError("Đăng nhập không trả kết quả."))
+                    continuation.resume(throwing: SessionAuth.AuthError(localized("signIn.noResult", "Đăng nhập không trả kết quả.")))
                 }
             }
             session.presentationContextProvider = self
@@ -116,7 +116,7 @@ public class HoandatAuthPlugin: CAPPlugin, CAPBridgedPlugin, ASWebAuthentication
             session.prefersEphemeralWebBrowserSession = false
             self.session = session
             if !session.start() {
-                continuation.resume(throwing: SessionAuth.AuthError("Không mở được cửa sổ đăng nhập."))
+                continuation.resume(throwing: SessionAuth.AuthError(localized("signIn.sheetFailed", "Không mở được cửa sổ đăng nhập.")))
             }
         }
     }
@@ -124,7 +124,7 @@ public class HoandatAuthPlugin: CAPPlugin, CAPBridgedPlugin, ASWebAuthentication
     private static func randomURLSafe(_ count: Int) throws -> String {
         var bytes = [UInt8](repeating: 0, count: count)
         guard SecRandomCopyBytes(kSecRandomDefault, count, &bytes) == errSecSuccess else {
-            throw SessionAuth.AuthError("Không tạo được mã ngẫu nhiên.")
+            throw SessionAuth.AuthError(localized("signIn.randomFailed", "Không tạo được mã ngẫu nhiên."))
         }
         return Data(bytes).base64URLEncoded()
     }

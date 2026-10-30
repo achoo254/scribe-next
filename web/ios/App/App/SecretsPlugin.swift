@@ -60,7 +60,7 @@ public class SecretsPlugin: CAPPlugin, CAPBridgedPlugin {
 
     private func name(_ call: CAPPluginCall) -> String? {
         guard let name = call.getString("name"), Self.allowed.contains(name) else {
-            call.reject("Tên khoá không hợp lệ.", "BAD_NAME")
+            call.reject(localized("secrets.badName", "Tên khoá không hợp lệ."), "BAD_NAME")
             return nil
         }
         return name
@@ -78,13 +78,13 @@ public class SecretsPlugin: CAPPlugin, CAPBridgedPlugin {
     @objc func set(_ call: CAPPluginCall) {
         guard let name = name(call) else { return }
         guard let value = call.getString("value"), !value.isEmpty else {
-            call.reject("Thiếu giá trị.", "NO_VALUE")
+            call.reject(localized("secrets.noValue", "Thiếu giá trị."), "NO_VALUE")
             return
         }
         if Keychain.save(value, service: Self.service, account: name) {
             call.resolve()
         } else {
-            call.reject("Không lưu được vào Keychain.", "KEYCHAIN")
+            call.reject(localized("secrets.keychain", "Không lưu được vào Keychain."), "KEYCHAIN")
         }
     }
 

@@ -1,0 +1,4 @@
+/* English permission prompts; Info.plist holds the Vietnamese originals. */
+"NSCameraUsageDescription" = "Scribe uses the camera when you choose to film a video to upload and transcribe.";
+"NSMicrophoneUsageDescription" = "Scribe uses the microphone to record meetings, even while the screen is locked. Recordings are uploaded to your Scribe account to be stored and transcribed.";
+"NSPhotoLibraryAddUsageDescription" = "Scribe saves a recording or video to your Photos library when you choose Save Video in the share sheet.";

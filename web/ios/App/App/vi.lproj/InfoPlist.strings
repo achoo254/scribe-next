@@ -1,0 +1,5 @@
+/* Vietnamese permission prompts, same as Info.plist: makes Vietnamese a listed
+   localization so a phone preferring Vietnamese gets it ahead of English or Chinese. */
+"NSCameraUsageDescription" = "Scribe dùng camera khi bạn chọn quay video để tải lên và chép lời.";
+"NSMicrophoneUsageDescription" = "Scribe dùng micro để ghi âm cuộc họp, kể cả khi màn hình khoá. Bản ghi được tải lên tài khoản Scribe của bạn để lưu và chép lời.";
+"NSPhotoLibraryAddUsageDescription" = "Scribe lưu bản ghi hoặc video vào thư viện Ảnh khi bạn chọn Lưu video trong bảng chia sẻ.";

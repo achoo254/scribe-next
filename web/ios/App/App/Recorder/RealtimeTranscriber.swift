@@ -334,10 +334,10 @@ final class RealtimeTranscriber: @unchecked Sendable {
         case .elevenLabs:
             // The single-use token rides in the query (the API key never leaves the server).
             guard var parts = URLComponents(url: token.url, resolvingAgainstBaseURL: false) else {
-                return end(error: "Địa chỉ chép trực tiếp không hợp lệ.")
+                return end(error: localized("live.badURL", "Địa chỉ chép trực tiếp không hợp lệ."))
             }
             parts.queryItems = (parts.queryItems ?? []) + [URLQueryItem(name: "token", value: token.value)]
-            guard let url = parts.url else { return end(error: "Địa chỉ chép trực tiếp không hợp lệ.") }
+            guard let url = parts.url else { return end(error: localized("live.badURL", "Địa chỉ chép trực tiếp không hợp lệ.")) }
             request = URLRequest(url: url)
             self.token?.used = true
         }
@@ -435,7 +435,7 @@ final class RealtimeTranscriber: @unchecked Sendable {
         case "quota_exceeded":
             log.warning("realtime quota_exceeded: \(message["error"] as? String ?? "", privacy: .public)")
             quotaExceeded = true
-            end(error: "Hệ thống đã dùng hết giờ chép lời chung — chép trực tiếp dừng, bản ghi vẫn tiếp tục.")
+            end(error: localized("live.quotaExhausted", "Hệ thống đã dùng hết giờ chép lời chung — chép trực tiếp dừng, bản ghi vẫn tiếp tục."))
         case "committed_transcript", "warning", "commit_throttled", "insufficient_audio_activity":
             break
         default:
@@ -584,7 +584,7 @@ final class RealtimeTranscriber: @unchecked Sendable {
                 do {
                     try await SessionAuth.refreshSession()
                 } catch {
-                    return .failure(.final("Phiên đăng nhập đã hết hạn — chép trực tiếp dừng, bản ghi vẫn tiếp tục."))
+                    return .failure(.final(localized("live.sessionExpired", "Phiên đăng nhập đã hết hạn — chép trực tiếp dừng, bản ghi vẫn tiếp tục.")))
                 }
                 (status, json) = try await post("/api/realtime/token", ["sessionId": sessionId])
             }
@@ -600,20 +600,20 @@ final class RealtimeTranscriber: @unchecked Sendable {
                       let expires = (json["expiresAt"] as? String).flatMap(parseDate),
                       let reserved = (json["reservedSeconds"] as? NSNumber)?.doubleValue, reserved > 0,
                       let url, url.scheme == "wss", rate == sampleRate
-                else { return .failure(.transient("Máy chủ trả token chép trực tiếp không đọc được.")) }
+                else { return .failure(.transient(localized("live.badToken", "Máy chủ trả token chép trực tiếp không đọc được."))) }
                 return .success(Token(value: value, id: id, expiresAt: expires, reservedS: reserved,
                                       provider: provider, url: url))
             case 401:
-                return .failure(.final("Phiên đăng nhập đã hết hạn — chép trực tiếp dừng, bản ghi vẫn tiếp tục."))
+                return .failure(.final(localized("live.sessionExpired", "Phiên đăng nhập đã hết hạn — chép trực tiếp dừng, bản ghi vẫn tiếp tục.")))
             // Only the backend's own `{ "error": … }` is final; a proxy page with the same status is not.
             case 400, 403:
                 if let message { return .failure(.final(message)) }
-                return .failure(.transient("Không lấy được token chép trực tiếp (HTTP \(status))."))
+                return .failure(.transient(localized("live.tokenFailed", "Không lấy được token chép trực tiếp (HTTP %@).", String(status))))
             default:
-                return .failure(.transient(message ?? "Không lấy được token chép trực tiếp (HTTP \(status))."))
+                return .failure(.transient(message ?? localized("live.tokenFailed", "Không lấy được token chép trực tiếp (HTTP %@).", String(status))))
             }
         } catch {
-            return .failure(.transient("Mất kết nối tới máy chủ: \(error.localizedDescription)"))
+            return .failure(.transient(localized("live.connectionLost", "Mất kết nối tới máy chủ: %@", error.localizedDescription)))
         }
     }
 
@@ -641,7 +641,7 @@ final class RealtimeTranscriber: @unchecked Sendable {
 
     private static func post(_ path: String, _ body: [String: Any]) async throws -> (Int, [String: Any]) {
         guard let url = URL(string: SessionAuth.backendOrigin + path) else {
-            throw SessionAuth.AuthError("Đường dẫn máy chủ không hợp lệ.")
+            throw SessionAuth.AuthError(localized("server.badURL", "Đường dẫn máy chủ không hợp lệ."))
         }
         var request = URLRequest(url: url, timeoutInterval: 20)
         request.httpMethod = "POST"

@@ -128,7 +128,7 @@ final class AudioRecorder {
             if granted {
                 self.attemptStart(attempt: 1)
             } else {
-                self.fail("Ứng dụng chưa được cấp quyền Micro — vào Cài đặt → Scribe → Micro để bật.")
+                self.fail(localized("recorder.micDenied", "Ứng dụng chưa được cấp quyền Micro — vào Cài đặt → Scribe → Micro để bật."))
             }
         }
     }
@@ -187,7 +187,7 @@ final class AudioRecorder {
             do {
                 try openSegment(format: tapFormat)
             } catch {
-                fail("Không ghi tiếp được sau khi tạm dừng: \(error.localizedDescription)")
+                fail(localized("recorder.resumeFailed", "Không ghi tiếp được sau khi tạm dừng: %@", error.localizedDescription))
                 return
             }
         }
@@ -224,7 +224,7 @@ final class AudioRecorder {
                 }
                 return
             }
-            fail("Không bắt đầu ghi được: \(error.localizedDescription)")
+            fail(localized("recorder.startFailed", "Không bắt đầu ghi được: %@", error.localizedDescription))
             return
         }
         startedAt = Date()
@@ -259,7 +259,7 @@ final class AudioRecorder {
         let input = engine.inputNode
         let format = input.outputFormat(forBus: 0)
         guard format.sampleRate > 0, format.channelCount > 0 else {
-            throw RecorderError("Định dạng micro không hợp lệ.")
+            throw RecorderError(localized("recorder.badFormat", "Định dạng micro không hợp lệ."))
         }
         try openSegment(format: format)
         input.installTap(onBus: 0, bufferSize: 4096, format: format) { [weak self] buffer, _ in
@@ -329,9 +329,9 @@ final class AudioRecorder {
             try startEngineChain()
             lastFrameCheck = -1
             stalledTicks = 0
-            onEvent?(.notice("Ghi tiếp sau gián đoạn (\(reason))."))
+            onEvent?(.notice(localized("recorder.resumedAfterInterruption", "Ghi tiếp sau gián đoạn (%@).", reason)))
         } catch {
-            fail("Không ghi tiếp được sau gián đoạn: \(error.localizedDescription)")
+            fail(localized("recorder.interruptionResumeFailed", "Không ghi tiếp được sau gián đoạn: %@", error.localizedDescription))
         }
     }
 
@@ -367,7 +367,7 @@ final class AudioRecorder {
         let paused = writingPaused
         fileLock.unlock()
         guard !paused else { return }
-        guard let dir else { throw RecorderError("Chưa có thư mục phiên ghi.") }
+        guard let dir else { throw RecorderError(localized("recorder.noSessionFolder", "Chưa có thư mục phiên ghi.")) }
         let url = dir.appendingPathComponent(String(format: "seg-%03d.m4a", index))
         let newFile = try makeAACFile(url: url, format: format)
         fileLock.lock()
@@ -458,7 +458,7 @@ final class AudioRecorder {
         let brand = header.count >= 12 ? String(decoding: header[8..<12], as: UTF8.self) : ""
         if brand != "M4A " {
             log.error("unexpected ftyp brand '\(brand, privacy: .public)'")
-            emit(.notice("Định dạng tệp ghi bất thường (\(brand)) — máy chủ có thể không nhận."))
+            emit(.notice(localized("recorder.oddFileFormat", "Định dạng tệp ghi bất thường (%@) — máy chủ có thể không nhận.", brand)))
         }
     }
 
@@ -475,7 +475,7 @@ final class AudioRecorder {
             fileLock.lock()
             file = nil
             fileLock.unlock()
-            DispatchQueue.main.async { self.fail("Không mở được đoạn ghi mới: \(error.localizedDescription)") }
+            DispatchQueue.main.async { self.fail(localized("recorder.segmentOpenFailed", "Không mở được đoạn ghi mới: %@", error.localizedDescription)) }
         }
     }
 
@@ -549,9 +549,9 @@ final class AudioRecorder {
     private func diskTrouble(_ count: Int) {
         guard state == .recording else { return }
         if count >= 100 {
-            fail("Không ghi được vào bộ nhớ máy (có thể đã đầy) — đã dừng, giữ phần đã ghi.")
+            fail(localized("recorder.diskFullStopped", "Không ghi được vào bộ nhớ máy (có thể đã đầy) — đã dừng, giữ phần đã ghi."))
         } else {
-            onEvent?(.notice("Không ghi được vào bộ nhớ máy — kiểm tra dung lượng trống."))
+            onEvent?(.notice(localized("recorder.diskWriteFailed", "Không ghi được vào bộ nhớ máy — kiểm tra dung lượng trống.")))
         }
     }
 
@@ -569,7 +569,7 @@ final class AudioRecorder {
         })
         observers.append(center.addObserver(forName: AVAudioSession.mediaServicesWereResetNotification,
                                             object: nil, queue: .main) { [weak self] _ in
-            self?.restartEngineChain(reason: "dịch vụ âm thanh khởi động lại", newEngine: true)
+            self?.restartEngineChain(reason: localized("recorder.reason.mediaReset", "dịch vụ âm thanh khởi động lại"), newEngine: true)
         })
         // An interruption whose "ended" never arrives: try again when the
         // user is back in the app.
@@ -587,7 +587,7 @@ final class AudioRecorder {
         engineObserver = NotificationCenter.default.addObserver(
             forName: .AVAudioEngineConfigurationChange, object: engine, queue: .main
         ) { [weak self] _ in
-            self?.restartEngineChain(reason: "đổi cấu hình âm thanh")
+            self?.restartEngineChain(reason: localized("recorder.reason.configChange", "đổi cấu hình âm thanh"))
         }
     }
 
@@ -602,7 +602,7 @@ final class AudioRecorder {
             updateClock()
             stopEngineChain()
             closeSegment(reason: "interrupt")
-            onEvent?(.notice("Tạm dừng: cuộc gọi hoặc ứng dụng khác đang dùng micro."))
+            onEvent?(.notice(localized("recorder.pausedByCall", "Tạm dừng: cuộc gọi hoặc ứng dụng khác đang dùng micro.")))
         case .ended:
             endInterruption()
         @unknown default:
@@ -615,7 +615,7 @@ final class AudioRecorder {
         pausedAt = nil
         updateClock()
         // Try to rebuild even without .shouldResume; fail clearly if impossible.
-        restartEngineChain(reason: "hết cuộc gọi/gián đoạn")
+        restartEngineChain(reason: localized("recorder.reason.interruptionEnded", "hết cuộc gọi/gián đoạn"))
     }
 
     private func resumeIfStillInterrupted() {
@@ -630,7 +630,7 @@ final class AudioRecorder {
               pausedAt == nil // during a call the restart happens when it ends
         else { return }
         if reason == .oldDeviceUnavailable || reason == .newDeviceAvailable {
-            restartEngineChain(reason: "đổi thiết bị âm thanh")
+            restartEngineChain(reason: localized("recorder.reason.routeChange", "đổi thiết bị âm thanh"))
         }
     }
 
@@ -667,7 +667,7 @@ final class AudioRecorder {
         lastFrameCheck = frames
         if stalledTicks >= 3 {
             stalledTicks = 0
-            restartEngineChain(reason: "micro ngừng gửi âm thanh")
+            restartEngineChain(reason: localized("recorder.reason.silentMic", "micro ngừng gửi âm thanh"))
         }
     }
 
