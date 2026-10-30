@@ -10,7 +10,8 @@ pub async fn connect(uri: &str, db_name: &str) -> Result<Database, String> {
     Ok(client.database(db_name))
 }
 
-/// Test trên Mongo dev chạy đối soát cả database (`search::index::reconcile`) giữ khoá này; test có dữ liệu
-/// giả mà đối soát sẽ "sửa" (câu của transcript chưa xong) cũng giữ, để hai bên không chạy chồng nhau.
+/// Test trên Mongo dev chạy đối soát cả database (`search::index::reconcile`) hoặc hoàn mọi phần giữ giờ ElevenLabs
+/// (`usage::refund_provider_holds`) giữ khoá này; test có dữ liệu giả mà các bước đó sẽ "sửa" (câu của transcript chưa
+/// xong, phần giữ giờ đang mở) cũng giữ, để hai bên không chạy chồng nhau.
 #[cfg(test)]
 pub static WHOLE_DB_SWEEP: std::sync::LazyLock<tokio::sync::Mutex<()>> = std::sync::LazyLock::new(Default::default);

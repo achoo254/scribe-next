@@ -530,6 +530,8 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn usage_ledger_never_exceeds_limits_on_real_mongo() {
+        // `refund_provider_holds` hoàn mọi phần giữ giờ ElevenLabs của cả database, kể cả của test khác.
+        let _sweep = crate::db::WHOLE_DB_SWEEP.lock().await;
         let uri = std::env::var("TRANSCRIPT_TEST_MONGO_URI").expect("TRANSCRIPT_TEST_MONGO_URI");
         let db_name = std::env::var("TRANSCRIPT_TEST_DB_NAME").expect("TRANSCRIPT_TEST_DB_NAME");
         let db = crate::db::connect(&uri, &db_name).await.expect("kết nối Mongo");

@@ -835,6 +835,8 @@ mod tests {
     async fn whole_session_money_and_queue_on_real_mongo() {
         use crate::config::TranscribeLimits;
         use crate::models::usage::Charge;
+        // Giữ giờ ElevenLabs của test này không được để `refund_provider_holds` của test khác hoàn mất.
+        let _sweep = crate::db::WHOLE_DB_SWEEP.lock().await;
         let uri = std::env::var("TRANSCRIPT_TEST_MONGO_URI").expect("TRANSCRIPT_TEST_MONGO_URI");
         let db_name = std::env::var("TRANSCRIPT_TEST_DB_NAME").expect("TRANSCRIPT_TEST_DB_NAME");
         let db = crate::db::connect(&uri, &db_name).await.expect("kết nối Mongo");
