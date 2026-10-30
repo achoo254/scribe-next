@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { setActiveTranslator } from "../i18n/active-translator";
 import { VIETNAMESE } from "../i18n/i18n-context";
 import { en } from "../i18n/messages/en/dictionary";
+import { zhCN } from "../i18n/messages/zh-CN/dictionary";
 import { createTranslator } from "../i18n/translate";
 import { fakeFetch, jsonResponse } from "../test/fake-fetch";
 import {
@@ -253,5 +254,29 @@ describe("apiFetch on an English page", () => {
 		await expect(
 			apiFetch("/api/x", { method: "PATCH" }, fetcher),
 		).rejects.toMatchObject({ message: "tên quá dài" });
+	});
+});
+
+describe("apiFetch on a Chinese page", () => {
+	it("words a coded refusal in Chinese instead of the backend's Vietnamese", async () => {
+		setActiveTranslator(createTranslator("zh-CN", zhCN));
+		const { fetcher } = fakeFetch({
+			"POST /api/x": jsonResponse(
+				{
+					error:
+						"Tài khoản mới dùng được chép lời miễn phí từ 09:00 ngày 29/10.",
+					code: "ACCOUNT_TOO_NEW",
+					usedMinutes: 0,
+					limitMinutes: 0,
+					retryAt: "2026-10-29T02:00:00Z",
+				},
+				403,
+			),
+		});
+		await expect(
+			apiFetch("/api/x", { method: "POST" }, fetcher),
+		).rejects.toMatchObject({
+			message: "新账号可从 10月29日 09:00 起使用免费转写。",
+		});
 	});
 });

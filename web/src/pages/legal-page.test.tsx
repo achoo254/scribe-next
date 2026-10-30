@@ -51,4 +51,22 @@ describe("LegalPage", () => {
 		).toHaveAttribute("href", "/privacy");
 		expect(document.documentElement.lang).toBe("en");
 	});
+
+	it("is translated in full on a Chinese page, Vietnamese prevailing", async () => {
+		document.cookie = "hd_lang=zh-CN; Path=/";
+		renderWithProviders(<LegalPage doc="privacy" />);
+		const article = await screen.findByRole("article");
+		expect(
+			within(article).getByRole("heading", { level: 1, name: "隐私政策" }),
+		).toBeVisible();
+		expect(
+			within(article).getByRole("heading", { name: "关于本译文" }),
+		).toBeVisible();
+		expect(article).toHaveTextContent("以越南语版本为准");
+		expect(article).toHaveTextContent("自 2026年");
+		expect(
+			within(article).queryByRole("heading", { name: "英文摘要" }),
+		).toBeNull();
+		expect(document.documentElement.lang).toBe("zh-CN");
+	});
 });

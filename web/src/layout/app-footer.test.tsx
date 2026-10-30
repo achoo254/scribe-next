@@ -63,7 +63,11 @@ describe("AppFooter", () => {
 		expect(
 			within(language).getByRole("button", { name: "Tiếng Việt" }),
 		).toHaveAttribute("aria-pressed", "true");
-		expect(within(language).queryByRole("button", { name: "中文" })).toBeNull();
+		expect(
+			within(language)
+				.getAllByRole("button")
+				.map((button) => button.textContent),
+		).toEqual(["Tiếng Việt", "English", "中文"]);
 		expect(
 			within(switches).getByRole("group", { name: "Giao diện" }),
 		).toBeInTheDocument();
@@ -96,8 +100,29 @@ describe("AppFooter", () => {
 		);
 	});
 
-	it("ignores a Chinese choice Scribe cannot speak", () => {
+	it("speaks Chinese chosen here or in another hoandat.com app", async () => {
 		document.cookie = "hd_lang=zh-CN; Path=/";
+		render(<AppFooter />);
+		expect(document.documentElement.lang).toBe("zh-CN");
+		expect(screen.getByRole("button", { name: "中文" })).toHaveAttribute(
+			"aria-pressed",
+			"true",
+		);
+		expect(
+			screen.getByRole("navigation", { name: "法律文件" }),
+		).toBeInTheDocument();
+		expect(screen.getByRole("link", { name: "隐私" })).toHaveAttribute(
+			"href",
+			"/privacy",
+		);
+
+		await userEvent.click(screen.getByRole("button", { name: "Tiếng Việt" }));
+		expect(document.cookie).toContain("hd_lang=vi");
+		expect(document.documentElement.lang).toBe("vi");
+	});
+
+	it("ignores a stored language Scribe cannot speak", () => {
+		document.cookie = "hd_lang=fr; Path=/";
 		render(<AppFooter />);
 		expect(screen.getByRole("button", { name: "Tiếng Việt" })).toHaveAttribute(
 			"aria-pressed",

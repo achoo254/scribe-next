@@ -1,0 +1,50 @@
+import type { SourceMessages, Translation } from "../../message-types";
+
+/** Simplified Chinese of `vi/split.ts`: the Split file page. */
+export const split: Translation<SourceMessages["split"]> = {
+	title: "拆分文件",
+	description: "上传音频或视频文件，选择拆分方式，然后将片段打包为 zip 下载。",
+	steps: {
+		file: "选择文件",
+		criteria: "拆分方式",
+	},
+	choose: "选择音频/视频文件",
+	chooseAnother: "选择其他文件",
+	uploadProgress: "上传进度",
+	uploading: "正在上传… {percent}%",
+	resume: "继续上传",
+	uploaded: "已上传，时长 {duration}",
+	start: "拆分",
+	working: "正在处理…",
+	result: { other: "结果（{count} 个片段）" },
+	downloadZip: "下载 zip",
+	criteria: {
+		label: "拆分依据",
+		byMinutes: "时长（分钟）",
+		byMegabytes: "大小（MB）",
+		byParts: "平均拆分",
+		minutesValue: "每个片段的分钟数",
+		megabytesValue: "每个片段的 MB 数",
+		partsValue: "片段数",
+		valueInvalid: "请输入大于 0 的数字。",
+		partsInvalid: "请输入不小于 1 的整数。",
+	},
+	managed: {
+		title: "服务器上的文件",
+		description:
+			"你为拆分而上传的文件以及拆分出的片段仍占用你的存储空间。删除一些即可释放空间（如不删除，14 天后会自动删除）。",
+		loadFailed: "无法加载文件列表",
+		uploads: "上传的文件",
+		outputs: "拆分片段",
+		segments: { other: "{count} 个片段" },
+		menu: "{name} 的操作",
+		download: "下载",
+		deleteAll: "全部删除",
+		deleteTitle: "删除文件",
+		deleteFile: "删除“{name}”？",
+		deleteSegments: { other: "删除 {count} 个拆分片段？" },
+		deleteBody: "空间会立即释放。此操作无法撤销。",
+		fileDeleted: "已删除“{name}”",
+		segmentsDeleted: { other: "已删除 {count} 个拆分片段" },
+	},
+};

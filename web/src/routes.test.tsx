@@ -232,6 +232,22 @@ describe("app routes", () => {
 		expect(document.documentElement.lang).toBe("en");
 	});
 
+	it("shows the landing in Chinese", async () => {
+		auth.signedIn = false;
+		document.cookie = "hd_lang=zh-CN; Path=/";
+		renderAt("/");
+		expect(
+			await screen.findByRole("heading", {
+				level: 1,
+				name: "开口说话，拿到文字稿。",
+			}),
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole("link", { name: "使用 hoandat.com 登录" }),
+		).toBeInTheDocument();
+		expect(document.documentElement.lang).toBe("zh-CN");
+	});
+
 	it("keeps the sign-in card at /login for a visitor", async () => {
 		auth.signedIn = false;
 		const router = renderAt("/login");

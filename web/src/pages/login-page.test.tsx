@@ -141,4 +141,21 @@ describe("LoginPage", () => {
 			within(footer()).getByRole("button", { name: "English" }),
 		).toHaveAttribute("aria-pressed", "true");
 	});
+
+	it("switches to Chinese from its footer", async () => {
+		renderAt("/login?error=forbidden");
+		await signInCard();
+
+		await userEvent.click(
+			within(footer()).getByRole("button", { name: "中文" }),
+		);
+		expect(document.cookie).toContain("hd_lang=zh-CN");
+		expect(
+			await screen.findByRole("heading", { level: 1, name: "登录" }),
+		).toBeVisible();
+		expect(screen.getByRole("alert")).toHaveTextContent(
+			"此账号暂时无法使用 Scribe。",
+		);
+		expect(document.documentElement.lang).toBe("zh-CN");
+	});
 });

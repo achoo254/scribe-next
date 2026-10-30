@@ -5,21 +5,26 @@
  * or not, write it; this module keeps the page and the browser chrome on it.
  */
 import {
-	type PreferenceOptions,
+	type LocalePreferenceOptions,
 	type ThemePreference,
 	applyTheme,
 	readPreferences,
 	subscribePreferences,
 } from "@achoo254/app-shell/preferences";
+import { LOCALES, type Locale } from "../i18n/locales";
 import { PRIMARY_TENANT_DOMAIN } from "./brand";
 import { LEGACY_THEME_KEY } from "./theme-bootstrap";
 
 export type { ThemePreference };
 
-/** Where Scribe reads and writes the shared choices. */
-export const PREFERENCE_OPTIONS: PreferenceOptions = {
+/**
+ * Where Scribe reads and writes the shared choices, and the languages it
+ * accepts from them (a stored language outside `LOCALES` counts as none).
+ */
+export const PREFERENCE_OPTIONS: LocalePreferenceOptions<Locale> = {
 	domain: PRIMARY_TENANT_DOMAIN,
 	legacyThemeKey: LEGACY_THEME_KEY,
+	locales: LOCALES,
 };
 
 /**

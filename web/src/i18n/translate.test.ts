@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { Messages } from "./message-types";
 import { vi as viMessages } from "./messages/vi/dictionary";
+import { zhCN } from "./messages/zh-CN/dictionary";
 import { createTranslator } from "./translate";
 
 const vietnamese = createTranslator("vi", viMessages);
+const chinese = createTranslator("zh-CN", zhCN);
 
 /*
  * No Scribe text has a placeholder or a plural form yet, so their runtime
@@ -49,6 +51,27 @@ describe("createTranslator", () => {
 
 	it("formats numbers with the Vietnamese grouping", () => {
 		expect(vietnamese.formatNumber(10_000)).toBe("10.000");
+	});
+});
+
+describe("createTranslator in Chinese", () => {
+	it("returns the Chinese text of a key", () => {
+		expect(chinese.t("common.actions.close")).toBe("关闭");
+	});
+
+	it("uses the single plural form and groups numbers the Chinese way", () => {
+		expect(chinese.t("record.bookmark.marked", { count: 1 })).toBe("1 个标记");
+		expect(chinese.t("split.managed.segments", { count: 10_000 })).toBe(
+			"10,000 个片段",
+		);
+		expect(chinese.formatNumber(10_000)).toBe("10,000");
+	});
+
+	it("formats dates in Asia/Saigon with year, month and day", () => {
+		expect(chinese.formatDate("2026-10-08T17:30:00.000Z")).toBe(
+			"2026年10月9日",
+		);
+		expect(chinese.formatDate("not a date")).toBe("");
 	});
 });
 

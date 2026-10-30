@@ -50,21 +50,33 @@ export function formatStorage(bytes: number): string {
 	return formatSize(bytes);
 }
 
-/** Day and month in Vietnam time, "1/11" (en "Nov 1"); empty when invalid. */
+/** How each language writes a month next to a day: "1/11", "Nov 1", "11月1日". */
+const MONTH_STYLE: Readonly<Record<Locale, "numeric" | "short" | "long">> = {
+	vi: "numeric",
+	en: "short",
+	"zh-CN": "long",
+};
+
+/**
+ * Day and month in Vietnam time, "1/11" (en "Nov 1", zh "11月1日"); empty
+ * when invalid.
+ */
 export function formatDayMonth(iso?: string | null): string {
 	if (!iso) return "";
 	const date = new Date(iso);
-	const english = activeTranslator().locale === "en";
 	return Number.isNaN(date.getTime())
 		? ""
 		: date.toLocaleDateString(intlLocale(), {
 				day: "numeric",
-				month: english ? "short" : "numeric",
+				month: MONTH_STYLE[activeTranslator().locale],
 				timeZone: APP_TIME_ZONE,
 			});
 }
 
-/** Full date in Vietnam time, "31/12/2026" (en "Dec 31, 2026"); empty when invalid. */
+/**
+ * Full date in Vietnam time, "31/12/2026" (en "Dec 31, 2026", zh
+ * "2026年12月31日"); empty when invalid.
+ */
 export function formatDate(iso?: string | null): string {
 	return iso ? activeTranslator().formatDate(iso) : "";
 }
@@ -89,18 +101,18 @@ export function formatDateTime(iso?: string): string {
 	return Number.isNaN(date.getTime()) ? "" : formatLocalDateTime(date);
 }
 
-/** Local date of `date`, "23/10/2026" (en "Oct 23, 2026"). */
+/** Local date of `date`, "23/10/2026" (en "Oct 23, 2026", zh "2026年10月23日"). */
 export function formatLocalDate(date: Date): string {
-	const english = activeTranslator().locale === "en";
+	const month = MONTH_STYLE[activeTranslator().locale];
 	return date.toLocaleDateString(
 		intlLocale(),
-		english
-			? { day: "numeric", month: "short", year: "numeric" }
-			: { day: "2-digit", month: "2-digit", year: "numeric" },
+		month === "numeric"
+			? { day: "2-digit", month: "2-digit", year: "numeric" }
+			: { day: "numeric", month, year: "numeric" },
 	);
 }
 
-/** Local weekday of `date`, capitalised: "Thứ Sáu", "Friday". */
+/** Local weekday of `date`, capitalised: "Thứ Sáu", "Friday", "星期五". */
 export function formatWeekday(date: Date): string {
 	const locale = intlLocale();
 	const name = date.toLocaleDateString(locale, { weekday: "long" });
@@ -109,15 +121,17 @@ export function formatWeekday(date: Date): string {
 
 /**
  * Local date and time of `date` in the language on screen:
- * "09:12:00 16/10/2026" (en "Oct 16, 2026, 09:12:00").
+ * "09:12:00 16/10/2026" (en "Oct 16, 2026, 09:12:00", zh
+ * "2026年10月16日 09:12:00").
  */
 export function formatLocalDateTime(date: Date): string {
-	if (activeTranslator().locale !== "en") {
+	const month = MONTH_STYLE[activeTranslator().locale];
+	if (month === "numeric") {
 		return date.toLocaleString(intlLocale(), { hourCycle: "h23" });
 	}
 	return date.toLocaleString(intlLocale(), {
 		day: "numeric",
-		month: "short",
+		month,
 		year: "numeric",
 		hour: "2-digit",
 		minute: "2-digit",
@@ -141,27 +155,42 @@ export function parsePositiveNumber(
 	return value;
 }
 
+/** Month of `formatTimeAndDay`: digits, except English's short name. */
+const TIME_AND_DAY_MONTH: Readonly<
+	Record<Locale, "2-digit" | "numeric" | "short">
+> = {
+	vi: "2-digit",
+	en: "short",
+	"zh-CN": "numeric",
+};
+
 /**
- * "00:00 17/10" (en "00:00, Oct 17") in Vietnam time: when a limit opens
- * again or a link expires. Empty for a missing or invalid timestamp.
+ * "00:00 17/10" (en "00:00, Oct 17", zh "10月17日 00:00") in Vietnam time:
+ * when a limit opens again or a link expires. Empty for a missing or
+ * invalid timestamp.
  */
 export function formatTimeAndDay(iso?: string | null): string {
 	if (!iso) return "";
 	const date = new Date(iso);
 	if (Number.isNaN(date.getTime())) return "";
-	const english = activeTranslator().locale === "en";
+	const locale = activeTranslator().locale;
 	const parts = new Intl.DateTimeFormat(intlLocale(), {
 		hour: "2-digit",
 		minute: "2-digit",
-		day: english ? "numeric" : "2-digit",
-		month: english ? "short" : "2-digit",
+		day: locale === "vi" ? "2-digit" : "numeric",
+		month: TIME_AND_DAY_MONTH[locale],
 		hourCycle: "h23",
 		timeZone: APP_TIME_ZONE,
 	}).formatToParts(date);
 	const part = (type: Intl.DateTimeFormatPartTypes) =>
 		parts.find((p) => p.type === type)?.value ?? "";
 	const time = `${part("hour")}:${part("minute")}`;
-	return english
-		? `${time}, ${part("month")} ${part("day")}`
-		: `${time} ${part("day")}/${part("month")}`;
+	switch (locale) {
+		case "en":
+			return `${time}, ${part("month")} ${part("day")}`;
+		case "zh-CN":
+			return `${part("month")}月${part("day")}日 ${time}`;
+		case "vi":
+			return `${time} ${part("day")}/${part("month")}`;
+	}
 }

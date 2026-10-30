@@ -1,7 +1,7 @@
 /* Adapted from localman-next apps/web/src/i18n/i18n-provider.tsx. Scribe
    changes: the language is the shared hoandat.com choice (`hd_lang`, set by
    the footer language switch of any app, signed in or not) instead of an
-   account setting, and both dictionaries are imported statically (no chunk
+   account setting, and every dictionary is imported statically (no chunk
    for an open tab to miss after a deploy). */
 import {
 	matchShellLocale,
@@ -12,9 +12,10 @@ import { type ReactNode, useLayoutEffect, useSyncExternalStore } from "react";
 import { PREFERENCE_OPTIONS } from "../lib/theme";
 import { activeTranslator, setActiveTranslator } from "./active-translator";
 import { I18nContext, type I18nValue, VIETNAMESE } from "./i18n-context";
-import { DEFAULT_LOCALE, type Locale } from "./locales";
+import { DEFAULT_LOCALE, LOCALES, type Locale } from "./locales";
 import type { Messages } from "./message-types";
 import { en } from "./messages/en/dictionary";
+import { zhCN } from "./messages/zh-CN/dictionary";
 import { createTranslator } from "./translate";
 
 /**
@@ -25,7 +26,7 @@ import { createTranslator } from "./translate";
 export function readPreferredLocale(): Locale {
 	return (
 		readPreferences(PREFERENCE_OPTIONS).lang ??
-		matchShellLocale(globalThis.navigator?.language) ??
+		matchShellLocale(globalThis.navigator?.language, LOCALES) ??
 		DEFAULT_LOCALE
 	);
 }
@@ -52,6 +53,7 @@ export function followStoredLocale(): void {}
 const TRANSLATORS: Readonly<Record<Locale, I18nValue>> = {
 	vi: VIETNAMESE,
 	en: createTranslator("en", en satisfies Messages),
+	"zh-CN": createTranslator("zh-CN", zhCN satisfies Messages),
 };
 
 /**

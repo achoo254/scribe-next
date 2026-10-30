@@ -1,0 +1,92 @@
+import type { SourceMessages, Translation } from "../../message-types";
+
+/** Simplified Chinese of `vi/errors.ts`. */
+export const errors: Translation<SourceMessages["errors"]> = {
+	network: "无法连接服务器。请检查网络连接后重试。",
+	requestFailed: "请求失败",
+	generic: "出了点问题。",
+	files: {
+		history: "无法加载录音记录",
+		list: "无法加载文件列表",
+		delete: "无法删除文件",
+		deleteAll: "无法删除录音记录",
+		usage: "无法加载存储用量",
+		download: "无法下载文件",
+	},
+	transcripts: {
+		request: "无法发送转写请求",
+		load: "无法加载文字稿",
+		list: "无法加载文字稿列表",
+		doc: "无法加载文字稿",
+		progress: "无法加载转写进度",
+		rename: "无法重命名",
+		speakers: "无法修改发言人名称",
+		saveSegment: "无法保存修改的句子",
+		delete: "无法删除文字稿",
+		summary: "无法生成会议纪要",
+		share: "无法发送到 chat",
+		bookmark: "无法保存标记",
+		deleteBookmark: "无法删除标记",
+		translate: "无法翻译",
+		translation: "无法加载译文",
+		translationProgress: "无法加载翻译进度",
+	},
+	search: {
+		search: "无法搜索文字稿",
+		ask: "无法询问 Scribe",
+	},
+	keys: {
+		load: "无法加载你的 API 密钥",
+		save: "无法保存密钥",
+		delete: "无法删除密钥",
+		prefs: "无法更改选择",
+	},
+	chat: {
+		status: "无法检查 chat 关联状态",
+		link: "无法创建关联链接",
+		unlink: "无法取消关联 chat",
+	},
+	split: {
+		create: "无法创建拆分任务",
+		progress: "无法获取任务进度",
+		failed: "拆分失败",
+		watch: "无法继续跟踪任务进度",
+	},
+	server: {
+		quotaExceeded: "转写分钟数不足：本月已使用 {used}/{limit} 分钟。",
+		dailyLimit:
+			"免费版每天可转写 {limit} 分钟，你今天已使用 {used} 分钟。将于 {time} 恢复。",
+		tooLongForFree:
+			"免费版每天最多转写 {limit} 分钟；所选录音共 {used} 分钟。请少选几条录音。",
+		accountTooNew: "新账号可从 {time} 起使用免费转写。",
+		providerHours: "系统的共享转写时长已用完。将于 {time} 恢复。",
+		notTranscribed: "这条录音还没有任何片段完成转写。请先转写。",
+		confirmRequired: "请输入确认词以删除账号。",
+		chatLinkDisabled: "此服务器未启用 chat 关联。",
+		chatNotLinked: "尚未关联 chat.hoandat.com。",
+		chatBlocked:
+			"Scribe 机器人在 chat 中已被屏蔽，无法发送。关联已移除，请重新关联 chat。",
+		noSummary: "还没有会议纪要。请先点击“生成纪要”，再发送。",
+		bookmarksFull: "这条录音的标记数量已达上限。",
+		realtimeNotAllowed: "此账号暂时无法使用实时转写。",
+		userKeyFailed: "无法使用你自己的 API 密钥。请在“你的 API 密钥”中检查。",
+		keyFormat: "密钥不符合该服务商的格式。",
+		keyRejected: "服务商拒绝了这个密钥。",
+		keyNoCredit: "该密钥所属账号余额不足。",
+		keyCheckFailed: "暂时无法检查密钥，请稍后重试。",
+		accountDeleted: "此 Scribe 账号已被删除。",
+		signedOut: "登录已过期，请重新登录。",
+		tooLarge:
+			"文件过大或存储空间已满。请删除部分录音或文件后再继续录制和上传。",
+		tooMany: "请求过于频繁。请稍等片刻后重试。",
+		unavailable: "此功能暂时停用，请稍后重试。",
+	},
+	upload: {
+		status: "无法获取上传状态",
+		chunk: "上传失败，可以重试",
+		noProgress: "服务器已停止接收数据。请重新上传。",
+		complete: "无法完成上传",
+		init: "无法开始上传（文件过大或超出额度）",
+		failed: "上传失败",
+	},
+};

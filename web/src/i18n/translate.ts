@@ -1,5 +1,5 @@
 /* Copied from localman-next apps/web/src/i18n/translate.ts. Scribe change:
-   the date formats of Scribe's two languages only. */
+   the date formats of Scribe's three languages. */
 import type { Locale } from "./locales";
 import type {
 	MessageKey,
@@ -13,7 +13,10 @@ import type {
 /** Dates are shown in the product's timezone, whatever the browser's is. */
 export const APP_TIME_ZONE = "Asia/Saigon";
 
-/** Vietnamese dates read `dd/mm/yyyy`; English ones `Oct 28, 2026`. */
+/**
+ * Vietnamese dates read `dd/mm/yyyy`; English ones `Oct 28, 2026`; Chinese
+ * ones `2026年10月28日`.
+ */
 const DATE_OPTIONS: Record<Locale, Intl.DateTimeFormatOptions> = {
 	vi: {
 		day: "2-digit",
@@ -24,6 +27,12 @@ const DATE_OPTIONS: Record<Locale, Intl.DateTimeFormatOptions> = {
 	en: {
 		day: "numeric",
 		month: "short",
+		year: "numeric",
+		timeZone: APP_TIME_ZONE,
+	},
+	"zh-CN": {
+		day: "numeric",
+		month: "long",
 		year: "numeric",
 		timeZone: APP_TIME_ZONE,
 	},

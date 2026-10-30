@@ -1,24 +1,26 @@
 /**
- * Languages of the Scribe UI, signed in or not: Vietnamese and English, the
- * shared shell's default pair (@achoo254/app-shell). Scribe has no Chinese,
- * so a `zh-CN` choice stored by another app counts as no choice here and
- * the language switch offers these two only. Vietnamese is the source of
- * every key (`messages/vi`).
+ * Languages of the Scribe UI, signed in or not: Vietnamese, English and
+ * Simplified Chinese, the three the shared shell speaks
+ * (@achoo254/app-shell). Scribe passes this list to the shared language
+ * switch and preference reader, which otherwise assume vi and en only.
+ * Vietnamese is the source of every key (`messages/vi`).
  */
-import {
-	DEFAULT_SHELL_LOCALES,
-	type DefaultShellLocale,
-} from "@achoo254/app-shell";
-
-export type Locale = DefaultShellLocale;
-
-export const DEFAULT_LOCALE: Locale = "vi";
+import type { ShellLocale } from "@achoo254/app-shell";
 
 /** Every language of the UI, in the order the language switch lists them. */
-export const LOCALES: readonly Locale[] = DEFAULT_SHELL_LOCALES;
+export const LOCALES = [
+	"vi",
+	"en",
+	"zh-CN",
+] as const satisfies readonly ShellLocale[];
+
+export type Locale = (typeof LOCALES)[number];
+
+export const DEFAULT_LOCALE: Locale = "vi";
 
 /** BCP 47 tag of a language for `Intl` and `toLocale*String`. */
 export const INTL_LOCALE: Readonly<Record<Locale, string>> = {
 	vi: "vi-VN",
 	en: "en-US",
+	"zh-CN": "zh-CN",
 };
