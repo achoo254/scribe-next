@@ -4,7 +4,7 @@ import { ScribeSignInCard } from "../layout/scribe-sign-in-card";
 import { useIdpName } from "../lib/idp-name";
 
 /**
- * Sign-in with the IdP account (hoandat-auth: Google, GitHub…): the shared
+ * Sign-in with the IdP account (hoandat-auth: Google, GitHub, Apple…): the shared
  * sign-in card alone in the shared signed-out frame (@achoo254/app-shell),
  * as on every hoandat.com app. The backend decides who may enter
  * (allowlist); the card says why a web sign-in came back (`?error=`) and

@@ -11,7 +11,7 @@ export const login: Translation<SourceMessages["login"]> = {
 		expired: "The sign-in expired. Press Sign in again.",
 		invalid: "The sign-in reply was not valid. Press Sign in again.",
 		unverified:
-			"The account's email is not verified. Sign in with a Google or GitHub account whose email is verified.",
+			"The account's email is not verified. Sign in with a Google, GitHub or Apple account whose email is verified.",
 		forbidden: "This account may not use Scribe yet.",
 		deleting:
 			"This Scribe account was just deleted and its data is being removed. Try signing in again in a few minutes.",

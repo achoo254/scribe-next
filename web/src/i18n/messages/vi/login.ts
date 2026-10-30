@@ -13,7 +13,7 @@ export const login = {
 		expired: "Lượt đăng nhập đã hết hạn — bấm Đăng nhập lại.",
 		invalid: "Phản hồi đăng nhập không hợp lệ — bấm Đăng nhập lại.",
 		unverified:
-			"Email của tài khoản chưa được xác minh — đăng nhập bằng Google hoặc GitHub đã xác minh email.",
+			"Email của tài khoản chưa được xác minh — đăng nhập bằng Google, GitHub hoặc Apple đã xác minh email.",
 		forbidden: "Tài khoản này chưa được phép dùng Scribe.",
 		deleting:
 			"Tài khoản Scribe này vừa được xoá và đang dọn dữ liệu — thử đăng nhập lại sau vài phút.",
