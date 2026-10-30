@@ -123,6 +123,15 @@ pub fn read_update(raw: Value) -> (Option<i64>, Result<Update, String>) {
     (id, update)
 }
 
+/// Lỗi thứ `failures` liên tiếp có đáng cảnh báo không. Lần lỗi đầu chỉ ghi info: đường từ máy này ra Cloudflare tới
+/// chat.hoandat.com thỉnh thoảng rớt một kết nối (treo tới hết 65 giây chờ, reset, hoặc 502/520 lúc chat deploy), và lần
+/// thử lại sau 1 giây trên kết nối mới luôn được. Thời gian chờ không phải nguyên nhân: poll chờ 50 giây (trần
+/// `LongPollMax` của chat), client chờ 65 giây, nginx của chat đọc 65 giây, `WriteTimeout` của chat 60 giây, Cloudflare
+/// 100 giây. Lỗi từ lần thứ hai liên tiếp mới là sự cố thật: cảnh báo.
+pub fn worth_warning(failures: u32) -> bool {
+    failures >= 2
+}
+
 /// Chờ trước lần thử lại thứ `failures` sau lỗi mạng: 1, 2, 4 … tối đa 60 giây.
 pub fn backoff_secs(failures: u32) -> u64 {
     2u64.pow(failures.saturating_sub(1).min(6)).min(60)
@@ -209,7 +218,11 @@ async fn run(state: AppState) {
             Err(e) => {
                 failures += 1;
                 let wait = backoff_secs(failures);
-                tracing::warn!(failures, wait, "liên kết chat: {e}");
+                if worth_warning(failures) {
+                    tracing::warn!(failures, wait, "liên kết chat: {e}");
+                } else {
+                    tracing::info!(failures, wait, "liên kết chat: {e}, thử lại");
+                }
                 tokio::time::sleep(Duration::from_secs(wait)).await;
             }
         }
@@ -368,6 +381,12 @@ mod tests {
         assert_eq!(id, Some(8));
         assert!(update.is_ok());
         assert_eq!(read_update(serde_json::json!({ "x": 1 })).0, None);
+    }
+
+    #[test]
+    fn a_single_network_failure_is_not_a_warning() {
+        assert!(!worth_warning(1));
+        assert!(worth_warning(2) && worth_warning(9));
     }
 
     #[test]
