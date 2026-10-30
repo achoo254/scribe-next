@@ -1,5 +1,7 @@
 package com.hoandat.scribe.recorder
 
+import com.hoandat.scribe.AppText
+import com.hoandat.scribe.R
 import java.io.File
 import java.io.IOException
 import java.text.ParseException
@@ -17,7 +19,7 @@ internal object StoreFiles {
         temp.writeText(text, Charsets.UTF_8)
         if (!temp.renameTo(target)) {
             temp.delete()
-            throw IOException("Không ghi được ${target.name}")
+            throw IOException(AppText.get(R.string.recorder_file_write_failed, target.name))
         }
     }
 

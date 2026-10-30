@@ -1,5 +1,7 @@
 package com.hoandat.scribe.recorder
 
+import com.hoandat.scribe.AppText
+import com.hoandat.scribe.R
 import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
@@ -121,7 +123,7 @@ class SegmentStore(private val root: File, private val probe: (File) -> Double?)
     @Synchronized
     fun createSession(userKey: String, sessionId: String, segmentSeconds: Double, nowMs: Long = System.currentTimeMillis()): File {
         val dir = sessionDir(userKey, sessionId)
-        if (!dir.mkdirs() && !dir.isDirectory) throw IOException("Không tạo được thư mục phiên ghi.")
+        if (!dir.mkdirs() && !dir.isDirectory) throw IOException(AppText.get(R.string.recorder_session_folder_failed))
         write(RecordingSession(sessionId, nowMs, segmentSeconds, emptyList()), dir)
         return dir
     }
@@ -129,7 +131,7 @@ class SegmentStore(private val root: File, private val probe: (File) -> Double?)
     @Synchronized
     fun appendSegment(userKey: String, sessionId: String, segment: Segment) {
         val dir = sessionDir(userKey, sessionId)
-        val session = read(dir) ?: throw IOException("Thiếu session.json của phiên $sessionId")
+        val session = read(dir) ?: throw IOException(AppText.get(R.string.recorder_session_missing, sessionId))
         val segments = (session.segments.filter { it.index != segment.index } + segment).sortedBy { it.index }
         write(session.copy(segments = segments), dir)
     }
@@ -235,7 +237,7 @@ class SegmentStore(private val root: File, private val probe: (File) -> Double?)
     @Synchronized
     fun removeAll(userKey: String) {
         val dir = File(root, userKey)
-        if (dir.exists() && !dir.deleteRecursively()) throw IOException("Không xoá được bản ghi của tài khoản trên máy.")
+        if (dir.exists() && !dir.deleteRecursively()) throw IOException(AppText.get(R.string.recorder_account_delete_failed))
     }
 
     fun sessionDir(userKey: String, sessionId: String): File = File(File(root, userKey), sessionId)

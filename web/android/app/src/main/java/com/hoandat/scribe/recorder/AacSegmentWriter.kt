@@ -1,5 +1,7 @@
 package com.hoandat.scribe.recorder
 
+import com.hoandat.scribe.AppText
+import com.hoandat.scribe.R
 import android.media.MediaCodec
 import android.media.MediaCodecInfo
 import android.media.MediaFormat
@@ -38,7 +40,7 @@ class AacSegmentWriter(private val file: File, private val sampleRate: Int) {
             codec.start()
         } catch (e: Exception) {
             codec.release()
-            throw IOException("Không mở được bộ mã hoá AAC: ${e.message}", e)
+            throw IOException(AppText.get(R.string.recorder_encoder_failed, "${e.message}"), e)
         }
     }
 

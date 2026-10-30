@@ -1,5 +1,7 @@
 package com.hoandat.scribe.auth
 
+import com.hoandat.scribe.AppText
+import com.hoandat.scribe.R
 import com.hoandat.scribe.net.Base64Text
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
@@ -68,7 +70,7 @@ class AuthRequestTest {
 
     @Test
     fun `callback with another state, no code or another redirect is refused`() {
-        val mismatch = CallbackResult.Failure("Phản hồi đăng nhập không khớp, thử lại.")
+        val mismatch = CallbackResult.Failure(AppText.get(R.string.sign_in_state_mismatch))
         assertEquals(mismatch, request.parseCallback("com.hoandat.scribe:/auth/callback?code=abc&state=other"))
         assertEquals(mismatch, request.parseCallback("com.hoandat.scribe:/auth/callback?state=st4te"))
         assertEquals(mismatch, request.parseCallback("com.evil.app:/auth/callback?code=abc&state=st4te"))
@@ -77,11 +79,11 @@ class AuthRequestTest {
     @Test
     fun `callback errors are explained`() {
         assertEquals(
-            CallbackResult.Failure("Bạn đã từ chối đăng nhập."),
+            CallbackResult.Failure(AppText.get(R.string.sign_in_denied)),
             request.parseCallback("com.hoandat.scribe:/auth/callback?error=access_denied&state=st4te"),
         )
         assertEquals(
-            CallbackResult.Failure("Đăng nhập thất bại (server_error)."),
+            CallbackResult.Failure(AppText.get(R.string.sign_in_failed_code, "server_error")),
             request.parseCallback("com.hoandat.scribe:/auth/callback?error=server_error"),
         )
     }

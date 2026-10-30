@@ -5,6 +5,8 @@ import com.getcapacitor.Plugin
 import com.getcapacitor.PluginCall
 import com.getcapacitor.PluginMethod
 import com.getcapacitor.annotation.CapacitorPlugin
+import com.hoandat.scribe.AppText
+import com.hoandat.scribe.R
 
 /**
  * Values the WebView may touch in [SecureStore], same contract as SecretsPlugin.swift: `get`, `set`,
@@ -20,7 +22,7 @@ class SecretsPlugin : Plugin() {
     private fun name(call: PluginCall): String? {
         val name = call.getString("name")
         if (name == null || name !in ALLOWED) {
-            call.reject("Tên khoá không hợp lệ.", "BAD_NAME")
+            call.reject(AppText.get(R.string.secrets_bad_name), "BAD_NAME")
             return null
         }
         return name
@@ -40,14 +42,14 @@ class SecretsPlugin : Plugin() {
         val name = name(call) ?: return
         val value = call.getString("value")
         if (value.isNullOrEmpty()) {
-            call.reject("Thiếu giá trị.", "NO_VALUE")
+            call.reject(AppText.get(R.string.secrets_no_value), "NO_VALUE")
             return
         }
         execute {
             if (store.write(key(name), value)) {
                 call.resolve()
             } else {
-                call.reject("Không lưu được vào kho khoá của máy.", "KEYSTORE")
+                call.reject(AppText.get(R.string.secrets_keystore), "KEYSTORE")
             }
         }
     }

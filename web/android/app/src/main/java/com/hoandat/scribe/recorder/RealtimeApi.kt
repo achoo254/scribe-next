@@ -1,6 +1,8 @@
 package com.hoandat.scribe.recorder
 
 import android.util.Log
+import com.hoandat.scribe.AppText
+import com.hoandat.scribe.R
 import com.hoandat.scribe.net.BackendHttp
 import com.hoandat.scribe.net.HttpReply
 import kotlinx.coroutines.CancellationException
@@ -81,15 +83,15 @@ class RealtimeApi(
                     throw e
                 } catch (e: IOException) {
                     // Offline, not signed out: try again later.
-                    return TokenResult.Transient("Mất kết nối tới máy chủ: ${e.message ?: e.javaClass.simpleName}")
+                    return TokenResult.Transient(AppText.get(R.string.live_connection_lost, e.message ?: e.javaClass.simpleName))
                 } catch (e: Exception) {
-                    return TokenResult.Final(SIGNED_OUT)
+                    return TokenResult.Final(AppText.get(R.string.live_session_expired))
                 }
                 reply = http.postJson(TOKEN_PATH, body, TIMEOUT_MS)
             }
             tokenResult(reply)
         } catch (e: IOException) {
-            TokenResult.Transient("Mất kết nối tới máy chủ: ${e.message ?: e.javaClass.simpleName}")
+            TokenResult.Transient(AppText.get(R.string.live_connection_lost, e.message ?: e.javaClass.simpleName))
         }
     }
 
@@ -127,21 +129,20 @@ class RealtimeApi(
         private const val TAG = "ScribeRealtime"
         private const val TOKEN_PATH = "/api/realtime/token"
         private const val TIMEOUT_MS = 20_000
-        private const val SIGNED_OUT = "Phiên đăng nhập đã hết hạn — chép trực tiếp dừng, bản ghi vẫn tiếp tục."
 
         /** Only the backend's own `{ "error": … }` is final; a proxy page with the same status is not. */
         fun tokenResult(reply: HttpReply): TokenResult {
             val message = reply.backendError()
             return when (reply.status) {
                 in 200..299 -> RealtimeToken.parse(reply.json())?.let { TokenResult.Ok(it) }
-                    ?: TokenResult.Transient("Máy chủ trả token chép trực tiếp không đọc được.")
-                401 -> TokenResult.Final(SIGNED_OUT)
+                    ?: TokenResult.Transient(AppText.get(R.string.live_bad_token))
+                401 -> TokenResult.Final(AppText.get(R.string.live_session_expired))
                 400, 403 -> if (message != null) {
                     TokenResult.Final(message)
                 } else {
-                    TokenResult.Transient("Không lấy được token chép trực tiếp (HTTP ${reply.status}).")
+                    TokenResult.Transient(AppText.get(R.string.live_token_failed, reply.status.toString()))
                 }
-                else -> TokenResult.Transient(message ?: "Không lấy được token chép trực tiếp (HTTP ${reply.status}).")
+                else -> TokenResult.Transient(message ?: AppText.get(R.string.live_token_failed, reply.status.toString()))
             }
         }
     }

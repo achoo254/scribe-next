@@ -10,6 +10,8 @@ import com.getcapacitor.PluginMethod
 import com.getcapacitor.annotation.CapacitorPlugin
 import com.getcapacitor.annotation.Permission
 import com.getcapacitor.annotation.PermissionCallback
+import com.hoandat.scribe.AppText
+import com.hoandat.scribe.R
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -92,7 +94,7 @@ class RecorderPlugin : Plugin(), RecorderEngine.Listener {
         if (getPermissionState(MICROPHONE) == PermissionState.GRANTED) {
             startRecording(call)
         } else {
-            val message = "Ứng dụng chưa được cấp quyền Micro — vào Cài đặt → Ứng dụng → Scribe → Quyền để bật."
+            val message = AppText.get(R.string.recorder_mic_denied)
             notifyListeners("failure", JSObject().put("message", message))
             call.reject(message, "PERMISSION")
         }
@@ -172,7 +174,7 @@ class RecorderPlugin : Plugin(), RecorderEngine.Listener {
                 withContext(Dispatchers.IO) { engine.ackBookmarks(userKey, ids) }
                 call.resolve()
             } catch (e: IOException) {
-                call.reject("Không cập nhật được dấu mốc trên máy: ${e.message}", "STORE")
+                call.reject(AppText.get(R.string.recorder_bookmark_update_failed, "${e.message}"), "STORE")
             }
         }
     }
@@ -187,7 +189,7 @@ class RecorderPlugin : Plugin(), RecorderEngine.Listener {
     private fun userKey(call: PluginCall): String? {
         val userKey = call.getString("userKey")
         if (userKey.isNullOrEmpty()) {
-            call.reject("Thiếu thông tin tài khoản.", "NO_USER")
+            call.reject(AppText.get(R.string.recorder_no_user), "NO_USER")
             return null
         }
         return userKey

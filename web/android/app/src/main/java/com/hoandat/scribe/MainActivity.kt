@@ -20,6 +20,7 @@ import com.hoandat.scribe.recorder.RecorderPlugin
  */
 class MainActivity : BridgeActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
+        AppText.init(this)
         registerPlugin(HoandatAuthPlugin::class.java)
         registerPlugin(NativeFilesPlugin::class.java)
         registerPlugin(RecorderPlugin::class.java)

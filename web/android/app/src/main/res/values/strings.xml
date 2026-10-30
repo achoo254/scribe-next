@@ -6,7 +6,7 @@
     <string name="package_name" translatable="false">com.hoandat.scribe</string>
     <string name="custom_url_scheme" translatable="false">com.hoandat.scribe</string>
 
-    <!-- Recording notification; values-zh-rCN translates it, other languages keep Vietnamese. -->
+    <!-- Recording notification; values-en and values-zh-rCN translate it. -->
     <string name="recording_channel">Ghi âm</string>
     <string name="recording_channel_description">Thông báo khi Scribe đang ghi âm, kể cả lúc khoá màn hình.</string>
     <string name="recording_title">Scribe đang ghi</string>
@@ -19,4 +19,84 @@
     <string name="recording_stop">Dừng</string>
     <!-- Shown for 3 seconds after a bookmark; %1$s is the recording clock, e.g. 12:34. -->
     <string name="recording_bookmarked">Đã đánh dấu %1$s</string>
+
+    <!-- Native errors and notices (AppText); values-en and values-zh-rCN translate them. -->
+    <!-- Sign-in and session. -->
+    <string name="sign_in_in_progress">Đang mở trang đăng nhập.</string>
+    <string name="sign_in_bad_config">Cấu hình đăng nhập không hợp lệ.</string>
+    <string name="sign_in_no_browser">Máy chưa có trình duyệt để mở trang đăng nhập.</string>
+    <string name="sign_in_no_result">Đăng nhập không trả kết quả.</string>
+    <string name="sign_in_failed_code">Đăng nhập thất bại (%1$s).</string>
+    <string name="sign_in_failed_detail">Đăng nhập thất bại: %1$s</string>
+    <string name="sign_in_denied">Bạn đã từ chối đăng nhập.</string>
+    <string name="sign_in_state_mismatch">Phản hồi đăng nhập không khớp, thử lại.</string>
+    <string name="sign_in_cancelled">Cửa sổ đăng nhập đã đóng trước khi hoàn tất.</string>
+    <string name="sign_in_app_closed">Ứng dụng đã đóng trong lúc đăng nhập — thử lại.</string>
+    <string name="sign_in_config_failed">Không lấy được cấu hình đăng nhập</string>
+    <string name="sign_in_config_incomplete">Cấu hình đăng nhập thiếu trường.</string>
+    <string name="server_unreachable">Không kết nối được máy chủ: %1$s</string>
+    <string name="session_exchange_failed">Máy chủ không cấp phiên đăng nhập</string>
+    <string name="session_no_device_token">Máy chủ không trả mã thiết bị.</string>
+    <string name="session_device_token_not_saved">Không lưu được mã thiết bị trên máy.</string>
+    <string name="session_sign_out_failed">Đăng xuất</string>
+    <string name="session_none">Chưa có phiên đăng nhập để làm mới.</string>
+    <string name="session_refresh_failed">Máy chủ không cấp lại phiên</string>
+    <string name="session_expired">Phiên đăng nhập đã hết hạn.</string>
+    <string name="account_deleted">Tài khoản Scribe đã bị xoá.</string>
+
+    <!-- Secrets kept on the phone. -->
+    <string name="secrets_bad_name">Tên khoá không hợp lệ.</string>
+    <string name="secrets_no_value">Thiếu giá trị.</string>
+    <string name="secrets_keystore">Không lưu được vào kho khoá của máy.</string>
+
+    <!-- Downloads and the share sheet. -->
+    <string name="files_download_failed">Tải tệp thất bại.</string>
+    <string name="files_download_failed_http">Tải tệp thất bại (HTTP %1$s).</string>
+    <string name="files_share_unavailable">Không mở được bảng chia sẻ.</string>
+    <string name="files_bad_download_url">Đường dẫn tải không hợp lệ.</string>
+    <string name="files_cache_failed">Không lưu được tệp vào bộ nhớ đệm.</string>
+    <string name="files_share_prepare_failed">Không chuẩn bị được tệp để chia sẻ.</string>
+    <string name="files_session_expired">Phiên đăng nhập đã hết — đăng nhập lại rồi thử lại.</string>
+
+    <!-- Recording. -->
+    <string name="recorder_mic_denied">Ứng dụng chưa được cấp quyền Micro — vào Cài đặt → Ứng dụng → Scribe → Quyền để bật.</string>
+    <string name="recorder_mic_unavailable">Không mở được micro — kiểm tra quyền Micro của Scribe trong Cài đặt.</string>
+    <string name="recorder_mic_busy">Micro đang bị cuộc gọi hoặc ứng dụng khác dùng — chưa ghi được.</string>
+    <string name="recorder_mic_silenced">Micro đang bị cuộc gọi hoặc ứng dụng khác dùng — đoạn này sẽ im lặng, bản ghi vẫn chạy.</string>
+    <string name="recorder_start_failed">Không bắt đầu ghi được.</string>
+    <string name="recorder_start_failed_detail">Không bắt đầu ghi được: %1$s</string>
+    <string name="recorder_foreground_refused">Android không cho Scribe ghi âm nền: %1$s</string>
+    <string name="recorder_busy">Đang ghi rồi.</string>
+    <string name="recorder_no_user">Thiếu thông tin tài khoản.</string>
+    <string name="recorder_session_create_failed">Không tạo được phiên ghi: %1$s</string>
+    <string name="recorder_session_folder_failed">Không tạo được thư mục phiên ghi.</string>
+    <string name="recorder_session_missing">Thiếu session.json của phiên %1$s</string>
+    <string name="recorder_no_session_folder">Chưa có thư mục phiên ghi.</string>
+    <string name="recorder_file_write_failed">Không ghi được %1$s</string>
+    <string name="recorder_account_delete_failed">Không xoá được bản ghi của tài khoản trên máy.</string>
+    <string name="recorder_encoder_failed">Không mở được bộ mã hoá AAC: %1$s</string>
+    <string name="recorder_segment_open_failed">Không mở được đoạn ghi mới: %1$s</string>
+    <string name="recorder_disk_full_stopped">Không ghi được vào bộ nhớ máy (có thể đã đầy) — đã dừng, giữ phần đã ghi.</string>
+    <string name="recorder_disk_write_failed">Không ghi được vào bộ nhớ máy — kiểm tra dung lượng trống.</string>
+    <string name="recorder_odd_file_format">Định dạng tệp ghi bất thường (%1$s) — máy chủ có thể không nhận.</string>
+    <string name="recorder_resumed_after_interruption">Ghi tiếp sau gián đoạn (%1$s).</string>
+    <string name="recorder_interruption_resume_failed">Không ghi tiếp được sau gián đoạn (%1$s).</string>
+    <string name="recorder_reason_silent_mic">micro ngừng gửi âm thanh</string>
+    <string name="recorder_reason_interruption_ended">hết cuộc gọi/gián đoạn</string>
+    <string name="recorder_bookmark_save_failed">Không lưu được dấu mốc: %1$s</string>
+    <string name="recorder_bookmark_update_failed">Không cập nhật được dấu mốc trên máy: %1$s</string>
+    <string name="recorder_bookmark_delete_failed">Không xoá được dấu mốc trên máy.</string>
+
+    <!-- Live transcription. -->
+    <string name="live_bad_url">Địa chỉ chép trực tiếp không hợp lệ.</string>
+    <string name="live_quota_exhausted">Hệ thống đã dùng hết giờ chép lời chung — chép trực tiếp dừng, bản ghi vẫn tiếp tục.</string>
+    <string name="live_session_expired">Phiên đăng nhập đã hết hạn — chép trực tiếp dừng, bản ghi vẫn tiếp tục.</string>
+    <string name="live_bad_token">Máy chủ trả token chép trực tiếp không đọc được.</string>
+    <string name="live_token_failed">Không lấy được token chép trực tiếp (HTTP %1$s).</string>
+    <string name="live_connection_lost">Mất kết nối tới máy chủ: %1$s</string>
+
+    <!-- Uploads. -->
+    <string name="upload_unreadable_segment">Tệp đoạn ghi không đọc được.</string>
+    <string name="upload_chunk_incomplete">chunk không ghi đủ dữ liệu</string>
+    <string name="upload_storage_full">Hết dung lượng lưu trữ.</string>
 </resources>

@@ -15,6 +15,7 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
+import com.hoandat.scribe.AppText
 import com.hoandat.scribe.MainActivity
 import com.hoandat.scribe.R
 
@@ -58,7 +59,7 @@ class RecordingService : Service() {
         } catch (e: RuntimeException) {
             // ForegroundServiceStartNotAllowedException / SecurityException (no microphone permission).
             Log.e(TAG, "startForeground refused", e)
-            engine.foregroundRefused("Android không cho Scribe ghi âm nền: ${e.message ?: e.javaClass.simpleName}")
+            engine.foregroundRefused(AppText.get(R.string.recorder_foreground_refused, e.message ?: e.javaClass.simpleName))
             stopSelf()
             return START_NOT_STICKY
         }

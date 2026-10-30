@@ -1,7 +1,9 @@
 package com.hoandat.scribe.auth
 
 import android.content.Context
+import com.hoandat.scribe.AppText
 import com.hoandat.scribe.BuildConfig
+import com.hoandat.scribe.R
 import com.hoandat.scribe.net.BackendHttp
 import com.hoandat.scribe.net.WebViewCookies
 import kotlinx.coroutines.CoroutineScope
@@ -35,7 +37,7 @@ class HttpStatusException(val status: Int, message: String) : AuthException(mess
  * The account behind this device was deleted (410 on refresh): what the phone still keeps for it
  * (segments not uploaded, bookmarks) must go, never into a later account.
  */
-class AccountDeletedException : AuthException("Tài khoản Scribe đã bị xoá.")
+class AccountDeletedException : AuthException(AppText.get(R.string.account_deleted))
 
 /**
  * Backend session of the native side, the Android twin of SessionAuth.swift. Sign-in leaves a device
@@ -59,8 +61,8 @@ class SessionAuth(
 
     fun loadConfig(): NativeAuthConfig {
         val reply = http.get("/api/auth/native/config")
-        if (!reply.ok) throw HttpStatusException(reply.status, failure("Không lấy được cấu hình đăng nhập", reply.status, reply.backendError()))
-        return NativeAuthConfig.parse(reply.json()) ?: throw AuthException("Cấu hình đăng nhập thiếu trường.")
+        if (!reply.ok) throw HttpStatusException(reply.status, failure(AppText.get(R.string.sign_in_config_failed), reply.status, reply.backendError()))
+        return NativeAuthConfig.parse(reply.json()) ?: throw AuthException(AppText.get(R.string.sign_in_config_incomplete))
     }
 
     /**
@@ -69,11 +71,11 @@ class SessionAuth(
      */
     fun exchange(code: String, verifier: String, nonce: String): String {
         val body = JSONObject().put("code", code).put("codeVerifier", verifier).put("nonce", nonce)
-        val json = post("/api/auth/native/exchange", body, "Máy chủ không cấp phiên đăng nhập")
+        val json = post("/api/auth/native/exchange", body, AppText.get(R.string.session_exchange_failed))
         val token = json.optString("deviceToken")
-        if (token.isEmpty()) throw AuthException("Máy chủ không trả mã thiết bị.")
+        if (token.isEmpty()) throw AuthException(AppText.get(R.string.session_no_device_token))
         clear()
-        if (!store.write(DEVICE_TOKEN, token)) throw AuthException("Không lưu được mã thiết bị trên máy.")
+        if (!store.write(DEVICE_TOKEN, token)) throw AuthException(AppText.get(R.string.session_device_token_not_saved))
         return json.optString("email")
     }
 
@@ -82,7 +84,7 @@ class SessionAuth(
         val body = JSONObject()
         deviceToken()?.let { body.put("deviceToken", it) }
         try {
-            post("/api/auth/logout", body, "Đăng xuất")
+            post("/api/auth/logout", body, AppText.get(R.string.session_sign_out_failed))
         } catch (e: IOException) {
             // Offline: the device is forgotten here; the backend session expires on its own.
         } catch (e: AuthException) {
@@ -112,16 +114,16 @@ class SessionAuth(
     }
 
     private suspend fun renew() {
-        val token = deviceToken() ?: throw AuthException("Chưa có phiên đăng nhập để làm mới.")
+        val token = deviceToken() ?: throw AuthException(AppText.get(R.string.session_none))
         try {
-            post("/api/auth/native/refresh", JSONObject().put("deviceToken", token), "Máy chủ không cấp lại phiên")
+            post("/api/auth/native/refresh", JSONObject().put("deviceToken", token), AppText.get(R.string.session_refresh_failed))
         } catch (e: HttpStatusException) {
             when (e.status) {
                 // Another renewal of this device is running (from the WebView): it sets the cookie.
                 409 -> delay(conflictWaitMs)
                 401 -> {
                     clear()
-                    throw AuthException(e.message ?: "Phiên đăng nhập đã hết hạn.")
+                    throw AuthException(e.message ?: AppText.get(R.string.session_expired))
                 }
                 410 -> {
                     clear()

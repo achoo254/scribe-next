@@ -11,6 +11,8 @@ import com.getcapacitor.Plugin
 import com.getcapacitor.PluginCall
 import com.getcapacitor.PluginMethod
 import com.getcapacitor.annotation.CapacitorPlugin
+import com.hoandat.scribe.AppText
+import com.hoandat.scribe.R
 import com.hoandat.scribe.auth.SessionAuth
 import com.hoandat.scribe.net.BackendHttp
 import kotlinx.coroutines.CancellationException
@@ -59,7 +61,7 @@ class NativeFilesPlugin : Plugin() {
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                call.reject(e.message ?: "Tải tệp thất bại.", DOWNLOAD_FAILED)
+                call.reject(e.message ?: AppText.get(R.string.files_download_failed), DOWNLOAD_FAILED)
             }
         }
     }
@@ -83,9 +85,9 @@ class NativeFilesPlugin : Plugin() {
             } catch (e: CancellationException) {
                 throw e
             } catch (e: ActivityNotFoundException) {
-                call.reject("Không mở được bảng chia sẻ.", "NO_VIEW")
+                call.reject(AppText.get(R.string.files_share_unavailable), "NO_VIEW")
             } catch (e: Exception) {
-                call.reject(e.message ?: "Tải tệp thất bại.", DOWNLOAD_FAILED)
+                call.reject(e.message ?: AppText.get(R.string.files_download_failed), DOWNLOAD_FAILED)
             }
         }
     }
@@ -107,7 +109,7 @@ class NativeFilesPlugin : Plugin() {
 
     private fun backendUrl(call: PluginCall): URI? {
         val url = MediaFiles.backendUrl(call.getString("url"), http.origin)
-        if (url == null) call.reject("Đường dẫn tải không hợp lệ.", DOWNLOAD_FAILED)
+        if (url == null) call.reject(AppText.get(R.string.files_bad_download_url), DOWNLOAD_FAILED)
         return url
     }
 
@@ -136,7 +138,7 @@ class NativeFilesPlugin : Plugin() {
             val name = MediaFiles.fileName(reply.header("Content-Disposition"))
             val extension = MediaFiles.extension(name ?: url.rawPath, reply.header("Content-Type"))
             val target = File(dir, if (extension.isEmpty()) key else "$key.$extension")
-            if (!staged.renameTo(target)) throw IOException("Không lưu được tệp vào bộ nhớ đệm.")
+            if (!staged.renameTo(target)) throw IOException(AppText.get(R.string.files_cache_failed))
             return target
         } finally {
             staged.delete()
@@ -154,7 +156,7 @@ class NativeFilesPlugin : Plugin() {
             val name = MediaFiles.fileName(reply.header("Content-Disposition"))
                 ?: url.rawPath.substringAfterLast('/').ifEmpty { "Scribe" }
             val target = File(dir, name)
-            if (!staged.renameTo(target)) throw IOException("Không chuẩn bị được tệp để chia sẻ.")
+            if (!staged.renameTo(target)) throw IOException(AppText.get(R.string.files_share_prepare_failed))
             return target
         } finally {
             staged.delete()
@@ -166,9 +168,9 @@ class NativeFilesPlugin : Plugin() {
         staged.delete()
         throw IOException(
             if (status == 401) {
-                "Phiên đăng nhập đã hết — đăng nhập lại rồi thử lại."
+                AppText.get(R.string.files_session_expired)
             } else {
-                "Tải tệp thất bại (HTTP $status)."
+                AppText.get(R.string.files_download_failed_http, status.toString())
             },
         )
     }

@@ -1,5 +1,7 @@
 package com.hoandat.scribe.auth
 
+import com.hoandat.scribe.AppText
+import com.hoandat.scribe.R
 import com.hoandat.scribe.net.BackendHttp
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -66,7 +68,7 @@ class SessionAuthTest {
             auth.exchange("code", "verifier", "nonce")
             fail("expected AuthException")
         } catch (e: AuthException) {
-            assertEquals("Máy chủ không cấp phiên đăng nhập: mã đã dùng", e.message)
+            assertEquals("${AppText.get(R.string.session_exchange_failed)}: mã đã dùng", e.message)
         }
         assertNull(auth.deviceToken())
     }

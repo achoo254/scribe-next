@@ -1,0 +1,95 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <!-- Recording notification in English. -->
+    <string name="recording_channel">Recording</string>
+    <string name="recording_channel_description">Shown while Scribe is recording, even with the screen locked.</string>
+    <string name="recording_title">Scribe is recording</string>
+    <string name="recording_text">Tap Bookmark to mark an important moment</string>
+    <string name="recording_paused_title">Scribe is paused</string>
+    <string name="recording_paused_text">Tap Resume to keep recording</string>
+    <string name="recording_pause">Pause</string>
+    <string name="recording_resume">Resume</string>
+    <string name="recording_bookmark">Bookmark</string>
+    <string name="recording_stop">Stop</string>
+    <string name="recording_bookmarked">Bookmarked %1$s</string>
+
+    <!-- Native errors and notices. -->
+    <!-- Sign-in and session. -->
+    <string name="sign_in_in_progress">The sign-in page is already opening.</string>
+    <string name="sign_in_bad_config">The sign-in configuration is invalid.</string>
+    <string name="sign_in_no_browser">This phone has no browser to open the sign-in page.</string>
+    <string name="sign_in_no_result">Sign-in returned no result.</string>
+    <string name="sign_in_failed_code">Sign-in failed (%1$s).</string>
+    <string name="sign_in_failed_detail">Sign-in failed: %1$s</string>
+    <string name="sign_in_denied">You declined to sign in.</string>
+    <string name="sign_in_state_mismatch">The sign-in response didn\'t match, try again.</string>
+    <string name="sign_in_cancelled">The sign-in window was closed before finishing.</string>
+    <string name="sign_in_app_closed">The app closed during sign-in — try again.</string>
+    <string name="sign_in_config_failed">Couldn\'t load the sign-in configuration</string>
+    <string name="sign_in_config_incomplete">The sign-in configuration is missing fields.</string>
+    <string name="server_unreachable">Couldn\'t reach the server: %1$s</string>
+    <string name="session_exchange_failed">The server didn\'t grant a sign-in session</string>
+    <string name="session_no_device_token">The server didn\'t return a device code.</string>
+    <string name="session_device_token_not_saved">Couldn\'t save the device code on this phone.</string>
+    <string name="session_sign_out_failed">Sign out</string>
+    <string name="session_none">There is no sign-in session to renew.</string>
+    <string name="session_refresh_failed">The server didn\'t renew the session</string>
+    <string name="session_expired">Your sign-in session has expired.</string>
+    <string name="account_deleted">The Scribe account was deleted.</string>
+
+    <!-- Secrets kept on the phone. -->
+    <string name="secrets_bad_name">Invalid key name.</string>
+    <string name="secrets_no_value">The value is missing.</string>
+    <string name="secrets_keystore">Couldn\'t save to the phone\'s keystore.</string>
+
+    <!-- Downloads and the share sheet. -->
+    <string name="files_download_failed">Download failed.</string>
+    <string name="files_download_failed_http">Download failed (HTTP %1$s).</string>
+    <string name="files_share_unavailable">Couldn\'t open the share sheet.</string>
+    <string name="files_bad_download_url">The download link is invalid.</string>
+    <string name="files_cache_failed">Couldn\'t save the file to the cache.</string>
+    <string name="files_share_prepare_failed">Couldn\'t prepare the file for sharing.</string>
+    <string name="files_session_expired">Your sign-in session has expired — sign in again and retry.</string>
+
+    <!-- Recording. -->
+    <string name="recorder_mic_denied">The app doesn\'t have microphone access — go to Settings → Apps → Scribe → Permissions to turn it on.</string>
+    <string name="recorder_mic_unavailable">Couldn\'t open the microphone — check Scribe\'s microphone permission in Settings.</string>
+    <string name="recorder_mic_busy">A call or another app is using the microphone — can\'t record yet.</string>
+    <string name="recorder_mic_silenced">A call or another app is using the microphone — this part will be silent, the recording keeps going.</string>
+    <string name="recorder_start_failed">Couldn\'t start recording.</string>
+    <string name="recorder_start_failed_detail">Couldn\'t start recording: %1$s</string>
+    <string name="recorder_foreground_refused">Android didn\'t allow Scribe to record in the background: %1$s</string>
+    <string name="recorder_busy">Already recording.</string>
+    <string name="recorder_no_user">The account information is missing.</string>
+    <string name="recorder_session_create_failed">Couldn\'t create the recording: %1$s</string>
+    <string name="recorder_session_folder_failed">Couldn\'t create the recording folder.</string>
+    <string name="recorder_session_missing">session.json of recording %1$s is missing</string>
+    <string name="recorder_no_session_folder">There is no folder for this recording yet.</string>
+    <string name="recorder_file_write_failed">Couldn\'t write %1$s</string>
+    <string name="recorder_account_delete_failed">Couldn\'t delete the account\'s recordings on this phone.</string>
+    <string name="recorder_encoder_failed">Couldn\'t open the AAC encoder: %1$s</string>
+    <string name="recorder_segment_open_failed">Couldn\'t open a new recording part: %1$s</string>
+    <string name="recorder_disk_full_stopped">Couldn\'t write to the phone\'s storage (it may be full) — recording stopped, what was recorded is kept.</string>
+    <string name="recorder_disk_write_failed">Couldn\'t write to the phone\'s storage — check the free space.</string>
+    <string name="recorder_odd_file_format">The recording file has an unusual format (%1$s) — the server may not accept it.</string>
+    <string name="recorder_resumed_after_interruption">Recording resumed after an interruption (%1$s).</string>
+    <string name="recorder_interruption_resume_failed">Couldn\'t resume recording after the interruption (%1$s).</string>
+    <string name="recorder_reason_silent_mic">the microphone stopped sending audio</string>
+    <string name="recorder_reason_interruption_ended">the call or interruption ended</string>
+    <string name="recorder_bookmark_save_failed">Couldn\'t save the bookmark: %1$s</string>
+    <string name="recorder_bookmark_update_failed">Couldn\'t update the bookmark on this phone: %1$s</string>
+    <string name="recorder_bookmark_delete_failed">Couldn\'t delete the bookmark on this phone.</string>
+
+    <!-- Live transcription. -->
+    <string name="live_bad_url">The live transcription address is invalid.</string>
+    <string name="live_quota_exhausted">The system has used up its shared transcription hours — live transcription stopped, the recording continues.</string>
+    <string name="live_session_expired">Your sign-in session has expired — live transcription stopped, the recording continues.</string>
+    <string name="live_bad_token">The server returned an unreadable live transcription token.</string>
+    <string name="live_token_failed">Couldn\'t get a live transcription token (HTTP %1$s).</string>
+    <string name="live_connection_lost">Lost the connection to the server: %1$s</string>
+
+    <!-- Uploads. -->
+    <string name="upload_unreadable_segment">The recording part file can\'t be read.</string>
+    <string name="upload_chunk_incomplete">the uploaded chunk was not fully written</string>
+    <string name="upload_storage_full">Storage is full.</string>
+</resources>

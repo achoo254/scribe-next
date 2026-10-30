@@ -12,4 +12,84 @@
     <string name="recording_bookmark">标记</string>
     <string name="recording_stop">停止</string>
     <string name="recording_bookmarked">已标记 %1$s</string>
+
+    <!-- Native errors and notices. -->
+    <!-- Sign-in and session. -->
+    <string name="sign_in_in_progress">正在打开登录页面。</string>
+    <string name="sign_in_bad_config">登录配置无效。</string>
+    <string name="sign_in_no_browser">设备上没有可以打开登录页面的浏览器。</string>
+    <string name="sign_in_no_result">登录没有返回结果。</string>
+    <string name="sign_in_failed_code">登录失败（%1$s）。</string>
+    <string name="sign_in_failed_detail">登录失败：%1$s</string>
+    <string name="sign_in_denied">你已拒绝登录。</string>
+    <string name="sign_in_state_mismatch">登录响应不匹配，请重试。</string>
+    <string name="sign_in_cancelled">登录窗口在完成前已关闭。</string>
+    <string name="sign_in_app_closed">登录过程中应用已关闭——请重试。</string>
+    <string name="sign_in_config_failed">无法获取登录配置</string>
+    <string name="sign_in_config_incomplete">登录配置缺少字段。</string>
+    <string name="server_unreachable">无法连接服务器：%1$s</string>
+    <string name="session_exchange_failed">服务器未授予登录会话</string>
+    <string name="session_no_device_token">服务器未返回设备码。</string>
+    <string name="session_device_token_not_saved">无法在设备上保存设备码。</string>
+    <string name="session_sign_out_failed">退出登录</string>
+    <string name="session_none">没有可续期的登录会话。</string>
+    <string name="session_refresh_failed">服务器未续期会话</string>
+    <string name="session_expired">登录已过期。</string>
+    <string name="account_deleted">该 Scribe 账号已被删除。</string>
+
+    <!-- Secrets kept on the phone. -->
+    <string name="secrets_bad_name">密钥名称无效。</string>
+    <string name="secrets_no_value">缺少值。</string>
+    <string name="secrets_keystore">无法保存到设备的密钥库。</string>
+
+    <!-- Downloads and the share sheet. -->
+    <string name="files_download_failed">下载文件失败。</string>
+    <string name="files_download_failed_http">下载文件失败（HTTP %1$s）。</string>
+    <string name="files_share_unavailable">无法打开共享菜单。</string>
+    <string name="files_bad_download_url">下载链接无效。</string>
+    <string name="files_cache_failed">无法将文件保存到缓存。</string>
+    <string name="files_share_prepare_failed">无法准备要共享的文件。</string>
+    <string name="files_session_expired">登录已过期——请重新登录后重试。</string>
+
+    <!-- Recording. -->
+    <string name="recorder_mic_denied">应用没有麦克风权限——请前往“设置”→“应用”→ Scribe →“权限”开启。</string>
+    <string name="recorder_mic_unavailable">无法打开麦克风——请在“设置”中检查 Scribe 的麦克风权限。</string>
+    <string name="recorder_mic_busy">通话或其他应用正在使用麦克风——暂时无法录制。</string>
+    <string name="recorder_mic_silenced">通话或其他应用正在使用麦克风——这一段将是静音，录音仍在继续。</string>
+    <string name="recorder_start_failed">无法开始录制。</string>
+    <string name="recorder_start_failed_detail">无法开始录制：%1$s</string>
+    <string name="recorder_foreground_refused">Android 不允许 Scribe 在后台录音：%1$s</string>
+    <string name="recorder_busy">正在录制。</string>
+    <string name="recorder_no_user">缺少账号信息。</string>
+    <string name="recorder_session_create_failed">无法创建录音：%1$s</string>
+    <string name="recorder_session_folder_failed">无法创建录音文件夹。</string>
+    <string name="recorder_session_missing">录音 %1$s 缺少 session.json</string>
+    <string name="recorder_no_session_folder">还没有这次录音的文件夹。</string>
+    <string name="recorder_file_write_failed">无法写入 %1$s</string>
+    <string name="recorder_account_delete_failed">无法删除设备上该账号的录音。</string>
+    <string name="recorder_encoder_failed">无法打开 AAC 编码器：%1$s</string>
+    <string name="recorder_segment_open_failed">无法打开新的录音片段：%1$s</string>
+    <string name="recorder_disk_full_stopped">无法写入设备存储空间（可能已满）——录制已停止，已录制的部分会保留。</string>
+    <string name="recorder_disk_write_failed">无法写入设备存储空间——请检查剩余空间。</string>
+    <string name="recorder_odd_file_format">录音文件格式异常（%1$s）——服务器可能不接受。</string>
+    <string name="recorder_resumed_after_interruption">中断后已继续录制（%1$s）。</string>
+    <string name="recorder_interruption_resume_failed">中断后无法继续录制（%1$s）。</string>
+    <string name="recorder_reason_silent_mic">麦克风停止发送声音</string>
+    <string name="recorder_reason_interruption_ended">通话或中断已结束</string>
+    <string name="recorder_bookmark_save_failed">无法保存标记：%1$s</string>
+    <string name="recorder_bookmark_update_failed">无法在设备上更新标记：%1$s</string>
+    <string name="recorder_bookmark_delete_failed">无法删除设备上的标记。</string>
+
+    <!-- Live transcription. -->
+    <string name="live_bad_url">实时转写地址无效。</string>
+    <string name="live_quota_exhausted">系统的共享转写时长已用完——实时转写已停止，录音会继续。</string>
+    <string name="live_session_expired">登录已过期——实时转写已停止，录音会继续。</string>
+    <string name="live_bad_token">服务器返回的实时转写令牌无法读取。</string>
+    <string name="live_token_failed">无法获取实时转写令牌（HTTP %1$s）。</string>
+    <string name="live_connection_lost">与服务器的连接已断开：%1$s</string>
+
+    <!-- Uploads. -->
+    <string name="upload_unreadable_segment">无法读取录音片段文件。</string>
+    <string name="upload_chunk_incomplete">上传的分块没有完整写入</string>
+    <string name="upload_storage_full">存储空间已满。</string>
 </resources>

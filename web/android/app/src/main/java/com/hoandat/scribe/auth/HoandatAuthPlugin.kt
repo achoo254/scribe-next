@@ -13,7 +13,9 @@ import com.getcapacitor.Plugin
 import com.getcapacitor.PluginCall
 import com.getcapacitor.PluginMethod
 import com.getcapacitor.annotation.CapacitorPlugin
+import com.hoandat.scribe.AppText
 import com.hoandat.scribe.BuildConfig
+import com.hoandat.scribe.R
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -78,14 +80,14 @@ class HoandatAuthPlugin : Plugin() {
     fun signIn(call: PluginCall) {
         scope.launch {
             if (pending != null || starting) {
-                call.reject("Đang mở trang đăng nhập.", SIGN_IN_FAILED)
+                call.reject(AppText.get(R.string.sign_in_in_progress), SIGN_IN_FAILED)
                 return@launch
             }
             starting = true
             try {
                 val config = withContext(Dispatchers.IO) { session.loadConfig() }
                 if (!config.redirectScheme.equals(REDIRECT_SCHEME, ignoreCase = true)) {
-                    throw AuthException("Cấu hình đăng nhập không hợp lệ.")
+                    throw AuthException(AppText.get(R.string.sign_in_bad_config))
                 }
                 openBrowser(call, AuthRequest.create(config))
             } catch (e: CancellationException) {
@@ -93,10 +95,10 @@ class HoandatAuthPlugin : Plugin() {
             } catch (e: AuthException) {
                 call.reject(e.message, SIGN_IN_FAILED)
             } catch (e: IOException) {
-                call.reject("Không kết nối được máy chủ: ${e.message ?: e.javaClass.simpleName}", SIGN_IN_FAILED)
+                call.reject(AppText.get(R.string.server_unreachable, e.message ?: e.javaClass.simpleName), SIGN_IN_FAILED)
             } catch (e: Exception) {
                 Log.e(TAG, "sign-in failed", e)
-                call.reject("Đăng nhập thất bại: ${e.message ?: e.javaClass.simpleName}", SIGN_IN_FAILED)
+                call.reject(AppText.get(R.string.sign_in_failed_detail, e.message ?: e.javaClass.simpleName), SIGN_IN_FAILED)
             } finally {
                 starting = false
             }
@@ -133,7 +135,7 @@ class HoandatAuthPlugin : Plugin() {
             }
         } catch (e: ActivityNotFoundException) {
             pending = null
-            call.reject("Máy chưa có trình duyệt để mở trang đăng nhập.", SIGN_IN_FAILED)
+            call.reject(AppText.get(R.string.sign_in_no_browser), SIGN_IN_FAILED)
         }
     }
 
@@ -150,10 +152,10 @@ class HoandatAuthPlugin : Plugin() {
                 if (uri != null) {
                     finish(current, uri.toString())
                 } else {
-                    current.call.reject("Đăng nhập không trả kết quả.", SIGN_IN_FAILED)
+                    current.call.reject(AppText.get(R.string.sign_in_no_result), SIGN_IN_FAILED)
                 }
-            AuthTabIntent.RESULT_CANCELED -> current.call.reject(CLOSED, CANCELLED)
-            else -> current.call.reject("Đăng nhập thất bại (Auth Tab ${result.resultCode}).", SIGN_IN_FAILED)
+            AuthTabIntent.RESULT_CANCELED -> current.call.reject(AppText.get(R.string.sign_in_cancelled), CANCELLED)
+            else -> current.call.reject(AppText.get(R.string.sign_in_failed_code, "Auth Tab ${result.resultCode}"), SIGN_IN_FAILED)
         }
     }
 
@@ -180,10 +182,10 @@ class HoandatAuthPlugin : Plugin() {
                 } catch (e: AuthException) {
                     current.call.reject(e.message, SIGN_IN_FAILED)
                 } catch (e: IOException) {
-                    current.call.reject("Không kết nối được máy chủ: ${e.message ?: e.javaClass.simpleName}", SIGN_IN_FAILED)
+                    current.call.reject(AppText.get(R.string.server_unreachable, e.message ?: e.javaClass.simpleName), SIGN_IN_FAILED)
                 } catch (e: Exception) {
                     Log.e(TAG, "code exchange failed", e)
-                    current.call.reject("Đăng nhập thất bại: ${e.message ?: e.javaClass.simpleName}", SIGN_IN_FAILED)
+                    current.call.reject(AppText.get(R.string.sign_in_failed_detail, e.message ?: e.javaClass.simpleName), SIGN_IN_FAILED)
                 }
             }
         }
@@ -201,11 +203,11 @@ class HoandatAuthPlugin : Plugin() {
     override fun handleOnResume() {
         val current = pending?.takeIf { it.viaCustomTabs && it.leftApp } ?: return
         pending = null
-        current.call.reject(CLOSED, CANCELLED)
+        current.call.reject(AppText.get(R.string.sign_in_cancelled), CANCELLED)
     }
 
     override fun handleOnDestroy() {
-        pending?.call?.reject("Ứng dụng đã đóng trong lúc đăng nhập — thử lại.", SIGN_IN_FAILED)
+        pending?.call?.reject(AppText.get(R.string.sign_in_app_closed), SIGN_IN_FAILED)
         pending = null
         scope.cancel()
         if (active?.get() === this) active = null
@@ -215,7 +217,6 @@ class HoandatAuthPlugin : Plugin() {
         private const val TAG = "ScribeAuth"
         private const val CANCELLED = "CANCELLED"
         private const val SIGN_IN_FAILED = "SIGN_IN_FAILED"
-        private const val CLOSED = "Cửa sổ đăng nhập đã đóng trước khi hoàn tất."
 
         /** Scheme of `com.hoandat.scribe:/auth/callback`, the only one AuthRedirectActivity receives. */
         const val REDIRECT_SCHEME = "com.hoandat.scribe"

@@ -3,6 +3,8 @@ package com.hoandat.scribe.recorder
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import com.hoandat.scribe.AppText
+import com.hoandat.scribe.R
 import com.hoandat.scribe.net.Base64Text
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -302,7 +304,7 @@ class RealtimeTranscriber(
                 // The single-use token rides in the query (the API key never leaves the server).
                 val url = current.token.url.replaceFirst("wss://", "https://").toHttpUrlOrNull()
                     ?.newBuilder()?.addQueryParameter("token", current.token.value)?.build()
-                    ?: return end("Địa chỉ chép trực tiếp không hợp lệ.")
+                    ?: return end(AppText.get(R.string.live_bad_url))
                 current.used = true
                 Request.Builder().url(url).build()
             }
@@ -384,7 +386,7 @@ class RealtimeTranscriber(
             "quota_exceeded" -> {
                 Log.w(TAG, "realtime quota_exceeded: ${message.optString("error")}")
                 quotaExceeded = true
-                end("Hệ thống đã dùng hết giờ chép lời chung — chép trực tiếp dừng, bản ghi vẫn tiếp tục.")
+                end(AppText.get(R.string.live_quota_exhausted))
             }
             "committed_transcript", "warning", "commit_throttled", "insufficient_audio_activity" -> Unit
             else -> {

@@ -3,6 +3,7 @@ package com.hoandat.scribe.auth
 import android.app.Activity
 import android.content.Intent
 import android.os.Bundle
+import com.hoandat.scribe.AppText
 
 /**
  * Target of `com.hoandat.scribe:/auth/callback` when the browser has no Auth Tab (Custom Tabs fallback,
@@ -12,6 +13,7 @@ import android.os.Bundle
 class AuthRedirectActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        AppText.init(this)
         HoandatAuthPlugin.handleRedirect(intent)
         packageManager.getLaunchIntentForPackage(packageName)?.let { launch ->
             launch.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)

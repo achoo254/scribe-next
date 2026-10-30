@@ -1,5 +1,7 @@
 package com.hoandat.scribe.recorder
 
+import com.hoandat.scribe.AppText
+import com.hoandat.scribe.R
 import android.util.Log
 import org.json.JSONArray
 import org.json.JSONException
@@ -81,7 +83,7 @@ class BookmarkStore(private val root: File) {
         val kept = all.filter { it.id !in ids }
         if (kept.size == all.size) return
         if (kept.isEmpty()) {
-            if (!file(userKey).delete()) throw IOException("Không xoá được dấu mốc trên máy.")
+            if (!file(userKey).delete()) throw IOException(AppText.get(R.string.recorder_bookmark_delete_failed))
         } else {
             write(kept, userKey)
         }
@@ -91,7 +93,7 @@ class BookmarkStore(private val root: File) {
     @Synchronized
     fun removeAll(userKey: String) {
         val file = file(userKey)
-        if (file.exists() && !file.delete()) throw IOException("Không xoá được dấu mốc trên máy.")
+        if (file.exists() && !file.delete()) throw IOException(AppText.get(R.string.recorder_bookmark_delete_failed))
     }
 
     private fun write(bookmarks: List<NativeBookmark>, userKey: String) {

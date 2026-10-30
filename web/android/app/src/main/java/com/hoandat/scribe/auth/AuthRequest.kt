@@ -1,5 +1,7 @@
 package com.hoandat.scribe.auth
 
+import com.hoandat.scribe.AppText
+import com.hoandat.scribe.R
 import com.hoandat.scribe.net.Base64Text
 import org.json.JSONObject
 import java.net.URI
@@ -69,26 +71,24 @@ class AuthRequest(
     /** Reads the redirect the browser returned: the code to exchange, or why sign-in failed. */
     fun parseCallback(url: String): CallbackResult {
         val base = url.substringBefore('?').substringBefore('#')
-        if (!base.equals(config.redirectUri, ignoreCase = true)) return CallbackResult.Failure(MISMATCH)
+        if (!base.equals(config.redirectUri, ignoreCase = true)) return CallbackResult.Failure(AppText.get(R.string.sign_in_state_mismatch))
         val query = try {
             URI(url).rawQuery
         } catch (e: URISyntaxException) {
-            return CallbackResult.Failure(MISMATCH)
+            return CallbackResult.Failure(AppText.get(R.string.sign_in_state_mismatch))
         }
         val values = parseQuery(query)
         values["error"]?.let { error ->
             return CallbackResult.Failure(
-                if (error == "access_denied") "Bạn đã từ chối đăng nhập." else "Đăng nhập thất bại ($error).",
+                if (error == "access_denied") AppText.get(R.string.sign_in_denied) else AppText.get(R.string.sign_in_failed_code, error),
             )
         }
         val code = values["code"]
-        if (values["state"] != state || code.isNullOrEmpty()) return CallbackResult.Failure(MISMATCH)
+        if (values["state"] != state || code.isNullOrEmpty()) return CallbackResult.Failure(AppText.get(R.string.sign_in_state_mismatch))
         return CallbackResult.Code(code)
     }
 
     companion object {
-        private const val MISMATCH = "Phản hồi đăng nhập không khớp, thử lại."
-
         fun create(config: NativeAuthConfig, random: SecureRandom = SecureRandom()): AuthRequest =
             AuthRequest(
                 config = config,

@@ -10,6 +10,7 @@ import android.os.Looper
 import android.util.Log
 import com.getcapacitor.JSArray
 import com.getcapacitor.JSObject
+import com.hoandat.scribe.AppText
 import com.hoandat.scribe.R
 import com.hoandat.scribe.auth.SessionAuth
 import kotlinx.coroutines.CoroutineScope
@@ -86,13 +87,13 @@ class RecorderEngine private constructor(private val app: Context) {
 
     /** Starts a session (microphone permission granted); returns its id. */
     fun start(userKey: String, segmentMinutes: Double, wantsRealtime: Boolean): String {
-        if (recorder.state != RecorderState.IDLE) throw RecorderException("Đang ghi rồi.", "BUSY")
+        if (recorder.state != RecorderState.IDLE) throw RecorderException(AppText.get(R.string.recorder_busy), "BUSY")
         val segmentSeconds = segmentMinutes.takeIf { it.isFinite() && it > 0 }?.let { it * 60 } ?: 60.0
         val sessionId = UUID.randomUUID().toString().lowercase(Locale.US)
         val dir = try {
             store.createSession(userKey, sessionId, segmentSeconds)
         } catch (e: IOException) {
-            throw RecorderException("Không tạo được phiên ghi: ${e.message}", "STORE")
+            throw RecorderException(AppText.get(R.string.recorder_session_create_failed, "${e.message}"), "STORE")
         }
         this.userKey = userKey
         recordingUserKey = userKey
@@ -106,13 +107,13 @@ class RecorderEngine private constructor(private val app: Context) {
         recorder.start(sessionId, dir, segmentSeconds)
         if (recorder.state != RecorderState.RECORDING) {
             // The failure event already told the page why.
-            throw RecorderException(lastNotice.ifEmpty { "Không bắt đầu ghi được." }, "START_FAILED")
+            throw RecorderException(lastNotice.ifEmpty { AppText.get(R.string.recorder_start_failed) }, "START_FAILED")
         }
         try {
             RecordingService.start(app)
         } catch (e: RuntimeException) {
             // ForegroundServiceStartNotAllowedException: only possible if the app left the screen meanwhile.
-            val message = "Android không cho Scribe ghi âm nền: ${e.message ?: e.javaClass.simpleName}"
+            val message = AppText.get(R.string.recorder_foreground_refused, e.message ?: e.javaClass.simpleName)
             recorder.stop()
             lastNotice = message
             throw RecorderException(message, "START_FAILED")
@@ -243,7 +244,7 @@ class RecorderEngine private constructor(private val app: Context) {
         try {
             bookmarks.append(bookmark, owner)
         } catch (e: IOException) {
-            lastNotice = "Không lưu được dấu mốc: ${e.message}"
+            lastNotice = AppText.get(R.string.recorder_bookmark_save_failed, "${e.message}")
             listener?.emit("notice", JSObject().put("message", lastNotice))
             return
         }
@@ -400,6 +401,7 @@ class RecorderEngine private constructor(private val app: Context) {
         private var instance: RecorderEngine? = null
 
         fun get(context: Context): RecorderEngine = instance ?: synchronized(this) {
+            AppText.init(context)
             instance ?: RecorderEngine(context.applicationContext).also { instance = it }
         }
 

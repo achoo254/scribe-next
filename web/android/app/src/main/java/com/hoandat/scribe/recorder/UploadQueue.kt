@@ -1,6 +1,8 @@
 package com.hoandat.scribe.recorder
 
 import android.util.Log
+import com.hoandat.scribe.AppText
+import com.hoandat.scribe.R
 import com.hoandat.scribe.auth.AccountDeletedException
 import com.hoandat.scribe.net.BackendHttp
 import com.hoandat.scribe.net.HttpReply
@@ -190,7 +192,7 @@ class UploadQueue(
             }
             is Outcome.QuotaFull -> {
                 synchronized(lock) { paused = true }
-                onEvent(UploadEvent.QuotaFull(outcome.message ?: "Hết dung lượng lưu trữ."))
+                onEvent(UploadEvent.QuotaFull(outcome.message ?: AppText.get(R.string.upload_storage_full)))
                 false
             }
             is Outcome.AccountDeleted -> {
@@ -251,7 +253,7 @@ class UploadQueue(
         } catch (e: IOException) {
             null
         }
-        if (data == null || data.isEmpty()) throw Outcome.Terminal("Tệp đoạn ghi không đọc được.")
+        if (data == null || data.isEmpty()) throw Outcome.Terminal(AppText.get(R.string.upload_unreadable_segment))
 
         var serverSession = segment.serverSession
         if (serverSession == null) {
@@ -271,7 +273,7 @@ class UploadQueue(
                 http.runCatchingIo { postBytes("/api/recordings/chunk?session=$session&offset=$offset", data.copyOfRange(offset, end)) },
             )
             val written = reply.optLong("written", -1)
-            if (written < end) throw Outcome.Redo("chunk không ghi đủ dữ liệu")
+            if (written < end) throw Outcome.Redo(AppText.get(R.string.upload_chunk_incomplete))
             offset = end
         }
 
@@ -314,7 +316,7 @@ class UploadQueue(
         return when (reply.status) {
             in 200..299 -> reply.json() ?: JSONObject()
             401 -> throw Outcome.Unauthorized()
-            413 -> throw Outcome.QuotaFull(message ?: "Hết dung lượng lưu trữ.")
+            413 -> throw Outcome.QuotaFull(message ?: AppText.get(R.string.upload_storage_full))
             400, 403, 404 -> {
                 if (message == null) throw Outcome.Transient("HTTP ${reply.status} không từ máy chủ ứng dụng")
                 if (reply.status == 403) throw Outcome.Terminal(message)

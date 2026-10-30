@@ -1,5 +1,7 @@
 package com.hoandat.scribe.recorder
 
+import com.hoandat.scribe.AppText
+import com.hoandat.scribe.R
 import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Context
@@ -136,19 +138,19 @@ class AudioRecorder(private val context: Context, private val onEvent: (Recorder
         setState(RecorderState.STARTING)
         val opened = openRecord()
         if (opened == null) {
-            fail("Không mở được micro — kiểm tra quyền Micro của Scribe trong Cài đặt.")
+            fail(AppText.get(R.string.recorder_mic_unavailable))
             return
         }
         try {
             opened.startRecording()
         } catch (e: IllegalStateException) {
             opened.release()
-            fail("Không bắt đầu ghi được: ${e.message}")
+            fail(AppText.get(R.string.recorder_start_failed_detail, "${e.message}"))
             return
         }
         if (opened.recordingState != AudioRecord.RECORDSTATE_RECORDING) {
             opened.release()
-            fail("Micro đang bị cuộc gọi hoặc ứng dụng khác dùng — chưa ghi được.")
+            fail(AppText.get(R.string.recorder_mic_busy))
             return
         }
         record = opened
@@ -245,7 +247,7 @@ class AudioRecorder(private val context: Context, private val onEvent: (Recorder
                 val restart = restartReason
                 if (read < 0 || restart != null) {
                     restartReason = null
-                    current = reopen(current, restart ?: "micro ngừng gửi âm thanh") ?: return
+                    current = reopen(current, restart ?: AppText.get(R.string.recorder_reason_silent_mic)) ?: return
                     rate = current.sampleRate
                     buffer = ShortArray(rate / 10)
                     continue
@@ -262,7 +264,7 @@ class AudioRecorder(private val context: Context, private val onEvent: (Recorder
             }
         } catch (e: IOException) {
             Log.e(TAG, "capture failed", e)
-            post { fail("Không ghi được vào bộ nhớ máy (có thể đã đầy) — đã dừng, giữ phần đã ghi.") }
+            post { fail(AppText.get(R.string.recorder_disk_full_stopped)) }
         } finally {
             closeSegment("stop")
         }
@@ -288,7 +290,7 @@ class AudioRecorder(private val context: Context, private val onEvent: (Recorder
                 Log.w(TAG, "segment write failed", e)
                 closeSegment("write-error")
                 if (++writeFailures >= MAX_WRITE_FAILURES) throw e
-                post { onEvent(RecorderEvent.Notice("Không ghi được vào bộ nhớ máy — kiểm tra dung lượng trống.")) }
+                post { onEvent(RecorderEvent.Notice(AppText.get(R.string.recorder_disk_write_failed))) }
                 openSegment(rate)
                 return
             }
@@ -303,7 +305,7 @@ class AudioRecorder(private val context: Context, private val onEvent: (Recorder
     }
 
     private fun openSegment(rate: Int) {
-        val dir = segmentDir ?: throw IOException("Chưa có thư mục phiên ghi.")
+        val dir = segmentDir ?: throw IOException(AppText.get(R.string.recorder_no_session_folder))
         val index = segmentIndex + 1
         val file = File(dir, Segment.fileName(index))
         val next = AacSegmentWriter(file, rate)
@@ -340,7 +342,7 @@ class AudioRecorder(private val context: Context, private val onEvent: (Recorder
             checkedBrand = true
             val brand = M4aBrand.read(file)
             if (brand != M4aBrand.AUDIO) {
-                post { onEvent(RecorderEvent.Notice("Định dạng tệp ghi bất thường ($brand) — máy chủ có thể không nhận.")) }
+                post { onEvent(RecorderEvent.Notice(AppText.get(R.string.recorder_odd_file_format, "$brand"))) }
             }
         }
         val segment = Segment(index, file.name, seconds, file.length())
@@ -362,7 +364,7 @@ class AudioRecorder(private val context: Context, private val onEvent: (Recorder
         if (next == null || !startRecording(next)) {
             next?.release()
             record = null
-            post { fail("Không ghi tiếp được sau gián đoạn ($reason).") }
+            post { fail(AppText.get(R.string.recorder_interruption_resume_failed, reason)) }
             return null
         }
         record = next
@@ -382,11 +384,11 @@ class AudioRecorder(private val context: Context, private val onEvent: (Recorder
             if (!isPaused) openSegment(next.sampleRate)
             post {
                 watchSilence(next)
-                onEvent(RecorderEvent.Notice("Ghi tiếp sau gián đoạn ($reason)."))
+                onEvent(RecorderEvent.Notice(AppText.get(R.string.recorder_resumed_after_interruption, reason)))
             }
             next
         } catch (e: IOException) {
-            post { fail("Không mở được đoạn ghi mới: ${e.message}") }
+            post { fail(AppText.get(R.string.recorder_segment_open_failed, "${e.message}")) }
             null
         }
     }
@@ -421,7 +423,7 @@ class AudioRecorder(private val context: Context, private val onEvent: (Recorder
             lastFrameCheck = frames
             if (stalledTicks >= 3) {
                 stalledTicks = 0
-                restartReason = "micro ngừng gửi âm thanh"
+                restartReason = AppText.get(R.string.recorder_reason_silent_mic)
                 try {
                     record?.stop() // unblocks the capture thread's read
                 } catch (e: IllegalStateException) {
@@ -449,9 +451,9 @@ class AudioRecorder(private val context: Context, private val onEvent: (Recorder
                 onEvent(
                     RecorderEvent.Notice(
                         if (silenced) {
-                            "Micro đang bị cuộc gọi hoặc ứng dụng khác dùng — đoạn này sẽ im lặng, bản ghi vẫn chạy."
+                            AppText.get(R.string.recorder_mic_silenced)
                         } else {
-                            "Ghi tiếp sau gián đoạn (hết cuộc gọi/gián đoạn)."
+                            AppText.get(R.string.recorder_resumed_after_interruption, AppText.get(R.string.recorder_reason_interruption_ended))
                         },
                     ),
                 )
