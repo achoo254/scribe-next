@@ -211,7 +211,10 @@ describe("app routes", () => {
 		expect(
 			within(footer).getByRole("link", { name: "Điều khoản" }),
 		).toHaveAttribute("href", "/terms");
-		await userEvent.click(screen.getByRole("link", { name: "Đăng nhập" }));
+		// The header's guest button: "Đăng ký miễn phí", the short "Đăng ký" for phones beside it (CSS picks one).
+		await userEvent.click(
+			screen.getByRole("link", { name: /^Đăng ký miễn phí/ }),
+		);
 		expect(await screen.findByText("login")).toBeInTheDocument();
 		expect(router.state.location.pathname).toBe("/login");
 	});
