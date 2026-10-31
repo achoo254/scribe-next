@@ -32,9 +32,9 @@
 		"android:sync": "pnpm run build && cap sync android"
 	},
 	"dependencies": {
-		"@achoo254/app-shell": "github:achoo254/shared-next#v0.12.0&path:/packages/app-shell",
-		"@achoo254/app-switcher": "github:achoo254/shared-next#v0.12.0&path:/packages/app-switcher",
-		"@achoo254/brand": "github:achoo254/shared-next#v0.12.0&path:/packages/brand",
+		"@achoo254/app-shell": "github:achoo254/shared-next#v0.13.0&path:/packages/app-shell",
+		"@achoo254/app-switcher": "github:achoo254/shared-next#v0.13.0&path:/packages/app-switcher",
+		"@achoo254/brand": "github:achoo254/shared-next#v0.13.0&path:/packages/brand",
 		"@capacitor/android": "8.5.3",
 		"@capacitor/core": "8.5.3",
 		"@capacitor/ios": "8.5.3",
