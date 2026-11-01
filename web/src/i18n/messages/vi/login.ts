@@ -5,6 +5,8 @@
 export const login = {
 	title: "Đăng nhập",
 	subtitle: "Ghi âm, cắt file và chép lời bằng tài khoản {idpName}.",
+	/** Under the sign-in card on the web: opens hoandat-auth on "create account". */
+	signUp: "Chưa có tài khoản? Đăng ký miễn phí",
 	sessionCheck: "Đang kiểm tra phiên đăng nhập…",
 	noSession: "Đăng nhập xong nhưng máy chủ chưa nhận phiên — thử lại.",
 	/** Codes the backend appends to /login?error=… */

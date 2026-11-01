@@ -157,22 +157,65 @@ async fn admit(state: &AppState, claims: &crate::oidc::IdClaims) -> Result<Strin
 
 // MARK: Web
 
-/// `GET /api/auth/login` — bắt đầu đăng nhập web: lưu lượt, chuyển tới IdP.
-pub async fn login(State(state): State<AppState>, jar: CookieJar) -> Result<(CookieJar, Redirect), AppError> {
+#[derive(Deserialize)]
+pub struct LoginQuery {
+    /// `1`: người dùng bấm nút đăng ký, IdP mở thẳng màn tạo tài khoản.
+    signup: Option<String>,
+}
+
+/// Tham số của một lượt đăng nhập web gửi tới authorization endpoint của IdP.
+struct AuthorizeRequest<'a> {
+    client_id: &'a str,
+    redirect_uri: &'a str,
+    state: &'a str,
+    nonce: &'a str,
+    code_challenge: &'a str,
+    /// Nút đăng ký: thêm `prompt=create` (IdP mở màn tạo tài khoản, có link sang đăng nhập). Đăng nhập
+    /// thường không bao giờ gửi nó: bot đếm lượt bấm đăng ký từ log IdP theo `prompt=create`.
+    sign_up: bool,
+}
+
+fn authorize_url(endpoint: &str, req: &AuthorizeRequest<'_>) -> Result<reqwest::Url, AppError> {
+    let mut url = reqwest::Url::parse(endpoint).map_err(|e| AppError::Internal(format!("authorization endpoint: {e}")))?;
+    {
+        let mut query = url.query_pairs_mut();
+        query
+            .append_pair("client_id", req.client_id)
+            .append_pair("response_type", "code")
+            .append_pair("scope", SCOPE)
+            .append_pair("redirect_uri", req.redirect_uri)
+            .append_pair("state", req.state)
+            .append_pair("nonce", req.nonce)
+            .append_pair("code_challenge", req.code_challenge)
+            .append_pair("code_challenge_method", "S256");
+        if req.sign_up {
+            query.append_pair("prompt", "create");
+        }
+    }
+    Ok(url)
+}
+
+/// `GET /api/auth/login` — bắt đầu đăng nhập web: lưu lượt, chuyển tới IdP. `?signup=1` (nút đăng ký) mở
+/// IdP ở màn tạo tài khoản. Xong đều về `/` như đăng nhập.
+pub async fn login(
+    State(state): State<AppState>,
+    jar: CookieJar,
+    Query(q): Query<LoginQuery>,
+) -> Result<(CookieJar, Redirect), AppError> {
     let discovery = state.oidc.discovery(&state.http).await?;
     let (login_state, verifier, nonce) = (random_token(), random_token(), random_token());
     sessions::save_state(&state.db, &login_state, &verifier, &nonce).await?;
-    let mut url = reqwest::Url::parse(&discovery.authorization_endpoint)
-        .map_err(|e| AppError::Internal(format!("authorization endpoint: {e}")))?;
-    url.query_pairs_mut()
-        .append_pair("client_id", &state.config.oidc_web_client_id)
-        .append_pair("response_type", "code")
-        .append_pair("scope", SCOPE)
-        .append_pair("redirect_uri", &callback_url(&state))
-        .append_pair("state", &login_state)
-        .append_pair("nonce", &nonce)
-        .append_pair("code_challenge", &pkce_challenge(&verifier))
-        .append_pair("code_challenge_method", "S256");
+    let url = authorize_url(
+        &discovery.authorization_endpoint,
+        &AuthorizeRequest {
+            client_id: &state.config.oidc_web_client_id,
+            redirect_uri: &callback_url(&state),
+            state: &login_state,
+            nonce: &nonce,
+            code_challenge: &pkce_challenge(&verifier),
+            sign_up: q.signup.as_deref() == Some("1"),
+        },
+    )?;
     let cookie = Cookie::build((login_cookie_name(&state), login_state))
         .http_only(true)
         .secure(state.config.public_url.starts_with("https://"))
@@ -613,4 +656,50 @@ pub async fn require_auth(
     // Cho access log (lớp ngoài) biết request thuộc user nào.
     res.extensions_mut().insert(UserId(user_id));
     Ok(res)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn request(sign_up: bool) -> AuthorizeRequest<'static> {
+        AuthorizeRequest {
+            client_id: "scribe-web",
+            redirect_uri: "https://scribe.hoandat.com/api/auth/callback",
+            state: "st",
+            nonce: "nn",
+            code_challenge: "cc",
+            sign_up,
+        }
+    }
+
+    fn pairs(url: &reqwest::Url) -> HashMap<String, String> {
+        url.query_pairs().map(|(k, v)| (k.into_owned(), v.into_owned())).collect()
+    }
+
+    #[test]
+    fn sign_up_opens_the_idp_on_create_account() {
+        let url = authorize_url("https://auth.hoandat.com/oauth2/authorize", &request(true)).unwrap();
+        let q = pairs(&url);
+        assert_eq!(q.get("prompt").map(String::as_str), Some("create"));
+        assert_eq!(q.get("client_id").map(String::as_str), Some("scribe-web"));
+        assert_eq!(q.get("code_challenge_method").map(String::as_str), Some("S256"));
+        assert_eq!(q.get("redirect_uri").map(String::as_str), Some("https://scribe.hoandat.com/api/auth/callback"));
+    }
+
+    #[test]
+    fn plain_sign_in_never_sends_a_prompt() {
+        let url = authorize_url("https://auth.hoandat.com/oauth2/authorize", &request(false)).unwrap();
+        let q = pairs(&url);
+        assert!(!q.contains_key("prompt"));
+        assert_eq!(q.get("state").map(String::as_str), Some("st"));
+        assert_eq!(q.get("nonce").map(String::as_str), Some("nn"));
+        assert_eq!(q.get("response_type").map(String::as_str), Some("code"));
+        assert_eq!(q.get("scope").map(String::as_str), Some(SCOPE));
+    }
+
+    #[test]
+    fn a_broken_authorization_endpoint_is_an_error() {
+        assert!(authorize_url("not a url", &request(false)).is_err());
+    }
 }

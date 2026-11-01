@@ -211,12 +211,13 @@ describe("app routes", () => {
 		expect(
 			within(footer).getByRole("link", { name: "Điều khoản" }),
 		).toHaveAttribute("href", "/terms");
-		// The header's guest button: "Đăng ký miễn phí", the short "Đăng ký" for phones beside it (CSS picks one).
-		await userEvent.click(
+		// The header's guest button: "Đăng ký miễn phí", the short "Đăng ký" for
+		// phones beside it (CSS picks one). A sign-up button: a plain link to the
+		// backend, which opens hoandat-auth on "create account" (prompt=create).
+		expect(
 			screen.getByRole("link", { name: /^Đăng ký miễn phí/ }),
-		);
-		expect(await screen.findByText("login")).toBeInTheDocument();
-		expect(router.state.location.pathname).toBe("/login");
+		).toHaveAttribute("href", "/api/auth/login?signup=1");
+		expect(router.state.location.pathname).toBe("/");
 	});
 
 	it("shows the landing in the visitor's language", async () => {
@@ -277,6 +278,13 @@ describe("app routes", () => {
 			}),
 		).toBeInTheDocument();
 		expect(router.state.location.pathname).toBe("/");
+		// The app signs in natively: its header button opens /login, which
+		// starts that sign-in; no web sign-up link in the card.
+		await userEvent.click(
+			screen.getByRole("link", { name: /^Đăng ký miễn phí/ }),
+		);
+		expect(await screen.findByText("login")).toBeInTheDocument();
+		expect(router.state.location.pathname).toBe("/login");
 	});
 
 	it("opens the legal pages without signing in, every other page goes to /login", async () => {

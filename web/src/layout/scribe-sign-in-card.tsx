@@ -1,20 +1,25 @@
 import { SignInCard } from "@achoo254/app-shell";
 import { useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
-import { WEB_LOGIN_PATH } from "../auth/auth-api";
+import { WEB_LOGIN_PATH, WEB_SIGN_UP_PATH } from "../auth/auth-api";
 import { useAuth } from "../auth/auth-context";
 import { loginErrorFromCode, loginErrorMessage } from "../auth/login-error";
 import { Alert } from "../components/ui/alert";
 import { useI18n } from "../i18n/i18n-context";
-import { apiUrl } from "../lib/api";
+import { apiUrl, isNativeShell } from "../lib/api";
 import { useIdpName } from "../lib/idp-name";
+import { TEXT_LINK } from "./legal-links";
 import { SHELL_BRAND } from "./scribe-public-page";
 
 /**
  * The shared sign-in card (@achoo254/app-shell) with Scribe's sign-in
  * behind its one call to action: the web follows the backend sign-in
  * (`/api/auth/login` → auth.hoandat.com, BFF), the iPhone and Android apps
- * open it in the system browser (`useAuth().login`). Under the card: why
+ * open it in the system browser (`useAuth().login`). On the web a second
+ * link offers a free account: the same backend sign-in, opened on
+ * hoandat-auth's "create account" (`WEB_SIGN_UP_PATH`); the apps build
+ * their sign-in natively, so they keep the one call to action (the IdP
+ * page links to making an account). Under the card: why
  * the last web sign-in came back (`?error=<code>`), a failed app sign-in,
  * or that the account was just deleted.
  */
@@ -81,6 +86,17 @@ export function ScribeSignInCard({
 					{error}
 				</Alert>
 			) : null}
+			{isNativeShell() ? null : (
+				<p className="m-0">
+					<a
+						href={apiUrl(WEB_SIGN_UP_PATH)}
+						className={TEXT_LINK}
+						data-id="sign-up-link"
+					>
+						{t("login.signUp")}
+					</a>
+				</p>
+			)}
 		</SignInCard>
 	);
 }

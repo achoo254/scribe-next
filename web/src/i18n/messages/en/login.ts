@@ -4,6 +4,7 @@ import type { SourceMessages, Translation } from "../../message-types";
 export const login: Translation<SourceMessages["login"]> = {
 	title: "Sign in",
 	subtitle: "Record, split and transcribe with your {idpName} account.",
+	signUp: "No account yet? Sign up free",
 	sessionCheck: "Checking your session…",
 	noSession: "You signed in but the server has no session yet. Try again.",
 	errors: {

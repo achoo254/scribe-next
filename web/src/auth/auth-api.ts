@@ -100,3 +100,11 @@ export async function deleteSession(
 
 /** Where the web sign-in starts: the backend redirects to hoandat-auth. */
 export const WEB_LOGIN_PATH = "/api/auth/login";
+
+/**
+ * Where a web sign-up starts: the same backend sign-in, but hoandat-auth
+ * opens on "create account" (`prompt=create`, which links to sign-in for
+ * existing accounts). Only sign-up buttons use it: the sign-up clicks of
+ * each app are counted from `prompt=create` in the auth log.
+ */
+export const WEB_SIGN_UP_PATH = `${WEB_LOGIN_PATH}?signup=1`;

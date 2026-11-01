@@ -1,7 +1,7 @@
 import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { RouterProvider, createMemoryRouter } from "react-router";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TestProviders } from "../test/test-providers";
 import { LoginPage } from "./login-page";
 
@@ -46,6 +46,10 @@ beforeEach(() => {
 	auth.login.mockClear();
 });
 
+afterEach(() => {
+	vi.unstubAllGlobals();
+});
+
 /*
  * /login is the shared sign-in card (@achoo254/app-shell) in the shared
  * frame; a web sign-in the backend refused comes back to /login?error=<code>
@@ -63,10 +67,19 @@ describe("LoginPage", () => {
 			name: "Đăng nhập bằng hoandat.com",
 		});
 		expect(cta).toHaveAttribute("href", "/api/auth/login");
-		expect(within(card).getAllByRole("link")).toHaveLength(1);
-		expect(byDataId("public-sign-in").getAttribute("aria-current")).toBe(
-			"page",
+		// The only other link makes an account: hoandat-auth opens on "create
+		// account" (prompt=create); the sign-in itself never asks for it.
+		const signUp = within(card).getByRole("link", {
+			name: "Chưa có tài khoản? Đăng ký miễn phí",
+		});
+		expect(signUp).toHaveAttribute("href", "/api/auth/login?signup=1");
+		expect(within(card).getAllByRole("link")).toHaveLength(2);
+		// The header's "Đăng ký miễn phí" is a sign-up button too, not this page.
+		expect(byDataId("public-sign-in")).toHaveAttribute(
+			"href",
+			"/api/auth/login?signup=1",
 		);
+		expect(byDataId("public-sign-in")).not.toHaveAttribute("aria-current");
 		expect(screen.queryByRole("alert")).toBeNull();
 		expect(document.documentElement.lang).toBe("vi");
 	});
@@ -78,6 +91,17 @@ describe("LoginPage", () => {
 		);
 		expect(auth.login).toHaveBeenCalledTimes(1);
 		expect(router.state.location.pathname).toBe("/");
+	});
+
+	it("keeps one call to action in the native apps, which sign in natively", async () => {
+		vi.stubGlobal("Capacitor", { isNativePlatform: () => true });
+		renderAt("/login");
+		const card = await signInCard();
+		expect(within(card).getAllByRole("link")).toHaveLength(1);
+		expect(document.querySelector('[data-id="sign-up-link"]')).toBeNull();
+		expect(byDataId("public-sign-in").getAttribute("aria-current")).toBe(
+			"page",
+		);
 	});
 
 	it("shows the call to action busy while the system browser is open", async () => {
@@ -121,6 +145,9 @@ describe("LoginPage", () => {
 		expect(
 			screen.getByRole("link", { name: "Sign in with hoandat.com" }),
 		).toBeVisible();
+		expect(
+			screen.getByRole("link", { name: "No account yet? Sign up free" }),
+		).toHaveAttribute("href", "/api/auth/login?signup=1");
 		expect(screen.getByRole("alert")).toHaveTextContent(
 			"This account may not use Scribe yet.",
 		);
@@ -156,6 +183,9 @@ describe("LoginPage", () => {
 		expect(screen.getByRole("alert")).toHaveTextContent(
 			"此账号暂时无法使用 Scribe。",
 		);
+		expect(
+			screen.getByRole("link", { name: "还没有账号？免费注册" }),
+		).toHaveAttribute("href", "/api/auth/login?signup=1");
 		expect(document.documentElement.lang).toBe("zh-CN");
 	});
 });

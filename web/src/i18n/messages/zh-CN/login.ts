@@ -4,6 +4,7 @@ import type { SourceMessages, Translation } from "../../message-types";
 export const login: Translation<SourceMessages["login"]> = {
 	title: "登录",
 	subtitle: "使用你的 {idpName} 账号录制、拆分文件和转写。",
+	signUp: "还没有账号？免费注册",
 	sessionCheck: "正在检查登录状态…",
 	noSession: "已登录，但服务器尚未收到会话。请重试。",
 	errors: {
