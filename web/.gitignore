@@ -7,6 +7,3 @@ dist
 .env.*
 !.env.example
 
-# Playwright output (screenshots baselines in e2e/specs/*-snapshots stay in git)
-e2e/test-results
-e2e/playwright-report

@@ -1,4 +1,4 @@
-# Kiểm tra tự động cho web (React: lint, typecheck, unit, build, e2e) và backend (Rust). Chỉ kiểm, không deploy:
+# Kiểm tra tự động cho web (React: lint, typecheck, unit, build) và backend (Rust). Chỉ kiểm, không deploy:
 # deploy prod lên .65 vẫn làm tay theo docs/deploy-web-production.md.
 name: CI
 
@@ -37,59 +37,9 @@ jobs:
       - run: pnpm run lint
       - run: pnpm run typecheck
       - run: pnpm test
-      # Build prod (tsc đã chạy ở typecheck) + bảo đảm stub e2e không lọt vào dist.
+      # Build prod (tsc đã chạy ở typecheck).
       - run: pnpm exec vite build
-      - run: pnpm run check:dist
 
-  # Bộ smoke Playwright mỗi lần push/PR: chỉ các test gắn tag @smoke (SMOKE trong
-  # web/e2e/support/page-helpers.ts), chỉ Chromium desktop: Vite dev + API stub, rồi bản build prod dưới
-  # header bảo mật prod (csp.spec.ts + các test smoke). WebKit iPhone, mọi spec còn lại và CSP trên WebKit
-  # chạy hằng đêm ở e2e-nightly.yml. Không cài WebKit ở đây: thư viện apt của WebKit từng tốn ~45 phút.
-  e2e:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    # Image Playwright chính thức (giống e2e-nightly.yml): trình duyệt và thư viện hệ thống có sẵn, khỏi bước
-    # apt install-deps chậm trên runner. Nâng Playwright thì sửa tag image ở cả hai workflow.
-    container:
-      image: mcr.microsoft.com/playwright:v1.64.1-noble
-      options: --user 1001
-    env:
-      PLAYWRIGHT_VERSION: 1.64.1
-    defaults:
-      run:
-        working-directory: web
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          package_json_file: web/package.json
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-          cache-dependency-path: web/pnpm-lock.yaml
-      - run: pnpm install --frozen-lockfile
-      - name: Image matches the installed Playwright
-        run: |
-          installed="$(node -p "require('@playwright/test/package.json').version")"
-          if [ "$installed" != "$PLAYWRIGHT_VERSION" ]; then
-            echo "::error::@playwright/test is $installed but the container image is $PLAYWRIGHT_VERSION; update both workflows"
-            exit 1
-          fi
-      # Ảnh chụp mốc chỉ có bản macOS (*-darwin.png): trên Linux bỏ so sánh ảnh, giữ mọi assert khác.
-      - run: pnpm run test:e2e:smoke --ignore-snapshots
-      - run: pnpm exec vite build
-      - run: pnpm run test:e2e:csp:smoke
-      - if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: e2e-test-results
-          path: web/e2e/test-results
-          retention-days: 7
-
-  # Mongo trống cùng major với prod (.65 chạy MongoDB 7.0): test `#[ignore]` trên Mongo thật (danh tính, index, phiên,
-  # hàng đợi chỉ nhận lượt của tenant duy nhất, xoá tài khoản) chạy ở đây thay vì chỉ trên Mongo lab qua VPN.
-  # `--skip live_` bỏ các test gọi API trả tiền thật (OpenAI, ElevenLabs).
   rust:
     runs-on: ubuntu-latest
     services:

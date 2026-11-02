@@ -1,6 +1,5 @@
 /*
- * Providers and uses of "Key riêng", free of app imports so the e2e stubs
- * (Node, no `import.meta.env`) can share them.
+ * Providers and uses of "Key riêng", free of app imports.
  */
 
 export type KeyProvider = "elevenlabs" | "openai" | "gemini" | "anthropic";

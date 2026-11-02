@@ -135,7 +135,7 @@ Scribe 在 iPhone 上录制会议，并为你把越南语转写成文字。
 使用 hoandat.com 账号登录。录音前请先征得所有人的同意。
 ```
 
-Ảnh chụp: dùng bộ ảnh tiếng Việt hiện có (giao diện app có thể đổi sang tiếng Trung nhưng `screenshots:app-store` chưa chụp bản tiếng Trung).
+Ảnh chụp: dùng bộ ảnh tiếng Việt hiện có (giao diện app có thể đổi sang tiếng Trung nhưng chưa có bộ ảnh tiếng Trung).
 
 ## Phân loại độ tuổi (Age Rating)
 
@@ -210,7 +210,7 @@ Rủi ro cần chủ dự án quyết: auth-next hiện đăng nhập bằng Goo
 
 ## Ảnh chụp màn hình
 
-Tạo bằng `cd web && pnpm run screenshots:app-store` (Playwright, giao diện app iPhone với dữ liệu demo trong `web/e2e/app-store/demo-fixtures.ts`, theme sáng, PNG RGB không kênh alpha). Kết quả ở `docs/app-store/screenshots/<cỡ>/`:
+Bộ ảnh được chụp bằng script Playwright `screenshots:app-store` (đã gỡ 02/11/2026 cùng e2e; muốn chụp lại thì lấy script từ lịch sử git trước commit gỡ e2e). Giao diện app iPhone với dữ liệu demo, theme sáng, PNG RGB không kênh alpha. Kết quả ở `docs/app-store/screenshots/<cỡ>/`:
 
 | Thư mục | Nhóm App Store Connect | Kích thước |
 |---|---|---|
