@@ -600,7 +600,9 @@ mod tests {
         let mut old = FileDoc::new_recording(owner, "cũ", "/nonexistent", 1, 1.0, false, ObjectId::new());
         old.created_at = DateTime::from_millis(old.created_at.timestamp_millis() - 10 * DAY_MS);
         old.expires_at = DateTime::from_millis(old.created_at.timestamp_millis() + 14 * DAY_MS);
-        let fresh = FileDoc::new_recording(owner, "mới", "/nonexistent", 1, 1.0, false, ObjectId::new());
+        // Tệp vừa tạo dưới hạn 14 ngày của gói plus cũ: rút về 7 ngày nhưng chưa hết hạn.
+        let mut fresh = FileDoc::new_recording(owner, "mới", "/nonexistent", 1, 1.0, false, ObjectId::new());
+        fresh.expires_at = DateTime::from_millis(fresh.created_at.timestamp_millis() + 14 * DAY_MS);
         let free = FileDoc::new_upload(Owner { user_id: &user }, "free", "/n", 1, 1.0, false, ObjectId::new());
         let (old_id, fresh_id, free_id) = (old.id, fresh.id, free.id);
         for f in [old, fresh, free] {

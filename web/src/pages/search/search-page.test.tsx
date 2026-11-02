@@ -70,7 +70,7 @@ describe("SearchPage", () => {
 		const { router } = renderWithProviders(<SearchPage />);
 		await userEvent.type(screen.getByRole("searchbox"), "h");
 		await waitFor(() => expect(router.state.location.search).toBe("?q=h"));
-		expect(screen.getByText("Gõ ít nhất 2 ký tự để tìm.")).toBeInTheDocument();
+		expect(await screen.findByText("Gõ ít nhất 2 ký tự để tìm.")).toBeInTheDocument();
 		expect(fake.calls).toHaveLength(0);
 	});
 
