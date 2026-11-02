@@ -1,5 +1,11 @@
 import { type Page, expect, test } from "@playwright/test";
-import { REJECTED_KEY, SIGNED_IN_USER, stubApi } from "../support/api-stubs";
+import {
+	EMPTY_USER_KEYS,
+	REJECTED_KEY,
+	SIGNED_IN_USER,
+	apiFixtures,
+	stubApi,
+} from "../support/api-stubs";
 import { stubNativeShell } from "../support/capacitor-stub";
 import {
 	COLOR_SCHEMES,
@@ -31,7 +37,10 @@ for (const scheme of COLOR_SCHEMES) {
 	test.describe(`Key riêng in ${scheme}`, smokeIn(scheme), () => {
 		test("add keys, pick their uses, delete", async ({ page, isMobile }) => {
 			await preparePage(page, scheme);
-			const api = await stubApi(page);
+			const api = await stubApi(
+				page,
+				apiFixtures({ userKeys: EMPTY_USER_KEYS }),
+			);
 			await openKeys(page, isMobile);
 			const dialog = page.getByRole("dialog", { name: "Key riêng" });
 			const elevenlabs = dialog.getByRole("region", { name: "ElevenLabs" });
@@ -39,7 +48,10 @@ for (const scheme of COLOR_SCHEMES) {
 			await expect(elevenlabs).toContainText("Chưa có key");
 			await expect(
 				dialog.getByRole("group", { name: "Chép lời tệp" }),
-			).toContainText("Đang dùng key của Scribe");
+			).toContainText("Chưa bật: thêm key hợp lệ");
+			await expect(page.getByTestId("usage")).toContainText(
+				"Chép lời, biên bản, hỏi đáp và dịch chạy bằng API key của bạn",
+			);
 			await expect(page).toHaveScreenshot(`user-keys-empty-${scheme}.png`);
 
 			const elevenField = elevenlabs.getByLabel("Key ElevenLabs");

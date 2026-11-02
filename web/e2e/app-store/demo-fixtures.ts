@@ -26,30 +26,18 @@ const USER: CurrentUser = {
 	email: DEMO_EMAIL,
 	canTranscribe: true,
 	plan: {
-		name: "plus",
-		until: "2027-10-16T00:00:00+07:00",
-		quotaBytes: 5 * 1024 * MB,
-		maxFileBytes: 2 * 1024 * MB,
-		retentionDays: 14,
+		quotaBytes: 200 * MB,
+		maxFileBytes: 200 * MB,
+		retentionDays: 7,
 	},
-	transcription: {
-		plan: "plus",
-		planUntil: "2027-10-16T00:00:00+07:00",
-		usedMinutes: 486,
-		limitMinutes: 3000,
-		resetsAt: "2026-11-01T00:00:00+07:00",
-		capReached: false,
-		paused: false,
-		daily: null,
-	},
+	transcription: null,
 };
 
 const USAGE: Usage = {
-	usageBytes: 1_288_490_189,
-	quotaBytes: 5 * 1024 * MB,
-	maxFileBytes: 2 * 1024 * MB,
-	retentionDays: 14,
-	plan: "plus",
+	usageBytes: 128_849_019,
+	quotaBytes: 200 * MB,
+	maxFileBytes: 200 * MB,
+	retentionDays: 7,
 };
 
 /** The meeting: one recording (`f:` key) with speakers. */
@@ -322,7 +310,7 @@ export function demoFixtures(): ApiFixtures {
 	return apiFixtures({
 		user: USER,
 		usage: USAGE,
-		recordings: { retentionDays: 14, items: HISTORY },
+		recordings: { retentionDays: 7, items: HISTORY },
 		transcriptDocs: [MEETING_SUMMARY, ...OTHER_SUMMARIES],
 		transcriptDetails: { [MEETING_KEY]: MEETING_DETAIL },
 		transcripts: [],

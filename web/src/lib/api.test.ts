@@ -72,35 +72,28 @@ describe("apiFetch", () => {
 		await expect(failure).rejects.toEqual(new ApiError(413, "Vượt hạn mức"));
 	});
 
-	it("keeps the machine code and the quota numbers of a refusal", async () => {
+	it("keeps the machine code of a refusal", async () => {
 		const { fetcher } = fakeFetch({
 			"POST /api/x": jsonResponse(
-				{
-					error: "Hết lượt",
-					code: "SUMMARY_DAILY_LIMIT",
-					usedMinutes: 10,
-					limitMinutes: 10,
-					retryAt: "2026-10-16T17:00:00+00:00",
-				},
+				{ error: "Cần key riêng", code: "NO_USER_KEY" },
 				403,
 			),
 		});
 		const failure = apiFetch("/api/x", { method: "POST" }, fetcher);
 		await expect(failure).rejects.toMatchObject({
 			status: 403,
-			message: "Hết lượt",
-			code: "SUMMARY_DAILY_LIMIT",
-			quota: { used: 10, limit: 10, retryAt: "2026-10-16T17:00:00+00:00" },
+			message: "Cần key riêng",
+			code: "NO_USER_KEY",
 		});
 	});
 
-	it("has no code or quota when the reply carries none", async () => {
+	it("has no code when the reply carries none", async () => {
 		const { fetcher } = fakeFetch({
-			"POST /api/x": jsonResponse({ error: "Sai", retryAt: null }, 400),
+			"POST /api/x": jsonResponse({ error: "Sai" }, 400),
 		});
 		await expect(
 			apiFetch("/api/x", { method: "POST" }, fetcher),
-		).rejects.toMatchObject({ code: null, quota: null });
+		).rejects.toMatchObject({ code: null });
 	});
 
 	it("falls back to the given message when the body has none", async () => {
@@ -176,11 +169,8 @@ describe("apiFetch on an English page", () => {
 		const { fetcher } = fakeFetch({
 			"POST /api/transcripts": jsonResponse(
 				{
-					error: "Không đủ phút chép lời: tháng này đã dùng 120/120 phút.",
-					code: "QUOTA_EXCEEDED",
-					usedMinutes: 120,
-					limitMinutes: 120,
-					retryAt: "2026-11-01T00:00:00+07:00",
+					error: "Chép lời cần API key của bạn. Thêm key trong Key riêng.",
+					code: "NO_USER_KEY",
 				},
 				403,
 			),
@@ -189,31 +179,9 @@ describe("apiFetch on an English page", () => {
 			apiFetch("/api/transcripts", { method: "POST" }, fetcher),
 		).rejects.toMatchObject({
 			status: 403,
-			code: "QUOTA_EXCEEDED",
+			code: "NO_USER_KEY",
 			message:
-				"Not enough transcription minutes: you've used 120/120 minutes this month.",
-		});
-	});
-
-	it("says when a limit opens again, in English", async () => {
-		english();
-		const { fetcher } = fakeFetch({
-			"POST /api/x": jsonResponse(
-				{
-					error:
-						"Tài khoản mới dùng được chép lời miễn phí từ 09:00 ngày 29/10.",
-					code: "ACCOUNT_TOO_NEW",
-					usedMinutes: 0,
-					limitMinutes: 0,
-					retryAt: "2026-10-29T02:00:00Z",
-				},
-				403,
-			),
-		});
-		await expect(
-			apiFetch("/api/x", { method: "POST" }, fetcher),
-		).rejects.toMatchObject({
-			message: "New accounts can use free transcription from 09:00, Oct 29.",
+				"This feature runs on your own API key. Add a key in Your API keys to use it.",
 		});
 	});
 
@@ -263,12 +231,8 @@ describe("apiFetch on a Chinese page", () => {
 		const { fetcher } = fakeFetch({
 			"POST /api/x": jsonResponse(
 				{
-					error:
-						"Tài khoản mới dùng được chép lời miễn phí từ 09:00 ngày 29/10.",
-					code: "ACCOUNT_TOO_NEW",
-					usedMinutes: 0,
-					limitMinutes: 0,
-					retryAt: "2026-10-29T02:00:00Z",
+					error: "Không dùng được key riêng của bạn.",
+					code: "USER_KEY_FAILED",
 				},
 				403,
 			),
@@ -276,7 +240,7 @@ describe("apiFetch on a Chinese page", () => {
 		await expect(
 			apiFetch("/api/x", { method: "POST" }, fetcher),
 		).rejects.toMatchObject({
-			message: "新账号可从 10月29日 09:00 起使用免费转写。",
+			message: "无法使用你自己的 API 密钥。请在“你的 API 密钥”中检查。",
 		});
 	});
 });

@@ -1,18 +1,20 @@
-//! Key riêng của người dùng ("Key riêng"): ElevenLabs, OpenAI, Google Gemini, Anthropic Claude. Mọi người đăng nhập đều
-//! thêm được. Việc chạy bằng key riêng không tính vào phút, lượt ngày, quỹ free, trần tổng hay sổ giờ ElevenLabs của
-//! Scribe (tiền của người dùng); dung lượng, cỡ tệp và rate limit vẫn áp.
+//! Key riêng của người dùng ("Key riêng"): ElevenLabs, OpenAI, Google Gemini, Anthropic Claude. Từ 02/11/2026 (chủ dự án
+//! chốt) Scribe không trả tiền AI thay người dùng: mọi việc AI — chép lời theo tệp (cả phiên iPhone), chép trực tiếp,
+//! biên bản, hỏi đáp (cả `scribe_ask` của MCP), dịch — chỉ chạy bằng key riêng; server không có key AI nào. Mọi người
+//! đăng nhập đều thêm được key; không có key hợp lệ cho việc đó thì request bị từ chối 403 `NO_USER_KEY` với câu bảo thêm
+//! key ở Key riêng ([`no_key_error`]). Không có phút, lượt ngày hay trần AI (tiền của người dùng); dung lượng, cỡ tệp và
+//! rate limit vẫn áp.
 //!
 //! - Lưu trên server, mã hoá AES-256-GCM ([`crypto`]) bằng bí mật trong tệp `USER_KEYS_SECRET_PATH`; thiếu tệp thì tính
-//!   năng tắt ([`api`] trả `available: false`). API chỉ ghi: không bao giờ trả key, chỉ nhà cung cấp, 4 ký tự cuối, trạng
-//!   thái, giờ sửa/kiểm. Key không vào log, audit hay thông báo lỗi.
+//!   năng tắt ([`api`] trả `available: false`) và mọi việc AI bị từ chối. API chỉ ghi: không bao giờ trả key, chỉ nhà
+//!   cung cấp, 4 ký tự cuối, trạng thái, giờ sửa/kiểm. Key không vào log, audit hay thông báo lỗi.
 //! - Việc nào dùng key nào ([`Use`]): chép lời theo tệp (ElevenLabs có người nói, OpenAI `gpt-transcribe`, Gemini), chép
 //!   trực tiếp (ElevenLabs, OpenAI Realtime), model chữ cho biên bản/hỏi đáp/dịch (OpenAI, Gemini, Claude, kèm model).
 //!   Người dùng chọn nhà cung cấp cho từng việc; chưa chọn (hoặc key đã chọn không còn hợp lệ) thì lấy key hợp lệ đầu tiên
-//!   theo thứ tự trên; không có key hợp lệ thì dùng key server với hạn mức thường ([`pick`]).
+//!   theo thứ tự trên ([`pick`]).
 //! - Lượt xếp hàng chỉ ghi nhà cung cấp; worker đọc và giải mã key của chủ phiên lúc chạy ([`open`]).
 //! - Key lỗi lúc dùng (sai, thu hồi, thiếu quyền, hết credit): lượt đó dừng với câu "Key … của bạn không dùng được: … —
-//!   sửa hoặc xoá key ở Key riêng", key bị đánh dấu ([`report`]); không bao giờ chuyển sang key server giữa chừng và không
-//!   đụng cờ tạm ngưng hay dấu hết quota của key server.
+//!   sửa hoặc xoá key ở Key riêng", key bị đánh dấu ([`report`]).
 
 pub mod api;
 pub mod check;
@@ -92,7 +94,7 @@ impl Prefs {
 }
 
 /// Nhà cung cấp dùng cho `use_`: lựa chọn của người dùng nếu key đó hợp lệ, không thì key hợp lệ đầu tiên theo thứ tự
-/// mặc định; `None` = dùng key server.
+/// mặc định; `None` = không có key nào làm được việc này.
 pub fn pick(use_: Use, prefs: &Prefs, valid: &[Vendor]) -> Option<Vendor> {
     let allowed = use_.providers();
     use_.pref(prefs)
@@ -264,12 +266,52 @@ pub fn user_key_error(message: String) -> AppError {
     AppError::Coded { status: StatusCode::FORBIDDEN, code: "USER_KEY_FAILED", message }
 }
 
-/// Model chữ bằng key riêng của người dùng, khi có: key đã giải mã và model. Key đang có hiệu lực mà không mở được
-/// ⟹ lỗi `USER_KEY_FAILED` (không lặng lẽ dùng key server).
-pub(crate) async fn text_key(state: &AppState, user_id: &str) -> Result<Option<(UserKey, String)>, AppError> {
-    let Some((provider, model)) = active(state, user_id).await?.text else { return Ok(None) };
+/// Câu người dùng thấy khi chưa có key riêng hợp lệ cho việc `use_` (`enabled` = máy chủ bật tính năng Key riêng).
+pub fn missing_key_message(use_: Use, enabled: bool) -> String {
+    if !enabled {
+        return "Máy chủ đang tắt tính năng Key riêng nên chưa dùng được các việc AI, thử lại sau.".into();
+    }
+    let what = match use_ {
+        Use::Transcribe => "Chép lời",
+        Use::Live => "Chép trực tiếp",
+        Use::Text => "Biên bản, hỏi đáp và dịch",
+    };
+    let labels: Vec<&str> = use_.providers().iter().map(|v| v.label()).collect();
+    let providers = match labels.split_last() {
+        Some((last, rest)) if !rest.is_empty() => format!("{} hoặc {last}", rest.join(", ")),
+        _ => labels.concat(),
+    };
+    format!("{what} chạy bằng key riêng của bạn ({providers}). Thêm key ở Key riêng để dùng.")
+}
+
+/// Lỗi 403 `NO_USER_KEY`: người dùng chưa có key riêng hợp lệ cho việc `use_`.
+pub fn no_key_error(use_: Use, enabled: bool) -> AppError {
+    AppError::Coded { status: StatusCode::FORBIDDEN, code: "NO_USER_KEY", message: missing_key_message(use_, enabled) }
+}
+
+/// Nhà cung cấp của key riêng đang có hiệu lực cho việc `use_` (`Use::Text` trả cả model); không có ⟹ `NO_USER_KEY`.
+pub fn require(use_: Use, active: &Active, enabled: bool) -> Result<(Vendor, Option<String>), AppError> {
+    let found = match use_ {
+        Use::Transcribe => active.transcribe.map(|v| (v, None)),
+        Use::Live => active.live.map(|v| (v, None)),
+        Use::Text => active.text.clone().map(|(v, m)| (v, Some(m))),
+    };
+    found.ok_or_else(|| no_key_error(use_, enabled))
+}
+
+/// Nhà cung cấp key riêng của `user_id` cho việc `use_`; không có ⟹ `NO_USER_KEY`. Tính năng Key riêng tắt thì trả lỗi
+/// mà không đọc Mongo.
+pub async fn required(state: &AppState, user_id: &str, use_: Use) -> Result<(Vendor, Option<String>), AppError> {
+    require(use_, &active(state, user_id).await?, available(state))
+}
+
+/// Model chữ bằng key riêng của người dùng: key đã giải mã và model. Không có key ⟹ `NO_USER_KEY`; key đang có hiệu lực
+/// mà không mở được ⟹ `USER_KEY_FAILED`.
+pub(crate) async fn text_key(state: &AppState, user_id: &str) -> Result<(UserKey, String), AppError> {
+    let (provider, model) = required(state, user_id, Use::Text).await?;
+    let model = model.unwrap_or_else(|| llm::default_model(provider).to_string());
     match open(state, user_id, provider).await {
-        Ok(key) => Ok(Some((key, model))),
+        Ok(key) => Ok((key, model)),
         Err(message) => Err(user_key_error(message)),
     }
 }
@@ -323,6 +365,29 @@ mod tests {
         let m = failure_message(Vendor::ElevenLabs, status_reason(Status::Quota));
         assert!(m.starts_with("Key ElevenLabs của bạn không dùng được: "), "{m}");
         assert!(m.ends_with("sửa hoặc xoá key ở Key riêng."), "{m}");
+    }
+
+    #[test]
+    fn without_a_key_for_the_use_the_request_is_refused_with_a_pointer_to_key_rieng() {
+        let none = Active::default();
+        for use_ in [Use::Transcribe, Use::Live, Use::Text] {
+            let Err(AppError::Coded { status, code, message }) = require(use_, &none, true) else { panic!("phải từ chối") };
+            assert_eq!((status, code), (StatusCode::FORBIDDEN, "NO_USER_KEY"));
+            assert!(message.ends_with("Thêm key ở Key riêng để dùng."), "{message}");
+        }
+        assert_eq!(
+            missing_key_message(Use::Transcribe, true),
+            "Chép lời chạy bằng key riêng của bạn (ElevenLabs, OpenAI hoặc Google Gemini). Thêm key ở Key riêng để dùng."
+        );
+        assert!(missing_key_message(Use::Live, true).contains("(ElevenLabs hoặc OpenAI)"));
+        assert!(missing_key_message(Use::Text, false).contains("tắt tính năng Key riêng"));
+        // Key chép lời không mở được biên bản và ngược lại.
+        let only_transcribe = Active { transcribe: Some(Vendor::ElevenLabs), ..Active::default() };
+        assert_eq!(require(Use::Transcribe, &only_transcribe, true).ok(), Some((Vendor::ElevenLabs, None)));
+        assert!(require(Use::Text, &only_transcribe, true).is_err());
+        assert!(require(Use::Live, &only_transcribe, true).is_err());
+        let text = Active { text: Some((Vendor::Anthropic, "claude-haiku-5-5".into())), ..Active::default() };
+        assert_eq!(require(Use::Text, &text, true).ok(), Some((Vendor::Anthropic, Some("claude-haiku-5-5".into()))));
     }
 
     #[test]

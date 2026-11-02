@@ -46,9 +46,5 @@ export const search: Translation<SourceMessages["search"]> = {
 		sources: "来源",
 		cite: "来源 {n}：{title}，从 {time} 开始播放",
 		session: "问题仅保留到你离开此页面为止。",
-		dailyLimit: "你今天已提问 {used}/{limit} 次。将于 {time} 恢复。",
-		monthlyLimit:
-			"此账号本月的会议纪要和提问额度已用完（{used}/{limit} 等效分钟）。将于 {time} 恢复。",
-		capReached: "提问已用完本月的共享额度。将于 {time} 恢复。",
 	},
 };

@@ -6,7 +6,7 @@ export const keys: Translation<SourceMessages["keys"]> = {
 	dialog: {
 		title: "你的 API 密钥",
 		intro:
-			"使用你自己的 API 密钥代替 Scribe 的密钥。密钥在 Scribe 服务器上加密保存，之后不会再显示；费用由服务商向你的账号收取，使用你的密钥完成的工作不计入 Scribe 的分钟数或次数。",
+			"转写、实时转写、会议纪要、问答和翻译都使用你自己的 API 密钥。密钥在 Scribe 服务器上加密保存，只用于你的请求，之后不会再显示；费用由服务商向你的账号收取。",
 		unavailable:
 			"此服务器未启用“你的 API 密钥”。需要管理员创建加密密钥文件并重启。",
 		loading: "正在加载你的 API 密钥…",
@@ -54,9 +54,18 @@ export const keys: Translation<SourceMessages["keys"]> = {
 		transcribe: "转写文件",
 		live: "iPhone 上的实时转写",
 		text: "会议纪要、问答、翻译",
-		scribe: "使用 Scribe 的密钥，计入你套餐的用量。",
+		off: "未启用：请在上方为某个服务商添加有效密钥。",
 		needsKey: "{provider}（尚无密钥）",
 		model: "模型",
 		geminiNote: "Gemini：句子时间为估算值，不区分发言人。",
+	},
+	needed: {
+		title: "需要你的 API 密钥",
+		open: "打开“你的 API 密钥”",
+		any: "转写、会议纪要、问答和翻译都使用你自己的 API 密钥（ElevenLabs、OpenAI、Google Gemini 或 Anthropic Claude）。请在“你的 API 密钥”中添加密钥后使用。",
+		transcribe:
+			"转写使用你自己的 API 密钥。请在“你的 API 密钥”中添加 ElevenLabs、OpenAI 或 Google Gemini 密钥。",
+		live: "实时转写使用你自己的 API 密钥。请在“你的 API 密钥”中添加 ElevenLabs 或 OpenAI 密钥。",
+		text: "会议纪要、问答和翻译使用你自己的 API 密钥。请在“你的 API 密钥”中添加 OpenAI、Google Gemini 或 Anthropic Claude 密钥。",
 	},
 };

@@ -1,6 +1,7 @@
 import { IconRefresh, IconSend, IconSparkles } from "@tabler/icons-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import { useAuth } from "../../auth/auth-context";
 import { ChatLinkDialog } from "../../components/chat-link-dialog";
 import { Alert } from "../../components/ui/alert";
 import { Badge } from "../../components/ui/badge";
@@ -8,6 +9,7 @@ import { Button } from "../../components/ui/button";
 import { Card } from "../../components/ui/card";
 import { ProgressBar } from "../../components/ui/progress-bar";
 import { useToast } from "../../components/ui/toast";
+import { NeedsKeyNotice } from "../../components/user-keys-entry";
 import type { ChatLinkStatus } from "../../features/chat-link/chat-link-api";
 import {
 	chatLinkKeys,
@@ -19,10 +21,10 @@ import {
 	useCreateSummary,
 	useShareSummary,
 } from "../../features/transcript-docs/transcript-docs-queries";
+import { isOwnKeyRefusal, ownKeyFor } from "../../features/user-keys/own-keys";
 import { useT } from "../../i18n/i18n-context";
-import type { Translate } from "../../i18n/translate";
-import { ApiError, errorCode, errorMessage } from "../../lib/api";
-import { formatDateTime, formatTimeAndDay } from "../../lib/format";
+import { errorCode, errorMessage } from "../../lib/api";
+import { formatDateTime } from "../../lib/format";
 import { TimeJump } from "./time-jump";
 
 export interface MinutesCardProps {
@@ -33,31 +35,6 @@ export interface MinutesCardProps {
 	onJump: (at: number) => void;
 }
 
-/** Why "Tóm tắt" was refused; a used-up allowance says when it opens again. */
-export function summaryError(t: Translate, error: unknown): string {
-	if (error instanceof ApiError && error.quota?.retryAt) {
-		const time = formatTimeAndDay(error.quota.retryAt);
-		if (error.code === "SUMMARY_DAILY_LIMIT") {
-			return t("transcript.minutes.dailyLimit", {
-				used: error.quota.used,
-				limit: error.quota.limit,
-				time,
-			});
-		}
-		if (error.code === "SUMMARY_MONTHLY_LIMIT") {
-			return t("transcript.minutes.monthlyLimit", {
-				used: error.quota.used,
-				limit: error.quota.limit,
-				time,
-			});
-		}
-		if (error.code === "CAP_REACHED") {
-			return t("transcript.minutes.capReached", { time });
-		}
-	}
-	return errorMessage(error);
-}
-
 /** The chat link is gone (never made, or the bot was blocked and the server unlinked). */
 const CHAT_UNLINKED = new Set(["CHAT_NOT_LINKED", "CHAT_BLOCKED"]);
 
@@ -66,6 +43,8 @@ const CHAT_UNLINKED = new Set(["CHAT_NOT_LINKED", "CHAT_BLOCKED"]);
  * minutes (summary, decisions, tasks; each item's time plays from there),
  * marked "Đã cũ" once the transcript changed. "Gửi sang chat" sends them
  * to the user's chat with the Scribe bot, or opens the linking steps first.
+ * Summaries run on the user's own text key: without one the buttons are
+ * off and a notice opens "Key riêng".
  */
 export function MinutesCard({
 	transcriptKey,
@@ -76,6 +55,8 @@ export function MinutesCard({
 	const t = useT();
 	const toast = useToast();
 	const queryClient = useQueryClient();
+	const { user } = useAuth();
+	const hasKey = ownKeyFor(user, "text") !== null;
 	const create = useCreateSummary(transcriptKey);
 	const share = useShareSummary(transcriptKey);
 	const chatLink = useChatLinkQuery(summary !== null);
@@ -131,7 +112,7 @@ export function MinutesCard({
 							variant="ghost"
 							data-id="minutes-recreate"
 							loading={running}
-							disabled={!canSummarize}
+							disabled={!canSummarize || !hasKey}
 							leadingIcon={<IconRefresh size={16} aria-hidden="true" />}
 							onClick={() => create.mutate()}
 						>
@@ -163,13 +144,26 @@ export function MinutesCard({
 				</div>
 			) : null}
 			{create.isError ? (
-				<Alert
-					tone="danger"
-					title={t("transcript.minutes.failed")}
-					data-id="minutes-error"
-				>
-					{summaryError(t, create.error)}
-				</Alert>
+				isOwnKeyRefusal(create.error) ? (
+					<NeedsKeyNotice
+						tone="danger"
+						data-id="minutes-error"
+						message={errorMessage(create.error)}
+					/>
+				) : (
+					<Alert
+						tone="danger"
+						title={t("transcript.minutes.failed")}
+						data-id="minutes-error"
+					>
+						{errorMessage(create.error)}
+					</Alert>
+				)
+			) : !hasKey && canSummarize ? (
+				<NeedsKeyNotice
+					data-id="minutes-needs-key"
+					message={t("keys.needed.text")}
+				/>
 			) : null}
 
 			{summary ? (
@@ -184,7 +178,7 @@ export function MinutesCard({
 					<Button
 						variant="primary"
 						data-id="minutes-create"
-						disabled={!canSummarize}
+						disabled={!canSummarize || !hasKey}
 						leadingIcon={<IconSparkles size={18} aria-hidden="true" />}
 						onClick={() => create.mutate()}
 					>

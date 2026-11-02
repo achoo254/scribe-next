@@ -14,7 +14,7 @@
 use crate::audit;
 use crate::error::AppError;
 use crate::models::session::{self as sessions, Client};
-use crate::models::{plan, usage, user};
+use crate::models::{storage, user};
 use crate::oidc::{GrantError, SCOPE};
 use crate::rate_limit::IDP_TOKEN_BUDGET;
 use crate::session::{open, random_token, seal};
@@ -540,22 +540,18 @@ pub async fn me(
     let profile = user::find_profile(&state.db, &user.0)
         .await?
         .ok_or_else(|| AppError::Unauthorized("user không tồn tại".into()))?;
-    let can_transcribe = state.config.transcribe_allowed(&profile.email);
-    let plan = plan::effective(profile.plan.as_deref(), profile.plan_until, mongodb::bson::DateTime::now());
-    // Hạn chỉ có nghĩa khi gói plus còn hiệu lực (gói đã hết hạn thì là free, không có hạn).
-    let plan_until = profile
-        .plan_until
-        .filter(|_| plan == plan::Plan::Plus)
-        .and_then(|d| d.try_to_rfc3339_string().ok());
-    let storage = plan.storage();
+    // Không còn gói free/plus: giới hạn lưu trữ chung cho mọi người. Giữ `plan` (tên luôn "free", không có hạn) cho bản
+    // web đóng gói trong app đã phát hành.
+    let limits = storage::LIMITS;
     let plan_info = json!({
-        "name": plan.name(),
-        "until": plan_until,
-        "quotaBytes": storage.quota_bytes,
-        "maxFileBytes": storage.max_file_bytes,
-        "retentionDays": storage.retention_days,
+        "name": "free",
+        "until": Value::Null,
+        "quotaBytes": limits.quota_bytes,
+        "maxFileBytes": limits.max_file_bytes,
+        "retentionDays": limits.retention_days,
     });
-    // Key riêng chỉ để hiện lên thẻ mức dùng: đọc lỗi thì báo `null` (thẻ hiện như không có key) thay vì làm hỏng `/api/me`.
+    // Key riêng quyết định việc AI nào dùng được: đọc lỗi thì báo `null` (giao diện hiện như chưa có key) thay vì làm
+    // hỏng `/api/me`.
     let own_keys = match crate::user_keys::me_summary(&state, &user.0).await {
         Ok(v) => v,
         Err(e) => {
@@ -563,59 +559,19 @@ pub async fn me(
             Value::Null
         }
     };
-    let transcription = if can_transcribe {
-        let now = chrono::Utc::now();
-        let month = usage::month_key(now);
-        let used = usage::month_usage(&state.db, &user.0, &month).await?;
-        let limits = state.config.transcribe_limits;
-        let pool_full = plan == plan::Plan::Free && used.free_pool_seconds >= limits.free_pool_seconds;
-        // Gói free còn giới hạn theo ngày (giờ Việt Nam); gói plus không có.
-        let daily = if plan == plan::Plan::Free {
-            let used_today = usage::day_usage_seconds(&state.db, &user.0, &usage::day_key(now)).await?;
-            json!({ "usedMinutes": usage::used_minutes(used_today), "limitMinutes": limits.free_daily_seconds / 60 })
-        } else {
-            Value::Null
-        };
-        // Sổ giờ ElevenLabs dùng chung cả server, theo kỳ gia hạn của ElevenLabs: thẻ mức dùng báo khi nó còn ít hơn
-        // phút của tài khoản.
-        let (shared_left, shared_resets) = if state.transcriber.provider() == crate::config::Provider::ElevenLabs {
-            let day = state.config.elevenlabs_reset_day;
-            let period = usage::provider_period(now, day);
-            let left = if usage::provider_exhausted(&state.db, &period).await? {
-                0
-            } else {
-                state.config.elevenlabs_monthly_seconds - usage::provider_seconds(&state.db, &period).await?
-            };
-            (json!(left.max(0) / 60), json!(usage::provider_next_reset(now, day).to_rfc3339()))
-        } else {
-            (Value::Null, Value::Null)
-        };
-        json!({
-            "plan": plan.name(),
-            "planUntil": plan_until,
-            "usedMinutes": usage::used_minutes(used.user_seconds),
-            "limitMinutes": plan.limit_seconds(&limits) / 60,
-            "daily": daily,
-            "resetsAt": usage::next_reset(now).to_rfc3339(),
-            "capReached": pool_full || used.total_seconds >= limits.monthly_cap_seconds,
-            "paused": !state.transcriber.ready(),
-            "sharedLeftMinutes": shared_left,
-            "sharedResetsAt": shared_resets,
-            // Chép cả phiên iPhone trong một request (ElevenLabs): web gửi mọi đoạn và hiện số phút cả phiên.
-            "wholeSession": state.transcriber.provider() == crate::config::Provider::ElevenLabs,
-        })
-    } else {
-        Value::Null
-    };
     Ok(Json(json!({
         "email": profile.email,
         // Tên và ảnh IdP cho menu tài khoản; `null` tới lần đăng nhập kế tiếp của user cũ.
         "name": profile.name,
         "picture": profile.picture,
-        "canTranscribe": can_transcribe,
+        // Mọi người đăng nhập dùng được AI bằng key riêng của mình. Giữ trường cho bản web đóng gói trong app đã phát hành
+        // (mở trang đọc và nút AI theo trường này).
+        "canTranscribe": true,
         "plan": plan_info,
-        "transcription": transcription,
-        // Việc nào chạy bằng key riêng của người dùng (thẻ "Gói và mức dùng" hiện "Dùng key của bạn").
+        // Không còn phút chép lời của Scribe: luôn `null` (app đã phát hành hiểu là không có hạn mức để hiện).
+        "transcription": Value::Null,
+        // Việc nào chạy được bằng key riêng của người dùng (`null` = chưa có key cho việc đó) và số phút đã chép bằng key
+        // riêng tháng này.
         "ownKeys": own_keys,
     })))
 }

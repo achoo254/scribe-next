@@ -10,7 +10,7 @@ import {
 
 /*
  * The iPhone recorder card with "Đánh dấu", against its screenshot. The
- * after-meeting logic is locked by unit tests: minutes, their allowance and
+ * after-meeting logic is locked by unit tests: minutes, the own-key notice and
  * sending to chat in src/pages/transcript/transcript-reader.test.tsx,
  * linking chat.hoandat.com in src/layout/account-controls.test.tsx,
  * bookmarks in src/pages/record/record-state.test.tsx and

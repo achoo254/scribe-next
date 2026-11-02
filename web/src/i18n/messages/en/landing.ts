@@ -13,7 +13,7 @@ export const landing: Translation<SourceMessages["landing"]> = {
 	},
 	signIn: {
 		title: "Try it with your next meeting",
-		body: "The free plan has 200 MB of storage; files are deleted after 7 days, so download what you want to keep.",
+		body: "Every account has 200 MB of storage; files are deleted after 7 days, so download what you want to keep.",
 	},
 	features: {
 		eyebrow: "Features",
@@ -49,7 +49,7 @@ export const landing: Translation<SourceMessages["landing"]> = {
 			},
 			read: {
 				title: "Get the transcript",
-				body: "Press Transcribe, then read, edit, search and download it when it is done.",
+				body: "Add your own API key (ElevenLabs, OpenAI, Google Gemini or Anthropic Claude) in Your API keys, press Transcribe, then read, edit, search and download it when it is done.",
 			},
 		},
 	},

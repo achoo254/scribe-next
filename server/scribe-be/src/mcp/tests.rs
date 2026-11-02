@@ -168,7 +168,6 @@ async fn initialize_lists_read_only_tools_and_answers_ping() {
 #[ignore]
 async fn tools_read_only_the_callers_recordings_on_real_mongo() {
     use crate::models::file::{self, FileDoc, Owner};
-    use crate::models::plan::Plan;
     use crate::models::{transcript, transcript_doc, user};
     use crate::transcribe::chunking::Sentence;
     use mongodb::bson::{doc, oid::ObjectId, Document};
@@ -185,10 +184,9 @@ async fn tools_read_only_the_callers_recordings_on_real_mongo() {
     let other = format!("selftest-mcp-other-{}", uuid::Uuid::new_v4().simple());
     let (mine, theirs) = (ObjectId::new(), ObjectId::new());
     for (owner, id) in [(user_id.as_str(), mine), (other.as_str(), theirs)] {
-        let f = FileDoc::new_recording(Owner { user_id: owner, plan: Plan::Free }, "Họp tuần", "/nonexistent", 10, 60.0, false, id);
+        let f = FileDoc::new_recording(Owner { user_id: owner }, "Họp tuần", "/nonexistent", 10, 60.0, false, id);
         file::create(&db, f).await.expect("tạo file");
-        let charge = crate::models::usage::Charge { user_id: owner.into(), month: "test".into(), free_pool: false, day: None };
-        transcript::enqueue(&db, id, owner, "run-1", "m", transcript::Billing::Server(&charge), 0).await.expect("enqueue");
+        transcript::enqueue(&db, id, owner, "run-1", "m", crate::config::Vendor::OpenAi).await.expect("enqueue");
         let s = |start: f64, text: &str| Sentence { start, end: start + 1.0, text: text.into(), speaker: None };
         transcript::finish_done(&db, id, "run-1", "", &[s(1.0, "Chào cả nhà."), s(5.0, "Bàn hợp đồng.")]).await.expect("xong");
     }
@@ -201,6 +199,7 @@ async fn tools_read_only_the_callers_recordings_on_real_mongo() {
     assert_eq!(usage["isError"], false, "{usage}");
     assert_eq!(usage["structuredContent"]["storage"]["usageBytes"], 10);
     assert_eq!(usage["structuredContent"]["plan"]["name"], "free");
+    assert_eq!(usage["structuredContent"]["transcription"], Value::Null);
 
     let files = s.tool(&token, "scribe_list_files", json!({})).await;
     let items = files["structuredContent"]["items"].as_array().expect("items").clone();

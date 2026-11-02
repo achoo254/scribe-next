@@ -3,10 +3,12 @@ import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { Outlet, RouterProvider, createMemoryRouter } from "react-router";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { OwnKeys } from "../../auth/auth-api";
 import { ToastProvider } from "../../components/ui/toast";
 import type { RecorderNativePlugin } from "../../features/recorder/native-recorder";
 import { fakeFetch, jsonResponse } from "../../test/fake-fetch";
+import { ALL_OWN_KEYS, NO_OWN_KEYS } from "../../test/own-keys";
 import { RecordUploadProvider } from "./record-upload-state";
 
 type Handler = (data: Record<string, unknown>) => void;
@@ -116,9 +118,14 @@ vi.mock("../../features/recorder/recorder", () => ({
 	},
 }));
 
+const auth = vi.hoisted(() => ({ ownKeys: null as OwnKeys | null }));
 vi.mock("../../auth/auth-context", () => ({
 	useAuth: () => ({
-		user: { email: "minh.anh@example.com", canTranscribe: true },
+		user: {
+			email: "minh.anh@example.com",
+			canTranscribe: true,
+			ownKeys: auth.ownKeys,
+		},
 		logout: async () => undefined,
 	}),
 }));
@@ -204,6 +211,10 @@ async function leaveAndComeBack(
 		await act(() => router.navigate(path));
 	}
 }
+
+beforeEach(() => {
+	auth.ownKeys = ALL_OWN_KEYS;
+});
 
 afterEach(() => {
 	window.localStorage.clear();
@@ -473,7 +484,7 @@ describe("RecordStateProvider (iOS app)", () => {
 				type: "status",
 				connected: false,
 				disconnectedAtS: 125,
-				error: "Không đủ phút chép lời: tháng này đã dùng 120/120 phút.",
+				error: "Không dùng được key riêng của bạn.",
 				stopped: false,
 			});
 		});
@@ -481,9 +492,7 @@ describe("RecordStateProvider (iOS app)", () => {
 			screen.getByText("Mất kết nối từ 2:05, đang thử nối lại…"),
 		).toBeInTheDocument();
 		expect(
-			screen.getByText(
-				"Không đủ phút chép lời: tháng này đã dùng 120/120 phút.",
-			),
+			screen.getByText("Không dùng được key riêng của bạn."),
 		).toBeInTheDocument();
 		expect(native.plugin.stop).not.toHaveBeenCalled();
 
@@ -522,5 +531,26 @@ describe("RecordStateProvider (iOS app)", () => {
 			segmentMinutes: 1,
 		});
 		expect(screen.queryByText("Đang chép")).not.toBeInTheDocument();
+	});
+
+	it("keeps live transcription off without a live key and says how to add one", async () => {
+		auth.ownKeys = { ...NO_OWN_KEYS, transcribe: "gemini", text: "gemini" };
+		window.localStorage.setItem("scribe.native.realtime", "1");
+		renderRoutes(NativeRecordProvider, <NativeRecordCard />);
+		const toggle = await screen.findByRole("switch", {
+			name: "Chép trực tiếp",
+		});
+		expect(toggle).not.toBeChecked();
+		expect(toggle).toBeDisabled();
+		expect(
+			screen.getByText(
+				"Chép trực tiếp chạy bằng API key của bạn. Thêm key ElevenLabs hoặc OpenAI trong Key riêng.",
+			),
+		).toBeVisible();
+		await userEvent.click(screen.getByRole("button", { name: "Bắt đầu ghi" }));
+		expect(native.plugin.start).toHaveBeenCalledWith({
+			userKey: expect.any(String),
+			segmentMinutes: 1,
+		});
 	});
 });

@@ -31,7 +31,7 @@ export const split = {
 	managed: {
 		title: "Tệp trên hệ thống",
 		description:
-			"Tệp bạn tải lên để cắt và các đoạn đã cắt vẫn tính vào dung lượng. Xoá bớt để giải phóng (tự động xoá sau 14 ngày nếu không xoá tay).",
+			"Tệp bạn tải lên để cắt và các đoạn đã cắt vẫn tính vào dung lượng. Xoá bớt để giải phóng (tự động xoá sau 7 ngày nếu không xoá tay).",
 		loadFailed: "Không tải được danh sách tệp",
 		uploads: "Tệp đã tải lên",
 		outputs: "Đoạn đã cắt",

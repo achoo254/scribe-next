@@ -66,7 +66,7 @@ export const record = {
 		},
 		realtime: "Chép trực tiếp",
 		realtimeHint:
-			"Gửi âm thanh tới dịch vụ chép lời để chữ hiện ngay sau mỗi câu nói, tính vào phút chép lời. Bản chép lời đầy đủ vẫn chạy sau khi tải lên.",
+			"Gửi âm thanh tới nhà cung cấp của key chép trực tiếp để chữ hiện ngay sau mỗi câu nói, tính tiền vào tài khoản của bạn. Bản chép lời đầy đủ vẫn chạy sau khi tải lên.",
 		liveTitle: "Đang chép",
 		liveTitleDone: "Chép trực tiếp",
 		liveNote: "Bản xem trước. Bản chép lời đầy đủ chạy sau khi tải lên.",

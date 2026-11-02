@@ -62,9 +62,8 @@ export function searchTranscripts(
 
 /**
  * Asks Scribe about every transcript, or only `key`; the answer comes in
- * the language on screen. Refusals carry a code:
- * `ASK_DAILY_LIMIT` / `ASK_MONTHLY_LIMIT` / `CAP_REACHED` (403 with the
- * counts and `retryAt`), `NOT_TRANSCRIBED` (409).
+ * the language on screen, on the user's own text key. Refusals carry a
+ * code: `NO_USER_KEY` / `USER_KEY_FAILED` (403), `NOT_TRANSCRIBED` (409).
  */
 export function askScribe(
 	question: string,

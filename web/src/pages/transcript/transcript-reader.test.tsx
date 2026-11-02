@@ -1,6 +1,7 @@
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { CurrentUser, OwnKeys } from "../../auth/auth-api";
 import type {
 	Bookmark,
 	TranscriptDetail,
@@ -9,25 +10,28 @@ import type {
 	TranscriptTranslation,
 } from "../../features/transcript-docs/transcript-docs-api";
 import { fakeFetch, jsonResponse } from "../../test/fake-fetch";
+import { ALL_OWN_KEYS, NO_OWN_KEYS } from "../../test/own-keys";
 import { renderWithProviders } from "../../test/render-with-providers";
 import { TranscriptReaderPage } from "./transcript-page";
 import { TranscriptReader } from "./transcript-reader";
 
 const auth = vi.hoisted(() => ({
-	user: {
-		email: "a@b.c",
-		canTranscribe: true,
-		transcription: {
-			plan: "free",
-			usedMinutes: 100,
-			limitMinutes: 120,
-			resetsAt: "2026-10-31T17:00:00Z",
-			capReached: false,
-		},
-	},
+	user: null as CurrentUser | null,
 	refresh: async () => undefined,
 }));
 vi.mock("../../auth/auth-context", () => ({ useAuth: () => auth }));
+
+/** Signed in with these own keys. */
+function withKeys(ownKeys: OwnKeys): void {
+	auth.user = { email: "a@b.c", canTranscribe: true, ownKeys };
+}
+
+/** OpenAI for everything: files are transcribed one by one. */
+const OPENAI_KEYS: OwnKeys = { ...ALL_OWN_KEYS, transcribe: "openai" };
+
+beforeEach(() => {
+	withKeys(OPENAI_KEYS);
+});
 
 const KEY = "s:aaaaaaaa-1111";
 const PATH = "/api/transcript-docs/s%3Aaaaaaaaa-1111";
@@ -228,25 +232,32 @@ describe("TranscriptReader", () => {
 		expect(fake.calls.some((c) => c.method === "PUT")).toBe(false);
 	});
 
-	it("asks before a long transcription and shows the minutes left", async () => {
+	it("asks before a long transcription, naming the user's provider", async () => {
 		const long: TranscriptDetail = {
 			...DETAIL,
 			segments: DETAIL.segments.map((s) =>
 				s.fileId === "d" ? { ...s, durationS: 30 * 60 } : s,
 			),
 		};
-		const fake = renderReader({ [`GET ${PATH}`]: jsonResponse(long) });
+		const fake = renderReader({
+			[`GET ${PATH}`]: jsonResponse(long),
+			"POST /api/transcripts": jsonResponse({ queued: 1, skipped: 0 }),
+		});
 		await userEvent.click(
 			await screen.findByRole("button", { name: "Chép 1 đoạn còn lại" }),
 		);
 		const dialog = await screen.findByRole("dialog");
 		expect(dialog).toHaveTextContent("khoảng 30 phút");
-		expect(dialog).toHaveTextContent("20 phút còn lại");
-		// 30 phút > 20 phút còn lại: không cho gửi.
-		expect(
-			within(dialog).getByRole("button", { name: "Chép lời" }),
-		).toBeDisabled();
+		expect(dialog).toHaveTextContent("key OpenAI của bạn");
 		expect(fake.calls.some((c) => c.method === "POST")).toBe(false);
+		await userEvent.click(
+			within(dialog).getByRole("button", { name: "Chép lời" }),
+		);
+		await waitFor(() =>
+			expect(fake.calls.find((c) => c.method === "POST")?.body).toEqual({
+				fileIds: ["d"],
+			}),
+		);
 	});
 
 	it("asks before leaving the page with an unsaved edit", async () => {
@@ -383,15 +394,12 @@ describe("TranscriptReader minutes", () => {
 		expect(docReads).toHaveLength(2);
 	});
 
-	it("says when the daily allowance opens again", async () => {
+	it("shows the server's NO_USER_KEY refusal with a way to Key riêng", async () => {
 		const fake = renderReader({
 			[`POST ${PATH}/summary`]: jsonResponse(
 				{
-					error: "Hôm nay đã dùng 10/10 lượt tóm tắt. Mở lại lúc 0 giờ.",
-					code: "SUMMARY_DAILY_LIMIT",
-					usedMinutes: 10,
-					limitMinutes: 10,
-					retryAt: "2026-10-16T17:00:00+00:00",
+					error: "Biên bản cần API key của bạn. Thêm key trong Key riêng.",
+					code: "NO_USER_KEY",
 				},
 				403,
 			),
@@ -399,38 +407,34 @@ describe("TranscriptReader minutes", () => {
 		await userEvent.click(
 			await screen.findByRole("button", { name: "Tóm tắt" }),
 		);
+		const refusal = await screen.findByText(
+			"Biên bản cần API key của bạn. Thêm key trong Key riêng.",
+		);
+		const alert = refusal.closest("[data-id='minutes-error']") as HTMLElement;
 		expect(
-			await screen.findByText(
-				"Hôm nay đã dùng 10/10 lượt tóm tắt. Mở lại lúc 00:00 17/10.",
-			),
-		).toBeInTheDocument();
+			within(alert).getByRole("button", { name: "Mở Key riêng" }),
+		).toBeVisible();
 		// A refusal is an answer: nothing was saved, the doc is not read again.
 		expect(
 			fake.calls.filter((c) => c.method === "GET" && c.url.endsWith(PATH)),
 		).toHaveLength(1);
 	});
 
-	it("says when the account's monthly summary allowance opens again", async () => {
-		renderReader({
-			[`POST ${PATH}/summary`]: jsonResponse(
-				{
-					error: "Hết hạn mức tháng.",
-					code: "SUMMARY_MONTHLY_LIMIT",
-					usedMinutes: 60,
-					limitMinutes: 60,
-					retryAt: "2026-10-31T17:00:00+00:00",
-				},
-				403,
-			),
-		});
-		await userEvent.click(
+	it("explains that minutes need the user's text key, with summarising off", async () => {
+		withKeys({ ...NO_OWN_KEYS, transcribe: "openai" });
+		renderReader();
+		expect(
 			await screen.findByRole("button", { name: "Tóm tắt" }),
+		).toBeDisabled();
+		const minutes = document.querySelector(
+			"[data-id='minutes-needs-key']",
+		) as HTMLElement;
+		expect(minutes).toHaveTextContent(
+			"Biên bản, hỏi đáp và dịch chạy bằng API key của bạn.",
 		);
 		expect(
-			await screen.findByText(
-				"Tháng này tài khoản đã dùng hết hạn mức tóm tắt và hỏi đáp (60/60 phút quy đổi). Mở lại lúc 00:00 01/11.",
-			),
-		).toBeInTheDocument();
+			within(minutes).getByRole("button", { name: "Mở Key riêng" }),
+		).toBeVisible();
 	});
 
 	it("offers no sending when the server takes no chat links", async () => {
@@ -716,18 +720,9 @@ describe("TranscriptReader translation", () => {
 		);
 	});
 
-	it("says when the daily translation allowance opens again", async () => {
-		renderReader({
-			[`POST ${PATH}/translation`]: jsonResponse(
-				{
-					error: "Hôm nay đã dùng 3/3 lượt dịch. Mở lại lúc 0 giờ.",
-					code: "TRANSLATE_DAILY_LIMIT",
-					usedMinutes: 3,
-					limitMinutes: 3,
-					retryAt: "2026-10-16T17:00:00+00:00",
-				},
-				403,
-			),
+	it("explains that translating needs the user's text key, without sending", async () => {
+		withKeys({ ...NO_OWN_KEYS, transcribe: "openai" });
+		const fake = renderReader({
 			[`GET ${PATH}/translation`]: jsonResponse({
 				...RUNNING,
 				status: "none",
@@ -738,11 +733,19 @@ describe("TranscriptReader translation", () => {
 		await userEvent.click(
 			await screen.findByRole("menuitemradio", { name: "Tiếng Việt" }),
 		);
+		const notice = await waitFor(() => {
+			const found = document.querySelector("[data-id='translate-needs-key']");
+			expect(found).not.toBeNull();
+			return found as HTMLElement;
+		});
 		expect(
-			await screen.findByText(
-				"Hôm nay đã dùng 3/3 lượt dịch. Mở lại lúc 00:00 17/10.",
+			within(notice).getByRole("button", { name: "Mở Key riêng" }),
+		).toBeVisible();
+		expect(
+			fake.calls.some(
+				(c) => c.method === "POST" && c.url.endsWith("/translation"),
 			),
-		).toBeInTheDocument();
+		).toBe(false);
 	});
 
 	it("offers to resume a run that stopped part way", async () => {
@@ -888,18 +891,12 @@ describe("TranscriptReader speakers", () => {
 });
 
 describe("TranscriptReader whole-session transcription", () => {
-	afterEach(() => {
-		auth.user.transcription = {
-			...auth.user.transcription,
-			wholeSession: undefined,
-		} as typeof auth.user.transcription;
+	// ElevenLabs transcribes a whole iPhone session in one request.
+	beforeEach(() => {
+		withKeys(ALL_OWN_KEYS);
 	});
 
 	it("sends every segment of the session, asking first when edits would be lost", async () => {
-		auth.user.transcription = {
-			...auth.user.transcription,
-			wholeSession: true,
-		} as typeof auth.user.transcription;
 		const fake = renderReader({
 			"POST /api/transcripts": jsonResponse({ queued: 3, skipped: 0 }),
 		});
@@ -923,10 +920,6 @@ describe("TranscriptReader whole-session transcription", () => {
 	});
 
 	it("asks before a whole-session rerun resets renamed speakers", async () => {
-		auth.user.transcription = {
-			...auth.user.transcription,
-			wholeSession: true,
-		} as typeof auth.user.transcription;
 		const renamed: TranscriptDetail = {
 			...DETAIL,
 			segments: [segment("a", 0, 0), segment("c", 2, 60)],

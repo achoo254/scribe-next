@@ -53,13 +53,6 @@ export const errors: Translation<SourceMessages["errors"]> = {
 		watch: "无法继续跟踪任务进度",
 	},
 	server: {
-		quotaExceeded: "转写分钟数不足：本月已使用 {used}/{limit} 分钟。",
-		dailyLimit:
-			"免费版每天可转写 {limit} 分钟，你今天已使用 {used} 分钟。将于 {time} 恢复。",
-		tooLongForFree:
-			"免费版每天最多转写 {limit} 分钟；所选录音共 {used} 分钟。请少选几条录音。",
-		accountTooNew: "新账号可从 {time} 起使用免费转写。",
-		providerHours: "系统的共享转写时长已用完。将于 {time} 恢复。",
 		notTranscribed: "这条录音还没有任何片段完成转写。请先转写。",
 		confirmRequired: "请输入确认词以删除账号。",
 		chatLinkDisabled: "此服务器未启用 chat 关联。",
@@ -68,7 +61,8 @@ export const errors: Translation<SourceMessages["errors"]> = {
 			"Scribe 机器人在 chat 中已被屏蔽，无法发送。关联已移除，请重新关联 chat。",
 		noSummary: "还没有会议纪要。请先点击“生成纪要”，再发送。",
 		bookmarksFull: "这条录音的标记数量已达上限。",
-		realtimeNotAllowed: "此账号暂时无法使用实时转写。",
+		noUserKey:
+			"此功能使用你自己的 API 密钥。请在“你的 API 密钥”中添加密钥后使用。",
 		userKeyFailed: "无法使用你自己的 API 密钥。请在“你的 API 密钥”中检查。",
 		keyFormat: "密钥不符合该服务商的格式。",
 		keyRejected: "服务商拒绝了这个密钥。",

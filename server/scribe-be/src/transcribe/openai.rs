@@ -1,6 +1,6 @@
 //! ffmpeg (tìm khoảng lặng, cắt + nén Opus từng mảnh) và gọi OpenAI `audio/transcriptions`.
 //!
-//! API key (của server) chỉ đi qua header `Authorization`: không đưa vào thông báo lỗi, log hay argv
+//! API key (key riêng của người dùng) chỉ đi qua header `Authorization`: không đưa vào thông báo lỗi, log hay argv
 //! của tiến trình con.
 
 use super::chunking::{self, Span};
@@ -9,12 +9,11 @@ use std::process::Stdio;
 use std::time::Duration;
 use tokio::process::Command;
 
+/// Model chép trực tiếp (OpenAI Realtime).
 pub const MODEL: &str = "gpt-4o-mini-transcribe";
 /// Model chép lời bằng key riêng của người dùng (OpenAI khuyến nghị cho bản ghi, không có người nói, 0,0045 USD/phút).
 pub const USER_MODEL: &str = "gpt-transcribe";
 const API_URL: &str = "https://api.openai.com/v1/audio/transcriptions";
-/// Mảnh có dấu hiệu lặp thì gọi lại với temperature cao hơn.
-const RETRY_TEMPS: [&str; 3] = ["0", "0.4", "0.8"];
 const HTTP_RETRIES: u32 = 3;
 /// Âm lượng dưới ngưỡng này trong ít nhất `SILENCE_MIN_S` giây là khoảng lặng.
 const SILENCE_NOISE: &str = "-35dB";
@@ -66,52 +65,22 @@ fn last_line(text: &str) -> &str {
     text.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or("").trim()
 }
 
-/// Chép một mảnh; chữ có dấu hiệu lặp thì thử lại với temperature cao hơn. Trả (chữ, số lần gửi đã
-/// được OpenAI xử lý) — mỗi lần là một lần bị tính tiền.
-pub async fn transcribe_chunk(
-    http: &reqwest::Client,
-    api_key: &str,
-    audio: Vec<u8>,
-    seconds: f64,
-) -> Result<(String, u32), String> {
-    let mut first = None;
-    let mut posts = 0;
-    for temperature in RETRY_TEMPS {
-        let text = post(http, api_key, &audio, Some(temperature)).await?;
-        posts += 1;
-        if !chunking::looks_looped(&text, seconds) {
-            return Ok((text, posts));
-        }
-        first.get_or_insert(text);
-    }
-    // Lần nào cũng có vẻ lặp: giữ bản temperature 0 (ít bịa nhất) thay vì bản 0,8.
-    Ok((first.unwrap_or_default(), posts))
-}
-
 /// Chép một mảnh bằng `gpt-transcribe` (key riêng của người dùng): một lần gửi, không thử lại với temperature khác
 /// (model không nhận `temperature`).
 pub async fn transcribe_once(http: &reqwest::Client, api_key: &str, audio: &[u8]) -> Result<String, String> {
-    post(http, api_key, audio, None).await
+    post(http, api_key, audio).await
 }
 
-/// Các trường multipart: `gpt-4o-mini-transcribe` khi có `temperature`, còn lại `gpt-transcribe` (`languages[]` thay cho
-/// `language`, theo tài liệu speech-to-text của OpenAI).
-fn form(audio: &[u8], temperature: Option<&str>) -> Result<Form, String> {
+/// Các trường multipart của `gpt-transcribe` (`languages[]` thay cho `language`, theo tài liệu speech-to-text của
+/// OpenAI).
+fn form(audio: &[u8]) -> Result<Form, String> {
     let part = Part::bytes(audio.to_vec()).file_name("chunk.ogg").mime_str("audio/ogg").map_err(|e| format!("dựng multipart: {e}"))?;
-    let form = match temperature {
-        Some(t) => Form::new()
-            .text("model", MODEL)
-            .text("language", "vi")
-            .text("response_format", "json")
-            .text("temperature", t.to_string()),
-        None => Form::new().text("model", USER_MODEL).text("languages[]", "vi"),
-    };
-    Ok(form.part("file", part))
+    Ok(Form::new().text("model", USER_MODEL).text("languages[]", "vi").part("file", part))
 }
 
-async fn post(http: &reqwest::Client, api_key: &str, audio: &[u8], temperature: Option<&str>) -> Result<String, String> {
+async fn post(http: &reqwest::Client, api_key: &str, audio: &[u8]) -> Result<String, String> {
     for attempt in 1..=HTTP_RETRIES {
-        let form = form(audio, temperature)?;
+        let form = form(audio)?;
         let sent = http
             .post(API_URL)
             .bearer_auth(api_key)
@@ -156,7 +125,7 @@ pub(crate) fn is_quota(body: &str) -> bool {
     body.contains("insufficient_quota") || body.contains("credit_balance_exhausted")
 }
 
-/// Thông báo cho người dùng. Lỗi key/credit là lỗi "dừng hẳn": các file sau cũng sẽ hỏng y như vậy.
+/// Thông báo cho người dùng. Lỗi key/credit được `user_keys::problem_of` nhận ra để đánh dấu key.
 pub fn api_error(status: u16, body: &str) -> String {
     if status == 401 {
         return KEY_INVALID.into();
@@ -164,8 +133,7 @@ pub fn api_error(status: u16, body: &str) -> String {
     if is_quota(body) {
         return NO_CREDIT.into();
     }
-    // Thông điệp của OpenAI có thể nêu tổ chức/dự án của tài khoản server: chỉ ghi log, người dùng thấy
-    // câu chung kèm mã.
+    // Thông điệp của OpenAI có thể nêu tổ chức/dự án của tài khoản: chỉ ghi log, người dùng thấy câu chung kèm mã.
     let message = serde_json::from_str::<serde_json::Value>(body)
         .ok()
         .and_then(|v| v["error"]["message"].as_str().map(str::to_string))
@@ -177,14 +145,9 @@ pub fn api_error(status: u16, body: &str) -> String {
     format!("Dịch vụ chép lời đang lỗi (HTTP {status}), thử lại sau.")
 }
 
-/// Lỗi "dừng hẳn" của key server: các lượt sau (chép lời hay tóm tắt) cũng sẽ hỏng y vậy.
-pub fn is_key_broken(e: &str) -> bool {
-    e == KEY_INVALID || e == NO_CREDIT
-}
-
-/// Lỗi của key server (chỉ ghi log/audit cho quản trị; người dùng thấy thông báo tạm ngưng chung).
-pub const KEY_INVALID: &str = "OpenAI: API key của server không hợp lệ hoặc đã bị thu hồi";
-pub const NO_CREDIT: &str = "OpenAI: tài khoản của server đã hết credit";
+/// Lỗi của key (người dùng thấy câu của `user_keys::report` thay cho chúng).
+pub const KEY_INVALID: &str = "OpenAI: API key không hợp lệ hoặc đã bị thu hồi";
+pub const NO_CREDIT: &str = "OpenAI: tài khoản của key đã hết credit";
 
 #[cfg(test)]
 mod tests {

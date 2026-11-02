@@ -20,7 +20,7 @@ import { ChatLinkDialog } from "../components/chat-link-dialog";
 import { DeleteAccountDialog } from "../components/delete-account-dialog";
 import { ConfirmModal } from "../components/ui/confirm-modal";
 import { useToast } from "../components/ui/toast";
-import { UserKeysDialog } from "../components/user-keys-dialog";
+import { useOpenUserKeys } from "../components/user-keys-entry";
 import {
 	useChatLinkQuery,
 	useUnlinkChat,
@@ -68,7 +68,7 @@ export function AccountControls({
 	const chatLink = useChatLinkQuery(canSend);
 	const unlink = useUnlinkChat();
 	const [linking, setLinking] = useState(false);
-	const [keysOpen, setKeysOpen] = useState(false);
+	const openKeys = useOpenUserKeys();
 	const [deleting, setDeleting] = useState(false);
 
 	function unlinkChat(): void {
@@ -119,15 +119,19 @@ export function AccountControls({
 						},
 					]
 				: [];
+	// The "Key riêng" dialog lives in `UserKeysProvider` (app shell).
+	const keyEntries: AccountMenuEntry[] = openKeys
+		? [
+				{
+					label: t("keys.menu"),
+					dataId: "account-menu-keys",
+					icon: <IconKey {...ICON} />,
+					onClick: openKeys,
+				},
+			]
+		: [];
 	const entries: AccountMenuEntry[][] = [
-		[
-			{
-				label: t("keys.menu"),
-				dataId: "account-menu-keys",
-				icon: <IconKey {...ICON} />,
-				onClick: () => setKeysOpen(true),
-			},
-		],
+		keyEntries,
 		chatEntries,
 		[
 			{
@@ -167,7 +171,6 @@ export function AccountControls({
 				onOpenExternal={isNativeShell() ? openExternal : undefined}
 				linkComponent={RouterLink}
 			/>
-			<UserKeysDialog open={keysOpen} onOpenChange={setKeysOpen} />
 			<DeleteAccountDialog
 				open={deleting}
 				onOpenChange={setDeleting}

@@ -15,37 +15,21 @@ import { serverErrorText } from "./server-errors";
 export const NATIVE_API_ORIGIN: string =
 	import.meta.env.VITE_NATIVE_API_ORIGIN ?? "";
 
-/**
- * Numbers of a refused request that counts against an allowance (`403`
- * `{code, usedMinutes, limitMinutes, retryAt}`): what was used, the limit,
- * and when it opens again (ISO time; null when the backend does not say).
- */
-export interface QuotaRefusal {
-	used: number;
-	limit: number;
-	retryAt: string | null;
-}
-
 /** HTTP or network failure; `status` 0 means the request never got a reply. */
 export class ApiError extends Error {
 	readonly status: number;
 	/** Machine-readable reason (`{code}` of the reply), e.g. `CHAT_NOT_LINKED`. */
 	readonly code: string | null;
-	readonly quota: QuotaRefusal | null;
 
 	constructor(
 		status: number,
 		message: string,
-		{
-			code = null,
-			quota = null,
-		}: { code?: string | null; quota?: QuotaRefusal | null } = {},
+		{ code = null }: { code?: string | null } = {},
 	) {
 		super(message);
 		this.name = "ApiError";
 		this.status = status;
 		this.code = code;
-		this.quota = quota;
 	}
 }
 
@@ -56,19 +40,6 @@ export function errorCode(error: unknown): string | null {
 
 function field(body: object, name: string): unknown {
 	return Reflect.get(body, name);
-}
-
-/** The quota numbers of a refusal body, or null when it carries none. */
-function quotaOf(body: object): QuotaRefusal | null {
-	const used = field(body, "usedMinutes");
-	const limit = field(body, "limitMinutes");
-	if (typeof used !== "number" || typeof limit !== "number") return null;
-	const retryAt = field(body, "retryAt");
-	return {
-		used,
-		limit,
-		retryAt: typeof retryAt === "string" && retryAt ? retryAt : null,
-	};
 }
 
 interface CapacitorGlobal {
@@ -97,7 +68,7 @@ export function apiUrl(path: string, base: string = apiBase()): string {
 }
 
 /**
- * Reads `{ error, code? }` (and the quota numbers) from a failed response.
+ * Reads `{ error, code? }` from a failed response.
  * The backend's text is Vietnamese: a Vietnamese page shows it as sent; a
  * page in another language words the refusal itself (`serverErrorText`),
  * else shows the request's translated `fallback`.
@@ -109,15 +80,13 @@ async function errorFrom(res: Response, fallback: string): Promise<ApiError> {
 	const error = field(record, "error");
 	const rawCode = field(record, "code");
 	const code = typeof rawCode === "string" && rawCode ? rawCode : null;
-	const quota = quotaOf(record);
 	let message = fallback;
 	if (translator.locale !== DEFAULT_LOCALE) {
-		message =
-			serverErrorText(translator.t, res.status, code, quota) ?? fallback;
+		message = serverErrorText(translator.t, res.status, code) ?? fallback;
 	} else if (typeof error === "string" && error.length > 0) {
 		message = error;
 	}
-	return new ApiError(res.status, message, { code, quota });
+	return new ApiError(res.status, message, { code });
 }
 
 export interface ApiRequest extends Omit<RequestInit, "body"> {

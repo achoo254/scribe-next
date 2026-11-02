@@ -82,7 +82,7 @@ export const record: Translation<SourceMessages["record"]> = {
 		},
 		realtime: "Live transcription",
 		realtimeHint:
-			"Sends audio to the transcription service so text appears right after each sentence; counts toward your transcription minutes. The full transcript still runs after upload.",
+			"Sends audio to the provider of your live transcription key so text appears right after each sentence, billed to your account. The full transcript still runs after upload.",
 		liveTitle: "Transcribing",
 		liveTitleDone: "Live transcription",
 		liveNote: "Preview. The full transcript runs after upload.",

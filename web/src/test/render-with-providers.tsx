@@ -7,6 +7,7 @@ import {
 	createMemoryRouter,
 } from "react-router";
 import { ToastProvider } from "../components/ui/toast";
+import { UserKeysProvider } from "../components/user-keys-entry";
 import { I18nProvider } from "../i18n/i18n-provider";
 
 export interface RenderOptions {
@@ -18,7 +19,7 @@ export interface RenderOptions {
  * Renders `ui` at "/" of a memory data router (pages may use `useBlocker`
  * and `useNavigate`) with the language of the shared choice (Vietnamese
  * unless a test sets `hd_lang`), a fresh query client (no retries) and the
- * toast provider.
+ * toast provider and the "Key riêng" dialog.
  */
 export function renderWithProviders(
 	ui: ReactElement,
@@ -35,7 +36,9 @@ export function renderWithProviders(
 			<I18nProvider>
 				<QueryClientProvider client={queryClient}>
 					<ToastProvider>
-						<RouterProvider router={router} />
+						<UserKeysProvider>
+							<RouterProvider router={router} />
+						</UserKeysProvider>
 					</ToastProvider>
 				</QueryClientProvider>
 			</I18nProvider>,

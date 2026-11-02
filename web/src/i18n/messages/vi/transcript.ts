@@ -13,10 +13,8 @@ export const transcript = {
 		failed: "Không chép lời được",
 		confirmTitle: "Chép lời bản ghi dài",
 		send: "Chép lời",
-		usage: "Bản ghi này dùng khoảng <strong>{minutes} phút</strong>.",
-		usageOfLeft:
-			"Bản ghi này dùng khoảng <strong>{minutes} phút</strong> trong <strong>{left} phút</strong> còn lại của tháng này.",
-		notEnough: "Không đủ phút còn lại cho bản ghi này.",
+		usage:
+			"Bản ghi này dài khoảng <strong>{minutes} phút</strong>, được chép bằng key {provider} của bạn; nhà cung cấp tính tiền vào tài khoản của bạn.",
 	},
 	download: {
 		menu: "Tải xuống",
@@ -46,11 +44,6 @@ export const transcript = {
 		retranslate: "Dịch lại câu đã sửa",
 		fillMissing: "Dịch phần còn thiếu",
 		outdatedMark: "bản dịch cũ",
-		dailyLimit: "Hôm nay đã dùng {used}/{limit} lượt dịch. Mở lại lúc {time}.",
-		monthlyLimit:
-			"Tháng này tài khoản đã dùng hết hạn mức tóm tắt, hỏi đáp và dịch ({used}/{limit} phút quy đổi). Mở lại lúc {time}.",
-		capReached:
-			"Dịch đã dùng hết hạn mức chung của tháng này, mở lại lúc {time}.",
 	},
 	panel: {
 		done: "Đã chép lời",
@@ -97,11 +90,6 @@ export const transcript = {
 		actions: "Thao tác với “{name}”",
 		dayMeta: { other: "{count} bản chép lời · {duration}" },
 	},
-	quota: {
-		paused: "Chép lời đang tạm ngưng, quản trị đã được báo. Thử lại sau.",
-		capReached:
-			"Chép lời đã dùng hết hạn mức chung của tháng này, sẽ mở lại đầu tháng sau.",
-	},
 	minutes: {
 		title: "Biên bản",
 		intro:
@@ -121,12 +109,6 @@ export const transcript = {
 		due: "Hạn: {due}",
 		createdAt: "Tạo lúc {date}",
 		jump: "Nghe từ {time}",
-		dailyLimit:
-			"Hôm nay đã dùng {used}/{limit} lượt tóm tắt. Mở lại lúc {time}.",
-		monthlyLimit:
-			"Tháng này tài khoản đã dùng hết hạn mức tóm tắt và hỏi đáp ({used}/{limit} phút quy đổi). Mở lại lúc {time}.",
-		capReached:
-			"Tóm tắt đã dùng hết hạn mức chung của tháng này, mở lại lúc {time}.",
 		failed: "Không tóm tắt được",
 		send: "Gửi sang chat",
 		link: "Liên kết chat",

@@ -272,14 +272,10 @@ pub fn api_error(status: u16, body: &str) -> String {
     format!("Dịch vụ chép lời đang lỗi (HTTP {status}), thử lại sau.")
 }
 
-/// Lỗi "dừng hẳn" của key ElevenLabs: các lượt sau cũng sẽ hỏng y vậy.
-pub fn is_key_broken(e: &str) -> bool {
-    e == KEY_INVALID
-}
-
-pub const KEY_INVALID: &str = "ElevenLabs: API key của server không hợp lệ, bị thu hồi hoặc thiếu quyền";
-/// ElevenLabs báo tài khoản hết credit của tháng (gói Starter không có tính thêm theo dùng).
-pub const QUOTA_EXHAUSTED: &str = "ElevenLabs: tài khoản của server đã hết quota tháng";
+/// Lỗi của key (người dùng thấy câu của `user_keys::report` thay cho chúng).
+pub const KEY_INVALID: &str = "ElevenLabs: API key không hợp lệ, bị thu hồi hoặc thiếu quyền";
+/// ElevenLabs báo tài khoản của key hết credit.
+pub const QUOTA_EXHAUSTED: &str = "ElevenLabs: tài khoản của key đã hết quota";
 
 #[cfg(test)]
 mod tests {
@@ -371,14 +367,13 @@ mod tests {
         let invalid = r#"{"detail":{"type":"authentication_error","code":"invalid_api_key","message":"bad"}}"#;
         assert_eq!(api_error(401, invalid), KEY_INVALID);
         assert_eq!(api_error(403, "{}"), KEY_INVALID);
-        // Hết credit tháng không phải key hỏng: chặn tới tháng sau, không ngắt tới khi khởi động lại.
+        // Hết credit khác key hỏng: key được đánh dấu hết hạn mức thay vì sai.
         assert_eq!(api_error(402, r#"{"detail":{"code":"insufficient_credits"}}"#), QUOTA_EXHAUSTED);
         let legacy = r#"{"detail":{"status":"quota_exceeded","message":"You have 12 credits remaining, while 26 credits are required"}}"#;
         assert_eq!(api_error(401, legacy), QUOTA_EXHAUSTED);
-        assert!(is_key_broken(&api_error(401, invalid)) && !is_key_broken(QUOTA_EXHAUSTED));
+        assert_eq!(api_error(401, invalid), KEY_INVALID);
         let other = r#"{"detail":{"code":"system_busy","message":"workspace acme busy"}}"#;
         assert!(!api_error(429, other).contains("acme"));
-        assert!(!is_key_broken(&api_error(500, "{}")));
         assert_eq!(api_error(422, "{}"), "Không chép được bản ghi này (ElevenLabs từ chối dữ liệu).");
     }
 

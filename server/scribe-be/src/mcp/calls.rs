@@ -51,7 +51,7 @@ impl ToolError {
         Self::new("internal", "internal error; retry later")
     }
 
-    /// Lỗi HTTP của handler (`{error, code?}`) → lỗi tool; mã riêng của handler (vd `DAILY_LIMIT`) được giữ.
+    /// Lỗi HTTP của handler (`{error, code?}`) → lỗi tool; mã riêng của handler (vd `NO_USER_KEY`) được giữ.
     fn from_http(status: StatusCode, body: &[u8]) -> Self {
         let parsed: Value = serde_json::from_slice(body).unwrap_or(Value::Null);
         let message = parsed["error"].as_str().unwrap_or("request failed").to_string();
@@ -546,6 +546,7 @@ impl Ctx<'_> {
             "plan": me["plan"],
             "canTranscribe": me["canTranscribe"],
             "transcription": me["transcription"],
+            "ownKeys": me["ownKeys"],
             "storage": storage,
         })))
     }
@@ -572,8 +573,8 @@ mod tests {
 
     #[test]
     fn handler_errors_keep_their_own_code_or_follow_the_status() {
-        let quota = ToolError::from_http(StatusCode::FORBIDDEN, br#"{"error":"het luot","code":"DAILY_LIMIT"}"#);
-        assert_eq!((quota.code.as_str(), quota.message.as_str()), ("DAILY_LIMIT", "het luot"));
+        let no_key = ToolError::from_http(StatusCode::FORBIDDEN, br#"{"error":"them key","code":"NO_USER_KEY"}"#);
+        assert_eq!((no_key.code.as_str(), no_key.message.as_str()), ("NO_USER_KEY", "them key"));
         let missing = ToolError::from_http(StatusCode::NOT_FOUND, br#"{"error":"khong co"}"#);
         assert_eq!(missing.code, "not_found");
         assert_eq!(ToolError::from_http(StatusCode::INTERNAL_SERVER_ERROR, b"").code, "internal");

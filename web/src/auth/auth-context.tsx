@@ -48,7 +48,7 @@ interface AuthApi extends AuthState {
 	 * lands on /login, which reads `accountDeleted`.
 	 */
 	forgetDeletedAccount: (deleted: AccountDeleted) => Promise<void>;
-	/** Re-reads `/api/me` (minutes left after a transcription request). */
+	/** Re-reads `/api/me` (minutes on the own key after a transcription request). */
 	refresh: () => Promise<void>;
 }
 

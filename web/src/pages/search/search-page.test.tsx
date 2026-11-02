@@ -3,8 +3,16 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SearchReply } from "../../features/search/search-api";
 import { fakeFetch, jsonResponse } from "../../test/fake-fetch";
+import { ALL_OWN_KEYS } from "../../test/own-keys";
 import { renderWithProviders } from "../../test/render-with-providers";
 import { SearchPage } from "./search-page";
+
+vi.mock("../../auth/auth-context", () => ({
+	useAuth: () => ({
+		user: { email: "a@b.c", canTranscribe: true, ownKeys: ALL_OWN_KEYS },
+		refresh: async () => undefined,
+	}),
+}));
 
 const REPLY: SearchReply = {
 	results: [

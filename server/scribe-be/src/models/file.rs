@@ -1,6 +1,6 @@
 //! `files` collection: bản ghi, tệp tải lên, đoạn cắt. Ownership theo `userId`.
 
-use super::plan::Plan;
+use super::storage;
 use crate::config::RETENTION_DAYS;
 use crate::error::AppError;
 use futures_util::StreamExt;
@@ -31,16 +31,15 @@ fn expiry() -> DateTime {
     expiry_after(RETENTION_DAYS)
 }
 
-/// Chủ của file mới và gói của họ lúc tạo: hạn giữ tệp (`expiresAt`) tính theo gói.
+/// Chủ của file mới. Hạn giữ tệp (`expiresAt`) ghi lúc tạo theo `storage::LIMITS` (chung cho mọi người).
 #[derive(Debug, Clone, Copy)]
 pub struct Owner<'a> {
     pub user_id: &'a str,
-    pub plan: Plan,
 }
 
 impl Owner<'_> {
     fn expiry(&self) -> DateTime {
-        expiry_after(self.plan.storage().retention_days)
+        expiry_after(storage::LIMITS.retention_days)
     }
 }
 
@@ -532,7 +531,7 @@ mod tests {
     #[test]
     fn uploads_are_single_file_sessions_whatever_their_name() {
         let id = ObjectId::parse_str("65f0a1b2c3d4e5f60718293a").expect("oid");
-        let owner = Owner { user_id: "u", plan: Plan::Free };
+        let owner = Owner { user_id: "u" };
         let upload = FileDoc::new_upload(owner, "6ad09d56-a5e5#12", "/x.mp3", 1, 30.0, false, id);
         assert_eq!(upload.kind, "upload");
         assert_eq!(upload.session_key().as_deref(), Some("f:65f0a1b2c3d4e5f60718293a"));
@@ -544,7 +543,7 @@ mod tests {
 
     #[test]
     fn history_holds_recordings_and_record_page_uploads_only() {
-        let owner = Owner { user_id: "u", plan: Plan::Free };
+        let owner = Owner { user_id: "u" };
         let upload = || FileDoc::new_upload(owner, "a.mp3", "/a.mp3", 1, 1.0, false, ObjectId::new());
         assert!(FileDoc::new_recording(owner, "a", "/a", 1, 1.0, false, ObjectId::new()).in_history());
         assert!(upload().for_transcription().in_history());
@@ -568,14 +567,10 @@ mod tests {
     }
 
     #[test]
-    fn new_files_expire_after_the_owner_plan_retention() {
-        let days = |plan| {
-            let f = FileDoc::new_recording(Owner { user_id: "u", plan }, "a", "/a", 1, 1.0, false, ObjectId::new());
-            (f.expires_at.timestamp_millis() - f.created_at.timestamp_millis() + DAY_MS / 2) / DAY_MS
-        };
-        assert_eq!(days(Plan::Free), 7);
-        assert_eq!(days(Plan::Plus), 14);
-        let output = FileDoc::new_output(Owner { user_id: "u", plan: Plan::Free }, "j", "p1", "/p1", 1);
+    fn new_files_expire_after_seven_days() {
+        let f = FileDoc::new_recording(Owner { user_id: "u" }, "a", "/a", 1, 1.0, false, ObjectId::new());
+        assert_eq!((f.expires_at.timestamp_millis() - f.created_at.timestamp_millis() + DAY_MS / 2) / DAY_MS, 7);
+        let output = FileDoc::new_output(Owner { user_id: "u" }, "j", "p1", "/p1", 1);
         assert_eq!((output.expires_at.timestamp_millis() - output.created_at.timestamp_millis() + DAY_MS / 2) / DAY_MS, 7);
     }
 
@@ -601,12 +596,12 @@ mod tests {
         let db_name = std::env::var("TRANSCRIPT_TEST_DB_NAME").expect("TRANSCRIPT_TEST_DB_NAME");
         let db = crate::db::connect(&uri, &db_name).await.expect("kết nối Mongo");
         let user = format!("selftest-{}", uuid::Uuid::new_v4());
-        let owner = Owner { user_id: &user, plan: Plan::Plus };
+        let owner = Owner { user_id: &user };
         let mut old = FileDoc::new_recording(owner, "cũ", "/nonexistent", 1, 1.0, false, ObjectId::new());
         old.created_at = DateTime::from_millis(old.created_at.timestamp_millis() - 10 * DAY_MS);
         old.expires_at = DateTime::from_millis(old.created_at.timestamp_millis() + 14 * DAY_MS);
         let fresh = FileDoc::new_recording(owner, "mới", "/nonexistent", 1, 1.0, false, ObjectId::new());
-        let free = FileDoc::new_upload(Owner { user_id: &user, plan: Plan::Free }, "free", "/n", 1, 1.0, false, ObjectId::new());
+        let free = FileDoc::new_upload(Owner { user_id: &user }, "free", "/n", 1, 1.0, false, ObjectId::new());
         let (old_id, fresh_id, free_id) = (old.id, fresh.id, free.id);
         for f in [old, fresh, free] {
             create(&db, f).await.expect("tạo file");
@@ -636,7 +631,7 @@ mod tests {
         let db = crate::db::connect(&uri, &db_name).await.expect("kết nối Mongo");
         let user = format!("selftest-{}", uuid::Uuid::new_v4());
         let session = format!("selftest-{}", &uuid::Uuid::new_v4().simple().to_string()[..12]);
-        let owner = Owner { user_id: &user, plan: Plan::Free };
+        let owner = Owner { user_id: &user };
         let upload = FileDoc::new_upload(owner, &format!("{session}#0"), "/nonexistent", 5, 9.0, false, ObjectId::new())
             .for_transcription();
         let segment = FileDoc::new_recording(owner, &format!("{session}#1"), "/nonexistent", 7, 60.0, false, ObjectId::new());

@@ -1,38 +1,12 @@
 import { ApiError, apiJson } from "../lib/api";
 
-/** Monthly transcription allowance of the signed-in user. */
-export interface Transcription {
-	plan: "free" | "plus";
-	planUntil?: string | null;
-	usedMinutes: number;
-	limitMinutes: number;
-	/** Start of next month (Vietnam time), when the minutes reset. */
-	resetsAt: string;
-	/** The shared monthly limit is used up: nobody on this plan can transcribe. */
-	capReached: boolean;
-	/** Transcription is paused for everyone (server key unusable). */
-	paused?: boolean;
-	/**
-	 * Minutes left this month on the transcription hours the whole service
-	 * shares (ElevenLabs); null when the provider has no such limit.
-	 */
-	sharedLeftMinutes?: number | null;
-	/** When those shared hours renew (ISO): the provider's billing day, not the 1st. */
-	sharedResetsAt?: string | null;
-	/**
-	 * An iPhone session is transcribed as a whole (one request, consistent
-	 * speakers): send every segment and show the minutes of the session.
-	 */
-	wholeSession?: boolean;
-	/** Free plan: minutes of today (Vietnam time); null on plus. */
-	daily?: { usedMinutes: number; limitMinutes: number } | null;
-}
-
-/** The plan in effect and what it allows. */
-export interface PlanInfo {
-	name: "free" | "plus";
-	/** End of a plus plan (ISO); null when it does not end. */
-	until?: string | null;
+/**
+ * Storage every account gets (Scribe has no plans: 200 MB, files up to
+ * 200 MB, kept 7 days). The backend still sends `plan` with a constant
+ * `name: "free"` and `until: null` for app bundles that read them; the web
+ * reads only these limits.
+ */
+export interface StorageLimits {
 	quotaBytes: number;
 	maxFileBytes: number;
 	/** Days a new file is kept before it is deleted. */
@@ -45,19 +19,24 @@ export interface CurrentUser {
 	name?: string | null;
 	/** IdP picture URL (https), like `name`; the menu shows the initial without it. */
 	picture?: string | null;
-	/** May transcribe recordings (backend allowlist). */
+	/**
+	 * Always true for a signed-in user: every AI feature runs on the user's
+	 * own key (`ownKeys`). Kept for app bundles that still read it.
+	 */
 	canTranscribe?: boolean;
-	/** Missing from older backends. */
-	plan?: PlanInfo | null;
-	transcription?: Transcription | null;
+	/** Storage limits (named `plan` for older app bundles); missing from older backends. */
+	plan?: StorageLimits | null;
+	/** Always null: Scribe meters no AI minutes. Kept for app bundles that still read it. */
+	transcription?: null;
 	/** Which uses run on the user's own keys ("Key riêng"); missing from older backends. */
 	ownKeys?: OwnKeys | null;
 }
 
 /**
- * Uses that run on the user's own keys: the provider of each (null: on
- * Scribe's key, metered as usual) and the minutes transcribed this month
- * on the user's keys.
+ * AI runs only on the user's own keys ("Key riêng"): the provider active
+ * for each use (null: that use is unavailable until a valid key is added),
+ * and the minutes transcribed this month on the user's keys. `available`
+ * false: the server cannot store keys, so no AI use is available.
  */
 export interface OwnKeys {
 	available: boolean;

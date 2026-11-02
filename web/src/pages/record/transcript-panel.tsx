@@ -22,6 +22,7 @@ import {
 } from "../../features/transcript/merge-transcripts";
 import type { ExportScope } from "../../features/transcript/transcript-api";
 import { useTranscriptsQuery } from "../../features/transcript/transcript-queries";
+import { transcribesWholeSession } from "../../features/user-keys/own-keys";
 import { useT } from "../../i18n/i18n-context";
 import { useOpenTranscript } from "../../layout/transcript-nav";
 import { errorMessage } from "../../lib/api";
@@ -98,7 +99,7 @@ export function TranscriptPanel({
 	 * Files to send now: the missing ones; everything when all are done, or
 	 * when an iPhone session is transcribed as a whole (one request).
 	 */
-	const wholeSession = Boolean(session && user?.transcription?.wholeSession);
+	const wholeSession = Boolean(session) && transcribesWholeSession(user);
 	const toSend = allDone || wholeSession ? fileIds : missing;
 	/** Segments already transcribed go again: edits and speaker names would be lost. */
 	const redoesDone = allDone || (wholeSession && merged.done > 0);

@@ -260,7 +260,7 @@ mod tests {
         let key = format!("s:{session}");
         let (a, b) = (ObjectId::new(), ObjectId::new());
         for (id, index) in [(a, 0), (b, 1)] {
-            let owner = file::Owner { user_id: &user, plan: crate::models::plan::Plan::Free };
+            let owner = file::Owner { user_id: &user };
             let f = file::FileDoc::new_recording(owner, &format!("{session}#{index}"), "/nonexistent", 1, 60.0, false, id);
             file::create(&db, f).await.expect("tạo file");
         }

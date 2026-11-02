@@ -1,20 +1,14 @@
-import type { PlanInfo } from "../auth/auth-api";
 import { useAuth } from "../auth/auth-context";
 import { useUsageQuery } from "../features/files/file-queries";
+import { ownKeyFor } from "../features/user-keys/own-keys";
 import { useT } from "../i18n/i18n-context";
 import type { MessageKey } from "../i18n/message-types";
 import { cn } from "../lib/cn";
-import { formatDate, formatDayMonth, formatStorage } from "../lib/format";
-import { PROVIDER_INFO } from "./key-providers";
-import { Badge } from "./ui/badge";
+import { formatStorage } from "../lib/format";
+import { providerNameKey } from "./key-providers";
 import { cardClassName } from "./ui/card";
 import { MeterBar, type MeterTone } from "./ui/meter-bar";
-
-/** Label of each plan ("Gói Free"), shared with the account menu. */
-export const PLAN_LABEL = {
-	free: "ui.usage.plan.free",
-	plus: "ui.usage.plan.plus",
-} as const satisfies Record<PlanInfo["name"], MessageKey>;
+import { NeedsKeyNotice } from "./user-keys-entry";
 
 /** Bar colour: warning from 75%, error from 90%. */
 export function usageTone(percent: number): MeterTone {
@@ -72,8 +66,8 @@ function UsageRow({
 function useProviderName(): (code: string) => string {
 	const t = useT();
 	return (code) => {
-		const info = Object.entries(PROVIDER_INFO).find(([key]) => key === code);
-		return info ? t(info[1].name) : code;
+		const key = providerNameKey(code);
+		return key ? t(key) : code;
 	};
 }
 
@@ -84,7 +78,7 @@ interface OwnKeyRowProps {
 	"data-id": string;
 }
 
-/** A use that runs on the user's own key: no Scribe allowance to show. */
+/** A use that runs on the user's own key, and on which provider. */
 function OwnKeyRow({
 	label,
 	provider,
@@ -106,11 +100,10 @@ function OwnKeyRow({
 }
 
 /**
- * The plan and what of it is used, in one compact card above every page:
- * plan badge (with its end date) and how long files are kept, then storage,
- * this month's transcription minutes and, on the free plan, today's. Shows
- * once `/api/me/usage` answers; the minutes only for accounts that may
- * transcribe.
+ * Usage in one compact card above every page: how long files are kept,
+ * storage, and which AI uses run on which of the user's own keys. AI runs only on the
+ * user's keys, so a missing one gets a hint that opens "Key riêng". Shows
+ * once `/api/me/usage` answers.
  */
 export function UsageCard() {
 	const t = useT();
@@ -119,23 +112,19 @@ export function UsageCard() {
 	const providerName = useProviderName();
 	if (!storage) return null;
 	const own = user?.ownKeys ?? null;
-	const plan: PlanInfo["name"] = user?.plan?.name ?? storage.plan ?? "free";
-	const until = user?.plan?.until ?? null;
+	const transcribeKey = ownKeyFor(user, "transcribe");
+	const textKey = ownKeyFor(user, "text");
 	const retentionDays = user?.plan?.retentionDays ?? storage.retentionDays ?? 0;
-	// Transcription on the user's own key: Scribe's minutes do not apply.
-	const minutes = own?.transcribe ? null : (user?.transcription ?? null);
-	const reset = formatDayMonth(minutes?.resetsAt);
-	// The shared hours only matter once they are fewer than the account's own minutes left.
-	const sharedLeft = minutes?.sharedLeftMinutes ?? null;
-	const sharedReset = formatDayMonth(
-		minutes?.sharedResetsAt ?? minutes?.resetsAt,
-	);
-	const sharedShort =
-		minutes !== null &&
-		sharedLeft !== null &&
-		sharedLeft < minutes.limitMinutes - minutes.usedMinutes;
 	const storageFull =
 		storage.quotaBytes > 0 && storage.usageBytes >= storage.quotaBytes;
+	const keyHint: MessageKey | null =
+		transcribeKey === null && textKey === null
+			? "keys.needed.any"
+			: transcribeKey === null
+				? "keys.needed.transcribe"
+				: textKey === null
+					? "keys.needed.text"
+					: null;
 
 	return (
 		<section
@@ -143,28 +132,11 @@ export function UsageCard() {
 			aria-label={t("ui.usage.region")}
 			className={cn(cardClassName, "grid gap-2.5 px-4 py-3")}
 		>
-			<div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
-				<div className="flex min-w-0 items-center gap-2">
-					<Badge
-						tone={plan === "plus" ? "primary" : "neutral"}
-						data-id="usage-plan"
-					>
-						{t(PLAN_LABEL[plan])}
-					</Badge>
-					{until ? (
-						<span className="text-muted text-xs">
-							{t("ui.usage.planUntil", { date: formatDate(until) })}
-						</span>
-					) : null}
-				</div>
+			{retentionDays > 0 ? (
 				<span className="text-muted text-xs" data-id="usage-retention">
-					{retentionDays > 0
-						? t("ui.usage.retention", { count: retentionDays })
-						: null}
-					{retentionDays > 0 && minutes && reset ? " · " : null}
-					{minutes && reset ? t("ui.usage.resets", { date: reset }) : null}
+					{t("ui.usage.retention", { count: retentionDays })}
 				</span>
-			</div>
+			) : null}
 			<div className="grid gap-x-6 gap-y-2.5 sm:grid-cols-[repeat(auto-fit,minmax(10rem,1fr))]">
 				<UsageRow
 					data-id="usage-storage"
@@ -174,49 +146,23 @@ export function UsageCard() {
 					used={storage.usageBytes}
 					limit={storage.quotaBytes}
 				/>
-				{minutes ? (
-					<UsageRow
-						data-id="usage-month"
-						label={t("ui.usage.month")}
-						meterLabel={t("ui.usage.monthMeter")}
-						value={t("ui.usage.minutes", {
-							used: minutes.usedMinutes,
-							limit: minutes.limitMinutes,
-						})}
-						used={minutes.usedMinutes}
-						limit={minutes.limitMinutes}
-					/>
-				) : null}
-				{own?.transcribe ? (
+				{transcribeKey ? (
 					<OwnKeyRow
 						data-id="usage-own-transcribe"
 						label={t("ui.usage.ownKey.transcribe")}
-						provider={providerName(own.transcribe)}
+						provider={providerName(transcribeKey)}
 						detail={
-							own.minutes > 0
+							own && own.minutes > 0
 								? t("ui.usage.ownKey.minutes", { count: own.minutes })
 								: undefined
 						}
 					/>
 				) : null}
-				{own?.text ? (
+				{textKey ? (
 					<OwnKeyRow
 						data-id="usage-own-text"
 						label={t("ui.usage.ownKey.text")}
-						provider={providerName(own.text)}
-					/>
-				) : null}
-				{minutes?.daily ? (
-					<UsageRow
-						data-id="usage-today"
-						label={t("ui.usage.today")}
-						meterLabel={t("ui.usage.todayMeter")}
-						value={t("ui.usage.minutes", {
-							used: minutes.daily.usedMinutes,
-							limit: minutes.daily.limitMinutes,
-						})}
-						used={minutes.daily.usedMinutes}
-						limit={minutes.daily.limitMinutes}
+						provider={providerName(textKey)}
 					/>
 				) : null}
 			</div>
@@ -225,25 +171,8 @@ export function UsageCard() {
 					{t("ui.usage.storageFull")}
 				</p>
 			) : null}
-			{minutes?.paused ? (
-				<p className="m-0 text-warning-text text-xs">
-					{t("transcript.quota.paused")}
-				</p>
-			) : null}
-			{sharedShort && sharedLeft === 0 ? (
-				<p data-id="usage-shared-out" className="m-0 text-error-text text-xs">
-					{t("ui.usage.sharedOut", { date: sharedReset ?? "" })}
-				</p>
-			) : null}
-			{sharedShort && sharedLeft !== null && sharedLeft > 0 ? (
-				<p data-id="usage-shared-low" className="m-0 text-warning-text text-xs">
-					{t("ui.usage.sharedLow", { count: sharedLeft })}
-				</p>
-			) : null}
-			{minutes?.capReached ? (
-				<p className="m-0 text-warning-text text-xs">
-					{t("transcript.quota.capReached")}
-				</p>
+			{keyHint ? (
+				<NeedsKeyNotice data-id="usage-needs-key" message={t(keyHint)} />
 			) : null}
 		</section>
 	);

@@ -1,10 +1,8 @@
-//! Báo chủ sản phẩm qua bot của chat.hoandat.com (quỹ free sắp cạn, trần tổng, ai đó liên tục chạm giới
-//! hạn ngày, key OpenAI hỏng). Token bot nằm ở tệp `NOTIFY_BOT_TOKEN_PATH` (600), chat id là biến build
-//! `NOTIFY_CHAT_ID`; bot chỉ nhắn được người đã bấm "Bắt đầu" với nó. Thiếu cấu hình thì chỉ log. Gửi
-//! nền: lỗi không làm hỏng request, và không log token.
+//! Kênh báo chủ sản phẩm qua bot của chat.hoandat.com (thử bằng `scribe-be admin notify-test`; client Bot API cũng
+//! dùng cho liên kết chat). Token bot nằm ở tệp `NOTIFY_BOT_TOKEN_PATH` (600), chat id là biến build `NOTIFY_CHAT_ID`;
+//! bot chỉ nhắn được người đã bấm "Bắt đầu" với nó. Không log token.
 
 use crate::config::Config;
-use crate::state::AppState;
 use serde_json::json;
 use std::net::{IpAddr, SocketAddr};
 use std::time::Duration;
@@ -68,16 +66,6 @@ pub async fn deliver(http: &reqwest::Client, config: &Config, text: &str) -> Res
     } else {
         Err(format!("bot API trả {}", res.status()))
     }
-}
-
-/// Gửi nền; không cấu hình hoặc lỗi thì chỉ log.
-pub fn send(state: &AppState, text: String) {
-    let (http, config) = (state.bot_http.clone(), state.config.clone());
-    tokio::spawn(async move {
-        if let Err(e) = deliver(&http, &config, &text).await {
-            tracing::warn!(alert = %text, "không gửi được báo động: {e}");
-        }
-    });
 }
 
 #[cfg(test)]

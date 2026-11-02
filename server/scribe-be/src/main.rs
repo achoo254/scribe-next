@@ -134,11 +134,8 @@ async fn main() {
     }
 
     let port = config.port;
-    if let Some(model) = config::unlisted_llm_model() {
-        tracing::error!(model = %model, fallback = %config.summary_model, "LLM_MODEL không có trong bảng giá — dùng model mặc định");
-    }
-    let transcriber = transcribe::Transcriber::load(&config);
-    // Key riêng: thiếu hoặc sai tệp bí mật thì tính năng tắt (giao diện báo), server vẫn chạy.
+    // Key riêng: thiếu hoặc sai tệp bí mật thì tính năng tắt (giao diện báo) và mọi việc AI bị từ chối (Scribe không có
+    // key AI của server), server vẫn chạy cho ghi âm, tải lên, cắt file.
     let user_keys_secret = match config.user_keys_secret_path.as_deref() {
         Some(path) => match user_keys::crypto::Secret::load(path) {
             Ok(secret) => {
@@ -188,7 +185,7 @@ async fn main() {
         session_cache: Arc::default(),
         session_key: Arc::new(session_key),
         rate: Arc::new(RateLimiter::new()),
-        transcriber: Arc::new(transcriber),
+        transcriber: Arc::default(),
         summaries: Arc::default(),
         chat_bot: Arc::default(),
         user_keys: user_keys_secret,

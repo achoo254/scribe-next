@@ -53,15 +53,6 @@ export const errors: Translation<SourceMessages["errors"]> = {
 		watch: "Lost track of the job progress",
 	},
 	server: {
-		quotaExceeded:
-			"Not enough transcription minutes: you've used {used}/{limit} minutes this month.",
-		dailyLimit:
-			"The free plan transcribes {limit} minutes a day and you've used {used} today. Available again at {time}.",
-		tooLongForFree:
-			"The free plan transcribes up to {limit} minutes a day; the selected recordings are {used} minutes long. Choose fewer recordings.",
-		accountTooNew: "New accounts can use free transcription from {time}.",
-		providerHours:
-			"The service has used up its shared transcription hours. Available again at {time}.",
 		notTranscribed:
 			"No part of this recording is transcribed yet. Transcribe it first.",
 		confirmRequired: "Type the confirmation word to delete your account.",
@@ -71,7 +62,8 @@ export const errors: Translation<SourceMessages["errors"]> = {
 			"Couldn't send because the Scribe bot is blocked in chat. The link was removed; link chat again.",
 		noSummary: "No minutes yet. Press Summarise first, then send.",
 		bookmarksFull: "This recording has the maximum number of bookmarks.",
-		realtimeNotAllowed: "This account can't use live transcription yet.",
+		noUserKey:
+			"This feature runs on your own API key. Add a key in Your API keys to use it.",
 		userKeyFailed:
 			"Your own API key couldn't be used. Check it in Your API keys.",
 		keyFormat: "The key doesn't match the provider's format.",

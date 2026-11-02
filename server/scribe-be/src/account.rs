@@ -426,7 +426,6 @@ pub async fn delete_me(
 mod tests {
     use super::*;
     use crate::models::file::{FileDoc, Owner};
-    use crate::models::plan::Plan;
 
     #[test]
     fn confirm_word_accepts_any_vietnamese_spelling() {
@@ -534,7 +533,7 @@ mod tests {
             tokio::fs::create_dir_all(&dir).await.expect("thư mục");
             tokio::fs::create_dir_all(format!("{data_dir}/{id}/tmp")).await.expect("tmp");
             tokio::fs::write(format!("{data_dir}/{id}/tmp/x.part"), b"part").await.expect(".part");
-            let owner = Owner { user_id: id, plan: Plan::Free };
+            let owner = Owner { user_id: id };
             let path = format!("{dir}/seg.m4a");
             tokio::fs::write(&path, b"audio").await.expect("tệp");
             let rec = FileDoc::new_recording(owner, &format!("{session}#0"), &path, 5, 60.0, false, ObjectId::new());

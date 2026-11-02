@@ -46,13 +46,12 @@ export interface ManagedFile {
 
 export interface Usage {
 	usageBytes: number;
-	/** Storage of the user's plan (free 200 MB, plus 5 GB). */
+	/** Storage of the account (200 MB). */
 	quotaBytes: number;
-	/** Largest single file of the plan. */
+	/** Largest single file. */
 	maxFileBytes?: number;
 	/** Days a new file is kept. */
 	retentionDays?: number;
-	plan?: "free" | "plus";
 }
 
 /** What "Xoá tất cả" did; `skipped` files belong to a recording still in progress. */

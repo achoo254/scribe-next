@@ -14,10 +14,8 @@ export const transcript: Translation<SourceMessages["transcript"]> = {
 		failed: "无法转写",
 		confirmTitle: "转写较长的录音",
 		send: "转写",
-		usage: "这条录音约需 <strong>{minutes} 分钟</strong>。",
-		usageOfLeft:
-			"这条录音约需本月剩余 <strong>{left} 分钟</strong>中的 <strong>{minutes} 分钟</strong>。",
-		notEnough: "剩余分钟数不足以转写这条录音。",
+		usage:
+			"这条录音约 <strong>{minutes} 分钟</strong>，将使用你的 {provider} 密钥转写；费用由服务商向你的账号收取。",
 	},
 	download: {
 		menu: "下载",
@@ -47,10 +45,6 @@ export const transcript: Translation<SourceMessages["transcript"]> = {
 		retranslate: "重新翻译修改过的句子",
 		fillMissing: "翻译其余部分",
 		outdatedMark: "旧译文",
-		dailyLimit: "你今天已翻译 {used}/{limit} 次。将于 {time} 恢复。",
-		monthlyLimit:
-			"此账号本月的会议纪要、提问和翻译额度已用完（{used}/{limit} 等效分钟）。将于 {time} 恢复。",
-		capReached: "翻译已用完本月的共享额度。将于 {time} 恢复。",
 	},
 	panel: {
 		done: "已转写",
@@ -97,10 +91,6 @@ export const transcript: Translation<SourceMessages["transcript"]> = {
 		actions: "“{name}”的操作",
 		dayMeta: { other: "{count} 份文字稿 · {duration}" },
 	},
-	quota: {
-		paused: "转写已暂停，并已通知管理员。请稍后重试。",
-		capReached: "转写已用完本月的共享额度，将于下月初恢复。",
-	},
 	minutes: {
 		title: "会议纪要",
 		intro:
@@ -119,10 +109,6 @@ export const transcript: Translation<SourceMessages["transcript"]> = {
 		due: "截止：{due}",
 		createdAt: "创建于 {date}",
 		jump: "从 {time} 开始播放",
-		dailyLimit: "你今天已生成 {used}/{limit} 次纪要。将于 {time} 恢复。",
-		monthlyLimit:
-			"此账号本月的会议纪要和提问额度已用完（{used}/{limit} 等效分钟）。将于 {time} 恢复。",
-		capReached: "会议纪要已用完本月的共享额度。将于 {time} 恢复。",
 		failed: "无法生成纪要",
 		send: "发送到 chat",
 		link: "关联 chat",

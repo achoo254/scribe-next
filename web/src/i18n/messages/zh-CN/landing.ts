@@ -13,7 +13,7 @@ export const landing: Translation<SourceMessages["landing"]> = {
 	},
 	signIn: {
 		title: "下次开会时试试看",
-		body: "免费版提供 200 MB 存储空间；文件在 7 天后删除，需要保留的内容请及时下载。",
+		body: "每个账号提供 200 MB 存储空间；文件在 7 天后删除，需要保留的内容请及时下载。",
 	},
 	features: {
 		eyebrow: "功能",
@@ -49,7 +49,7 @@ export const landing: Translation<SourceMessages["landing"]> = {
 			},
 			read: {
 				title: "拿到文字稿",
-				body: "点击“转写”，完成后即可阅读、编辑、搜索和下载。",
+				body: "在“你的 API 密钥”中添加你自己的密钥（ElevenLabs、OpenAI、Google Gemini 或 Anthropic Claude），点击“转写”，完成后即可阅读、编辑、搜索和下载。",
 			},
 		},
 	},

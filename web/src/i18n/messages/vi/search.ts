@@ -40,10 +40,5 @@ export const search = {
 		sources: "Nguồn",
 		cite: "Nguồn {n}: {title}, nghe từ {time}",
 		session: "Các câu đã hỏi chỉ giữ tới khi rời trang.",
-		dailyLimit: "Hôm nay đã dùng {used}/{limit} lượt hỏi. Mở lại lúc {time}.",
-		monthlyLimit:
-			"Tháng này tài khoản đã dùng hết hạn mức tóm tắt và hỏi đáp ({used}/{limit} phút quy đổi). Mở lại lúc {time}.",
-		capReached:
-			"Hỏi đáp đã dùng hết hạn mức chung của tháng này, mở lại lúc {time}.",
 	},
 } as const;

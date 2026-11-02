@@ -4,7 +4,6 @@ use crate::audit;
 use crate::auth::UserId;
 use crate::error::AppError;
 use crate::models::file::{self, FileDoc, Owner};
-use crate::models::user;
 use crate::models::transcript_doc;
 use crate::models::job::{self, Job, SegRef};
 use crate::state::AppState;
@@ -201,15 +200,7 @@ async fn run_job(state: &AppState, job: &Job) {
 
 /// Mode B (Cắt file): lưu mỗi đoạn thành `kind:output` (tải zip). KHÔNG đụng input file.
 async fn finish_output_split(state: &AppState, job_id: &str, user_id: &str, segs: Vec<OutputSeg>) {
-    let plan = match user::effective_plan(&state.db, user_id).await {
-        Ok(plan) => plan,
-        Err(e) => {
-            cleanup_seg_files(&segs);
-            let _ = job::finish_failed(&state.db, job_id, &format!("đọc gói của user: {e:?}")).await;
-            return;
-        }
-    };
-    let owner = Owner { user_id, plan };
+    let owner = Owner { user_id };
     let mut refs = Vec::with_capacity(segs.len());
     for s in segs {
         let doc = FileDoc::new_output(owner, job_id, &s.name, &s.path, s.size as i64);
@@ -246,20 +237,12 @@ async fn finish_recording_split(state: &AppState, job: &Job, job_id: &str, segs:
         }
     };
     let base = input.name.clone();
-    let plan = match user::effective_plan(&state.db, &job.user_id).await {
-        Ok(plan) => plan,
-        Err(e) => {
-            cleanup_seg_files(&segs);
-            let _ = job::finish_failed(&state.db, job_id, &format!("đọc gói của user: {e:?}")).await;
-            return;
-        }
-    };
 
     let mut refs = Vec::with_capacity(segs.len());
     for (i, s) in segs.iter().enumerate() {
         let name = format!("{base} — Phần {:02}", i + 1);
         let doc = FileDoc::new_recording(
-            Owner { user_id: &job.user_id, plan },
+            Owner { user_id: &job.user_id },
             &name,
             &s.path,
             s.size as i64,

@@ -5,14 +5,14 @@
 //! Khác upload: init KHÔNG cần size (stream mở); finalize → `files{kind:recording}` + probe duration.
 //! Red-team: #8 sessionId UUID server-sinh + verify userId (chống IDOR/traversal); #7 append-only
 //! stateless (độ dài `.part` = nguồn sự thật, không cần totalChunks); #3 quota tăng dần; #14 size cap. Quota và
-//! cỡ tệp tối đa theo gói của user (`plan::Plan::storage`). Chunk làm vượt giới hạn bị cắt bỏ (413) nhưng
+//! cỡ tệp tối đa chung (`storage::LIMITS`). Chunk làm vượt giới hạn bị cắt bỏ (413) nhưng
 //! phần đã nhận giữ nguyên: bản ghi vẫn finalize được tới lúc đầy.
 
 use crate::audit;
 use crate::auth::UserId;
 use crate::error::AppError;
 use crate::models::file::{self, FileDoc, Owner};
-use crate::models::user;
+use crate::models::storage;
 use crate::state::AppState;
 use axum::body::Bytes;
 use axum::extract::{Query, State};
@@ -48,7 +48,7 @@ pub async fn init(
     Extension(user): Extension<UserId>,
     Json(req): Json<InitReq>,
 ) -> Result<Json<InitResp>, AppError> {
-    let storage = user::effective_plan(&state.db, &user.0).await?.storage();
+    let storage = storage::LIMITS;
     let usage = file::user_usage_bytes(&state.db, &user.0).await?;
     let inflight = user_inflight_bytes(&state, &user.0).await;
     if usage + inflight >= storage.quota_bytes {
@@ -118,7 +118,7 @@ pub async fn chunk(
     f.flush().await.ok();
 
     let written = tokio::fs::metadata(&part).await.map(|m| m.len()).unwrap_or(0);
-    let storage = user::effective_plan(&state.db, &user.0).await?.storage();
+    let storage = storage::LIMITS;
     let over = if written > storage.max_file_bytes {
         Some(storage.file_too_large_message())
     } else {
@@ -169,7 +169,6 @@ pub async fn finalize(
     if !finalizable_size(size) {
         return Err(AppError::BadRequest("kích thước bản ghi không hợp lệ".into()));
     }
-    let plan = user::effective_plan(&state.db, &user.0).await?;
     // Magic-byte: MediaRecorder xuất webm (matroska) → infer nhận diện Video. Chỉ nhận audio/video.
     let detected = infer::get_from_path(&part)
         .map_err(|e| AppError::Internal(format!("đọc header: {e}")))?
@@ -230,7 +229,7 @@ pub async fn finalize(
     let name = session.get_str("name").unwrap_or("Bản ghi").to_string();
     let file_id = file::create(
         &state.db,
-        FileDoc::new_recording(Owner { user_id: &user.0, plan }, &name, &final_path, size as i64, duration_s, has_video, id),
+        FileDoc::new_recording(Owner { user_id: &user.0 }, &name, &final_path, size as i64, duration_s, has_video, id),
     )
     .await?;
     // Đoạn iPhone tới muộn (sau các đoạn đứng sau nó): mốc giây theo cả phiên của các đoạn sau nó dời theo,
@@ -412,7 +411,6 @@ fn part_path(state: &AppState, user_id: &str, session_id: &str) -> Result<String
 #[cfg(test)]
 mod tests {
     use super::{finalizable_size, recording_alive, RECORDING_IDLE_S};
-    use crate::models::plan::Plan;
 
     #[test]
     fn a_recording_is_alive_while_chunks_keep_arriving() {
@@ -428,12 +426,11 @@ mod tests {
     }
 
     #[test]
-    fn finalize_keeps_what_was_received_after_a_plan_downgrade() {
-        // Ghi 600 MB khi còn plus, gói hạ về free (200 MB/tệp) giữa chừng: phần đã nhận vẫn finalize được.
+    fn finalize_keeps_what_was_received_beyond_the_file_limit() {
+        // Phần đã nhận trên cỡ tệp tối đa (vd ghi từ trước khi bỏ gói plus) vẫn finalize được.
         let received = 600 * 1024 * 1024;
-        assert!(received > Plan::Free.storage().max_file_bytes);
+        assert!(received > crate::models::storage::LIMITS.max_file_bytes);
         assert!(finalizable_size(received));
-        assert!(finalizable_size(Plan::Plus.storage().max_file_bytes + 1));
         assert!(!finalizable_size(0));
     }
 }

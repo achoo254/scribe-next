@@ -4,7 +4,7 @@ use crate::audit;
 use crate::auth::UserId;
 use crate::error::AppError;
 use crate::models::file::FileDoc;
-use crate::models::{file, job, transcript, transcript_doc, user};
+use crate::models::{file, job, storage, transcript, transcript_doc};
 use crate::recordings;
 use crate::state::AppState;
 use axum::body::Body;
@@ -34,7 +34,7 @@ pub async fn list(
     Extension(user): Extension<UserId>,
 ) -> Result<Json<Value>, AppError> {
     let recs = file::list_history(&state.db, &user.0).await?;
-    let retention_days = user::effective_plan(&state.db, &user.0).await?.storage().retention_days;
+    let retention_days = storage::LIMITS.retention_days;
     let transcripts: HashMap<String, String> = transcript::statuses(&state.db, &user.0).await?.into_iter().collect();
     let titles = session_titles(&state, &user.0, &recs).await?;
     let items: Vec<Value> = recs
@@ -69,7 +69,7 @@ pub async fn manage_list(
     Extension(user): Extension<UserId>,
 ) -> Result<Json<Value>, AppError> {
     let files = file::list_split_files(&state.db, &user.0).await?;
-    let retention_days = user::effective_plan(&state.db, &user.0).await?.storage().retention_days;
+    let retention_days = storage::LIMITS.retention_days;
     let items: Vec<Value> = files
         .iter()
         .map(|f| {
@@ -87,20 +87,20 @@ pub async fn manage_list(
     Ok(Json(json!({ "items": items, "retentionDays": retention_days })))
 }
 
-/// `GET /api/me/usage` — dung lượng đã dùng và giới hạn lưu trữ theo gói của user.
+/// `GET /api/me/usage` — dung lượng đã dùng và giới hạn lưu trữ (chung cho mọi người).
 pub async fn usage(
     State(state): State<AppState>,
     Extension(user): Extension<UserId>,
 ) -> Result<Json<Value>, AppError> {
     let used = file::user_usage_bytes(&state.db, &user.0).await?;
-    let plan = user::effective_plan(&state.db, &user.0).await?;
-    let storage = plan.storage();
+    let limits = storage::LIMITS;
     Ok(Json(json!({
         "usageBytes": used,
-        "quotaBytes": storage.quota_bytes,
-        "maxFileBytes": storage.max_file_bytes,
-        "retentionDays": storage.retention_days,
-        "plan": plan.name(),
+        "quotaBytes": limits.quota_bytes,
+        "maxFileBytes": limits.max_file_bytes,
+        "retentionDays": limits.retention_days,
+        // Không còn gói: luôn "free", giữ cho bản web đóng gói trong app đã phát hành.
+        "plan": "free",
     })))
 }
 
@@ -489,13 +489,12 @@ fn content_type_for(path: &str) -> &'static str {
 mod tests {
     use super::{display_name, file_download_name, live_iphone_sessions, parse_range, split_for_delete_all, LIVE_IPHONE_SESSION_MS};
     use crate::models::file::{FileDoc, Owner};
-    use crate::models::plan::Plan;
     use mongodb::bson::{oid::ObjectId, DateTime};
     use std::collections::HashSet;
 
     #[test]
     fn downloads_are_named_after_the_title_the_user_set() {
-        let owner = Owner { user_id: "u", plan: Plan::Free };
+        let owner = Owner { user_id: "u" };
         let segment = FileDoc::new_recording(owner, "aaaaaaaa-1111#3", "/r/x.m4a", 1, 1.0, false, ObjectId::new());
         let single = FileDoc::new_recording(owner, "Ghi âm 11:50", "/r/y.webm", 1, 1.0, false, ObjectId::new());
         let upload = FileDoc::new_upload(owner, "aaaaaaaa-1111#3", "/r/z.mp3", 1, 1.0, false, ObjectId::new());
@@ -510,7 +509,7 @@ mod tests {
 
     #[test]
     fn delete_all_spares_open_recording_sessions_and_busy_split_inputs() {
-        let owner = Owner { user_id: "u", plan: Plan::Free };
+        let owner = Owner { user_id: "u" };
         let rec = |name: &str| FileDoc::new_recording(owner, name, "/r", 10, 1.0, false, ObjectId::new());
         let files = vec![
             rec("Họp sáng"),
@@ -534,7 +533,7 @@ mod tests {
 
     #[test]
     fn delete_all_spares_iphone_sessions_with_a_recent_segment() {
-        let owner = Owner { user_id: "u", plan: Plan::Free };
+        let owner = Owner { user_id: "u" };
         let now = DateTime::now();
         let at = |name: &str, ago_ms: i64| FileDoc {
             created_at: DateTime::from_millis(now.timestamp_millis() - ago_ms),

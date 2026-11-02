@@ -1,60 +1,70 @@
 import { type ReactNode, useState } from "react";
 import { useAuth } from "../../auth/auth-context";
+import { providerNameKey } from "../../components/key-providers";
 import { Button } from "../../components/ui/button";
 import { Modal, ModalClose } from "../../components/ui/modal";
 import { ModalFooter } from "../../components/ui/modal-footer";
 import { useToast } from "../../components/ui/toast";
+import { NeedsKeyNotice } from "../../components/user-keys-entry";
 import { useRequestTranscripts } from "../../features/transcript/transcript-queries";
+import { isOwnKeyRefusal, ownKeyFor } from "../../features/user-keys/own-keys";
 import { useT } from "../../i18n/i18n-context";
 import { type TagRenderers, renderRich } from "../../i18n/rich-text";
 import { errorMessage } from "../../lib/api";
 
-/** `<strong>` in the confirmation texts: the minutes stand out. */
+/** `<strong>` in the confirmation text: the minutes stand out. */
 const STRONG: TagRenderers = { strong: (chunk) => <strong>{chunk}</strong> };
 
-/** Above this many minutes, say how much of the month it uses before sending. */
+/** Above this many minutes, say how long it is before sending. */
 const CONFIRM_ABOVE_MINUTES = 10;
 
 export interface Transcribe {
 	/**
 	 * Queues the files; `seconds` is their total length, used to ask first
-	 * when a long recording takes a big part of the monthly minutes.
+	 * when a long recording goes to the user's provider.
 	 */
 	start: (fileIds: readonly string[], seconds: number) => Promise<void>;
 	pending: boolean;
-	/** The confirmation dialog; render it once next to the buttons that call `start`. */
+	/** The dialogs; render them once next to the buttons that call `start`. */
 	dialog: ReactNode;
 }
 
+/** What the dialog asks or explains; null when closed. */
+type Prompt =
+	| { kind: "confirm"; fileIds: readonly string[]; minutes: number }
+	| { kind: "needsKey"; message: string };
+
 /**
- * "Chép lời" on the server's OpenAI key, shared by the recordings list and
- * the transcript reader. `onSent` runs once the backend queued the files;
- * the minutes left are re-read afterwards.
+ * "Chép lời" on the user's own transcription key, shared by the recordings
+ * list and the transcript reader. Without a key (or when the server says
+ * so), a dialog explains it and opens "Key riêng". `onSent` runs once the
+ * backend queued the files; `/api/me` is re-read afterwards (minutes on
+ * the user's key).
  */
 export function useTranscribe(onSent?: () => void): Transcribe {
 	const t = useT();
 	const toast = useToast();
 	const { user, refresh } = useAuth();
 	const request = useRequestTranscripts();
-	const [pendingConfirm, setPendingConfirm] = useState<{
-		fileIds: readonly string[];
-		minutes: number;
-	} | null>(null);
-	const quota = user?.transcription;
-	const left = quota
-		? Math.max(0, quota.limitMinutes - quota.usedMinutes)
-		: null;
+	const [prompt, setPrompt] = useState<Prompt | null>(null);
+	const provider = ownKeyFor(user, "transcribe");
+	const nameKey = providerNameKey(provider);
+	const providerName = nameKey ? t(nameKey) : (provider ?? "");
 
 	async function send(fileIds: readonly string[]): Promise<void> {
 		try {
 			await request.mutateAsync({ fileIds });
 			onSent?.();
 		} catch (cause) {
-			toast.show({
-				tone: "error",
-				title: t("transcript.transcribe.failed"),
-				description: errorMessage(cause),
-			});
+			if (isOwnKeyRefusal(cause)) {
+				setPrompt({ kind: "needsKey", message: errorMessage(cause) });
+			} else {
+				toast.show({
+					tone: "error",
+					title: t("transcript.transcribe.failed"),
+					description: errorMessage(cause),
+				});
+			}
 		} finally {
 			void refresh();
 		}
@@ -64,62 +74,83 @@ export function useTranscribe(onSent?: () => void): Transcribe {
 		fileIds: readonly string[],
 		seconds: number,
 	): Promise<void> {
+		if (provider === null) {
+			setPrompt({ kind: "needsKey", message: t("keys.needed.transcribe") });
+			return;
+		}
 		const minutes = Math.ceil(seconds / 60);
 		if (minutes > CONFIRM_ABOVE_MINUTES) {
-			setPendingConfirm({ fileIds, minutes });
+			setPrompt({ kind: "confirm", fileIds, minutes });
 			return;
 		}
 		await send(fileIds);
 	}
 
-	const confirmMinutes = pendingConfirm?.minutes ?? 0;
+	const confirm = prompt?.kind === "confirm" ? prompt : null;
+	const needsKey = prompt?.kind === "needsKey" ? prompt : null;
+	const close = () => setPrompt(null);
 	const dialog = (
-		<Modal
-			open={pendingConfirm !== null}
-			onOpenChange={(next) => {
-				if (!next) setPendingConfirm(null);
-			}}
-			title={t("transcript.transcribe.confirmTitle")}
-			size="sm"
-			data-id="transcribe-confirm"
-			footer={
-				<ModalFooter>
-					<ModalClose asChild>
-						<Button variant="ghost">{t("common.actions.cancel")}</Button>
-					</ModalClose>
-					<Button
-						variant="primary"
-						data-id="transcribe-confirm-send"
-						disabled={left !== null && confirmMinutes > left}
-						loading={request.isPending}
-						onClick={() => {
-							const next = pendingConfirm;
-							setPendingConfirm(null);
-							if (next) void send(next.fileIds);
-						}}
-					>
-						{t("transcript.transcribe.send")}
-					</Button>
-				</ModalFooter>
-			}
-		>
-			<p className="m-0 text-sm">
-				{renderRich(
-					left !== null
-						? t("transcript.transcribe.usageOfLeft", {
-								minutes: confirmMinutes,
-								left,
-							})
-						: t("transcript.transcribe.usage", { minutes: confirmMinutes }),
-					STRONG,
-				)}
-			</p>
-			{left !== null && confirmMinutes > left ? (
-				<p className="m-0 mt-2 text-error-text text-sm">
-					{t("transcript.transcribe.notEnough")}
+		<>
+			<Modal
+				open={confirm !== null}
+				onOpenChange={(next) => {
+					if (!next) close();
+				}}
+				title={t("transcript.transcribe.confirmTitle")}
+				size="sm"
+				data-id="transcribe-confirm"
+				footer={
+					<ModalFooter>
+						<ModalClose asChild>
+							<Button variant="ghost">{t("common.actions.cancel")}</Button>
+						</ModalClose>
+						<Button
+							variant="primary"
+							data-id="transcribe-confirm-send"
+							loading={request.isPending}
+							onClick={() => {
+								close();
+								if (confirm) void send(confirm.fileIds);
+							}}
+						>
+							{t("transcript.transcribe.send")}
+						</Button>
+					</ModalFooter>
+				}
+			>
+				<p className="m-0 text-sm">
+					{renderRich(
+						t("transcript.transcribe.usage", {
+							minutes: confirm?.minutes ?? 0,
+							provider: providerName,
+						}),
+						STRONG,
+					)}
 				</p>
-			) : null}
-		</Modal>
+			</Modal>
+			<Modal
+				open={needsKey !== null}
+				onOpenChange={(next) => {
+					if (!next) close();
+				}}
+				title={t("keys.needed.title")}
+				size="sm"
+				data-id="transcribe-needs-key"
+				footer={
+					<ModalFooter>
+						<ModalClose asChild>
+							<Button variant="ghost">{t("common.actions.close")}</Button>
+						</ModalClose>
+					</ModalFooter>
+				}
+			>
+				<NeedsKeyNotice
+					data-id="transcribe-needs-key-notice"
+					message={needsKey?.message ?? ""}
+					onOpen={close}
+				/>
+			</Modal>
+		</>
 	);
 
 	return { start, pending: request.isPending, dialog };

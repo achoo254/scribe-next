@@ -17,13 +17,10 @@ pub enum AppError {
     TooLarge(String),
     /// 429 — rate-limit theo IP (red-team #2).
     TooManyRequests(String),
-    /// 403 kèm số — hết phút chép lời (`QUOTA_EXCEEDED`, `DAILY_LIMIT`, `IP_LIMIT`), hạn mức chung
-    /// (`CAP_REACHED`) hoặc tài khoản còn mới (`ACCOUNT_TOO_NEW`); `retry_at` = lúc mở lại (RFC 3339).
-    Quota { code: &'static str, message: String, used_minutes: i64, limit_minutes: i64, retry_at: Option<String> },
     /// Lỗi kèm mã máy đọc được (`{error, code}`), cho client rẽ nhánh mà không dò câu chữ
-    /// (vd 409 `CHAT_NOT_LINKED`, `NO_SUMMARY`).
+    /// (vd 409 `CHAT_NOT_LINKED`, `NO_SUMMARY`, 403 `NO_USER_KEY`).
     Coded { status: StatusCode, code: &'static str, message: String },
-    /// 503 — tính năng tạm ngưng (vd key OpenAI của server hỏng).
+    /// 503 — tạm thời không làm được (vd nhà cung cấp không cấp được token).
     Unavailable(String),
     Internal(String),
 }
@@ -38,7 +35,6 @@ impl AppError {
             AppError::Conflict(m) => (StatusCode::CONFLICT, m),
             AppError::TooLarge(m) => (StatusCode::PAYLOAD_TOO_LARGE, m),
             AppError::TooManyRequests(m) => (StatusCode::TOO_MANY_REQUESTS, m),
-            AppError::Quota { message, .. } => (StatusCode::FORBIDDEN, message),
             AppError::Coded { status, message, .. } => (*status, message),
             AppError::Unavailable(m) => (StatusCode::SERVICE_UNAVAILABLE, m),
             AppError::Internal(m) => (StatusCode::INTERNAL_SERVER_ERROR, m),
@@ -48,16 +44,6 @@ impl AppError {
 
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
-        if let AppError::Quota { code, message, used_minutes, limit_minutes, retry_at } = &self {
-            let body = json!({
-                "error": message,
-                "code": code,
-                "usedMinutes": used_minutes,
-                "limitMinutes": limit_minutes,
-                "retryAt": retry_at,
-            });
-            return (StatusCode::FORBIDDEN, Json(body)).into_response();
-        }
         if let AppError::Coded { status, code, message } = &self {
             return (*status, Json(json!({ "error": message, "code": code }))).into_response();
         }

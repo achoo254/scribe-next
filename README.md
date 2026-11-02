@@ -14,7 +14,7 @@ Các ứng dụng dùng chung một backend:
 ## Quyết định và ràng buộc
 
 - **Đơn tenant.** Scribe chỉ phục vụ `hoandat.com`. Đa tenant theo domain đã chạy rồi bị bỏ ([ADR 0001](./docs/decisions/0001-tenants-by-domain.md), superseded); dữ liệu vẫn mang `tenantId: "primary"` và giữ shape `GET /api/idp` vì app di động đã phát hành đọc nó.
-- **Chép lời bằng key server có hạn mức, hoặc key riêng của người dùng.** Nhà cung cấp và giá mỗi phút nằm ở `server/scribe-be/src/config.rs`; việc chạy bằng key riêng không tính vào hạn mức của Scribe (lý do và quy tắc ở đầu `server/scribe-be/src/user_keys/mod.rs`).
+- **AI chỉ chạy bằng key riêng của người dùng.** Chủ dự án chốt 02/11/2026: Scribe không trả tiền AI thay người dùng, server không có key AI nào. Chép lời (cả phiên iPhone), chép trực tiếp, biên bản, hỏi đáp (cả `scribe_ask` của MCP) và dịch chỉ chạy bằng key người dùng thêm ở "Key riêng"; chưa có key thì API trả 403 `NO_USER_KEY`. Không có phút hay hạn mức AI. Cùng ngày bỏ gói free/plus: mọi người một mức lưu trữ 200 MB, tệp ≤ 200 MB, giữ 7 ngày (`server/scribe-be/src/models/storage.rs`). Quy tắc ở đầu `server/scribe-be/src/user_keys/mod.rs`.
 - **Backend đọc cấu hình lúc build** (`option_env!`), không phải lúc chạy: đổi biến là phải build lại. Chi tiết ở mục "Ràng buộc then chốt" của [docs/deploy-web-production.md](./docs/deploy-web-production.md).
 - **Hai môi trường: dev local và prod.** Không có staging, không dựng môi trường xem trước; deploy prod làm tay.
 - **Env nằm ngoài repo.** [`scripts/env-dir.sh`](./scripts/env-dir.sh) in ra thư mục chứa env (dùng chung giữa các máy của chủ dự án); mẫu biến web ở [`web/.env.example`](./web/.env.example).
@@ -22,7 +22,7 @@ Các ứng dụng dùng chung một backend:
 
 ## MCP cho công cụ AI
 
-Thêm `https://scribe.hoandat.com/mcp` vào công cụ AI (Claude Code: `claude mcp add --transport http scribe https://scribe.hoandat.com/mcp`) làm MCP server rồi duyệt quyền `scribe:read` ở trang consent của IdP. Tool **chỉ đọc**, với đúng quyền của tài khoản trong app: liệt kê bản ghi và tệp, đọc bản chép lời, biên bản, bản dịch, người nói, dấu mốc, xuất txt/srt/vtt/md/docx, tìm kiếm, xem gói và mức dùng. `scribe_ask` (hỏi đáp) tốn một lượt hỏi trong ngày như hỏi trong app. Không có tool tải lên, chép lời, sửa hay xoá. Quyết định: [ADR 0002](docs/decisions/0002-mcp-endpoint.md); mã ở [`server/scribe-be/src/mcp/`](server/scribe-be/src/mcp/).
+Thêm `https://scribe.hoandat.com/mcp` vào công cụ AI (Claude Code: `claude mcp add --transport http scribe https://scribe.hoandat.com/mcp`) làm MCP server rồi duyệt quyền `scribe:read` ở trang consent của IdP. Tool **chỉ đọc**, với đúng quyền của tài khoản trong app: liệt kê bản ghi và tệp, đọc bản chép lời, biên bản, bản dịch, người nói, dấu mốc, xuất txt/srt/vtt/md/docx, tìm kiếm, xem dung lượng và key riêng đang dùng. `scribe_ask` (hỏi đáp) chạy bằng key riêng của tài khoản như hỏi trong app; chưa có key thì trả lỗi `NO_USER_KEY`. Không có tool tải lên, chép lời, sửa hay xoá. Quyết định: [ADR 0002](docs/decisions/0002-mcp-endpoint.md); mã ở [`server/scribe-be/src/mcp/`](server/scribe-be/src/mcp/).
 
 ## Chạy và kiểm tra
 

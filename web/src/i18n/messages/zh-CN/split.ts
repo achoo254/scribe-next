@@ -32,7 +32,7 @@ export const split: Translation<SourceMessages["split"]> = {
 	managed: {
 		title: "服务器上的文件",
 		description:
-			"你为拆分而上传的文件以及拆分出的片段仍占用你的存储空间。删除一些即可释放空间（如不删除，14 天后会自动删除）。",
+			"你为拆分而上传的文件以及拆分出的片段仍占用你的存储空间。删除一些即可释放空间（如不删除，7 天后会自动删除）。",
 		loadFailed: "无法加载文件列表",
 		uploads: "上传的文件",
 		outputs: "拆分片段",

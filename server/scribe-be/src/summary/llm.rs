@@ -33,8 +33,7 @@ const DEADLINE: Duration = Duration::from_secs(80);
 const MIN_ATTEMPT: Duration = Duration::from_secs(25);
 /// Gemini 3 suy nghĩ trước khi trả lời; Scribe hạ mức suy nghĩ xuống thấp nhất ([`gemini_thinking`], `MINIMAL`: "little to
 /// no thinking") và chừa thêm chừng này token trong `maxOutputTokens` (trần của cả câu trả lời) để kết quả không bị cắt.
-/// Token suy nghĩ được tính tiền như token ra ([`Completion::output_tokens`] gồm cả chúng), nên phần giữ chỗ cũng cộng
-/// phần chừa này ([`output_cap`]): ước lượng luôn là cận trên.
+/// Token suy nghĩ được tính tiền như token ra ([`Completion::output_tokens`] gồm cả chúng).
 pub(crate) const GEMINI_THINKING_HEADROOM: i64 = 2_000;
 
 /// Số token ra tối đa nhà cung cấp có thể tính cho một lượt có trần `max_output_tokens` (Gemini cộng phần suy nghĩ).
@@ -60,37 +59,11 @@ pub fn is_key_broken(e: &str) -> bool {
     e == KEY_INVALID || e == NO_CREDIT
 }
 
-/// Giá một model theo đơn vị 1e-8 USD mỗi token ($0,40 mỗi triệu token = 40), để quy chi phí ra giây chép lời tương
-/// đương bằng số nguyên. `long`: giá khác khi đầu vào vượt ngưỡng token (Claude Haiku 5.5 trên 100.000 token).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Price {
-    pub input_e8: i64,
-    pub output_e8: i64,
-    pub long: Option<(i64, i64, i64)>,
-}
-
-impl Price {
-    /// Chi phí (1e-8 USD) của một lượt.
-    pub fn cost_e8(&self, input_tokens: i64, output_tokens: i64) -> i64 {
-        let (input, output) = (input_tokens.max(0), output_tokens.max(0));
-        let (in_e8, out_e8) = match self.long {
-            Some((above, in_e8, out_e8)) if input > above => (in_e8, out_e8),
-            _ => (self.input_e8, self.output_e8),
-        };
-        input * in_e8 + output * out_e8
-    }
-}
-
-/// Một model chữ chọn được: id gửi nhà cung cấp, tên hiện cho người dùng, giá.
+/// Một model chữ chọn được: id gửi nhà cung cấp, tên hiện cho người dùng.
 #[derive(Debug)]
 pub struct ModelInfo {
     pub id: &'static str,
     pub label: &'static str,
-    pub price: Price,
-}
-
-const fn price(input_e8: i64, output_e8: i64) -> Price {
-    Price { input_e8, output_e8, long: None }
 }
 
 /// Danh sách ngắn model chữ của từng nhà cung cấp; model đầu tiên là mặc định (rẻ, nhanh).
@@ -98,26 +71,22 @@ pub const MODELS: [(Vendor, &[ModelInfo]); 3] = [
     (
         Vendor::OpenAi,
         &[
-            ModelInfo { id: "gpt-4.1-mini", label: "GPT-4.1 mini", price: price(40, 160) },
-            ModelInfo { id: "gpt-4.1-nano", label: "GPT-4.1 nano (rẻ hơn)", price: price(10, 40) },
+            ModelInfo { id: "gpt-4.1-mini", label: "GPT-4.1 mini" },
+            ModelInfo { id: "gpt-4.1-nano", label: "GPT-4.1 nano (rẻ hơn)" },
         ],
     ),
     (
         Vendor::Gemini,
         &[
-            ModelInfo { id: "gemini-3.8-flash", label: "Gemini 3.8 Flash", price: price(75, 375) },
-            ModelInfo { id: "gemini-3.5-flash-lite", label: "Gemini 3.5 Flash-Lite (rẻ hơn)", price: price(30, 250) },
+            ModelInfo { id: "gemini-3.8-flash", label: "Gemini 3.8 Flash" },
+            ModelInfo { id: "gemini-3.5-flash-lite", label: "Gemini 3.5 Flash-Lite (rẻ hơn)" },
         ],
     ),
     (
         Vendor::Anthropic,
         &[
-            ModelInfo {
-                id: "claude-haiku-5-5",
-                label: "Claude Haiku 5.5",
-                price: Price { input_e8: 10, output_e8: 50, long: Some((100_000, 50, 250)) },
-            },
-            ModelInfo { id: "claude-sonnet-5-5", label: "Claude Sonnet 5.5 (tốt hơn, đắt hơn)", price: price(200, 1_000) },
+            ModelInfo { id: "claude-haiku-5-5", label: "Claude Haiku 5.5" },
+            ModelInfo { id: "claude-sonnet-5-5", label: "Claude Sonnet 5.5 (tốt hơn, đắt hơn)" },
         ],
     ),
 ];
@@ -137,19 +106,7 @@ pub fn is_listed(vendor: Vendor, model: &str) -> bool {
     models(vendor).iter().any(|m| m.id == model)
 }
 
-/// Giá của `model`. Model ngoài danh sách không bao giờ chạy bằng key server (`config::llm_model` đổi về model mặc định
-/// lúc khởi động) hay key riêng (`user_keys::text_model`); nếu vẫn gặp thì tính theo model đắt nhất của nhà cung cấp, để
-/// trần chi phí không bị tính thiếu.
-pub fn price_of(vendor: Vendor, model: &str) -> Price {
-    let list = models(vendor);
-    let priciest = || list.iter().max_by_key(|m| m.price.cost_e8(1_000_000, 1_000_000));
-    match list.iter().find(|m| m.id == model).or_else(priciest) {
-        Some(m) => m.price,
-        None => price(40, 160),
-    }
-}
-
-/// Một lượt gọi: nhà cung cấp, model và key (của server hoặc của người dùng).
+/// Một lượt gọi: nhà cung cấp, model và key riêng của người dùng.
 #[derive(Clone, Copy)]
 pub struct Llm<'a> {
     pub vendor: Vendor,
@@ -203,16 +160,14 @@ pub struct Completion<T> {
     pub draft: Result<T, String>,
 }
 
-/// Kết quả gọi model. `Err` kèm `maybe_billed`: OpenAI có thể đã xử lý (và tính tiền) mà không trả được
-/// số token — quá thời gian chờ sau khi đã gửi, đứt kết nối giữa chừng, trả 2xx không đọc được.
+/// Kết quả gọi model.
 pub struct Call<T> {
     pub result: Result<Completion<T>, String>,
-    pub maybe_billed: bool,
 }
 
 impl<T> Call<T> {
-    fn failed(e: impl Into<String>, maybe_billed: bool) -> Call<T> {
-        Call { result: Err(e.into()), maybe_billed }
+    fn failed(e: impl Into<String>) -> Call<T> {
+        Call { result: Err(e.into()) }
     }
 
     /// Token đã dùng (0 khi OpenAI không trả số).
@@ -544,38 +499,36 @@ pub async fn complete_at<T: DeserializeOwned>(http: &reqwest::Client, base: &str
         let sent = with_key(http.post(&url), llm).json(&body).timeout(remaining).send().await;
         let response = match sent {
             Ok(r) => r,
-            Err(e) if e.is_timeout() => return Call::failed(format!("{vendor}: quá thời gian chờ phản hồi"), true),
+            Err(e) if e.is_timeout() => return Call::failed(format!("{vendor}: quá thời gian chờ phản hồi")),
             Err(e) if e.is_connect() && can_retry(wait) => {
                 tracing::warn!(attempt, schema = prompt.schema_name, "gọi {vendor} không kết nối được, thử lại");
                 backoff(attempt).await;
                 continue;
             }
-            Err(e) if e.is_connect() => return Call::failed(format!("{vendor}: không kết nối được"), false),
-            Err(_) => return Call::failed(format!("{vendor}: kết nối bị ngắt giữa chừng"), true),
+            Err(e) if e.is_connect() => return Call::failed(format!("{vendor}: không kết nối được")),
+            Err(_) => return Call::failed(format!("{vendor}: kết nối bị ngắt giữa chừng")),
         };
         let status = response.status().as_u16();
         let text = match response.text().await {
             Ok(t) => t,
             Err(e) => {
-                let timeout = e.is_timeout();
-                let billed = (200..300).contains(&status);
-                let what = if timeout { "quá thời gian chờ phản hồi" } else { "đọc phản hồi lỗi" };
-                return Call::failed(format!("{vendor}: {what}"), billed || timeout);
+                let what = if e.is_timeout() { "quá thời gian chờ phản hồi" } else { "đọc phản hồi lỗi" };
+                return Call::failed(format!("{vendor}: {what}"));
             }
         };
         if (200..300).contains(&status) {
             return match parse_response(llm.vendor, &text) {
-                Ok(c) => Call { result: Ok(c), maybe_billed: true },
-                Err(e) => Call::failed(e, true),
+                Ok(c) => Call { result: Ok(c) },
+                Err(e) => Call::failed(e),
             };
         }
         if retryable(llm.vendor, status, &text) && can_retry(wait) {
             backoff(attempt).await;
             continue;
         }
-        return Call::failed(api_error(llm.vendor, status, &text), false);
+        return Call::failed(api_error(llm.vendor, status, &text));
     }
-    Call::failed(format!("{vendor}: hết số lần thử"), false)
+    Call::failed(format!("{vendor}: hết số lần thử"))
 }
 
 /// Viết biên bản cho chữ đầu vào, bằng ngôn ngữ `lang`.
@@ -754,22 +707,12 @@ mod tests {
     }
 
     #[test]
-    fn prices_follow_the_catalog() {
+    fn models_follow_the_catalog() {
         assert_eq!(default_model(Vendor::OpenAi), "gpt-4.1-mini");
         assert_eq!(default_model(Vendor::Gemini), "gemini-3.8-flash");
         assert_eq!(default_model(Vendor::Anthropic), "claude-haiku-5-5");
         assert!(models(Vendor::ElevenLabs).is_empty());
         assert!(is_listed(Vendor::Anthropic, "claude-sonnet-5-5") && !is_listed(Vendor::Anthropic, "gpt-4.1-mini"));
-        // $0,40 / $1,60 mỗi triệu token.
-        assert_eq!(price_of(Vendor::OpenAi, "gpt-4.1-mini").cost_e8(1_000_000, 1_000_000), 200_000_000);
-        // Model ngoài danh sách: giá model đắt nhất của nhà cung cấp, không bao giờ rẻ hơn.
-        assert_eq!(price_of(Vendor::OpenAi, "gpt-x"), price_of(Vendor::OpenAi, "gpt-4.1-mini"));
-        assert_eq!(price_of(Vendor::Anthropic, "claude-opus-5-5"), price_of(Vendor::Anthropic, "claude-sonnet-5-5"));
-        assert_eq!(price_of(Vendor::Gemini, "gemini-x"), price_of(Vendor::Gemini, "gemini-3.8-flash"));
-        // Haiku 5.5: trên 100.000 token đầu vào thì giá cao hơn cho cả lượt.
-        let haiku = price_of(Vendor::Anthropic, "claude-haiku-5-5");
-        assert_eq!(haiku.cost_e8(100_000, 0), 1_000_000);
-        assert_eq!(haiku.cost_e8(100_001, 1), 100_001 * 50 + 250);
     }
 
     /// Một lượt thật qua lớp chuyển đổi bằng OpenAI (tốn vài phần trăm cent): `LLM_TEST_OPENAI_FILE=<tệp key> cargo test

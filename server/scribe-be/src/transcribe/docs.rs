@@ -597,7 +597,7 @@ mod tests {
     use mongodb::bson::DateTime;
 
     fn recording(name: &str, duration_s: Option<f64>) -> FileDoc {
-        FileDoc::new_recording(file::Owner { user_id: "u", plan: crate::models::plan::Plan::Free }, name, "/tmp/x", 1, duration_s.unwrap_or(0.0), false, ObjectId::new())
+        FileDoc::new_recording(file::Owner { user_id: "u" }, name, "/tmp/x", 1, duration_s.unwrap_or(0.0), false, ObjectId::new())
     }
 
     fn done(f: &FileDoc, run_id: &str, sentences: Vec<Sentence>) -> TranscriptDoc {
@@ -612,11 +612,7 @@ mod tests {
             sentences,
             model: "m".into(),
             updated_at: DateTime::now(),
-            charged_s: 0,
             sent_s: 0,
-            month: None,
-            free_pool: false,
-            day: None,
             open: false,
             settled: true,
             attempts: 0,
@@ -792,10 +788,9 @@ mod tests {
         let key = format!("s:{session}");
         let segment = ObjectId::new();
         let single = ObjectId::new();
-        let plan = crate::models::plan::Plan::Free;
-        let f = FileDoc::new_recording(file::Owner { user_id: &owner, plan }, &format!("{session}#0"), "/nonexistent", 1, 60.0, false, segment);
+        let f = FileDoc::new_recording(file::Owner { user_id: &owner }, &format!("{session}#0"), "/nonexistent", 1, 60.0, false, segment);
         file::create(&db, f).await.expect("tạo đoạn");
-        let f = FileDoc::new_recording(file::Owner { user_id: &owner, plan }, "Ghi âm", "/nonexistent", 1, 60.0, false, single);
+        let f = FileDoc::new_recording(file::Owner { user_id: &owner }, "Ghi âm", "/nonexistent", 1, 60.0, false, single);
         file::create(&db, f).await.expect("tạo bản ghi");
         let single_key = format!("f:{}", single.to_hex());
 

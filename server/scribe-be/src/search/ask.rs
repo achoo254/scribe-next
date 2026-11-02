@@ -2,16 +2,15 @@
 //! diện của người hỏi, mặc định tiếng Việt), chỉ dựa vào bản ghi của chính người hỏi, trích nguồn từng ý bằng mốc giây.
 //!
 //! Ngữ cảnh lấy từ index tìm kiếm (`transcript_sentences`). Có `key` và bản ghi ngắn (dưới
-//! [`full_context_chars`] của gói) thì gửi nguyên bản; còn lại tìm theo từ khoá của câu hỏi (đã bỏ dấu, bỏ từ đệm)
+//! [`FULL_CONTEXT_CHARS`]) thì gửi nguyên bản; còn lại tìm theo từ khoá của câu hỏi (đã bỏ dấu, bỏ từ đệm)
 //! trong cả kho hoặc trong bản ghi đó, lấy [`TOP_HITS`] câu liên quan nhất, mỗi câu kèm [`NEIGHBORS`] câu
 //! trước và sau. Mỗi câu ngữ cảnh mang số `[n]`; model trích `[n]`, server đổi `[n]` thành trích dẫn
 //! `{key, title, at, text}` lấy từ chính ngữ cảnh (số ngoài ngữ cảnh bị bỏ) và đánh số lại 1, 2, … theo
 //! thứ tự xuất hiện. Không có câu nào liên quan thì trả "Không tìm thấy trong bản ghi" mà không gọi model.
 //!
-//! Tiền: như tóm tắt (`summary::meter`) — lượt ngày riêng (`ASK_FREE_DAILY`, `ASK_PAID_DAILY`), chung trần
-//! chi phí tháng của tài khoản với tóm tắt và trần tổng tháng của chép lời; phần có tiền chạy trong task
-//! riêng. Không lưu câu hỏi hay câu trả lời: `ask_runs` chỉ có token và chi phí, audit `ask.create` chỉ
-//! có số.
+//! Chạy bằng model chữ của key riêng người dùng như tóm tắt (`summary::text_key`; không có ⟹ 403 `NO_USER_KEY`, cả với
+//! `scribe_ask` của MCP); lượt chạy trong task riêng. Không lưu câu hỏi hay câu trả lời: `ask_runs` chỉ có token, audit
+//! `ask.create` chỉ có số.
 
 use super::{norm, session_meta, SessionMeta};
 use crate::audit;
@@ -20,31 +19,23 @@ use crate::error::AppError;
 use crate::lang::{self, Lang};
 use crate::models::sentence::{self, Order, Row};
 use crate::models::summary::Feature;
-use crate::models::{plan, user};
+use crate::models::user;
 use crate::state::AppState;
-use crate::summary::{self, llm, meter, RunningGuard, TextKey, ASK_SLOT, PAUSED};
+use crate::summary::{self, llm, meter, RunningGuard, TextKey, ASK_SLOT};
 use crate::transcribe::docs::check_key;
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::{Extension, Json};
-use mongodb::bson::{doc, DateTime};
+use mongodb::bson::doc;
 use mongodb::Database;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
 
 const MAX_QUESTION_CHARS: usize = 500;
-/// Hỏi trong một bản ghi ngắn hơn chừng này ký tự thì gửi nguyên bản; dài hơn thì lấy câu theo từ khoá.
-///
-/// Mỗi câu hỏi gửi nguyên bản tốn chi phí theo độ dài bản ghi, trừ vào trần tháng dùng chung với tóm tắt:
-/// 120.000 ký tự (~2 giờ nói) khoảng 535 giây quy đổi một câu, đủ làm cạn trần tháng của gói free sau vài
-/// câu. Gói free chỉ gửi nguyên bản dưới 30.000 ký tự (~30 phút nói, khoảng 135 giây một câu).
-fn full_context_chars(plan: plan::Plan) -> usize {
-    match plan {
-        plan::Plan::Free => 30_000,
-        plan::Plan::Plus => 120_000,
-    }
-}
+/// Hỏi trong một bản ghi ngắn hơn chừng này ký tự (~2 giờ nói) thì gửi nguyên bản; dài hơn thì lấy câu theo từ khoá.
+/// Mỗi câu hỏi gửi nguyên bản tốn token theo độ dài bản ghi trên key của người dùng.
+const FULL_CONTEXT_CHARS: usize = 120_000;
 /// Số câu liên quan nhất lấy từ index khi tìm theo từ khoá.
 const TOP_HITS: i64 = 40;
 /// Số câu kèm theo mỗi phía của một câu liên quan.
@@ -172,7 +163,7 @@ fn arrange(rows: Vec<Row>, hits: &[Row]) -> Vec<Row> {
 }
 
 /// Ngữ cảnh của câu hỏi. Hỏi trong một bản ghi chưa có câu nào → 409 `NOT_TRANSCRIBED`.
-async fn gather(db: &Database, user_id: &str, key: Option<&str>, question: &str, plan: plan::Plan) -> Result<Vec<Row>, AppError> {
+async fn gather(db: &Database, user_id: &str, key: Option<&str>, question: &str) -> Result<Vec<Row>, AppError> {
     if let Some(key) = key {
         let rows = sentence::session_rows(db, user_id, key).await?;
         if rows.is_empty() {
@@ -183,7 +174,7 @@ async fn gather(db: &Database, user_id: &str, key: Option<&str>, question: &str,
             });
         }
         let chars: usize = rows.iter().map(|r| r.text.chars().count()).sum();
-        if chars <= full_context_chars(plan) {
+        if chars <= FULL_CONTEXT_CHARS {
             return Ok(rows);
         }
     }
@@ -292,7 +283,6 @@ fn resolve(answer: &str, cited: &[i64], lines: usize) -> (String, Vec<usize>) {
 struct Job {
     user_id: String,
     key: Option<String>,
-    plan: plan::Plan,
     input: String,
     lines: Vec<Row>,
     meta: HashMap<String, SessionMeta>,
@@ -340,16 +330,13 @@ pub async fn ask(
     if let Some(key) = &key {
         check_key(key)?;
     }
+    let text_key = summary::text_key(&state, &user.0).await?;
     let profile = user::find_profile(&state.db, &user.0)
         .await?
         .ok_or_else(|| AppError::Unauthorized("user không tồn tại".into()))?;
     if profile.blocked {
         return Err(AppError::Forbidden("tài khoản đã bị khoá".into()));
     }
-    if !state.config.transcribe_allowed(&profile.email) {
-        return Err(AppError::Forbidden("tài khoản này chưa được dùng hỏi đáp".into()));
-    }
-    let text_key = summary::text_key(&state, &user.0, PAUSED).await?;
     if !state.rate.allow(&format!("ask:{}", user.0), PER_MINUTE) {
         return Err(AppError::TooManyRequests("hỏi quá nhanh, thử lại sau một phút".into()));
     }
@@ -358,10 +345,9 @@ pub async fn ask(
         .start(&user.0, ASK_SLOT)
         .ok_or_else(|| AppError::TooManyRequests("đang trả lời câu trước, chờ một chút".into()))?;
 
-    let plan = plan::effective(profile.plan.as_deref(), profile.plan_until, DateTime::now());
-    let lines = gather(&state.db, &user.0, key.as_deref(), &question, plan).await?;
+    let lines = gather(&state.db, &user.0, key.as_deref(), &question).await?;
     if lines.is_empty() {
-        let details = doc! { "scope": scope(key.as_deref()), "context": 0_i64, "costS": 0_i64 };
+        let details = doc! { "scope": scope(key.as_deref()), "context": 0_i64 };
         audit::record(&state, Some(&user.0), "ask.create", details);
         return Ok(Json(json!({ "answer": not_found(lang), "citations": [] })));
     }
@@ -370,14 +356,13 @@ pub async fn ask(
     let job = Job {
         user_id: user.0.clone(),
         key,
-        plan,
         input: build_input(&question, &lines, &meta),
         lines,
         meta,
         text_key,
         lang,
     };
-    // Task giữ `running` tới khi xong; handler bị huỷ thì task vẫn chạy hết và quyết toán.
+    // Task giữ `running` tới khi xong; handler bị huỷ thì task vẫn chạy hết và đóng nhật ký.
     let task = tokio::spawn(run(state, job, running));
     task.await.unwrap_or_else(|e| {
         tracing::error!("task hỏi đáp dừng bất thường: {e}");
@@ -385,15 +370,10 @@ pub async fn ask(
     })
 }
 
-/// Phần có tiền của một lượt: mọi đường ra đều quyết toán phần đã giữ.
+/// Một lượt: mở nhật ký, gọi model, đóng nhật ký theo token thật.
 async fn run(state: AppState, job: Job, _running: RunningGuard) -> Result<Json<Value>, AppError> {
     let user_id = job.user_id.as_str();
-    let chars = job.input.chars().count();
-    let estimate = meter::estimate_seconds(meter::estimate_input_tokens(chars), MAX_OUTPUT_TOKENS);
-    let reservation =
-        summary::reserve_for(&state, Feature::Ask, user_id, job.key.as_deref(), job.plan, estimate, &job.text_key).await?;
-
-    // Từ đây phần giữ chỗ phải được quyết toán ở mọi đường ra.
+    let reservation = summary::open_run(&state, Feature::Ask, user_id, job.key.as_deref(), &job.text_key).await?;
     let instructions = instructions(job.lang);
     let prompt = llm::Prompt {
         instructions: &instructions,
@@ -403,12 +383,12 @@ async fn run(state: AppState, job: Job, _running: RunningGuard) -> Result<Json<V
         max_output_tokens: MAX_OUTPUT_TOKENS,
     };
     let call = llm::complete::<Draft>(&state.http, &job.text_key.llm(), &prompt).await;
-    let cost_s = meter::settle(&state, &reservation, &call).await;
+    meter::settle(&state, &reservation, &call).await;
     let (input_tokens, output_tokens) = call.tokens();
     let draft = match call.result.and_then(|c| c.draft) {
         Ok(draft) => draft,
         Err(e) => {
-            if let Some(error) = summary::key_failure(&state, &job.text_key, &e, PAUSED).await {
+            if let Some(error) = summary::key_failure(&state, &job.text_key, &e).await {
                 return Err(error);
             }
             tracing::warn!("hỏi đáp lỗi: {e}");
@@ -423,7 +403,6 @@ async fn run(state: AppState, job: Job, _running: RunningGuard) -> Result<Json<V
         "context": job.lines.len() as i64,
         "inputTokens": input_tokens,
         "outputTokens": output_tokens,
-        "costS": cost_s,
         "citations": cited.len() as i64,
     };
     audit::record(&state, Some(user_id), "ask.create", details);
@@ -433,16 +412,27 @@ async fn run(state: AppState, job: Job, _running: RunningGuard) -> Result<Json<V
 #[cfg(test)]
 mod tests {
     use super::*;
-    use mongodb::bson::oid::ObjectId;
+    use mongodb::bson::{oid::ObjectId, DateTime};
 
     fn row(key: &str, idx: i64, at: f64, text: &str) -> Row {
         Row { key: key.into(), file_id: ObjectId::new(), idx, at, text: text.into(), norm: norm::normalize(text) }
     }
 
-    #[test]
-    fn free_accounts_send_whole_transcripts_only_when_short() {
-        assert_eq!(full_context_chars(plan::Plan::Free), 30_000);
-        assert_eq!(full_context_chars(plan::Plan::Plus), 120_000);
+    /// Không có key riêng cho model chữ (tính năng Key riêng tắt ⟹ không đọc Mongo): 403 `NO_USER_KEY`; `scribe_ask`
+    /// của MCP gọi đúng handler này.
+    #[tokio::test]
+    async fn without_an_own_text_key_no_question_is_answered() {
+        let db = mongodb::Client::with_uri_str("mongodb://127.0.0.1:9/?serverSelectionTimeoutMS=200&connectTimeoutMS=200")
+            .await
+            .expect("uri")
+            .database("scribe_ask_test");
+        let state = AppState::for_tests(crate::config::Config::for_tests("http://localhost", "http://localhost"), db);
+        let req = AskReq { question: "Chốt ngày nào?".into(), key: None, lang: None };
+        let Err(AppError::Coded { status, code, .. }) = ask(State(state), Extension(UserId("u1".into())), Json(req)).await
+        else {
+            panic!("phải từ chối");
+        };
+        assert_eq!((status, code), (StatusCode::FORBIDDEN, "NO_USER_KEY"));
     }
 
     #[test]

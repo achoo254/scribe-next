@@ -24,9 +24,9 @@ pub struct AppState {
     pub session_key: Arc<Vec<u8>>,
     /// Rate-limit theo IP (in-memory, red-team #2).
     pub rate: Arc<RateLimiter>,
-    /// Key OpenAI của server + hàng đợi chép lời.
+    /// Hàng đợi chép lời (đánh thức worker).
     pub transcriber: Arc<Transcriber>,
-    /// Phiên đang được tóm tắt (một lượt mỗi phiên) và cờ tạm ngưng riêng của tóm tắt.
+    /// Lượt tóm tắt, hỏi đáp, dịch đang chạy (một lượt mỗi phiên / mỗi người hỏi).
     pub summaries: Arc<crate::summary::Summaries>,
     /// Username bot chat.hoandat.com (đọc một lần).
     pub chat_bot: Arc<crate::chat_link::BotProfile>,
@@ -38,7 +38,6 @@ pub struct AppState {
 impl AppState {
     /// State cho test: `config`, database `db` (có thể chưa kết nối được), mọi phần khác rỗng như lúc chưa cấu hình.
     pub fn for_tests(config: Config, db: Database) -> AppState {
-        let transcriber = Transcriber::load(&config);
         AppState {
             oidc: Arc::new(Oidc::new(&config.oidc_issuer)),
             config: Arc::new(config),
@@ -49,7 +48,7 @@ impl AppState {
             session_cache: Arc::default(),
             session_key: Arc::new(vec![7u8; 32]),
             rate: Arc::new(RateLimiter::new()),
-            transcriber: Arc::new(transcriber),
+            transcriber: Arc::default(),
             summaries: Arc::default(),
             chat_bot: Arc::default(),
             user_keys: None,

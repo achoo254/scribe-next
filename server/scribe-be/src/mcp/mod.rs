@@ -38,7 +38,7 @@ const PER_MINUTE: u32 = 120;
 const INSTRUCTIONS: &str = "Read-only access to the user's Scribe recordings: transcripts, summaries, translations, \
 speakers, bookmarks, files, split jobs and usage. Start with scribe_list_transcripts (or scribe_search) to find a \
 recording key, then read it with scribe_get_transcript. Times are seconds from the start of the recording. \
-scribe_ask uses the account's question quota; the other tools are free. Nothing can be uploaded, transcribed, edited, \
+scribe_ask runs on the user's own AI key (added in Scribe under \"Key riêng\"); without one it returns NO_USER_KEY. Nothing can be uploaded, transcribed, edited, \
 shared or deleted through this server.";
 
 pub fn router() -> Router<AppState> {

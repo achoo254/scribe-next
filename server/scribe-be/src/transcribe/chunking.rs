@@ -4,7 +4,6 @@
 //! Mảnh dài (~2 phút) làm model lặp nguyên khối câu; mảnh ~40 giây thì sạch. Vùng có tiếng nói lấy
 //! từ ffmpeg `silencedetect` (phần bù của các khoảng lặng) thay cho silero VAD.
 
-use std::collections::HashMap;
 
 /// Điểm cắt ưu tiên quanh mốc này (giây).
 const CHUNK_TARGET: f64 = 40.0;
@@ -14,9 +13,6 @@ const CHUNK_MIN: f64 = 25.0;
 pub const CHUNK_MAX: f64 = 45.0;
 /// Câu dài hơn thì tách tiếp (model hay bỏ dấu chấm cả mảnh 40 giây): ~2 dòng phụ đề, ~8 giây nói.
 const MAX_SENTENCE_CHARS: usize = 120;
-/// Nhanh hơn mức này là model bịa hoặc lặp (người nói nhanh ~200 từ/phút).
-const MAX_WORDS_PER_MIN: f64 = 260.0;
-const MIN_SECONDS_FOR_SPEED: f64 = 10.0;
 
 /// Một vùng thời gian `[start, end)` tính bằng giây.
 pub type Span = (f64, f64);
@@ -100,20 +96,6 @@ pub fn parse_max_volume(stderr: &str) -> Option<f64> {
 /// Mảnh có tiếng nói không. Mảnh im lặng hoàn toàn dễ bị bịa chữ và tốn tiền vô ích.
 pub fn has_speech(chunk: Span, speech: &[Span]) -> bool {
     speech.iter().any(|&(s, e)| e > chunk.0 && s < chunk.1)
-}
-
-/// Chữ có dấu hiệu model lặp hoặc bịa: cụm 8 từ lặp lại nhiều, hoặc nói nhanh bất thường.
-pub fn looks_looped(text: &str, seconds: f64) -> bool {
-    let lower = text.to_lowercase();
-    let words: Vec<&str> = lower.split_whitespace().collect();
-    let mut grams: HashMap<&[&str], usize> = HashMap::new();
-    for gram in words.windows(8) {
-        *grams.entry(gram).or_default() += 1;
-    }
-    let repeated: usize = grams.values().filter(|&&c| c > 1).map(|c| c - 1).sum();
-    // Tốc độ chỉ có nghĩa với mảnh đủ dài: mảnh cuối 2 giây có 10 từ đã là 300 từ/phút.
-    let too_fast = seconds >= MIN_SECONDS_FOR_SPEED && words.len() as f64 / (seconds / 60.0) > MAX_WORDS_PER_MIN;
-    repeated > 3 || too_fast
 }
 
 /// Một câu có mốc thời gian trong bản ghi (giây tính trong file của câu). Bản OpenAI có mốc ước lượng và không có
@@ -298,18 +280,6 @@ mod tests {
         let speech = [(0.0, 10.0)];
         assert!(has_speech((0.0, 40.0), &speech));
         assert!(!has_speech((40.0, 80.0), &speech));
-    }
-
-    #[test]
-    fn detects_loops_and_impossible_speed() {
-        let clean = "hôm nay chúng ta họp về kế hoạch quý bốn và phân công công việc cho từng nhóm";
-        assert!(!looks_looped(clean, 10.0));
-        let looped = "một hai ba bốn năm sáu bảy tám ".repeat(6);
-        assert!(looks_looped(&looped, 60.0));
-        let fast = "chữ ".repeat(300);
-        assert!(looks_looped(&fast, 60.0));
-        // Mảnh cuối ngắn nói vài từ không bị coi là bịa.
-        assert!(!looks_looped("xin cảm ơn mọi người nhé", 1.0));
     }
 
     #[test]

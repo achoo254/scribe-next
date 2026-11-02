@@ -28,7 +28,8 @@ export interface KeyChoiceSectionProps {
  * Which provider each use runs on: a radio group per use, one option per
  * provider that can do it, enabled once that provider has a valid key. The
  * checked option is what the server actually uses (`active`); with no
- * valid key the use stays on Scribe's key. Text uses also pick a model.
+ * valid key the use is off (Scribe runs AI only on the user's keys). Text
+ * uses also pick a model.
  */
 export function KeyChoiceSection({ keys }: KeyChoiceSectionProps) {
 	const t = useT();
@@ -100,9 +101,9 @@ export function KeyChoiceSection({ keys }: KeyChoiceSectionProps) {
 					{keys.active[use] ? null : (
 						<p
 							className="m-0 text-muted text-xs"
-							data-id={`user-keys-use-${use}-scribe`}
+							data-id={`user-keys-use-${use}-off`}
 						>
-							{t("keys.uses.scribe")}
+							{t("keys.uses.off")}
 						</p>
 					)}
 					{use === "transcribe" && keys.active.transcribe === "gemini" ? (

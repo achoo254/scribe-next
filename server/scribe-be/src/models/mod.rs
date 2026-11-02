@@ -3,7 +3,7 @@ pub mod job;
 pub mod user;
 pub mod transcript;
 pub mod transcript_doc;
-pub mod plan;
+pub mod storage;
 pub mod usage;
 pub mod session;
 pub mod summary;

@@ -4,7 +4,7 @@ export const keys = {
 	dialog: {
 		title: "Key riêng",
 		intro:
-			"Dùng API key của chính bạn thay cho key của Scribe. Key được mã hoá và lưu trên máy chủ Scribe, không bao giờ hiện lại; nhà cung cấp tính tiền vào tài khoản của bạn và việc chạy bằng key của bạn không trừ phút hay lượt của Scribe.",
+			"Chép lời, chép trực tiếp, biên bản, hỏi đáp và dịch chạy bằng API key của chính bạn. Key được mã hoá và lưu trên máy chủ Scribe, chỉ dùng cho yêu cầu của bạn và không bao giờ hiện lại; nhà cung cấp tính tiền vào tài khoản của bạn.",
 		unavailable:
 			"Máy chủ chưa bật Key riêng. Quản trị cần tạo tệp bí mật mã hoá rồi khởi động lại.",
 		loading: "Đang tải key riêng…",
@@ -52,9 +52,19 @@ export const keys = {
 		transcribe: "Chép lời tệp",
 		live: "Chép trực tiếp trên iPhone",
 		text: "Biên bản, hỏi đáp, dịch",
-		scribe: "Đang dùng key của Scribe, tính vào mức dùng của gói.",
+		off: "Chưa bật: thêm key hợp lệ của một nhà cung cấp ở trên.",
 		needsKey: "{provider} (chưa có key)",
 		model: "Model",
 		geminiNote: "Gemini: mốc giờ của câu là ước lượng, không có người nói.",
+	},
+	/** An AI feature without a usable own key: what it needs, and the way to "Key riêng". */
+	needed: {
+		title: "Cần API key của bạn",
+		open: "Mở Key riêng",
+		any: "Chép lời, biên bản, hỏi đáp và dịch chạy bằng API key của bạn (ElevenLabs, OpenAI, Google Gemini hoặc Anthropic Claude). Thêm key trong Key riêng để dùng.",
+		transcribe:
+			"Chép lời chạy bằng API key của bạn. Thêm key ElevenLabs, OpenAI hoặc Google Gemini trong Key riêng.",
+		live: "Chép trực tiếp chạy bằng API key của bạn. Thêm key ElevenLabs hoặc OpenAI trong Key riêng.",
+		text: "Biên bản, hỏi đáp và dịch chạy bằng API key của bạn. Thêm key OpenAI, Google Gemini hoặc Anthropic Claude trong Key riêng.",
 	},
 } as const;

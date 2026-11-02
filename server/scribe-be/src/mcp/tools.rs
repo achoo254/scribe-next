@@ -186,9 +186,11 @@ pub fn definitions() -> Vec<Value> {
         ),
         tool(
             "scribe_get_usage",
-            "Get plan and usage",
-            "The account's plan, whether it may transcribe, transcription minutes used and left this month (and today \
-             on the free plan) and storage used against the plan's quota.",
+            "Get usage",
+            "Storage used against the account's quota (the same for every account; `plan` is kept for old clients and \
+             is always free), and which AI features run on the user's \
+             own provider keys (ownKeys: provider per use, null = no key yet; minutes transcribed this month on those \
+             keys). AI features only run on the user's own keys.",
             object(vec![], &[]),
             false,
         ),

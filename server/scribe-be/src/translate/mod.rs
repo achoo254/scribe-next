@@ -6,12 +6,10 @@
 //! có bản dịch hoặc bản dịch cũ — vừa là "Dịch lại câu đã sửa", vừa là dịch tiếp khi lượt trước dừng giữa
 //! chừng. Không còn câu nào cần dịch thì trả ngay, không tính lượt.
 //!
-//! Tiền: như tóm tắt (`summary::meter`) — lượt ngày riêng (`TRANSLATE_FREE_DAILY`, `TRANSLATE_PAID_DAILY`),
-//! chung trần chi phí tháng của tài khoản và trần tổng tháng của chép lời. Một lượt giữ chỗ một lần cho mọi
-//! câu cần dịch, gọi model theo từng lô ([`batch`]) tuần tự trong task nền, rồi quyết toán một lần theo tổng
-//! token thật; lượt ngày chỉ trả lại khi OpenAI chắc chắn chưa xử lý lô nào. Lô lỗi (gọi lỗi, đầu ra không
-//! khớp số câu) thử lại một lần; lỗi nữa thì dừng lượt, phần đã dịch giữ lại. Handler trả 202 sau khi giữ
-//! chỗ xong; web hỏi tiến độ qua `…/translation/status`. Audit không ghi chữ.
+//! Chạy bằng model chữ của key riêng người dùng như tóm tắt (`summary::text_key`; không có ⟹ 403 `NO_USER_KEY`). Một
+//! lượt mở một dòng nhật ký (`summary::meter`), gọi model theo từng lô ([`batch`]) tuần tự trong task nền, rồi đóng nhật
+//! ký theo tổng token thật. Lô lỗi (gọi lỗi, đầu ra không khớp số câu) thử lại một lần; lỗi nữa thì dừng lượt, phần đã
+//! dịch giữ lại. Handler trả 202 sau khi mở lượt; web hỏi tiến độ qua `…/translation/status`. Audit không ghi chữ.
 
 pub mod batch;
 
@@ -20,7 +18,7 @@ use crate::auth::UserId;
 use crate::error::AppError;
 use crate::models::summary::Feature;
 use crate::models::translation::{self, Item, Lang, NewItem, TranslationDoc};
-use crate::models::{plan, user};
+use crate::models::user;
 use crate::state::AppState;
 use crate::summary::llm::is_key_broken;
 use crate::summary::{self, meter, RunningGuard, TextKey};
@@ -29,7 +27,7 @@ use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::{Extension, Json};
-use mongodb::bson::{doc, DateTime};
+use mongodb::bson::doc;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use tokio::sync::oneshot;
@@ -41,7 +39,6 @@ const PER_MINUTE: u32 = 6;
 /// Số lần gọi model tối đa cho một lô (lần đầu và một lần thử lại).
 const ATTEMPTS: u32 = 2;
 
-const PAUSED: &str = "Dịch đang tạm ngưng, quản trị đã được báo. Thử lại sau.";
 const FAILED: &str = "Không dịch được phần còn lại lúc này. Bấm dịch tiếp để thử lại.";
 const SAVE_FAILED: &str = "Không lưu được bản dịch. Bấm dịch tiếp để thử lại.";
 const INTERRUPTED: &str = "Lượt dịch bị ngắt giữa chừng. Bấm dịch tiếp để làm nốt.";
@@ -204,7 +201,6 @@ struct Job {
     user_id: String,
     key: String,
     lang: Lang,
-    plan: plan::Plan,
     sources: Vec<Source>,
     text_key: TextKey,
 }
@@ -218,16 +214,13 @@ pub async fn create(
 ) -> Result<Response, AppError> {
     let lang = parse_lang(req.lang.as_deref())?;
     check_key(&key)?;
+    let text_key = summary::text_key(&state, &user.0).await?;
     let profile = user::find_profile(&state.db, &user.0)
         .await?
         .ok_or_else(|| AppError::Unauthorized("user không tồn tại".into()))?;
     if profile.blocked {
         return Err(AppError::Forbidden("tài khoản đã bị khoá".into()));
     }
-    if !state.config.transcribe_allowed(&profile.email) {
-        return Err(AppError::Forbidden("tài khoản này chưa được dùng dịch".into()));
-    }
-    let text_key = summary::text_key(&state, &user.0, PAUSED).await?;
     if !state.rate.allow(&format!("translate:{}", user.0), PER_MINUTE) {
         return Err(AppError::TooManyRequests("bấm dịch quá nhanh, thử lại sau một phút".into()));
     }
@@ -262,11 +255,10 @@ pub async fn create(
         user_id: user.0.clone(),
         key,
         lang,
-        plan: plan::effective(profile.plan.as_deref(), profile.plan_until, DateTime::now()),
         sources,
         text_key,
     };
-    // Task giữ `running` tới khi dịch xong; handler bị huỷ thì task vẫn chạy hết và quyết toán.
+    // Task giữ `running` tới khi dịch xong; handler bị huỷ thì task vẫn chạy hết và đóng nhật ký.
     let (started_tx, started_rx) = oneshot::channel();
     tokio::spawn(run(state, job, running, started_tx));
     match started_rx.await {
@@ -282,48 +274,29 @@ pub async fn create(
     }
 }
 
-/// Kết quả cộng dồn các lần gọi model của một lượt.
+/// Token cộng dồn các lần gọi model của một lượt.
 #[derive(Debug, Default, PartialEq)]
 struct Tally {
     input_tokens: i64,
     output_tokens: i64,
-    /// Giây giữ nguyên theo ước lượng của các lần gọi có thể đã bị tính tiền mà không biết token.
-    unknown_s: i64,
-    /// OpenAI có thể đã xử lý ít nhất một lần gọi.
-    billed: bool,
 }
 
 impl Tally {
-    fn add<T>(&mut self, call: &summary::llm::Call<T>, estimate_s: i64) {
-        match &call.result {
-            Ok(c) => {
-                self.input_tokens += c.input_tokens;
-                self.output_tokens += c.output_tokens;
-                self.billed = true;
-            }
-            Err(_) if call.maybe_billed => {
-                self.unknown_s += estimate_s;
-                self.billed = true;
-            }
-            Err(_) => {}
-        }
+    fn add<T>(&mut self, call: &summary::llm::Call<T>) {
+        let (input, output) = call.tokens();
+        self.input_tokens += input;
+        self.output_tokens += output;
     }
 
     fn outcome(&self, ok: bool) -> meter::Outcome {
-        meter::Outcome {
-            cost_s: meter::cost_seconds(self.input_tokens, self.output_tokens) + self.unknown_s,
-            refund: !self.billed,
-            input_tokens: self.input_tokens,
-            output_tokens: self.output_tokens,
-            ok,
-        }
+        meter::Outcome { input_tokens: self.input_tokens, output_tokens: self.output_tokens, ok }
     }
 }
 
 /// Lô dịch xong của một lượt, hoặc lý do dừng.
 enum BatchEnd {
     Done(Vec<String>),
-    /// Key/credit hỏng: tạm ngưng các tính năng gọi model chữ.
+    /// Key/credit hỏng: key của người dùng bị đánh dấu.
     KeyBroken(String),
     Failed(String),
 }
@@ -338,12 +311,10 @@ fn translate_batch<'a>(
     tally: &'a mut Tally,
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = BatchEnd> + Send + 'a>> {
     Box::pin(async move {
-        let chars: usize = lines.iter().map(|l| l.chars().count()).sum();
-        let estimate = batch::estimate_seconds(chars, lines.len());
         let mut last = String::new();
         for attempt in 1..=ATTEMPTS {
             let call = batch::translate(&state.http, &job.text_key.llm(), job.lang, lines).await;
-            tally.add(&call, estimate);
+            tally.add(&call);
             let draft = match call.result.and_then(|c| c.draft) {
                 Ok(draft) => draft,
                 Err(e) if is_key_broken(&e) => return BatchEnd::KeyBroken(e),
@@ -385,13 +356,12 @@ async fn translate_halves(state: &AppState, job: &Job, lines: &[&str], tally: &m
     }
 }
 
-/// Phần có tiền của một lượt: giữ chỗ (báo cho handler), dịch từng lô, quyết toán ở mọi đường ra.
+/// Một lượt: mở nhật ký (báo cho handler), dịch từng lô, đóng nhật ký ở mọi đường ra.
 async fn run(state: AppState, job: Job, _running: RunningGuard, started: oneshot::Sender<Result<(), AppError>>) {
     let (db, user_id, key, lang) = (&state.db, job.user_id.as_str(), job.key.as_str(), job.lang);
     let chars: Vec<usize> = job.sources.iter().map(|s| s.text.chars().count()).collect();
     let ranges = batch::split(&chars, batch::MAX_LINES, batch::MAX_CHARS);
-    let estimate: i64 = ranges.iter().map(|r| batch::estimate_seconds(chars[r.clone()].iter().sum(), r.len())).sum();
-    let reservation = match summary::reserve_for(&state, Feature::Translate, user_id, Some(key), job.plan, estimate, &job.text_key).await {
+    let reservation = match summary::open_run(&state, Feature::Translate, user_id, Some(key), &job.text_key).await {
         Ok(r) => r,
         Err(e) => {
             let _ = started.send(Err(e));
@@ -416,9 +386,9 @@ async fn run(state: AppState, job: Job, _running: RunningGuard, started: oneshot
         let texts = match translate_batch(&state, &job, &lines, &mut tally).await {
             BatchEnd::Done(texts) => texts,
             BatchEnd::KeyBroken(e) => {
-                let shown = match summary::key_failure(&state, &job.text_key, &e, PAUSED).await {
+                let shown = match summary::key_failure(&state, &job.text_key, &e).await {
                     Some(AppError::Coded { message, .. }) => message,
-                    _ => PAUSED.to_string(),
+                    _ => FAILED.to_string(),
                 };
                 failure = Some((shown, e));
                 break;
@@ -440,7 +410,7 @@ async fn run(state: AppState, job: Job, _running: RunningGuard, started: oneshot
         translated += items.len();
     }
 
-    let cost_s = meter::settle_outcome(&state, &reservation, &tally.outcome(failure.is_none())).await;
+    meter::settle_outcome(&state, &reservation, &tally.outcome(failure.is_none())).await;
     let details = doc! {
         "key": key,
         "lang": lang.code(),
@@ -449,7 +419,6 @@ async fn run(state: AppState, job: Job, _running: RunningGuard, started: oneshot
         "batches": ranges.len() as i64,
         "inputTokens": tally.input_tokens,
         "outputTokens": tally.output_tokens,
-        "costS": cost_s,
     };
     let finished = match &failure {
         None => {
@@ -471,6 +440,7 @@ async fn run(state: AppState, job: Job, _running: RunningGuard, started: oneshot
 #[cfg(test)]
 mod tests {
     use super::*;
+    use mongodb::bson::DateTime;
     use std::collections::HashMap;
 
     fn doc_with(items: &[(&str, usize, &str, &str)]) -> TranslationDoc {
@@ -528,29 +498,34 @@ mod tests {
     }
 
     #[test]
-    fn tally_refunds_the_daily_turn_only_when_nothing_was_billed() {
+    fn tally_adds_the_tokens_of_every_call() {
         use summary::llm::{Call, Completion};
         let ok = |i, o| Call::<batch::Draft> {
             result: Ok(Completion { input_tokens: i, output_tokens: o, draft: Ok(batch::Draft { lines: vec![] }) }),
-            maybe_billed: true,
         };
-        let unreachable = Call::<batch::Draft> { result: Err("không kết nối được".into()), maybe_billed: false };
-        let timed_out = Call::<batch::Draft> { result: Err("quá giờ".into()), maybe_billed: true };
+        let unreachable = Call::<batch::Draft> { result: Err("không kết nối được".into()) };
+        let mut tally = Tally::default();
+        tally.add(&ok(20_000, 1_500));
+        tally.add(&unreachable);
+        tally.add(&ok(1_000, 10));
+        let outcome = tally.outcome(true);
+        assert_eq!((outcome.input_tokens, outcome.output_tokens, outcome.ok), (21_000, 1_510, true));
+    }
 
-        let mut none = Tally::default();
-        none.add(&unreachable, 50);
-        none.add(&unreachable, 50);
-        let outcome = none.outcome(false);
-        assert_eq!((outcome.cost_s, outcome.refund), (0, true));
-
-        let mut some = Tally::default();
-        some.add(&ok(20_000, 1_500), 300);
-        some.add(&ok(1_000_000, 0), 300);
-        some.add(&timed_out, 70);
-        some.add(&unreachable, 70);
-        let outcome = some.outcome(true);
-        assert_eq!((outcome.input_tokens, outcome.output_tokens), (1_020_000, 1_500));
-        assert_eq!(outcome.cost_s, meter::cost_seconds(1_020_000, 1_500) + 70);
-        assert!(!outcome.refund && outcome.ok);
+    /// Không có key riêng cho model chữ (tính năng Key riêng tắt ⟹ không đọc Mongo): 403 `NO_USER_KEY`, không dịch gì.
+    #[tokio::test]
+    async fn without_an_own_text_key_nothing_is_translated() {
+        let db = mongodb::Client::with_uri_str("mongodb://127.0.0.1:9/?serverSelectionTimeoutMS=200&connectTimeoutMS=200")
+            .await
+            .expect("uri")
+            .database("scribe_translate_test");
+        let state = AppState::for_tests(crate::config::Config::for_tests("http://localhost", "http://localhost"), db);
+        let req = LangReq { lang: Some("en".into()) };
+        let Err(AppError::Coded { status, code, .. }) =
+            create(State(state), Extension(UserId("u1".into())), Path("f:65f0a1b2c3d4e5f60718293a".into()), Json(req)).await
+        else {
+            panic!("phải từ chối");
+        };
+        assert_eq!((status, code), (StatusCode::FORBIDDEN, "NO_USER_KEY"));
     }
 }

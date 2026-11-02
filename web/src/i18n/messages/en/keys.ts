@@ -6,7 +6,7 @@ export const keys: Translation<SourceMessages["keys"]> = {
 	dialog: {
 		title: "Your API keys",
 		intro:
-			"Use your own API keys instead of Scribe's. Keys are encrypted and stored on the Scribe server and never shown again; the provider bills your account, and work run on your keys does not count against Scribe's minutes or requests.",
+			"Transcription, live transcription, minutes, questions and translation run on your own API keys. Keys are encrypted and stored on the Scribe server, used only for your requests and never shown again; the provider bills your account.",
 		unavailable:
 			"Your API keys are not enabled on this server. An admin needs to create the encryption secret file and restart.",
 		loading: "Loading your API keys…",
@@ -55,9 +55,18 @@ export const keys: Translation<SourceMessages["keys"]> = {
 		transcribe: "Transcribing files",
 		live: "Live transcription on iPhone",
 		text: "Minutes, questions, translation",
-		scribe: "Using Scribe's key, counted in your plan's usage.",
+		off: "Off: add a valid key for one of the providers above.",
 		needsKey: "{provider} (no key yet)",
 		model: "Model",
 		geminiNote: "Gemini: sentence times are estimates, no speakers.",
+	},
+	needed: {
+		title: "Your API key is needed",
+		open: "Open Your API keys",
+		any: "Transcription, minutes, questions and translation run on your own API key (ElevenLabs, OpenAI, Google Gemini or Anthropic Claude). Add a key in Your API keys to use them.",
+		transcribe:
+			"Transcription runs on your own API key. Add an ElevenLabs, OpenAI or Google Gemini key in Your API keys.",
+		live: "Live transcription runs on your own API key. Add an ElevenLabs or OpenAI key in Your API keys.",
+		text: "Minutes, questions and translation run on your own API key. Add an OpenAI, Google Gemini or Anthropic Claude key in Your API keys.",
 	},
 };

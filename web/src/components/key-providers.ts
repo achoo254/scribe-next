@@ -27,3 +27,11 @@ export const PROVIDER_INFO = {
 	KeyProvider,
 	{ name: MessageKey; usedFor: MessageKey; createUrl: string }
 >;
+
+/** Name of a provider code the backend sent; null when the code is unknown. */
+export function providerNameKey(
+	code: string | null,
+): (typeof PROVIDER_INFO)[KeyProvider]["name"] | null {
+	const info = Object.entries(PROVIDER_INFO).find(([key]) => key === code);
+	return info ? info[1].name : null;
+}

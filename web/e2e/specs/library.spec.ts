@@ -19,8 +19,8 @@ import {
 /*
  * "Kho bản ghi" against its screenshots: search results and a "Hỏi Scribe"
  * answer, whose source opens the reader at its second. Search without
- * Vietnamese marks, the marked match, the answer's sources and the daily
- * allowance are locked by src/features/search/normalize.test.ts,
+ * Vietnamese marks, the marked match, the answer's sources and the own-key
+ * notice are locked by src/features/search/normalize.test.ts,
  * src/pages/search/search-page.test.tsx and src/pages/search/ask-card.test.tsx.
  */
 

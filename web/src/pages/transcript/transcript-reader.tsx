@@ -49,6 +49,7 @@ import {
 	useTranslation,
 } from "../../features/transcript-docs/transcript-docs-queries";
 import type { ExportScope } from "../../features/transcript/transcript-api";
+import { transcribesWholeSession } from "../../features/user-keys/own-keys";
 import { useT } from "../../i18n/i18n-context";
 import { LeaveGuard } from "../../layout/leave-guard";
 import { PageHeader } from "../../layout/page-header";
@@ -198,11 +199,10 @@ export function TranscriptReader({
 		translation && translation.status !== "none" ? view : "original";
 	const speakerNames = doc?.speakers?.names ?? NO_SPEAKERS;
 	const speakerBefore = useMemo(() => speakersBefore(segments), [segments]);
-	// An iPhone session is transcribed as a whole: every segment goes, and its
-	// minutes are the whole session's.
+	// An iPhone session on an ElevenLabs key is transcribed as a whole: every
+	// segment goes, and its minutes are the whole session's.
 	const wholeSession =
-		Boolean(user?.transcription?.wholeSession) &&
-		transcriptKey.startsWith("s:");
+		transcribesWholeSession(user) && transcriptKey.startsWith("s:");
 	const missing = untranscribed(segments);
 	const toSend = wholeSession && missing.length > 0 ? segments : missing;
 	const pending = segments.filter((s) => isPending(s.status)).length;

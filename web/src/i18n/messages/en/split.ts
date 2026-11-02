@@ -33,7 +33,7 @@ export const split: Translation<SourceMessages["split"]> = {
 	managed: {
 		title: "Files on the server",
 		description:
-			"Files you uploaded to split and the split parts still count toward your storage. Delete some to free space (deleted automatically after 14 days if you don't).",
+			"Files you uploaded to split and the split parts still count toward your storage. Delete some to free space (deleted automatically after 7 days if you don't).",
 		loadFailed: "Couldn't load the file list",
 		uploads: "Uploaded files",
 		outputs: "Split parts",

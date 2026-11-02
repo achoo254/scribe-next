@@ -36,7 +36,7 @@ export interface UserKeys {
 	keys: StoredKey[];
 	/** What the user picked. */
 	prefs: KeyChoice;
-	/** What actually runs on the user's keys now (null: Scribe's key). */
+	/** What actually runs on the user's keys now (null: that use is off). */
 	active: KeyChoice;
 	/** Text models per provider, the first being the default. */
 	models: Partial<Record<KeyProvider, TextModel[]>>;

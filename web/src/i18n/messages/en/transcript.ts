@@ -17,10 +17,8 @@ export const transcript: Translation<SourceMessages["transcript"]> = {
 		failed: "Couldn't transcribe",
 		confirmTitle: "Transcribe a long recording",
 		send: "Transcribe",
-		usage: "This recording uses about <strong>{minutes} minutes</strong>.",
-		usageOfLeft:
-			"This recording uses about <strong>{minutes} minutes</strong> of the <strong>{left} minutes</strong> left this month.",
-		notEnough: "Not enough minutes left for this recording.",
+		usage:
+			"This recording is about <strong>{minutes} minutes</strong> long and is transcribed with your {provider} key; the provider bills your account.",
 	},
 	download: {
 		menu: "Download",
@@ -56,12 +54,6 @@ export const transcript: Translation<SourceMessages["transcript"]> = {
 		retranslate: "Retranslate edited sentences",
 		fillMissing: "Translate the rest",
 		outdatedMark: "old translation",
-		dailyLimit:
-			"You've used {used}/{limit} translations today. Available again at {time}.",
-		monthlyLimit:
-			"This account has used its summary, question and translation allowance this month ({used}/{limit} equivalent minutes). Available again at {time}.",
-		capReached:
-			"Translation has used this month's shared allowance. Available again at {time}.",
 	},
 	panel: {
 		done: "Transcribed",
@@ -114,12 +106,6 @@ export const transcript: Translation<SourceMessages["transcript"]> = {
 			other: "{count} transcripts · {duration}",
 		},
 	},
-	quota: {
-		paused:
-			"Transcription is paused and the admin has been told. Try again later.",
-		capReached:
-			"Transcription has used this month's shared allowance and reopens at the start of next month.",
-	},
 	minutes: {
 		title: "Minutes",
 		intro:
@@ -139,12 +125,6 @@ export const transcript: Translation<SourceMessages["transcript"]> = {
 		due: "Due: {due}",
 		createdAt: "Created {date}",
 		jump: "Play from {time}",
-		dailyLimit:
-			"You've used {used}/{limit} summaries today. Available again at {time}.",
-		monthlyLimit:
-			"This account has used its summary and question allowance this month ({used}/{limit} equivalent minutes). Available again at {time}.",
-		capReached:
-			"Summaries have used this month's shared allowance. Available again at {time}.",
 		failed: "Couldn't summarise",
 		send: "Send to chat",
 		link: "Link chat",

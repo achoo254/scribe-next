@@ -46,11 +46,5 @@ export const search: Translation<SourceMessages["search"]> = {
 		sources: "Sources",
 		cite: "Source {n}: {title}, play from {time}",
 		session: "Questions are kept only until you leave the page.",
-		dailyLimit:
-			"You've used {used}/{limit} questions today. Available again at {time}.",
-		monthlyLimit:
-			"This account has used its summary and question allowance this month ({used}/{limit} equivalent minutes). Available again at {time}.",
-		capReached:
-			"Questions have used this month's shared allowance. Available again at {time}.",
 	},
 };

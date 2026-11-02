@@ -2,13 +2,13 @@
 //!
 //! Red-team: #8 sessionId UUID server-sinh + verify userId + validate UUID (chống IDOR/traversal);
 //! #7 resumable stateless (độ dài `.part` trên disk = nguồn sự thật); #14 size cap; #3 quota tăng dần. Cỡ tệp
-//! tối đa và quota theo gói của user (`plan::Plan::storage`).
+//! tối đa và quota chung (`storage::LIMITS`).
 
 use crate::audit;
 use crate::auth::UserId;
 use crate::error::AppError;
 use crate::models::file::{self, FileDoc, Owner};
-use crate::models::user;
+use crate::models::storage;
 use crate::state::AppState;
 use axum::body::Bytes;
 use axum::extract::{Query, State};
@@ -53,7 +53,7 @@ pub async fn init(
         return Err(AppError::BadRequest("size không hợp lệ".into()));
     }
     let size = req.size as u64;
-    let storage = user::effective_plan(&state.db, &user.0).await?.storage();
+    let storage = storage::LIMITS;
     if size > storage.max_file_bytes {
         return Err(AppError::TooLarge(storage.file_too_large_message()));
     }
@@ -132,7 +132,7 @@ pub async fn chunk(
 
     let written = tokio::fs::metadata(&part).await.map(|m| m.len()).unwrap_or(0);
     // Size cap + quota tăng dần — abort sớm, dọn .part để không ăn disk (box shared).
-    let storage = user::effective_plan(&state.db, &user.0).await?.storage();
+    let storage = storage::LIMITS;
     if written > storage.max_file_bytes {
         let _ = tokio::fs::remove_file(&part).await;
         return Err(AppError::TooLarge(storage.file_too_large_message()));
@@ -192,7 +192,6 @@ pub async fn finalize(
     if !crate::recordings::finalizable_size(size) {
         return Err(AppError::BadRequest("kích thước file không hợp lệ".into()));
     }
-    let plan = user::effective_plan(&state.db, &user.0).await?;
     // Magic-byte: chỉ nhận audio/video (soát header — không chặn CVE demuxer, xem red-team #15).
     let detected = infer::get_from_path(&part)
         .map_err(|e| AppError::Internal(format!("đọc header: {e}")))?
@@ -218,7 +217,7 @@ pub async fn finalize(
     let has_video = info.as_ref().is_some_and(|i| !i.vcodec.is_empty());
 
     let name = session.get_str("name").unwrap_or("upload").to_string();
-    let owner = Owner { user_id: &user.0, plan };
+    let owner = Owner { user_id: &user.0 };
     let mut upload = FileDoc::new_upload(owner, &name, &final_path, size as i64, duration_s, has_video, id);
     if session.get_str("purpose") == Ok(file::PURPOSE_TRANSCRIBE) {
         upload = upload.for_transcription();

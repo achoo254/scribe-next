@@ -634,7 +634,7 @@ mod tests {
         let key = format!("s:{session}");
         let (a, b) = (ObjectId::new(), ObjectId::new());
         for (id, index) in [(a, 0), (b, 1)] {
-            let f = file::FileDoc::new_recording(file::Owner { user_id: &user, plan: crate::models::plan::Plan::Free }, &format!("{session}#{index}"), "/nonexistent", 1, 60.0, false, id);
+            let f = file::FileDoc::new_recording(file::Owner { user_id: &user }, &format!("{session}#{index}"), "/nonexistent", 1, 60.0, false, id);
             file::create(&db, f).await.expect("tạo file");
         }
         let files = file::list_session(&db, &user, &key).await.expect("list_session");
@@ -661,8 +661,7 @@ mod tests {
         assert_eq!(get(&db, &user, &key).await.expect("get").expect("doc").title, None);
 
         // Chép lại đoạn a: runId đổi → câu sửa của lượt cũ hết hiệu lực.
-        let charge = crate::models::usage::Charge { user_id: user.clone(), month: "test".into(), free_pool: false, day: None };
-        transcript::enqueue(&db, a, &user, "run-2", "m", transcript::Billing::Server(&charge), 0).await.expect("enqueue");
+        transcript::enqueue(&db, a, &user, "run-2", "m", crate::config::Vendor::OpenAi).await.expect("enqueue");
         let run = transcript::statuses_for_files(&db, &user, &[a]).await.expect("status");
         assert_eq!(effective_texts(d.edits.get(&a.to_hex()), &run[0].run_id, 1), None);
 

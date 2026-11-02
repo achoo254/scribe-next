@@ -264,13 +264,12 @@ mod tests {
         let key = format!("s:{session}");
         let (a, b) = (ObjectId::new(), ObjectId::new());
         for (id, index) in [(a, 0), (b, 1)] {
-            let f = file::FileDoc::new_recording(file::Owner { user_id: &user, plan: crate::models::plan::Plan::Free }, &format!("{session}#{index}"), "/nonexistent", 1, 60.0, false, id);
+            let f = file::FileDoc::new_recording(file::Owner { user_id: &user }, &format!("{session}#{index}"), "/nonexistent", 1, 60.0, false, id);
             file::create(&db, f).await.expect("tạo file");
         }
-        let charge = crate::models::usage::Charge { user_id: user.clone(), month: "test".into(), free_pool: false, day: None };
         let s = |start: f64, text: &str| Sentence { start, end: start + 1.0, text: text.into(), speaker: None };
         for (id, sentences) in [(a, vec![s(1.0, "Chào cả nhà."), s(5.0, "Bàn hợp đồng.")]), (b, vec![s(2.0, "Chốt giá.")])] {
-            transcript::enqueue(&db, id, &user, "run-1", "m", transcript::Billing::Server(&charge), 0).await.expect("enqueue");
+            transcript::enqueue(&db, id, &user, "run-1", "m", crate::config::Vendor::OpenAi).await.expect("enqueue");
             transcript::finish_done(&db, id, "run-1", "", &sentences).await.expect("xong");
         }
         assert_eq!(reindex(&db, &user, &key).await.expect("dựng"), 3);

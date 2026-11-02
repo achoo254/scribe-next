@@ -1,10 +1,12 @@
 import { IconMessageQuestion, IconSend } from "@tabler/icons-react";
 import { type FormEvent, useState } from "react";
+import { useAuth } from "../../auth/auth-context";
 import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
 import { Card } from "../../components/ui/card";
 import { Input } from "../../components/ui/input";
 import { ProgressBar } from "../../components/ui/progress-bar";
+import { NeedsKeyNotice } from "../../components/user-keys-entry";
 import {
 	type AskCitation,
 	type AskReply,
@@ -13,10 +15,10 @@ import {
 } from "../../features/search/search-api";
 import { useAsk } from "../../features/search/search-queries";
 import { transcriptTitle } from "../../features/transcript-docs/reader-model";
+import { isOwnKeyRefusal, ownKeyFor } from "../../features/user-keys/own-keys";
 import { useT } from "../../i18n/i18n-context";
-import type { Translate } from "../../i18n/translate";
-import { ApiError, errorMessage } from "../../lib/api";
-import { formatClock, formatTimeAndDay } from "../../lib/format";
+import { errorMessage } from "../../lib/api";
+import { formatClock } from "../../lib/format";
 
 export interface AskCardProps {
 	/** Ask about this transcript only; every transcript when absent. */
@@ -30,24 +32,6 @@ interface Entry {
 	question: string;
 	reply: AskReply | null;
 	error: unknown;
-}
-
-/** Why a question was refused; a used-up allowance says when it opens again. */
-export function askError(t: Translate, error: unknown): string {
-	if (error instanceof ApiError && error.quota?.retryAt) {
-		const time = formatTimeAndDay(error.quota.retryAt);
-		const counts = { used: error.quota.used, limit: error.quota.limit, time };
-		if (error.code === "ASK_DAILY_LIMIT") {
-			return t("search.ask.dailyLimit", counts);
-		}
-		if (error.code === "ASK_MONTHLY_LIMIT") {
-			return t("search.ask.monthlyLimit", counts);
-		}
-		if (error.code === "CAP_REACHED") {
-			return t("search.ask.capReached", { time });
-		}
-	}
-	return errorMessage(error);
 }
 
 /** Name of the transcript a citation comes from, as the list shows it. */
@@ -64,10 +48,13 @@ export function citationTitle(citation: AskCitation): string {
  * "Hỏi Scribe": a question in plain words, answered only from the user's
  * transcripts. Every `[n]` of the answer and every source below it plays
  * the transcript from that second. Questions stay on the page only (nothing
- * is saved); the newest is on top.
+ * is saved); the newest is on top. Answers run on the user's own text key:
+ * without one, asking is off and a notice opens "Key riêng".
  */
 export function AskCard({ transcriptKey, onCite }: AskCardProps) {
 	const t = useT();
+	const { user } = useAuth();
+	const hasKey = ownKeyFor(user, "text") !== null;
 	const ask = useAsk(transcriptKey);
 	const [draft, setDraft] = useState("");
 	const [entries, setEntries] = useState<Entry[]>([]);
@@ -76,7 +63,7 @@ export function AskCard({ transcriptKey, onCite }: AskCardProps) {
 	async function submit(event: FormEvent): Promise<void> {
 		event.preventDefault();
 		const question = draft.trim();
-		if (!question || ask.isPending) return;
+		if (!question || ask.isPending || !hasKey) return;
 		const id = (entries[0]?.id ?? 0) + 1;
 		setEntries((list) => [{ id, question, reply: null, error: null }, ...list]);
 		setDraft("");
@@ -128,12 +115,18 @@ export function AskCard({ transcriptKey, onCite }: AskCardProps) {
 					variant="primary"
 					data-id="ask-submit"
 					loading={ask.isPending}
-					disabled={!draft.trim()}
+					disabled={!draft.trim() || !hasKey}
 					leadingIcon={<IconSend size={16} aria-hidden="true" />}
 				>
 					{t("search.ask.submit")}
 				</Button>
 			</form>
+			{hasKey ? null : (
+				<NeedsKeyNotice
+					data-id="ask-needs-key"
+					message={t("keys.needed.text")}
+				/>
+			)}
 			{entries.length > 0 ? (
 				<ol className="m-0 grid list-none gap-4 p-0" data-id="ask-entries">
 					{entries.map((entry) => (
@@ -167,13 +160,19 @@ function AskEntry({
 			</p>
 			{entry.reply ? (
 				<AskAnswer reply={entry.reply} dataId={dataId} onCite={onCite} />
+			) : entry.error && isOwnKeyRefusal(entry.error) ? (
+				<NeedsKeyNotice
+					tone="danger"
+					data-id={`${dataId}-error`}
+					message={errorMessage(entry.error)}
+				/>
 			) : entry.error ? (
 				<Alert
 					tone="danger"
 					title={t("search.ask.failed")}
 					data-id={`${dataId}-error`}
 				>
-					{askError(t, entry.error)}
+					{errorMessage(entry.error)}
 				</Alert>
 			) : (
 				<div

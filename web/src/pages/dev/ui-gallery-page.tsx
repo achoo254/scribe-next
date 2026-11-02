@@ -99,7 +99,7 @@ export function UiGalleryPage() {
 					))}
 				</div>
 				<Alert tone="info" title="Thông tin">
-					Bản ghi được tự động xoá sau 14 ngày.
+					Bản ghi được tự động xoá sau 7 ngày.
 				</Alert>
 				<Alert tone="success">Đã tải lên.</Alert>
 				<Alert tone="warning">Hãy bật ít nhất một nguồn ghi.</Alert>

@@ -1,4 +1,6 @@
 import { IconLanguage, IconRefresh } from "@tabler/icons-react";
+import { useState } from "react";
+import { useAuth } from "../../auth/auth-context";
 import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
 import {
@@ -10,6 +12,7 @@ import {
 } from "../../components/ui/dropdown-menu";
 import { ProgressBar } from "../../components/ui/progress-bar";
 import { SegmentedControl } from "../../components/ui/segmented-control";
+import { NeedsKeyNotice } from "../../components/user-keys-entry";
 import type {
 	TranscriptTranslation,
 	TranslationLang,
@@ -21,38 +24,12 @@ import {
 	TRANSLATION_LANGS,
 	TRANSLATION_LANG_LABEL,
 } from "../../features/transcript-docs/translation-langs";
+import { isOwnKeyRefusal, ownKeyFor } from "../../features/user-keys/own-keys";
 import { useT } from "../../i18n/i18n-context";
-import type { Translate } from "../../i18n/translate";
-import { ApiError, errorMessage } from "../../lib/api";
-import { formatTimeAndDay } from "../../lib/format";
+import { errorMessage } from "../../lib/api";
 
 /** How the reader shows a translated transcript. */
 export type TranslationView = "original" | "translation" | "both";
-
-/** Why "Dịch" was refused; a used-up allowance says when it opens again. */
-export function translateError(t: Translate, error: unknown): string {
-	if (error instanceof ApiError && error.quota?.retryAt) {
-		const time = formatTimeAndDay(error.quota.retryAt);
-		if (error.code === "TRANSLATE_DAILY_LIMIT") {
-			return t("transcript.translate.dailyLimit", {
-				used: error.quota.used,
-				limit: error.quota.limit,
-				time,
-			});
-		}
-		if (error.code === "TRANSLATE_MONTHLY_LIMIT") {
-			return t("transcript.translate.monthlyLimit", {
-				used: error.quota.used,
-				limit: error.quota.limit,
-				time,
-			});
-		}
-		if (error.code === "CAP_REACHED") {
-			return t("transcript.translate.capReached", { time });
-		}
-	}
-	return errorMessage(error);
-}
 
 export interface TranslationControlsProps {
 	transcriptKey: string;
@@ -75,7 +52,8 @@ export interface TranslationControlsProps {
  * "Dịch" of the reader: pick the language (a new one starts translating,
  * one already stored is shown), progress while the server translates, the
  * view switch Gốc / Bản dịch / Song song, and "Dịch lại câu đã sửa" when
- * sentences changed since.
+ * sentences changed since. Translating runs on the user's own text key:
+ * without one, a run is not sent and a notice opens "Key riêng" instead.
  */
 export function TranslationControls({
 	transcriptKey,
@@ -90,6 +68,9 @@ export function TranslationControls({
 }: TranslationControlsProps) {
 	const t = useT();
 	const start = useStartTranslation(transcriptKey);
+	const { user } = useAuth();
+	const hasKey = ownKeyFor(user, "text") !== null;
+	const [needsKey, setNeedsKey] = useState(false);
 	const languageName = (code: TranslationLang) =>
 		t(TRANSLATION_LANG_LABEL[code]);
 	const running = progress?.status === "running";
@@ -97,6 +78,10 @@ export function TranslationControls({
 	const leftover = translation ? translation.outdated + translation.missing : 0;
 
 	function run(target: TranslationLang): void {
+		if (!hasKey) {
+			setNeedsKey(true);
+			return;
+		}
 		start.reset();
 		start.mutate(target);
 	}
@@ -196,14 +181,28 @@ export function TranslationControls({
 				</p>
 			) : null}
 
+			{needsKey && !hasKey ? (
+				<NeedsKeyNotice
+					data-id="translate-needs-key"
+					message={t("keys.needed.text")}
+				/>
+			) : null}
 			{start.isError ? (
-				<Alert
-					tone="danger"
-					title={t("transcript.translate.failed")}
-					data-id="translate-error"
-				>
-					{translateError(t, start.error)}
-				</Alert>
+				isOwnKeyRefusal(start.error) ? (
+					<NeedsKeyNotice
+						tone="danger"
+						data-id="translate-error"
+						message={errorMessage(start.error)}
+					/>
+				) : (
+					<Alert
+						tone="danger"
+						title={t("transcript.translate.failed")}
+						data-id="translate-error"
+					>
+						{errorMessage(start.error)}
+					</Alert>
+				)
 			) : progress?.status === "failed" && lang ? (
 				<Alert
 					tone="danger"

@@ -255,12 +255,14 @@ describe("UserKeysDialog", () => {
 		);
 	});
 
-	it("says a use runs on Scribe's key when no key of the user can do it", async () => {
+	it("says a use is off when no key of the user can do it", async () => {
 		open({ "GET /api/me/keys": jsonResponse(keysReply()) });
 		const live = await screen.findByRole("group", {
 			name: "Chép trực tiếp trên iPhone",
 		});
-		expect(live).toHaveTextContent("Đang dùng key của Scribe");
+		expect(live).toHaveTextContent(
+			"Chưa bật: thêm key hợp lệ của một nhà cung cấp ở trên.",
+		);
 		expect(
 			within(live).getByRole("radio", { name: "OpenAI" }),
 		).not.toBeChecked();

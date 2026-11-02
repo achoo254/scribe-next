@@ -39,6 +39,7 @@ import type {
 } from "../../features/transcript-docs/bookmark-queue";
 import { transcriptKey } from "../../features/transcript-docs/transcript-docs-api";
 import { useBookmarkQueue } from "../../features/transcript-docs/use-bookmark-queue";
+import { ownKeyFor } from "../../features/user-keys/own-keys";
 import { isNativeShell } from "../../lib/api";
 import { parsePositiveNumber } from "../../lib/format";
 
@@ -290,7 +291,9 @@ export function NativeRecordProvider({ children }: { children: ReactNode }) {
 		const key = rec.userKey ?? (await userKeyOf(user.email));
 		queue.reset();
 		live.transcript.reset();
-		await rec.recorder.start(key, Number(minutes), realtime);
+		// Live transcription runs only on the user's own live key.
+		const streamLive = realtime && ownKeyFor(user, "live") !== null;
+		await rec.recorder.start(key, Number(minutes), streamLive);
 	}
 
 	const togglePause =

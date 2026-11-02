@@ -146,18 +146,14 @@ pub async fn find_id_by_sub(db: &Database, sub: &str) -> Result<Option<String>, 
     Ok(d.and_then(|d| d.get_object_id("_id").ok().map(|o| o.to_hex())))
 }
 
-/// Email, tên, ảnh + gói chép lời của user (gói hết hạn do `plan::effective` xử lý).
+/// Email, tên, ảnh và trạng thái của user. Trường `plan`/`planUntil` cũ (thời còn gói free/plus) không được đọc.
 pub struct Profile {
     pub email: String,
     /// Tên hiển thị từ IdP; user chưa đăng nhập lại từ khi Scribe lưu tên thì không có.
     pub name: Option<String>,
     /// URL ảnh đại diện (`https:`) từ IdP, như `name`.
     pub picture: Option<String>,
-    pub plan: Option<String>,
-    pub plan_until: Option<DateTime>,
-    /// Lúc tạo tài khoản; user rất cũ không có trường này (coi như đã lâu).
-    pub created_at: Option<DateTime>,
-    /// Quản trị đã khoá tài khoản (`admin block`): không đăng nhập, không chép lời.
+    /// Quản trị đã khoá tài khoản (`admin block`): không đăng nhập, không dùng AI.
     pub blocked: bool,
     /// Người dùng đã xoá tài khoản, việc dọn đang chạy (`deletingAt`): coi như không còn.
     pub deleting: bool,
@@ -168,16 +164,13 @@ pub async fn find_profile(db: &Database, user_id: &str) -> Result<Option<Profile
     let doc = db
         .collection::<Document>(COLL)
         .find_one(doc! { "_id": oid })
-        .projection(doc! { "email": 1, "name": 1, "picture": 1, "plan": 1, "planUntil": 1, "createdAt": 1, "blocked": 1, "deletingAt": 1 })
+        .projection(doc! { "email": 1, "name": 1, "picture": 1, "blocked": 1, "deletingAt": 1 })
         .await
         .map_err(|e| AppError::Internal(format!("mongo find user: {e}")))?;
     Ok(doc.map(|d| Profile {
         email: d.get_str("email").unwrap_or_default().to_string(),
         name: d.get_str("name").ok().map(str::to_string),
         picture: d.get_str("picture").ok().map(str::to_string),
-        plan: d.get_str("plan").ok().map(str::to_string),
-        plan_until: d.get_datetime("planUntil").ok().copied(),
-        created_at: d.get_datetime("createdAt").ok().copied(),
         // Dấu khoá do CLI ghi là `{at, reason}`; `true` sửa tay cũng tính là khoá.
         blocked: d.get_document("blocked").is_ok() || d.get_bool("blocked").unwrap_or(false),
         deleting: d.get_datetime("deletingAt").is_ok(),
@@ -192,34 +185,6 @@ pub async fn mark_deleting(db: &Database, user_id: &str) -> Result<(), AppError>
         .await
         .map(|_| ())
         .map_err(|e| AppError::Internal(format!("đánh dấu xoá tài khoản: {e}")))
-}
-
-/// Gói đang có hiệu lực của user (dung lượng, hạn tệp). Không có user thì là free.
-pub async fn effective_plan(db: &Database, user_id: &str) -> Result<super::plan::Plan, AppError> {
-    let profile = find_profile(db, user_id).await?;
-    let (stored, until) = profile.map_or((None, None), |p| (p.plan, p.plan_until));
-    Ok(super::plan::effective(stored.as_deref(), until, DateTime::now()))
-}
-
-/// `_id` (hex) của các user đang có gói plus hiệu lực lúc `now`.
-pub async fn plus_user_ids(db: &Database, now: DateTime) -> Result<Vec<String>, AppError> {
-    let read = |e: MongoError| AppError::Internal(format!("mongo users theo gói: {e}"));
-    let mut cur = db
-        .collection::<Document>(COLL)
-        .find(doc! { "plan": "plus" })
-        .projection(doc! { "_id": 1, "plan": 1, "planUntil": 1 })
-        .await
-        .map_err(read)?;
-    let mut out = Vec::new();
-    while let Some(d) = futures_util::StreamExt::next(&mut cur).await {
-        let d = d.map_err(read)?;
-        let until = d.get_datetime("planUntil").ok().copied();
-        let plan = super::plan::effective(d.get_str("plan").ok(), until, now);
-        if let (super::plan::Plan::Plus, Ok(id)) = (plan, d.get_object_id("_id")) {
-            out.push(id.to_hex());
-        }
-    }
-    Ok(out)
 }
 
 /// Khoá (`Some(lý do)`) hoặc mở khoá (`None`) tài khoản. Trả `false` khi không có user.
@@ -259,20 +224,6 @@ fn regex_escape(s: &str) -> String {
     s.chars()
         .flat_map(|c| if "\\.^$|?*+()[]{}/".contains(c) { vec!['\\', c] } else { vec![c] })
         .collect()
-}
-
-/// Đặt gói; `until` = None với gói plus nghĩa là không hết hạn; gói free xoá hạn.
-pub async fn set_plan(db: &Database, user_id: &str, plan: &str, until: Option<DateTime>) -> Result<(), AppError> {
-    let oid = ObjectId::parse_str(user_id).map_err(|_| AppError::BadRequest("user id không hợp lệ".into()))?;
-    let update = match until {
-        Some(until) => doc! { "$set": { "plan": plan, "planUntil": until } },
-        None => doc! { "$set": { "plan": plan }, "$unset": { "planUntil": "" } },
-    };
-    db.collection::<Document>(COLL)
-        .update_one(doc! { "_id": oid }, update)
-        .await
-        .map(|_| ())
-        .map_err(|e| AppError::Internal(format!("mongo set plan: {e}")))
 }
 
 fn extract_id(doc: Option<Document>) -> Result<String, AppError> {
@@ -337,9 +288,9 @@ mod tests {
         let (third, _) = find_or_link(&db, &format!("acc3_{tag}"), &format!("n3-{tag}@x.vn"), None, None).await.expect("mới");
         assert_eq!(find_id_by_sub(&db, &format!("acc3_{tag}")).await.expect("tìm"), Some(third.clone()));
 
-        // User mới có `createdAt`; khoá rồi mở khoá.
+        // Khoá rồi mở khoá.
         let profile = find_profile(&db, &third).await.expect("đọc").expect("có");
-        assert!(profile.created_at.is_some() && !profile.blocked);
+        assert!(!profile.blocked);
         assert!(set_blocked(&db, &third, Some("thử")).await.expect("khoá"));
         assert!(find_profile(&db, &third).await.expect("đọc").expect("có").blocked);
         assert!(set_blocked(&db, &third, None).await.expect("mở"));

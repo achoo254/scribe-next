@@ -2,7 +2,7 @@
 //! Không có I/O ngoài lượt gọi [`translate`]; phần còn lại thuần để test.
 
 use crate::models::translation::Lang;
-use crate::summary::{llm, meter};
+use crate::summary::llm;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::ops::Range;
@@ -13,8 +13,6 @@ pub const MAX_LINES: usize = 100;
 pub const MAX_CHARS: usize = 6_000;
 /// Trần token đầu ra của một lô (lô lớn nhất cần ~3k).
 const MAX_OUTPUT_TOKENS: i64 = 16_000;
-/// Token JSON (`{"i": n, "t": "…"}`) của mỗi câu, cả chiều vào lẫn ra.
-const LINE_OVERHEAD_TOKENS: i64 = 8;
 /// Bản dịch dài nhất giữ lại cho một câu (câu nguồn tối đa 2000 ký tự).
 const MAX_TRANSLATION_CHARS: usize = 4_000;
 
@@ -120,18 +118,6 @@ pub fn map_output(sources: &[&str], draft: Draft) -> Result<Vec<String>, String>
         .collect())
 }
 
-/// Token đầu ra ước lượng của một lô: bản dịch dài cỡ câu nguồn, chữ Việt ~2–3 ký tự mỗi token (lấy 2 cho
-/// chắc phần trên, như chiều vào), cộng phần JSON.
-fn output_tokens(chars: usize, lines: usize) -> i64 {
-    chars as i64 / 2 + LINE_OVERHEAD_TOKENS * lines as i64
-}
-
-/// Chi phí giữ chỗ (giây tương đương) của một lô `chars` ký tự, `lines` câu: chặn trên chi phí thật.
-pub fn estimate_seconds(chars: usize, lines: usize) -> i64 {
-    let input = meter::estimate_input_tokens(chars) + LINE_OVERHEAD_TOKENS * lines as i64;
-    meter::estimate_seconds(input, output_tokens(chars, lines))
-}
-
 /// Gọi model dịch một lô.
 pub async fn translate(http: &reqwest::Client, model: &llm::Llm<'_>, lang: Lang, lines: &[&str]) -> llm::Call<Draft> {
     let chars: usize = lines.iter().map(|l| l.chars().count()).sum();
@@ -213,17 +199,14 @@ mod tests {
         for (s, t) in sources.iter().zip(&texts) {
             println!("{s}\n  → {t}");
         }
-        println!("token: {input} vào, {output} ra; chi phí {} giây quy đổi", meter::cost_seconds(input, output));
+        println!("token: {input} vào, {output} ra");
         assert_eq!(texts.len(), sources.len());
         assert!(texts[0].contains("Hùng") && texts[0].contains("Minh Phát"), "giữ tên riêng");
         assert!(texts[3].contains('5') && texts[3].contains("VAT"), "giữ con số");
     }
 
     #[test]
-    fn reservation_covers_a_typical_batch() {
-        // Lô đầy (6000 ký tự, 100 câu): thật ~2,4k token vào + ~2,4k ra với chữ Việt.
-        let estimate = estimate_seconds(6_000, 100);
-        assert!(estimate >= meter::cost_seconds(2_400 + 1_000, 2_400 + 800));
+    fn instructions_ask_for_one_item_per_line() {
         assert!(INSTRUCTIONS.contains("exactly one item per input line"));
     }
 }

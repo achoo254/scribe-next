@@ -66,7 +66,7 @@ export const record: Translation<SourceMessages["record"]> = {
 		},
 		realtime: "实时转写",
 		realtimeHint:
-			"将音频发送到转写服务，每句话说完后即可显示文字；计入你的转写分钟数。上传后仍会进行完整转写。",
+			"将音频发送到你的实时转写密钥所属服务商，每句话说完后即可显示文字，费用由你的账号承担。上传后仍会进行完整转写。",
 		liveTitle: "正在转写",
 		liveTitleDone: "实时转写",
 		liveNote: "预览。上传后会进行完整转写。",

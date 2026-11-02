@@ -4,11 +4,14 @@ import {
 	IconPlayerPlayFilled,
 	IconPlayerStopFilled,
 } from "@tabler/icons-react";
+import { useAuth } from "../../auth/auth-context";
 import { Alert } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
 import { Card } from "../../components/ui/card";
 import { SegmentedControl } from "../../components/ui/segmented-control";
 import { SwitchField } from "../../components/ui/switch-field";
+import { NeedsKeyNotice } from "../../components/user-keys-entry";
+import { ownKeyFor } from "../../features/user-keys/own-keys";
 import { useT } from "../../i18n/i18n-context";
 import { BookmarkControl } from "./bookmark-control";
 import { LevelMeter } from "./live-monitor";
@@ -24,6 +27,8 @@ const SEGMENT_MINUTES = ["1", "5", "10"] as const;
  * segments that keep going on the lock screen and during calls, and
  * uploads each finished segment to "Lịch sử ghi". State and the segment
  * length live in `RecordStateProvider`, so they survive leaving the page.
+ * "Chép trực tiếp" runs on the user's own live key: without one the switch
+ * is off and a notice opens "Key riêng".
  */
 export function NativeRecordCard() {
 	const t = useT();
@@ -39,6 +44,8 @@ export function NativeRecordCard() {
 		bookmarks,
 		mark,
 	} = useNativeRecordState();
+	const { user } = useAuth();
+	const liveKey = ownKeyFor(user, "live") !== null;
 	const busy = rec.recording || rec.starting || rec.finalizing;
 	const options = SEGMENT_MINUTES.map((value) => ({
 		value,
@@ -69,13 +76,20 @@ export function NativeRecordCard() {
 				<SwitchField
 					label={t("record.native.realtime")}
 					data-id="native-realtime"
-					checked={realtime}
-					disabled={busy}
+					checked={realtime && liveKey}
+					disabled={busy || !liveKey}
 					onCheckedChange={setRealtime}
 				/>
-				<p className="m-0 text-muted text-xs">
-					{t("record.native.realtimeHint")}
-				</p>
+				{liveKey ? (
+					<p className="m-0 text-muted text-xs">
+						{t("record.native.realtimeHint")}
+					</p>
+				) : (
+					<NeedsKeyNotice
+						data-id="native-realtime-needs-key"
+						message={t("keys.needed.live")}
+					/>
+				)}
 			</div>
 			<RecordUpload />
 

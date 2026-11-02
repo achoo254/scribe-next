@@ -36,9 +36,9 @@ function batches<T>(items: readonly T[]): T[][] {
 }
 
 /**
- * Queues the recordings for transcription. The backend uses its own OpenAI
- * key and first takes the minutes from the user's monthly allowance; a
- * refusal (403) carries a message with the numbers.
+ * Queues the recordings for transcription on the user's own key. Without
+ * a valid key for it the backend refuses with `NO_USER_KEY` (403);
+ * `USER_KEY_FAILED` (403) when the provider rejected the key.
  */
 export async function requestTranscripts(
 	fileIds: readonly string[],

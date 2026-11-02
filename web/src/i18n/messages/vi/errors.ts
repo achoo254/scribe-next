@@ -57,15 +57,6 @@ export const errors = {
 	 * These Vietnamese texts repeat the backend's own wording.
 	 */
 	server: {
-		quotaExceeded:
-			"Không đủ phút chép lời: tháng này đã dùng {used}/{limit} phút.",
-		dailyLimit:
-			"Gói miễn phí chép được {limit} phút mỗi ngày, hôm nay đã dùng {used} phút. Mở lại lúc {time}.",
-		tooLongForFree:
-			"Gói miễn phí chép tối đa {limit} phút mỗi ngày, các bản ghi đã chọn dài {used} phút. Chọn ít bản ghi hơn.",
-		accountTooNew: "Tài khoản mới dùng được chép lời miễn phí từ {time}.",
-		providerHours:
-			"Hệ thống đã dùng hết giờ chép lời chung, mở lại lúc {time}.",
 		notTranscribed: "Bản ghi chưa có đoạn nào chép lời xong. Chép lời trước.",
 		confirmRequired: "Gõ từ xác nhận để xoá tài khoản.",
 		chatLinkDisabled: "Liên kết chat chưa được bật trên máy chủ này.",
@@ -74,7 +65,8 @@ export const errors = {
 			"Không gửi được vì bot Scribe đã bị chặn trên chat. Đã gỡ liên kết, hãy liên kết lại.",
 		noSummary: "Chưa có biên bản. Bấm Tóm tắt trước rồi gửi.",
 		bookmarksFull: "Bản ghi này đã có số dấu mốc tối đa.",
-		realtimeNotAllowed: "Tài khoản này chưa được dùng chép trực tiếp.",
+		noUserKey:
+			"Tính năng này chạy bằng API key của bạn. Thêm key trong Key riêng để dùng.",
 		userKeyFailed:
 			"Không dùng được key riêng của bạn. Kiểm tra key trong Key riêng.",
 		keyFormat: "Key không đúng định dạng của nhà cung cấp.",

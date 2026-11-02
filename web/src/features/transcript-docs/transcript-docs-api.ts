@@ -294,9 +294,8 @@ export async function deleteTranscript(
 
 /**
  * Makes (or makes again) the minutes of the transcript, written in the
- * language on screen. Refusals carry a code: `NOT_TRANSCRIBED` (409),
- * `SUMMARY_DAILY_LIMIT` / `CAP_REACHED` (403, with the counts and
- * `retryAt`).
+ * language on screen, on the user's own text key. Refusals carry a code:
+ * `NOT_TRANSCRIBED` (409), `NO_USER_KEY` / `USER_KEY_FAILED` (403).
  */
 export function createSummary(
 	key: string,
@@ -399,8 +398,8 @@ export function fetchTranslationStatus(
  * Translates the sentences of the transcript that have no translation into
  * `lang` yet, or an outdated one. Answers `running` (202) while the server
  * works through them, or `done` with `total: 0` when nothing was left.
- * Refusals carry a code: `NOT_TRANSCRIBED` (409), `TRANSLATE_DAILY_LIMIT` /
- * `TRANSLATE_MONTHLY_LIMIT` / `CAP_REACHED` (403, with `retryAt`).
+ * Runs on the user's own text key. Refusals carry a code:
+ * `NOT_TRANSCRIBED` (409), `NO_USER_KEY` / `USER_KEY_FAILED` (403).
  */
 export function startTranslation(
 	key: string,

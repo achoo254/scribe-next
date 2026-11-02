@@ -99,6 +99,35 @@ export const STUB_TEXT_MODELS: UserKeys["models"] = {
 	],
 };
 
+/**
+ * "Key riêng" of a user who added a valid OpenAI key: every AI use runs on
+ * it (files are transcribed one by one, as OpenAI does).
+ */
+export const OPENAI_USER_KEYS: UserKeys = {
+	available: true,
+	keys: [
+		{
+			provider: "openai",
+			last4: "1234",
+			status: "valid",
+			updatedAt: "2026-10-15T09:00:00+07:00",
+			lastCheckedAt: "2026-10-15T09:00:00+07:00",
+		},
+	],
+	prefs: NO_CHOICE,
+	active: NO_CHOICE,
+	models: STUB_TEXT_MODELS,
+};
+
+/** "Key riêng" before the user added any key: no AI use is available. */
+export const EMPTY_USER_KEYS: UserKeys = {
+	available: true,
+	keys: [],
+	prefs: NO_CHOICE,
+	active: NO_CHOICE,
+	models: STUB_TEXT_MODELS,
+};
+
 /** A key the stubbed provider refuses on save. */
 export const REJECTED_KEY = "sk-test-rejected-000000";
 
@@ -178,22 +207,11 @@ export const SIGNED_IN_USER: CurrentUser = {
 	email: "minh.anh@example.com",
 	canTranscribe: true,
 	plan: {
-		name: "free",
-		until: null,
 		quotaBytes: 200 * MB,
 		maxFileBytes: 200 * MB,
 		retentionDays: 7,
 	},
-	transcription: {
-		plan: "free",
-		planUntil: null,
-		usedMinutes: 42,
-		limitMinutes: 120,
-		resetsAt: "2026-11-01T00:00:00+07:00",
-		capReached: false,
-		paused: false,
-		daily: { usedMinutes: 12, limitMinutes: 30 },
-	},
+	transcription: null,
 };
 
 /** What a file uploaded on the record page becomes in "Lịch sử ghi". */
@@ -221,7 +239,6 @@ export function apiFixtures(overrides: Partial<ApiFixtures> = {}): ApiFixtures {
 			quotaBytes: 200 * MB,
 			maxFileBytes: 200 * MB,
 			retentionDays: 7,
-			plan: "free",
 		},
 		recordings: {
 			retentionDays: 7,
@@ -278,13 +295,9 @@ export function apiFixtures(overrides: Partial<ApiFixtures> = {}): ApiFixtures {
 		search: { results: [], total: 0 },
 		answer: { answer: "Không tìm thấy trong bản ghi.", citations: [] },
 		translation: null,
-		userKeys: {
-			available: true,
-			keys: [],
-			prefs: NO_CHOICE,
-			active: NO_CHOICE,
-			models: STUB_TEXT_MODELS,
-		},
+		// Scribe runs AI only on the user's keys: specs that exercise AI
+		// start with one; "Key riêng" specs start from `EMPTY_USER_KEYS`.
+		userKeys: OPENAI_USER_KEYS,
 		replies: {},
 		...overrides,
 	};
