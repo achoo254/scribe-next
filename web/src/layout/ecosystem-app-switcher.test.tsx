@@ -32,6 +32,7 @@ describe("EcosystemAppSwitcher", () => {
 			`https://miu.hoandat.com/?${UTM}`,
 			`https://webnhanh.hoandat.com/?${UTM}`,
 			`https://chat.hoandat.com/?${UTM}`,
+			`https://kb.hoandat.com/?${UTM}`,
 			`https://tieude.hoandat.com/?${UTM}`,
 			`https://localman.hoandat.com/?${UTM}`,
 			`https://tunnel.hoandat.com/?${UTM}`,
