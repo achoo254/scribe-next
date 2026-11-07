@@ -1,7 +1,7 @@
 ---
 title: "Scribe iOS — app ghi âm nền khi khoá màn hình"
 description: "App iOS hybrid (Capacitor + plugin Swift) tái dùng UI React (web/) và backend hiện tại; ghi âm sống sót khoá màn hình, cuộc gọi đến, chuyển app."
-status: in-progress
+status: paused
 priority: P1
 branch: "main"
 tags: [ios, capacitor, swift, avfoundation, mobile]
@@ -11,6 +11,8 @@ created: "2026-07-28"
 createdBy: "ak:plan"
 source: skill
 ---
+
+> Tạm dừng 07/11/2026: dừng App Store từ 02/11 (Apple từ chối Scribe, Miu, Localman theo 4.3 Spam). Xét lại khi web có khoảng 100 người dùng thường xuyên. Không huỷ.
 
 # Scribe iOS — app ghi âm nền khi khoá màn hình
 
