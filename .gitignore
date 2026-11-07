@@ -25,7 +25,7 @@ dist-ssr
 *.sw?
 
 # Rust / Cargo (server BE + core-split)
-/target/
+target/
 
 # Session signing key BE (tự sinh runtime — KHÔNG commit)
 .session-key
