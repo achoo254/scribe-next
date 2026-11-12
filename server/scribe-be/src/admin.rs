@@ -46,7 +46,7 @@ pub async fn run(config: &Config, db: &Database, args: &[String]) -> Result<Outc
             crate::notify::deliver(&http, config, "Thử kênh báo động của Scribe.").await?;
             Ok(json!({ "sent": true }).into())
         }
-        "busy" => busy(db, doc! {}).await,
+        "busy" => busy(db, &config.data_dir, doc! {}).await,
         _ => Err(usage_text()),
     }
 }
@@ -127,11 +127,13 @@ async fn shorten_retention(db: &Database, apply: bool) -> Result<Value, String> 
     Ok(out)
 }
 
-/// Việc mà restart sẽ cắt ngang: phiên ghi (`recording_sessions`) và phiên tải lên (`upload_sessions`) còn mở (doc bị
-/// xoá khi finalize, phiên bỏ dở do retention dọn sau một ngày) và lượt chép lời của tenant chính còn chờ hoặc đang chạy
-/// (`queued`, `running`, cả `held` thoáng qua lúc xếp một lượt nhiều tệp). Bước kích hoạt bản mới chờ lệnh này trả 0
-/// trước khi thay binary; còn việc thì mã thoát [`EXIT_BUSY`]. `scope` chỉ để test giới hạn vào doc của mình.
-async fn busy(db: &Database, scope: Document) -> Result<Outcome, String> {
+/// Việc mà restart sẽ cắt ngang: phiên ghi đang sống (`recording_sessions`, cùng định nghĩa với chặn xoá tài khoản:
+/// `recordings::count_live`, vừa mở hoặc vừa nhận chunk), phiên tải lên còn mở (`upload_sessions`) và lượt chép lời của
+/// tenant chính còn chờ hoặc đang chạy (`queued`, `running`, cả `held` thoáng qua lúc xếp một lượt nhiều tệp). Phiên ghi
+/// bỏ dở (đóng tab giữa chừng) còn doc tới khi retention dọn sau một ngày nhưng không tính, để không chặn deploy cả ngày.
+/// Bước kích hoạt bản mới chờ lệnh này trả 0 trước khi thay binary; còn việc thì mã thoát [`EXIT_BUSY`]. `scope` chỉ để
+/// test giới hạn vào doc của mình.
+async fn busy(db: &Database, data_dir: &str, scope: Document) -> Result<Outcome, String> {
     let count = |coll: &'static str, filter: Document| {
         let mut filter = filter;
         filter.extend(scope.clone());
@@ -142,7 +144,9 @@ async fn busy(db: &Database, scope: Document) -> Result<Outcome, String> {
                 .map_err(|e| format!("đếm {coll}: {e}"))
         }
     };
-    let recording = count("recording_sessions", doc! {}).await?;
+    let recording = crate::recordings::count_live(db, data_dir, scope.clone())
+        .await
+        .map_err(|e| format!("đếm recording_sessions: {e}"))?;
     let upload = count("upload_sessions", doc! {}).await?;
     let queue = count("transcripts", doc! { "status": { "$in": transcript::ACTIVE.to_vec() }, "tenantId": PRIMARY_ID }).await?;
     let busy = recording + upload + queue > 0;
@@ -158,6 +162,7 @@ mod tests {
 
     /// Trên Mongo thật (DB dev hoặc mongo của CI): `TRANSCRIPT_TEST_MONGO_URI=… TRANSCRIPT_TEST_DB_NAME=… cargo test
     /// -p scribe-be admin -- --ignored`. Chỉ đếm doc của user test này, vì test khác chạy song song cũng xếp lượt chép.
+    /// `.part` của phiên ghi nằm trong thư mục tạm riêng của test.
     #[tokio::test]
     #[ignore]
     async fn busy_counts_open_sessions_and_the_primary_queue_only() {
@@ -166,6 +171,7 @@ mod tests {
         let db = crate::db::connect(&uri, &db_name).await.expect("kết nối Mongo");
         let user = format!("selftest-{}", uuid::Uuid::new_v4().simple());
         let scope = doc! { "userId": &user };
+        let data_dir = std::env::temp_dir().join(format!("scribe-busy-{}", uuid::Uuid::new_v4())).to_string_lossy().into_owned();
         let check = |outcome: Outcome, rec: u64, up: u64, queue: u64| {
             assert_eq!(outcome.out["recordingSessions"], json!(rec));
             assert_eq!(outcome.out["uploadSessions"], json!(up));
@@ -173,7 +179,7 @@ mod tests {
             let busy = rec + up + queue > 0;
             assert_eq!((outcome.out["busy"].as_bool(), outcome.exit_code), (Some(busy), if busy { EXIT_BUSY } else { 0 }));
         };
-        check(busy(&db, scope.clone()).await.expect("rảnh"), 0, 0, 0);
+        check(busy(&db, &data_dir, scope.clone()).await.expect("rảnh"), 0, 0, 0);
 
         let transcripts = db.collection::<Document>("transcripts");
         let row = |status: &str, tenant: &str| doc! { "userId": &user, "status": status, "tenantId": tenant, "updatedAt": DateTime::now() };
@@ -181,18 +187,33 @@ mod tests {
             .insert_many([row("done", PRIMARY_ID), row("failed", PRIMARY_ID), row("queued", "ten_other")])
             .await
             .expect("lượt không tính");
-        check(busy(&db, scope.clone()).await.expect("lượt xong và tenant khác không tính"), 0, 0, 0);
+        check(busy(&db, &data_dir, scope.clone()).await.expect("lượt xong và tenant khác không tính"), 0, 0, 0);
         transcripts.insert_many([row("queued", PRIMARY_ID), row("running", PRIMARY_ID)]).await.expect("lượt chạy");
-        check(busy(&db, scope.clone()).await.expect("hàng đợi"), 0, 0, 2);
+        check(busy(&db, &data_dir, scope.clone()).await.expect("hàng đợi"), 0, 0, 2);
 
         let session = || doc! { "_id": uuid::Uuid::new_v4().to_string(), "userId": &user, "createdAt": DateTime::now() };
-        db.collection::<Document>("recording_sessions").insert_one(session()).await.expect("phiên ghi");
+        let recordings = db.collection::<Document>("recording_sessions");
+        // Bỏ dở: mở từ một giờ trước, `.part` không nhận chunk nào nữa ⟹ không chặn deploy.
+        let hour_ago = DateTime::from_millis(DateTime::now().timestamp_millis() - 3_600_000);
+        let abandoned = uuid::Uuid::new_v4().to_string();
+        recordings.insert_one(doc! { "_id": &abandoned, "userId": &user, "createdAt": hour_ago }).await.expect("phiên bỏ dở");
+        let tmp = format!("{data_dir}/{user}/tmp");
+        std::fs::create_dir_all(&tmp).expect("thư mục tmp");
+        let part = std::fs::File::create(format!("{tmp}/{abandoned}.part")).expect("part");
+        part.set_modified(std::time::SystemTime::now() - std::time::Duration::from_secs(3_600)).expect("mtime cũ");
+        check(busy(&db, &data_dir, scope.clone()).await.expect("phiên bỏ dở không tính"), 0, 0, 2);
+        // Đang ghi: mở từ lâu nhưng `.part` vừa nhận chunk; và một phiên vừa mở chưa có chunk.
+        let recording = uuid::Uuid::new_v4().to_string();
+        recordings.insert_one(doc! { "_id": &recording, "userId": &user, "createdAt": hour_ago }).await.expect("phiên đang ghi");
+        std::fs::write(format!("{tmp}/{recording}.part"), b"chunk").expect("chunk mới");
+        recordings.insert_one(session()).await.expect("phiên vừa mở");
         db.collection::<Document>("upload_sessions").insert_many([session(), session()]).await.expect("phiên tải");
-        check(busy(&db, scope.clone()).await.expect("đủ loại"), 1, 2, 2);
+        check(busy(&db, &data_dir, scope.clone()).await.expect("đủ loại"), 2, 2, 2);
 
         for coll in ["transcripts", "recording_sessions", "upload_sessions"] {
             db.collection::<Document>(coll).delete_many(scope.clone()).await.expect("dọn");
         }
-        check(busy(&db, scope).await.expect("dọn xong"), 0, 0, 0);
+        check(busy(&db, &data_dir, scope).await.expect("dọn xong"), 0, 0, 0);
+        let _ = std::fs::remove_dir_all(&data_dir);
     }
 }

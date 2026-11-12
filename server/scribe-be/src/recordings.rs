@@ -264,7 +264,11 @@ pub(crate) fn finalizable_size(size: u64) -> bool {
 }
 
 fn tmp_dir(state: &AppState, user_id: &str) -> String {
-    format!("{}/{}/tmp", state.config.data_dir, user_id)
+    user_tmp_dir(&state.config.data_dir, user_id)
+}
+
+fn user_tmp_dir(data_dir: &str, user_id: &str) -> String {
+    format!("{data_dir}/{user_id}/tmp")
 }
 
 /// Tổng byte các `.part` đang dở (chung tmp với upload → quota tính cả upload lẫn recording dở).
@@ -350,19 +354,30 @@ fn recording_alive(created_ms: i64, part_modified_ms: Option<i64>, now_ms: i64) 
 
 /// User có phiên ghi (trình duyệt) đang chạy không: xoá tài khoản từ chối khi đang ghi.
 pub(crate) async fn recording_live(state: &AppState, user_id: &str) -> Result<bool, AppError> {
-    let read = |e: mongodb::error::Error| AppError::Internal(format!("tra phiên ghi đang chạy: {e}"));
-    let mut cur = state
-        .db
-        .collection::<Document>(SESSIONS)
-        .find(doc! { "userId": user_id })
-        .projection(doc! { "_id": 1, "createdAt": 1 })
+    let live = count_live(&state.db, &state.config.data_dir, doc! { "userId": user_id })
         .await
-        .map_err(read)?;
+        .map_err(|e| AppError::Internal(format!("tra phiên ghi đang chạy: {e}")))?;
+    Ok(live > 0)
+}
+
+/// Số phiên ghi khớp `filter` còn sống theo [`recording_alive`] (`.part` nằm ở `{data_dir}/{userId}/tmp/`). Phiên bỏ dở
+/// (đóng tab giữa chừng) còn doc tới khi retention dọn nhưng không được tính.
+pub(crate) async fn count_live(db: &mongodb::Database, data_dir: &str, filter: Document) -> Result<u64, mongodb::error::Error> {
+    let mut cur = db
+        .collection::<Document>(SESSIONS)
+        .find(filter)
+        .projection(doc! { "_id": 1, "userId": 1, "createdAt": 1 })
+        .await?;
     let now = DateTime::now().timestamp_millis();
+    let mut live = 0;
     while let Some(d) = cur.next().await {
-        let d = d.map_err(read)?;
+        let d = d?;
         let created = d.get_datetime("createdAt").map_or(0, |t| t.timestamp_millis());
-        let modified = match d.get_str("_id").ok().and_then(|id| part_path(state, user_id, id).ok()) {
+        let path = match (d.get_str("userId"), d.get_str("_id")) {
+            (Ok(user_id), Ok(id)) => part_file(data_dir, user_id, id),
+            _ => None,
+        };
+        let modified = match path {
             Some(path) => tokio::fs::metadata(&path)
                 .await
                 .ok()
@@ -372,10 +387,10 @@ pub(crate) async fn recording_live(state: &AppState, user_id: &str) -> Result<bo
             None => None,
         };
         if recording_alive(created, modified, now) {
-            return Ok(true);
+            live += 1;
         }
     }
-    Ok(false)
+    Ok(live)
 }
 
 /// Một đoạn tải lên bắt đầu quá chừng này (phút) mà chưa finalize thì coi như bỏ dở (app bị gỡ, mất mạng hẳn).
@@ -404,8 +419,13 @@ pub(crate) async fn segment_uploading(state: &AppState, user_id: &str, session: 
 
 /// Path `.part` — session PHẢI là UUID hợp lệ (chống path-traversal).
 fn part_path(state: &AppState, user_id: &str, session_id: &str) -> Result<String, AppError> {
-    Uuid::parse_str(session_id).map_err(|_| AppError::BadRequest("session id không hợp lệ".into()))?;
-    Ok(format!("{}/{}.part", tmp_dir(state, user_id), session_id))
+    part_file(&state.config.data_dir, user_id, session_id).ok_or_else(|| AppError::BadRequest("session id không hợp lệ".into()))
+}
+
+/// `{data_dir}/{userId}/tmp/{session}.part`; `None` khi session không phải UUID.
+fn part_file(data_dir: &str, user_id: &str, session_id: &str) -> Option<String> {
+    Uuid::parse_str(session_id).ok()?;
+    Some(format!("{}/{session_id}.part", user_tmp_dir(data_dir, user_id)))
 }
 
 #[cfg(test)]
