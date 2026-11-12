@@ -59,7 +59,12 @@ async fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.first().map(String::as_str) == Some("admin") {
         match admin::run(&config, &db, &args[1..]).await {
-            Ok(out) => println!("{out:#}"),
+            Ok(outcome) => {
+                println!("{:#}", outcome.out);
+                if outcome.exit_code != 0 {
+                    std::process::exit(outcome.exit_code);
+                }
+            }
             Err(e) => {
                 eprintln!("{e}");
                 std::process::exit(2);

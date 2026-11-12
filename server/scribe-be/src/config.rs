@@ -1,7 +1,9 @@
 //! Cấu hình đọc từ biến nhúng compile-time (`option_env!`) + fallback dev.
 //!
 //! [Red-team #13] Dùng `option_env!` (KHÔNG `env!`) → máy dev thiếu secret vẫn `cargo check`/build
-//! được (fallback về localhost). Production: `build.rs` bake giá trị thật lúc build.
+//! được (fallback về localhost). Production: `build.rs` bake giá trị thật lúc build. Biến build chỉ chứa đường dẫn,
+//! URL công khai, id và cờ: mọi bí mật (kể cả URI Mongo, `MONGO_URI_PATH`) nằm trong tệp 600 trên server, đọc lúc
+//! khởi động, vì artifact build của repo public tải về được.
 //!
 //! Không có key AI của server (chủ dự án chốt 02/11/2026: mọi việc AI chạy bằng key riêng của người dùng, `user_keys`).
 //! Các biến cũ về key server, nhà cung cấp và hạn mức AI (`OPENAI_KEY_PATH`, `ELEVENLABS_KEY_PATH`, `GEMINI_KEY_PATH`,
@@ -174,7 +176,9 @@ impl Config {
             return Err(format!("thiếu biến build bắt buộc: {}", missing.join(", ")));
         }
         let get = |i: usize| required[i].1.unwrap_or_default();
-        Ok(Self::with_required(get(0), get(1), get(2), get(3), get(4)))
+        let mut config = Self::with_required(get(0), get(1), get(2), get(3), get(4));
+        config.mongo_uri = mongo_uri(option_env!("MONGO_URI_PATH"), option_env!("MONGO_URI"))?;
+        Ok(config)
     }
 
     /// Cấu hình từ các biến bắt buộc đã kiểm (theo thứ tự `DB_NAME`, `PUBLIC_URL`, `SESSION_KEY_PATH`, `DATA_DIR`,
@@ -188,9 +192,7 @@ impl Config {
     ) -> Self {
         Config {
             port: option_env!("PORT").and_then(|p| p.parse().ok()).unwrap_or(8787),
-            mongo_uri: option_env!("MONGO_URI")
-                .unwrap_or("mongodb://127.0.0.1:27017")
-                .to_string(),
+            mongo_uri: DEFAULT_MONGO_URI.to_string(),
             db_name: db_name.to_string(),
             public_url: public_url.trim_end_matches('/').to_string(),
             oidc_issuer: option_env!("OIDC_ISSUER").unwrap_or("https://auth.hoandat.com").to_string(),
@@ -254,6 +256,41 @@ impl Config {
     }
 }
 
+/// Mongo khi không đặt `MONGO_URI_PATH` lẫn `MONGO_URI` (dev với mongod không auth trên máy mình).
+const DEFAULT_MONGO_URI: &str = "mongodb://127.0.0.1:27017";
+
+/// URI Mongo: tệp `MONGO_URI_PATH` (prod: `/opt/scribe-be/.mongo-uri`, đọc lúc khởi động để binary không chứa mật khẩu)
+/// hoặc `MONGO_URI` nhúng lúc build (chỉ dev), không có cả hai thì mongod không auth trên máy. `build.rs` từ chối build
+/// khi đặt cả hai, nên không bao giờ phải chọn giữa hai nguồn.
+fn mongo_uri(path: Option<&str>, baked: Option<&str>) -> Result<String, String> {
+    match (path.filter(|p| !p.is_empty()), baked.filter(|u| !u.is_empty())) {
+        (Some(path), _) => read_mongo_uri_file(path),
+        (None, Some(uri)) => Ok(uri.to_string()),
+        (None, None) => Ok(DEFAULT_MONGO_URI.to_string()),
+    }
+}
+
+/// Đọc tệp URI Mongo như các tệp bí mật khác: chủ tệp đọc được thôi (600), một dòng `mongodb://` hoặc
+/// `mongodb+srv://`. Lỗi không bao giờ chứa nội dung tệp.
+fn read_mongo_uri_file(path: &str) -> Result<String, String> {
+    let meta = std::fs::metadata(path).map_err(|e| format!("không đọc được tệp URI Mongo {path} ({})", e.kind()))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if meta.permissions().mode() & 0o077 != 0 {
+            return Err(format!("tệp URI Mongo {path} phải có quyền 600 (chỉ chủ tệp đọc được)"));
+        }
+    }
+    #[cfg(not(unix))]
+    let _ = meta;
+    let raw = std::fs::read_to_string(path).map_err(|e| format!("không đọc được tệp URI Mongo {path} ({})", e.kind()))?;
+    let uri = raw.trim();
+    if !(uri.starts_with("mongodb://") || uri.starts_with("mongodb+srv://")) || uri.contains(char::is_whitespace) {
+        return Err(format!("tệp URI Mongo {path} phải chứa đúng một URI mongodb:// hoặc mongodb+srv://"));
+    }
+    Ok(uri.to_string())
+}
+
 /// `sub` của IdP so khớp tuyệt đối (phân biệt hoa thường), khác email.
 fn sub_listed(list: &[String], sub: &str) -> bool {
     !sub.is_empty() && list.iter().any(|s| s == sub)
@@ -288,6 +325,31 @@ mod tests {
         assert_eq!(transcribe_concurrency(Some("0")), 3);
         assert_eq!(transcribe_concurrency(Some("x")), 3);
         assert_eq!(transcribe_concurrency(Some("50")), 12);
+    }
+
+    #[test]
+    fn mongo_uri_comes_from_the_file_then_the_build_then_localhost() {
+        assert_eq!(mongo_uri(None, None).expect("mặc định"), DEFAULT_MONGO_URI);
+        assert_eq!(mongo_uri(Some(""), Some("mongodb://dev:27017")).expect("dev"), "mongodb://dev:27017");
+        let dir = std::env::temp_dir().join(format!("scribe-mongo-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).expect("thư mục");
+        let path = dir.join("mongo-uri");
+        let p = path.to_str().expect("utf8");
+        std::fs::write(&path, "mongodb://u:secret@127.0.0.1:27017/scribe?authSource=scribe\n").expect("ghi");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o640)).expect("chmod");
+            let wide = mongo_uri(Some(p), None).expect_err("640 bị từ chối");
+            assert!(!wide.contains("secret"), "lỗi không lộ nội dung");
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).expect("chmod");
+        }
+        assert_eq!(mongo_uri(Some(p), None).expect("tệp"), "mongodb://u:secret@127.0.0.1:27017/scribe?authSource=scribe");
+        std::fs::write(&path, "not-a-uri secret").expect("ghi");
+        let bad = mongo_uri(Some(p), None).expect_err("sai dạng");
+        assert!(!bad.contains("secret"), "lỗi không lộ nội dung");
+        assert!(mongo_uri(Some(dir.join("missing").to_str().expect("utf8")), Some("mongodb://dev")).is_err(), "thiếu tệp không rơi về URI nhúng");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

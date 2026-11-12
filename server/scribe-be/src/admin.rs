@@ -5,6 +5,7 @@
 //! scribe-be admin unblock <email>
 //! scribe-be admin notify-test
 //! scribe-be admin shorten-retention [--apply]
+//! scribe-be admin busy
 //! ```
 //!
 //! Chạy bằng user của service (`sudo -u <user> <binary> admin …`). Không khởi worker, sweeper hay
@@ -13,29 +14,46 @@
 
 use crate::config::Config;
 use crate::error::AppError;
-use crate::models::{file, session as sessions, storage, user};
+use crate::models::{file, session as sessions, storage, transcript, user};
+use crate::tenant::PRIMARY_ID;
 use mongodb::bson::{doc, DateTime, Document};
 use mongodb::Database;
 use serde_json::{json, Value};
 
-pub async fn run(config: &Config, db: &Database, args: &[String]) -> Result<Value, String> {
+/// Mã thoát của `admin busy` khi còn việc đang chạy (0 = rảnh, 2 = lỗi như mọi lệnh admin).
+pub const EXIT_BUSY: i32 = 3;
+
+/// Kết quả một lệnh admin: JSON in ra stdout và mã thoát của tiến trình.
+pub struct Outcome {
+    pub out: Value,
+    pub exit_code: i32,
+}
+
+impl From<Value> for Outcome {
+    fn from(out: Value) -> Self {
+        Outcome { out, exit_code: 0 }
+    }
+}
+
+pub async fn run(config: &Config, db: &Database, args: &[String]) -> Result<Outcome, String> {
     let (command, rest) = args.split_first().ok_or_else(usage_text)?;
     match command.as_str() {
-        "block" => block(db, rest, true).await,
-        "unblock" => block(db, rest, false).await,
-        "shorten-retention" => shorten_retention(db, args.iter().any(|a| a == "--apply")).await,
+        "block" => block(db, rest, true).await.map(Outcome::from),
+        "unblock" => block(db, rest, false).await.map(Outcome::from),
+        "shorten-retention" => shorten_retention(db, args.iter().any(|a| a == "--apply")).await.map(Outcome::from),
         "notify-test" => {
             let http = crate::notify::bot_client(reqwest::Client::builder(), config)?;
             crate::notify::deliver(&http, config, "Thử kênh báo động của Scribe.").await?;
-            Ok(json!({ "sent": true }))
+            Ok(json!({ "sent": true }).into())
         }
+        "busy" => busy(db, doc! {}).await,
         _ => Err(usage_text()),
     }
 }
 
 fn usage_text() -> String {
     "dùng: scribe-be admin block <email> [--reason <lý do>] | scribe-be admin unblock <email> | \
-     scribe-be admin notify-test | scribe-be admin shorten-retention [--apply]"
+     scribe-be admin notify-test | scribe-be admin shorten-retention [--apply] | scribe-be admin busy"
         .into()
 }
 
@@ -107,4 +125,74 @@ async fn shorten_retention(db: &Database, apply: bool) -> Result<Value, String> 
         audit(db, None, "admin.shorten_retention", details).await;
     }
     Ok(out)
+}
+
+/// Việc mà restart sẽ cắt ngang: phiên ghi (`recording_sessions`) và phiên tải lên (`upload_sessions`) còn mở (doc bị
+/// xoá khi finalize, phiên bỏ dở do retention dọn sau một ngày) và lượt chép lời của tenant chính còn chờ hoặc đang chạy
+/// (`queued`, `running`, cả `held` thoáng qua lúc xếp một lượt nhiều tệp). Bước kích hoạt bản mới chờ lệnh này trả 0
+/// trước khi thay binary; còn việc thì mã thoát [`EXIT_BUSY`]. `scope` chỉ để test giới hạn vào doc của mình.
+async fn busy(db: &Database, scope: Document) -> Result<Outcome, String> {
+    let count = |coll: &'static str, filter: Document| {
+        let mut filter = filter;
+        filter.extend(scope.clone());
+        async move {
+            db.collection::<Document>(coll)
+                .count_documents(filter)
+                .await
+                .map_err(|e| format!("đếm {coll}: {e}"))
+        }
+    };
+    let recording = count("recording_sessions", doc! {}).await?;
+    let upload = count("upload_sessions", doc! {}).await?;
+    let queue = count("transcripts", doc! { "status": { "$in": transcript::ACTIVE.to_vec() }, "tenantId": PRIMARY_ID }).await?;
+    let busy = recording + upload + queue > 0;
+    Ok(Outcome {
+        out: json!({ "busy": busy, "recordingSessions": recording, "uploadSessions": upload, "transcriptsActive": queue }),
+        exit_code: if busy { EXIT_BUSY } else { 0 },
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Trên Mongo thật (DB dev hoặc mongo của CI): `TRANSCRIPT_TEST_MONGO_URI=… TRANSCRIPT_TEST_DB_NAME=… cargo test
+    /// -p scribe-be admin -- --ignored`. Chỉ đếm doc của user test này, vì test khác chạy song song cũng xếp lượt chép.
+    #[tokio::test]
+    #[ignore]
+    async fn busy_counts_open_sessions_and_the_primary_queue_only() {
+        let uri = std::env::var("TRANSCRIPT_TEST_MONGO_URI").expect("TRANSCRIPT_TEST_MONGO_URI");
+        let db_name = std::env::var("TRANSCRIPT_TEST_DB_NAME").expect("TRANSCRIPT_TEST_DB_NAME");
+        let db = crate::db::connect(&uri, &db_name).await.expect("kết nối Mongo");
+        let user = format!("selftest-{}", uuid::Uuid::new_v4().simple());
+        let scope = doc! { "userId": &user };
+        let check = |outcome: Outcome, rec: u64, up: u64, queue: u64| {
+            assert_eq!(outcome.out["recordingSessions"], json!(rec));
+            assert_eq!(outcome.out["uploadSessions"], json!(up));
+            assert_eq!(outcome.out["transcriptsActive"], json!(queue));
+            let busy = rec + up + queue > 0;
+            assert_eq!((outcome.out["busy"].as_bool(), outcome.exit_code), (Some(busy), if busy { EXIT_BUSY } else { 0 }));
+        };
+        check(busy(&db, scope.clone()).await.expect("rảnh"), 0, 0, 0);
+
+        let transcripts = db.collection::<Document>("transcripts");
+        let row = |status: &str, tenant: &str| doc! { "userId": &user, "status": status, "tenantId": tenant, "updatedAt": DateTime::now() };
+        transcripts
+            .insert_many([row("done", PRIMARY_ID), row("failed", PRIMARY_ID), row("queued", "ten_other")])
+            .await
+            .expect("lượt không tính");
+        check(busy(&db, scope.clone()).await.expect("lượt xong và tenant khác không tính"), 0, 0, 0);
+        transcripts.insert_many([row("queued", PRIMARY_ID), row("running", PRIMARY_ID)]).await.expect("lượt chạy");
+        check(busy(&db, scope.clone()).await.expect("hàng đợi"), 0, 0, 2);
+
+        let session = || doc! { "_id": uuid::Uuid::new_v4().to_string(), "userId": &user, "createdAt": DateTime::now() };
+        db.collection::<Document>("recording_sessions").insert_one(session()).await.expect("phiên ghi");
+        db.collection::<Document>("upload_sessions").insert_many([session(), session()]).await.expect("phiên tải");
+        check(busy(&db, scope.clone()).await.expect("đủ loại"), 1, 2, 2);
+
+        for coll in ["transcripts", "recording_sessions", "upload_sessions"] {
+            db.collection::<Document>(coll).delete_many(scope.clone()).await.expect("dọn");
+        }
+        check(busy(&db, scope).await.expect("dọn xong"), 0, 0, 0);
+    }
 }
