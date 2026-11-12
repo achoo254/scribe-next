@@ -1,0 +1,122 @@
+# Continuous deploy of scribe.hoandat.com: after `CI` passes on a push to main, build the musl backend and the web,
+# pack the release (deploy/pack-release.sh), upload it as the restricted `scribe-deploy` user to
+# /opt/scribe-be/ci-incoming/<id> and switch through the one sudo command that user has
+# (deploy/activate-incoming.sh: waits until no recording, upload or transcription is open, binary swap with
+# scribe-be.prev kept, web assets kept for open tabs, /api/health, previous release back on failure).
+# Building (which runs dependency code) happens in a job without the deploy key; the deploy job only downloads the
+# artifact, uploads and activates it. The rule for every repo: docs/deploy-standard.md in the hoandat-app workspace;
+# Scribe specifics: docs/deploy-web-production.md.
+name: deploy
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+# Never cancel a deploy halfway; later runs wait their turn.
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      release_id: ${{ steps.release.outputs.id }}
+    env:
+      # Same public value as ci.yml; SCRIBE_BUILD_ENV may override it.
+      VITE_NATIVE_API_ORIGIN: https://scribe.hoandat.com
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+        with:
+          package_json_file: web/package.json
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+        working-directory: web
+      - name: rust musl toolchain
+        run: |
+          sudo apt-get update && sudo apt-get install -y --no-install-recommends musl-tools
+          rustup toolchain install stable --profile minimal --target x86_64-unknown-linux-musl --no-self-update
+          rustup default stable
+      # Build configuration of the backend and the web (dotenv): paths of the secret files on the server, public URLs,
+      # ids and flags. It holds no secret value: the Mongo URI is read at startup from MONGO_URI_PATH.
+      - name: build env
+        env:
+          SCRIBE_BUILD_ENV: ${{ secrets.SCRIBE_BUILD_ENV }}
+        run: |
+          [ -n "$SCRIBE_BUILD_ENV" ] || { echo "secret SCRIBE_BUILD_ENV is empty" >&2; exit 1; }
+          printf '%s\n' "$SCRIBE_BUILD_ENV" >"$RUNNER_TEMP/build.env"
+          (
+            set -a; . "$RUNNER_TEMP/build.env"; set +a
+            [ -z "${MONGO_URI:-}" ] || { echo "SCRIBE_BUILD_ENV must not set MONGO_URI (use MONGO_URI_PATH)" >&2; exit 1; }
+            [ -n "${MONGO_URI_PATH:-}" ] || { echo "SCRIBE_BUILD_ENV must set MONGO_URI_PATH" >&2; exit 1; }
+          )
+      - id: release
+        name: build release
+        env:
+          SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          echo "id=$(date -u +%Y%m%d-%H%M%S)-${SHA:0:12}" >>"$GITHUB_OUTPUT"
+          set -a; . "$RUNNER_TEMP/build.env"; set +a
+          cargo build --release --locked --target x86_64-unknown-linux-musl -p scribe-be
+          (cd web && pnpm exec vite build)
+          bash deploy/pack-release.sh release target/x86_64-unknown-linux-musl/release/scribe-be
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release
+          path: release/
+          retention-days: 7
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    # The activation may wait for another activation (up to 10 min) and for open recordings and transcriptions (10 min).
+    timeout-minutes: 30
+    environment: production
+    env:
+      RELEASE_ID: ${{ needs.build.outputs.release_id }}
+      # The server address and SSH port are secrets so the public repository does not show them.
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+      DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+      TARGET: scribe-deploy@${{ secrets.DEPLOY_HOST }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release
+          path: release/
+      - name: ssh setup
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" >~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$KNOWN_HOSTS" >~/.ssh/known_hosts
+          printf 'Host %s\n  Port %s\n  IdentityFile ~/.ssh/deploy_key\n  IdentitiesOnly yes\n  StrictHostKeyChecking yes\n' "$DEPLOY_HOST" "$DEPLOY_PORT" >~/.ssh/config
+      - name: upload and activate
+        run: |
+          rsync -rltz --chmod=Du=rwx,Dgo=rx,Fu=rw,Fgo=r release/ "$TARGET:/opt/scribe-be/ci-incoming/$RELEASE_ID/"
+          ssh "$TARGET" "sudo -n /usr/local/sbin/scribe-activate-incoming $RELEASE_ID"
+      - name: smoke from outside
+        run: |
+          code="$(curl -s -o /dev/null -w '%{http_code}' https://scribe.hoandat.com/)"
+          [ "$code" = 200 ] || { echo "https://scribe.hoandat.com/ -> $code" >&2; exit 1; }
+          curl -fsS https://scribe.hoandat.com/api/health | grep -q '"status":"ok"'
+          served="$(curl -fsS "https://scribe.hoandat.com/RELEASE?v=$RELEASE_ID" | tr -d '\r\n')"
+          [ "$served" = "$RELEASE_ID" ] || { echo "origin serves '$served', expected $RELEASE_ID" >&2; exit 1; }
+      - if: always()
+        run: rm -f ~/.ssh/deploy_key

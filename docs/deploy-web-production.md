@@ -1,6 +1,6 @@
 # Deploy Guide — Scribe Web (prod .65)
 
-Hướng dẫn build + deploy **Scribe** (web + backend dùng chung với app iPhone) (BE axum musl + FE React) lên box prod `.65`, bằng **deploy làm tay** (CI GitHub Actions chỉ kiểm, không deploy). Mục đích: AI Agent / dev có full context deploy mà không cần dò lại hạ tầng.
+Hướng dẫn build + deploy **Scribe** (web + backend dùng chung với app iPhone) (BE axum musl + FE React) lên box prod `.65`. **Deploy bình thường = push lên `main`**: CI xanh thì `.github/workflows/deploy.yml` build, đẩy và kích hoạt bản mới (§Deploy); script local `deploy/deploy.sh` chỉ dùng khi CI hỏng. Chuẩn chung của mọi repo: `docs/deploy-standard.md` ở workspace hoandat-app. Mục đích: AI Agent / dev có full context deploy mà không cần dò lại hạ tầng.
 
 ## Tên trên prod
 
@@ -11,7 +11,7 @@ Prod chạy đúng theo hai file mẫu trong `deploy/` (`scribe-be.service`, `ng
 | `DEPLOY_DOMAIN` | `scribe.hoandat.com` (Cloudflare → nginx) |
 | `DEPLOY_SERVICE` | `scribe-be` — systemd unit, cũng là tên file binary trong `DEPLOY_APP_DIR` |
 | `DEPLOY_USER` | `scribe` — user hệ thống chạy BE |
-| `DEPLOY_APP_DIR` | `/opt/scribe-be` (binary, `data/`, các tệp bí mật — xem §Tệp bí mật trên server) |
+| `DEPLOY_APP_DIR` | `/opt/scribe-be` (binary, `scribe-be.prev`, `data/`, `ci-incoming/`, các tệp bí mật — xem §Tệp bí mật trên server) |
 | `DEPLOY_WEB_ROOT` | `/var/www/scribe/dist` |
 | `DEPLOY_NGINX_CONF` | `/etc/nginx/conf.d/scribe.conf` |
 
@@ -74,19 +74,21 @@ Cloudflare (DNS proxied, SSL "Full")
 
 | Thành phần | Path trên .65 | Nguồn (repo) |
 |---|---|---|
-| BE binary | `/opt/scribe-be/scribe-be` | `cargo zigbuild` (xem §Deploy) → `x86_64-unknown-linux-musl/release/scribe-be` trong thư mục target |
+| BE binary | `/opt/scribe-be/scribe-be` (bản trước: `scribe-be.prev`) | `cargo build --target x86_64-unknown-linux-musl` trong `deploy.yml`, hoặc `cargo zigbuild` trong `deploy/deploy.sh` (§Deploy) |
 | systemd unit | `/etc/systemd/system/scribe-be.service` | `deploy/scribe-be.service` |
+| Bước kích hoạt release | `/usr/local/sbin/scribe-activate-incoming` (user `scribe-deploy` chỉ sudo được lệnh này) | `deploy/activate-incoming.sh`, cài bằng `deploy/setup-deploy-user.sh` |
 | nginx vhost | `/etc/nginx/conf.d/scribe.conf` | `deploy/nginx-scribe.conf` |
 | nginx header bảo mật | `/etc/nginx/scribe/security-headers.inc` | `deploy/nginx-scribe-security-headers.inc` (§Header bảo mật) |
 | nginx phần chung (`/api/`, `/mcp`, `/.well-known/oauth-protected-resource*`, web tĩnh, `/assets/`) | `/etc/nginx/scribe/locations.inc` | `deploy/nginx-scribe-locations.inc` |
-| FE static | `/var/www/scribe/dist` | `web/` → `pnpm run build` → `web/dist` |
+| FE static | `/var/www/scribe/dist` (bản trước: `dist.prev`; `RELEASE` = mã release) | `web/` → `vite build` → `web/dist` |
 
 ### Tệp bí mật trên server
 
-Tất cả trong `/opt/scribe-be`, chủ `scribe`, quyền 600, ghi bằng stdin (không qua argv), không bao giờ in. Đường dẫn là biến build; nội dung đọc lúc khởi động, nên đổi tệp xong phải restart.
+Tất cả trong `/opt/scribe-be`, chủ `scribe`, quyền 600, ghi bằng stdin (không qua argv), không bao giờ in. Đường dẫn là biến build; nội dung đọc lúc khởi động, nên đổi tệp xong phải restart. Binary và artifact build **không chứa bí mật nào** (repo public, artifact tải về được): biến build chỉ là đường dẫn, URL công khai, id và cờ.
 
 | Tệp | Biến build | Ghi chú |
 |---|---|---|
+| `.mongo-uri` | `MONGO_URI_PATH` | URI Mongo prod (user `scribe`, db `scribe`), một dòng. BE dừng lúc khởi động nếu thiếu tệp, sai dạng hoặc quyền rộng hơn 600; bước kích hoạt từ chối deploy khi chưa có tệp. Tạo một lần (từ 12/11/2026), giá trị là `MONGO_URI` trong `.env.production`: `printf '%s\n' "$MONGO_URI" \| ssh … 'test -e /opt/scribe-be/.mongo-uri \|\| install -m 600 -o scribe -g scribe /dev/stdin /opt/scribe-be/.mongo-uri'`. Đổi mật khẩu Mongo thì ghi lại tệp rồi restart |
 | `.session-key` | `SESSION_KEY_PATH` | BE tự sinh nếu chưa có; khoá mã hoá refresh token IdP của thiết bị |
 | `.oidc-web-secret` | `OIDC_WEB_CLIENT_SECRET_PATH` | Secret của client `scribe-web`; phía IdP là `SCRIBE_WEB_CLIENT_SECRET` trong `/var/www/hoandat-auth/.env` — đổi thì đổi cả hai |
 | `.user-keys-secret` | `USER_KEYS_SECRET_PATH` | 32 byte ngẫu nhiên mã hoá "Key riêng" (key API người dùng tự nhập), §Key riêng. Thiếu tệp hoặc quyền khác 600 ⟹ tính năng tắt, giao diện báo |
@@ -99,7 +101,8 @@ Tất cả trong `/opt/scribe-be`, chủ `scribe`, quyền 600, ghi bằng stdin
 - **Binary KHÔNG đọc env lúc chạy** → KHÔNG dùng systemd `EnvironmentFile`.
 - **Danh sách biến là `server/scribe-be/build.rs`** (biến nào không có ở đó thì không vào binary); mặc định và ý nghĩa ở `server/scribe-be/src/config.rs`.
 - **Bắt buộc lúc build:** `DB_NAME`, `PUBLIC_URL`, `SESSION_KEY_PATH`, `DATA_DIR`, `OIDC_WEB_CLIENT_SECRET_PATH`. Thiếu biến nào thì binary **dừng ngay khi khởi động** và log tên biến thiếu (để không bao giờ chạy với database hay thư mục sai).
-- **Tuỳ chọn:** `MONGO_URI` (mặc định `mongodb://127.0.0.1:27017`), `PORT` (`8787`), `ALLOWED_DOMAINS`, `ALLOWED_EMAILS`, các biến OIDC, `TRANSCRIBE_CONCURRENCY`, `USER_KEYS_SECRET_PATH`, các biến báo động và liên kết chat (bảng dưới).
+- **URI Mongo:** prod đặt `MONGO_URI_PATH` (tệp đọc lúc khởi động). `MONGO_URI` (nhúng cả URI vào binary) chỉ còn cho dev; `build.rs` dừng build khi đặt cả hai, không đặt cái nào thì dùng `mongodb://127.0.0.1:27017`. `.env.production` vẫn giữ `MONGO_URI` cho script mongosh của skill `scribe-ops-prod`; `deploy/deploy.sh` bỏ nó trước khi build.
+- **Tuỳ chọn:** `PORT` (`8787`), `ALLOWED_DOMAINS`, `ALLOWED_EMAILS`, các biến OIDC, `TRANSCRIBE_CONCURRENCY`, `USER_KEYS_SECRET_PATH`, các biến báo động và liên kết chat (bảng dưới).
 
 > Đổi bất kỳ biến nào = **build lại binary** rồi redeploy; sửa env trên server vô tác dụng.
 
@@ -107,7 +110,7 @@ Tất cả trong `/opt/scribe-be`, chủ `scribe`, quyền 600, ghi bằng stdin
 
 | Biến | Giá trị / nguồn |
 |---|---|
-| `MONGO_URI` | Mongo URI prod (user `scribe`, db `scribe`) — chỉ có trong `.env.production` |
+| `MONGO_URI_PATH` | `/opt/scribe-be/.mongo-uri` (§Tệp bí mật trên server). Dev có thể đặt `MONGO_URI` thay (nhúng lúc build), không cả hai |
 | `PORT` | `8787` (khớp systemd + nginx proxy) |
 | `DB_NAME` | `scribe` |
 | `PUBLIC_URL` | `https://scribe.hoandat.com` — origin trình duyệt thấy: dựng redirect OIDC `/api/auth/callback`; `https://` thì cookie là `__Host-scribe` + `Secure` |
@@ -163,8 +166,9 @@ Tuỳ chọn: `VITE_IDP_ORIGIN` — origin auth-next cho link "Tài khoản hoan
 
 ## CI và repo
 
-- **Repo duy nhất là GitHub** (`origin` = `achoo254/scribe-next`, private). GitLab đã bỏ hoàn toàn ngày 2026-10-16.
-- **CI** `.github/workflows/ci.yml` chạy mỗi lần push `main` và mỗi pull request, **chỉ kiểm, không deploy**: job `web` (`pnpm install --frozen-lockfile`, `lint` gồm `check:brand` và `check:tokens`, `typecheck`, `test`, `vite build`), job `rust` (`cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`, có ffmpeg cho test cắt file thật). CI build với `VITE_NATIVE_API_ORIGIN=https://scribe.hoandat.com` khai trong workflow.
+- **Repo duy nhất là GitHub** (`origin` = `achoo254/scribe-next`, **public**: không ghi IP, cổng SSH hay user máy chủ vào repo). GitLab đã bỏ hoàn toàn ngày 2026-10-16.
+- **CI** `.github/workflows/ci.yml` (tên workflow `CI`) chạy mỗi lần push `main` và mỗi pull request: job `web` (`pnpm install --frozen-lockfile`, `lint` gồm `check:brand` và `check:tokens`, `typecheck`, `test`, `vite build`), job `rust` (`cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`, có ffmpeg cho test cắt file thật). CI build với `VITE_NATIVE_API_ORIGIN=https://scribe.hoandat.com` khai trong workflow.
+- **Deploy** `.github/workflows/deploy.yml` chạy khi `CI` xanh trên push vào `main` (§Deploy). Secret GitHub: `SCRIBE_BUILD_ENV` (cấp repo; nội dung dotenv gồm biến build của BE như `.env.production` bỏ `MONGO_URI` và `DEPLOY_*`, thêm `MONGO_URI_PATH`, cộng các biến `VITE_*` của `web/.env`; không có giá trị bí mật nào, đổi biến build thì cập nhật cả secret này: `gh secret set SCRIBE_BUILD_ENV < <tệp>`), `DEPLOY_HOST`, `DEPLOY_PORT`, `DEPLOY_SSH_KEY` (khoá ed25519 riêng của `scribe-deploy`), `DEPLOY_KNOWN_HOSTS`; environment `production`.
 
 ### SSH source-IP allowlist
 
@@ -197,19 +201,47 @@ nginx -t && systemctl reload nginx
 
 # 4) MongoDB: mongod chung 27017 có auth → tạo user riêng chỉ có readWrite + dbAdmin trên $DB_NAME
 #    (cần tài khoản quản trị mongo_admin_* của entry SSH_SERVER_STAGING, mật khẩu qua stdin),
-#    rồi cập nhật MONGO_URI trong .env.production.
+#    rồi cập nhật MONGO_URI trong .env.production và ghi /opt/scribe-be/.mongo-uri (§Tệp bí mật trên server).
 
 # 5) Tệp bí mật (§Tệp bí mật trên server): ghi bằng stdin, chown $DEPLOY_USER, chmod 600.
 #    Client scribe-web phải có cùng secret trong /var/www/hoandat-auth/.env (SCRIBE_WEB_CLIENT_SECRET).
+
+# 6) User deploy của CI: chép deploy/ lên server rồi (khoá công khai ed25519 mới qua stdin)
+#      bash deploy/setup-deploy-user.sh < scribe-deploy.pub
+#    → user scribe-deploy (khoá có tiền tố `restrict`: không forward cổng, không pty), chỉ ghi được
+#    /opt/scribe-be/ci-incoming (750), sudoers đúng một lệnh /usr/local/sbin/scribe-activate-incoming
+#    (cài từ deploy/activate-incoming.sh). Khoá riêng vào secret DEPLOY_SSH_KEY.
 ```
 
 > Chỉ THÊM server block nginx cho Scribe — KHÔNG sửa 14 vhost khác trên box shared. `nginx -t` trước mọi reload.
 
-## Deploy (làm tay)
+## Deploy
+
+**Bình thường: push lên `main`, rồi theo dõi** `gh run watch` (CI rồi tới workflow `deploy`). Không chạy script deploy từ máy khi CI còn chạy được.
+
+`deploy.yml` có hai job:
+
+1. **build** (không thấy khoá deploy): checkout đúng commit CI đã kiểm, nạp `SCRIBE_BUILD_ENV`, `cargo build --release --target x86_64-unknown-linux-musl -p scribe-be` (musl-tools trên ubuntu), `pnpm exec vite build`, `deploy/pack-release.sh` đóng gói `scribe-be` + `web/` vào `release/` (từ chối binary có URI Mongo kèm mật khẩu), upload artifact. Mã release `YYYYMMDD-HHMMSS-<sha 12 ký tự>` (UTC).
+2. **deploy** (`environment: production`, `concurrency: deploy-prod`, không huỷ giữa chừng): `rsync` artifact vào `scribe-deploy@<server>:/opt/scribe-be/ci-incoming/<id>/`, chạy `sudo -n /usr/local/sbin/scribe-activate-incoming <id>`, rồi kiểm từ ngoài: `https://scribe.hoandat.com/` 200, `/api/health` `ok`, `/RELEASE` đúng mã release.
+
+**Bước kích hoạt** (`deploy/activate-incoming.sh`, cài thành `/usr/local/sbin/scribe-activate-incoming`, chạy bằng root):
+
+- kiểm mã release, giữ khoá `flock /run/scribe-activate.lock` (CI và đường dự phòng xếp hàng, chờ tối đa 10 phút);
+- từ chối khi chưa có `/opt/scribe-be/.mongo-uri` (báo cách tạo);
+- chuyển `ci-incoming/<id>` sang thư mục staging của root (`/var/lib/scribe-release/incoming`), từ chối link và file đặc biệt, đòi có `scribe-be` và `web/index.html`;
+- đặt binary mới cạnh binary đang chạy (`scribe-be.new`, chủ `scribe`, 700) và chạy **`scribe-be.new admin busy`** bằng user `scribe`: bản mới phải khởi động được với cấu hình và Mongo của server. Còn phiên ghi, phiên tải lên hay lượt chép lời đang mở thì hỏi lại mỗi 15 giây, tối đa 10 phút; vẫn bận thì thoát 1, **bản đang chạy không bị đụng** (push lại hoặc chạy lại workflow sau);
+- sao lưu binary (`/opt/scribe-be/scribe-be.prev`) và web root (`/var/www/scribe/dist.prev`), thay binary bằng `mv -f` (atomic), web: `assets/` mới chép trước **không** `--delete` (tab đang mở bản cũ vẫn tải được chunk cũ; tệp cũ trong `assets/` dọn ở lần sau khi cần), phần còn lại `--delete --exclude /assets/`, ghi mã release vào `RELEASE` của web root;
+- `systemctl restart scribe-be`, đợi `http://127.0.0.1:8787/api/health` tối đa 30 giây; hỏng thì trả binary `.prev` và web root `.prev` về, restart, thoát 1.
+
+nginx và systemd unit **không** đổi theo mỗi lần deploy: đổi chúng vẫn làm tay (§Setup, §Header bảo mật).
+
+**`scribe-be admin busy`** (cùng binary, chạy bằng user của service): in JSON `busy`, `recordingSessions` (doc trong `recording_sessions`), `uploadSessions` (`upload_sessions`), `transcriptsActive` (`transcripts` của tenant `primary` ở `queued`, `running` hoặc `held` thoáng qua lúc xếp một lượt nhiều tệp); thoát 0 khi tất cả bằng 0, 3 khi bận, khác (2) khi lỗi. Phiên ghi bỏ dở (đóng tab giữa chừng) còn doc tới khi retention dọn (sau một ngày, sweep mỗi giờ): trong lúc đó deploy báo bận.
+
+**Quay lại bản trước** (trên server, root): `install -o scribe -g scribe -m 700 /opt/scribe-be/scribe-be.prev /opt/scribe-be/scribe-be.new && mv -f /opt/scribe-be/scribe-be.new /opt/scribe-be/scribe-be && rsync -a --delete /var/www/scribe/dist.prev/ /var/www/scribe/dist/ && systemctl restart scribe-be`. Hoặc revert commit rồi push. Rollback code không đảo ngược dữ liệu.
 
 > **AI chỉ chạy bằng key riêng của người dùng (chủ dự án chốt 02/11/2026).** Server không có key AI nào: chép lời (cả phiên iPhone), chép trực tiếp, biên bản, hỏi đáp (cả `scribe_ask` của MCP) và dịch chạy bằng key người dùng thêm ở "Key riêng"; chưa có key hợp lệ cho việc đó thì API trả 403 `NO_USER_KEY` (app iPhone/Android dừng chép trực tiếp với câu đó, bản ghi vẫn tiếp tục). Không còn phút, lượt ngày, quỹ free, trần tổng, sổ giờ ElevenLabs, cờ tạm ngưng hay allow-list email AI; dung lượng, cỡ tệp và rate limit vẫn áp. Lượt chép lời cũ thời key server còn dở lúc deploy dừng với câu bảo thêm key rồi chép lại. Tệp `.openai-key`, `.elevenlabs-key`, `.gemini-key`, `.anthropic-key` trên server không còn được đọc (gỡ được). Doc sổ cũ (`transcribe_usage` `u:`/`free:`/`all:`/`d:`/`el:`, `summary_usage`, `transcribe_marks`) để nguyên, không còn đọc hay ghi.
 >
-> **Restart BE khi đang chép lời:** lượt đang chạy được xếp lại và chạy từ đầu (audio gửi lại bị tính tiền lần nữa trên key của người dùng); lượt đã bị cắt ngang một lần thì dừng hẳn. Vẫn nên chờ hàng đợi rỗng trước khi restart: đếm `db.transcripts.countDocuments({status:{$in:["queued","running"]}})` qua `scripts/prod-mongosh.sh` của skill `scribe-ops-prod`.
+> **Restart BE khi đang chép lời:** lượt đang chạy được xếp lại và chạy từ đầu (audio gửi lại bị tính tiền lần nữa trên key của người dùng); lượt đã bị cắt ngang một lần thì dừng hẳn. Bước kích hoạt tự chờ hàng đợi rỗng (`admin busy`); restart tay ngoài deploy thì tự chạy `admin busy` trước.
 >
 > Chép lời bằng ElevenLabs: một tệp (bản ghi trình duyệt, tệp tải lên) = một request; **phiên iPhone = một request cho cả phiên**: ffmpeg ghép các đoạn theo thứ tự rồi chia câu về lại từng đoạn, nhãn người nói nhất quán cả phiên. Audio gửi đi là Opus mono 16 kHz 32 kbps (khoảng 14 MB mỗi giờ); tệp hay phiên hoàn toàn im lặng (đỉnh < −30 dB) không gửi. Đoạn tải lên muộn (sau khi phiên đã chép) làm lần bấm chép tiếp theo **chép lại cả phiên**. OpenAI (`gpt-transcribe`) và Gemini chép theo mảnh ≤45 giây.
 >
@@ -220,7 +252,7 @@ nginx -t && systemctl reload nginx
 > Số giây chép bằng key riêng ở sổ `b:<userId>:<tháng>` (`transcribe_usage`) chỉ để người dùng xem; sổ chi tiết `transcribe_runs`, `summary_runs`/`ask_runs`/`translate_runs` có `byok` và token. Key lỗi lúc dùng (sai, thu hồi, hết credit) chỉ đánh dấu key đó (audit `user_key.failed`). Thiếu tệp bí mật ⟹ tính năng Key riêng tắt và **mọi việc AI bị từ chối**. Audit `user_key.save|delete|rejected|prefs` không có key.
 >
 > **Dung lượng** (một mức cho mọi người, hằng `LIMITS` trong `server/scribe-be/src/models/storage.rs`, không phải biến build; chủ dự án bỏ gói free/plus ngày 02/11/2026): tổng 200 MB, mỗi tệp tối đa 200 MB, tệp mới tự xoá sau 7 ngày. Hạn tệp ghi lúc tạo (`expiresAt`) và sweep chỉ xoá theo hạn đó: tệp tạo thời còn gói plus giữ hạn 14 ngày của nó, không bị xoá lúc deploy. User đang vượt 200 MB giữ tệp, chỉ bị chặn ghi và tải mới (413, cả đoạn iPhone tải lên) tới khi xoá bớt. Trường `plan`/`planUntil` cũ trong `users` không còn được đọc. `DELETE /api/files` ("Xoá tất cả") xoá mọi bản ghi và tệp tải lên của user cùng bản chép lời, biên bản, dấu mốc và câu trong index.
-> Lệnh quản trị (chạy trên `.65` bằng user của service, cấu hình nhúng trong binary): `sudo -u $DEPLOY_USER $DEPLOY_APP_DIR/$DEPLOY_SERVICE admin shorten-retention [--apply]`: tệp của mọi user có hạn dài hơn 7 ngày về `expiresAt = min(expiresAt, createdAt + 7 ngày)`. Không tự chạy; không `--apply` thì chỉ in số tệp, số user và số tệp sẽ bị sweep xoá ở vòng kế tiếp (tối đa một giờ); sao lưu trước khi `--apply` (audit `admin.shorten_retention`). Khoá tài khoản: `… admin block <email> [--reason <lý do>]` (chặn đăng nhập và mọi việc AI, xoá phiên; server đang chạy còn nhớ phiên tối đa 30 giây) / `… admin unblock <email>`. Lệnh `set-plan`, `usage`, `elevenlabs-quota` đã bỏ.
+> Lệnh quản trị (chạy trên `.65` bằng user của service, cấu hình nhúng trong binary): `sudo -u $DEPLOY_USER $DEPLOY_APP_DIR/$DEPLOY_SERVICE admin shorten-retention [--apply]`: tệp của mọi user có hạn dài hơn 7 ngày về `expiresAt = min(expiresAt, createdAt + 7 ngày)`. Không tự chạy; không `--apply` thì chỉ in số tệp, số user và số tệp sẽ bị sweep xoá ở vòng kế tiếp (tối đa một giờ); sao lưu trước khi `--apply` (audit `admin.shorten_retention`). Việc đang mở (bước kích hoạt dùng): `… admin busy` (§Deploy). Khoá tài khoản: `… admin block <email> [--reason <lý do>]` (chặn đăng nhập và mọi việc AI, xoá phiên; server đang chạy còn nhớ phiên tối đa 30 giây) / `… admin unblock <email>`. Lệnh `set-plan`, `usage`, `elevenlabs-quota` đã bỏ.
 >
 > **Kênh báo qua bot chat.hoandat.com** (`@bot_scribe_bot`, nhắn vào chat riêng của chủ sản phẩm): biến build `NOTIFY_CHAT_ID` (chat id của chủ sản phẩm, lấy từ `GET /bot/v1/updates` sau khi bấm "Bắt đầu" với bot) + `NOTIFY_BOT_TOKEN_PATH` (`/opt/scribe-be/.notify-bot-token`, chủ `$DEPLOY_USER`, 600, ghi bằng stdin); `NOTIFY_BOT_API` mặc định `https://chat.hoandat.com/bot/v1`. Các báo động về quỹ, trần và key server đã bỏ cùng key server. Thử: `… admin notify-test`.
 >
@@ -237,40 +269,17 @@ nginx -t && systemctl reload nginx
 >
 > **Đổi dữ liệu chép lời (`transcripts`):** chạy `scripts/transcripts-audit.js` (chỉ đọc) trước, và `mongodump --db "$DB_NAME" --collection transcripts` vào thư mục sao lưu ngay trước deploy. Khôi phục khi dữ liệu hỏng: `mongorestore --drop --nsInclude "$DB_NAME.transcripts" <thư mục sao lưu>`.
 
-Cần `cargo-zigbuild` (build chéo musl trên macOS: `brew install zig`, `rustup target add x86_64-unknown-linux-musl`, `cargo install cargo-zigbuild --locked`), cộng SSH key `.65`.
+### Đường dự phòng: `deploy/deploy.sh`
 
-> Build backend bằng `cargo zigbuild` (script Docker `scripts/build-musl.sh` cũ đã bỏ ngày 2026-10-16: còn đòi biến Firebase và không chuyển biến OIDC/hạn mức vào container).
+Chỉ khi GitHub Actions không deploy được. Chạy từ máy dev (macOS cần `brew install zig`, `rustup target add x86_64-unknown-linux-musl`, `cargo install cargo-zigbuild --locked`; SSH root qua `prod-ssh.sh` của skill `scribe-ops-prod`):
 
 ```bash
-set -a; . "$(scripts/env-dir.sh)/.env.production"; set +a
-
-# 1) Build BE musl (cấu hình lấy từ .env.production, KHÔNG hardcode)
-cargo zigbuild --release --target x86_64-unknown-linux-musl -p scribe-be
-#    → target/x86_64-unknown-linux-musl/release/scribe-be
-
-# 2) Build FE
-cd web && pnpm install --frozen-lockfile && pnpm run build && cd ..   # → web/dist
-
-# 3) Đẩy lên .65 (KEY = file tạm chứa private key, xem mục Server)
-rsync -avz -e "ssh -i $KEY -p <SSH_PORT>" target/x86_64-unknown-linux-musl/release/scribe-be <user>@<SERVER_65_IP>:/tmp/scribe-be.new
-rsync -avz --delete -e "ssh -i $KEY -p <SSH_PORT>" web/dist/ <user>@<SERVER_65_IP>:/tmp/scribe-fe/
-ssh -i "$KEY" -p <SSH_PORT> <user>@<SERVER_65_IP> "
-  set -e
-  install -o $DEPLOY_USER -g $DEPLOY_USER -m 700 /tmp/scribe-be.new $DEPLOY_APP_DIR/$DEPLOY_SERVICE.new
-  mv -f $DEPLOY_APP_DIR/$DEPLOY_SERVICE.new $DEPLOY_APP_DIR/$DEPLOY_SERVICE
-  rm -f /tmp/scribe-be.new
-  rsync -a /tmp/scribe-fe/assets/ $DEPLOY_WEB_ROOT/assets/
-  rsync -a --delete --exclude /assets/ /tmp/scribe-fe/ $DEPLOY_WEB_ROOT/
-  rm -rf /tmp/scribe-fe
-  systemctl restart $DEPLOY_SERVICE && sleep 2 && systemctl is-active $DEPLOY_SERVICE"
-rm -f "$KEY"
+bash deploy/deploy.sh
 ```
 
-Skill SSH lab không có rsync: đẩy bản build FE bằng `tar -C web/dist -czf - . | lab-ssh.sh 65 "tar -xzf - -C /tmp/scribe-fe"` (cách skill `scribe-ops-prod` làm: §6 của skill). Sao lưu trước mỗi lần thay bản vào `/root/scribe-backup-<YYYYMMDD-HHMMSS>/` (binary `scribe-be.prev`, `dist/`, dump Mongo khi cần); không có cron backup. Đóng gói `web/dist` bằng `tar` trên macOS thì đặt `COPYFILE_DISABLE=1` để không mang theo tệp `._*` vào web root. Hook của Claude chặn lệnh Bash có chữ `dist`: đặt các bước đẩy và thay web root vào một script rồi chạy script đó. Quay lại bản trước: `install` binary `.prev` từ thư mục sao lưu thành `$DEPLOY_APP_DIR/$DEPLOY_SERVICE.new`, `mv -f` đè lên binary rồi `systemctl restart $DEPLOY_SERVICE`.
+Script từ chối khi worktree còn thay đổi, `HEAD` chưa nằm trên `origin/main`, hoặc commit chưa có lần `CI` xanh (máy dev không chạy full test). Rồi nạp `.env.production` bỏ `MONGO_URI` (đòi có `MONGO_URI_PATH`), `cargo zigbuild` musl, `pnpm run build` (đọc `web/.env` trên iCloud), đóng gói bằng `deploy/pack-release.sh`, đẩy lên `ci-incoming/<id>` bằng root, cài `deploy/activate-incoming.sh` của commit đó và chạy **cùng bước kích hoạt** như CI (chung khoá, chờ hết bận, tự quay lại khi health hỏng), cuối cùng kiểm `/RELEASE` từ ngoài.
 
-> **Deploy web:** chỉ deploy khi không còn phiên ghi hay phiên tải lên đang mở và hàng đợi chép lời rỗng. Phiên mở là doc còn trong `recording_sessions` / `upload_sessions` (finalize thì doc bị xoá, `server/scribe-be/src/recordings.rs`, `upload.rs`; phiên bỏ dở do `retention.rs` dọn); hàng đợi đếm như ở đầu §Deploy. Giữ `assets/` của bản trước để tab đang mở bản cũ không bị 404 khi tải tệp trong `assets/`: rsync `assets/` không `--delete` và chạy trước, nên `index.html` mới không trỏ tới tệp chưa có. Tệp cũ trong `assets/` dọn ở lần deploy sau.
->
-> **Thay binary đang chạy:** dùng `mv` (atomic rename) — tránh `ETXTBSY` khi ghi đè executable đang chạy. rsync mặc định (không `--inplace`) cũng an toàn.
+> **Thay binary đang chạy:** dùng `mv` (atomic rename) — tránh `ETXTBSY` khi ghi đè executable đang chạy.
 
 ## Verify sau deploy
 
@@ -283,6 +292,7 @@ curl -s http://127.0.0.1:8787/api/health       # → liveness OK
 # Từ ngoài:
 curl -sI "https://$DEPLOY_DOMAIN/"             # 200, FE index
 curl -s  "https://$DEPLOY_DOMAIN/api/health"   # liveness
+curl -s  "https://$DEPLOY_DOMAIN/RELEASE"      # mã release đang phục vụ (YYYYMMDD-HHMMSS-<sha12>)
 ```
 
 - [ ] Service active, không restart-loop (`systemctl status` restart count).

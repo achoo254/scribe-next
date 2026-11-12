@@ -1,5 +1,5 @@
-# Kiểm tra tự động cho web (React: lint, typecheck, unit, build) và backend (Rust). Chỉ kiểm, không deploy:
-# deploy prod lên .65 vẫn làm tay theo docs/deploy-web-production.md.
+# Kiểm tra tự động cho web (React: lint, typecheck, unit, build) và backend (Rust). CI xanh trên push vào main thì
+# deploy.yml build và deploy prod lên .65 (docs/deploy-web-production.md).
 name: CI
 
 on:
