@@ -43,7 +43,7 @@ export const legal: Translation<SourceMessages["legal"]> = {
 		},
 		rights: {
 			title: "你的权利",
-			body: "- <b>查看和下载：</b>播放并下载每条录音，在“录音记录”中使用“全部下载”，将文字稿导出为 TXT、SRT、VTT、Markdown 或 Word。\n- <b>编辑：</b>修改句子、标题和发言人名称。\n- <b>删除：</b>删除单条录音、“全部删除”、删除你的 API 密钥、取消关联 chat。\n- <b>删除账号：</b>在账号菜单中选择“删除账号”。Scribe 会立即删除你的所有文件、文字稿、会议纪要、译文、标记、搜索索引、API 密钥、chat 关联、登录会话和用量数据。安全日志会保留至 180 天期满，但不再包含你的邮箱、文件名或错误详情；费用数据以匿名形式保留。你的 {idpName} 账号由多个应用共用；请在 <account>auth.hoandat.com/account</account> 删除。\n- 其他数据请求（例如获取你账号数据的副本）：请按“联系方式”中的说明联系我们。",
+			body: "- <b>查看和下载：</b>播放并下载每条录音，在“录音记录”中使用“全部下载”，将文字稿导出为 TXT、SRT、VTT、Markdown 或 Word。\n- <b>编辑：</b>修改句子、标题和发言人名称。\n- <b>删除：</b>删除单条录音、“全部删除”、删除你的 API 密钥、取消关联 chat。\n- <b>删除账号：</b>账号只能在一个地方删除，即你的 {idpName} 账号页面（<accountDelete>auth.hoandat.com/account</accountDelete>；Scribe 的账号菜单有入口）。在那里删除后，所有使用该账号的应用中的数据都会随之删除，Scribe 会立即删除你的所有文件、文字稿、会议纪要、译文、标记、搜索索引、API 密钥、chat 关联、登录会话和用量数据。安全日志会保留至 180 天期满，但不再包含你的邮箱、文件名或错误详情；费用数据以匿名形式保留。\n- 其他数据请求（例如获取你账号数据的副本）：请按“联系方式”中的说明联系我们。",
 		},
 		security: {
 			title: "安全",
@@ -98,7 +98,7 @@ export const legal: Translation<SourceMessages["legal"]> = {
 		},
 		end: {
 			title: "终止",
-			body: "你可以随时通过账号菜单删除 Scribe 账号。对于违反本条款的账号，我们可能会予以封禁。",
+			body: "你可以随时在 auth.hoandat.com 的账号页面删除账号，Scribe 中的数据会随之删除。对于违反本条款的账号，我们可能会予以封禁。",
 		},
 		law: {
 			title: "适用法律",

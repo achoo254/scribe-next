@@ -58,7 +58,6 @@ export const errors = {
 	 */
 	server: {
 		notTranscribed: "Bản ghi chưa có đoạn nào chép lời xong. Chép lời trước.",
-		confirmRequired: "Gõ từ xác nhận để xoá tài khoản.",
 		chatLinkDisabled: "Liên kết chat chưa được bật trên máy chủ này.",
 		chatNotLinked: "Chưa liên kết chat.hoandat.com.",
 		chatBlocked:

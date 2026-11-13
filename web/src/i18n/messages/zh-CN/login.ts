@@ -20,8 +20,4 @@ export const login: Translation<SourceMessages["login"]> = {
 		failed: "登录失败。请稍后重试。",
 	},
 	failed: "登录失败",
-	accountDeleted:
-		"你的 Scribe 账号及所有数据已删除。你的 {idpName} 账号仍保留在 auth.hoandat.com。",
-	accountDeletedPending:
-		"你的 Scribe 账号已删除。其余数据将在一小时内删除完毕。",
 };

@@ -8,7 +8,7 @@ import { LoginPage } from "./login-page";
 const auth = vi.hoisted(() => ({ login: vi.fn(async () => undefined) }));
 
 vi.mock("../auth/auth-context", () => ({
-	useAuth: () => ({ login: auth.login, accountDeleted: undefined }),
+	useAuth: () => ({ login: auth.login }),
 }));
 
 function renderAt(url: string) {

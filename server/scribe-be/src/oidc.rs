@@ -16,6 +16,10 @@ const JWKS_TTL: Duration = Duration::from_secs(3600);
 /// Logout token chỉ được nhận trong 2 phút sau khi phát (hợp đồng của IdP).
 const LOGOUT_TOKEN_MAX_AGE_S: i64 = 120;
 const BACKCHANNEL_EVENT: &str = "http://schemas.openid.net/event/backchannel-logout";
+/// Sự kiện "tài khoản đã xoá ở IdP" trong SET mà IdP gửi (auth-next ADR 0018).
+pub const ACCOUNT_DELETED_EVENT: &str = "urn:hoandat:auth:event:account.deleted";
+/// Độ lệch đồng hồ cho phép giữa IdP và Scribe khi kiểm `exp`/`iat` của SET.
+const SET_CLOCK_SKEW_S: i64 = 60;
 pub const SCOPE: &str = "openid profile email";
 
 #[derive(Debug, Deserialize)]
@@ -112,6 +116,28 @@ impl AccessClaims {
     }
 }
 
+/// Claim của SET báo xoá tài khoản; `aud` so tay (phải là đúng một chuỗi), không qua `Validation`.
+#[derive(Debug, Deserialize)]
+struct AccountDeletedClaims {
+    #[serde(default)]
+    sub: Option<String>,
+    #[serde(default)]
+    aud: serde_json::Value,
+    #[serde(default)]
+    iat: Option<i64>,
+    #[serde(default)]
+    events: Option<serde_json::Map<String, serde_json::Value>>,
+}
+
+/// Lý do SET báo xoá tài khoản bị từ chối: không phải SET (400), SET không hợp lệ cho URL này (401), chưa tải được
+/// khoá của IdP (503, IdP thử lại).
+#[derive(Debug, PartialEq, Eq)]
+pub enum SetError {
+    Malformed,
+    Invalid,
+    Unavailable,
+}
+
 /// Lý do access token bị từ chối: IdP chưa tải được khoá (tạm thời, 503) hay token sai (401).
 #[derive(Debug, PartialEq, Eq)]
 pub enum AccessTokenError {
@@ -144,6 +170,8 @@ struct TokenError {
 struct KeyCache {
     set: Option<JwkSet>,
     fetched: Option<Instant>,
+    /// Lần tải JWKS gần nhất lỗi: `kid` không có trong bộ khoá cũ là do IdP không trả lời, không phải token sai.
+    failed: bool,
 }
 
 /// Lỗi khi đổi/làm mới token. Chỉ `invalid_grant` là IdP thật sự từ chối grant (code sai/đã dùng, máy bị
@@ -159,6 +187,15 @@ pub struct Oidc {
     pub issuer: String,
     discovery: OnceCell<Discovery>,
     keys: RwLock<KeyCache>,
+}
+
+/// `kid` không có trong bộ khoá: IdP không trả JWKS (tạm thời) hay token ký bằng khoá lạ.
+fn missing_key(fetch_failed: bool) -> AppError {
+    if fetch_failed {
+        AppError::Unavailable("chưa tải được khoá ký của máy chủ đăng nhập".into())
+    } else {
+        AppError::Unauthorized("không tìm thấy khoá ký".into())
+    }
 }
 
 impl Oidc {
@@ -194,7 +231,7 @@ impl Oidc {
                 return DecodingKey::from_jwk(jwk).map_err(|e| AppError::Internal(format!("dựng khoá: {e}")));
             }
             if cache.fetched.is_some_and(|t| t.elapsed() < REFETCH_COOLDOWN) {
-                return Err(AppError::Unauthorized("không tìm thấy khoá ký".into()));
+                return Err(missing_key(cache.failed));
             }
         }
         let jwks_uri = self.discovery(http).await?.jwks_uri.clone();
@@ -204,7 +241,7 @@ impl Oidc {
             if let Some(jwk) = cache.set.as_ref().and_then(|s| s.find(kid)) {
                 return DecodingKey::from_jwk(jwk).map_err(|e| AppError::Internal(format!("dựng khoá: {e}")));
             }
-            return Err(AppError::Unauthorized("không tìm thấy khoá ký".into()));
+            return Err(missing_key(cache.failed));
         }
         let fetched: Result<JwkSet, String> = async {
             http.get(&jwks_uri)
@@ -220,15 +257,12 @@ impl Oidc {
         // Tải lỗi cũng tính là một lần tải (không gọi lại IdP mỗi request khi IdP sập) và dùng tạm bộ
         // khoá cũ nếu còn khoá `kid` này.
         cache.fetched = Some(Instant::now());
+        cache.failed = fetched.is_err();
         match fetched {
             Ok(set) => cache.set = Some(set),
             Err(e) => tracing::warn!("JWKS: {e} — dùng bộ khoá đã có"),
         }
-        let jwk = cache
-            .set
-            .as_ref()
-            .and_then(|s| s.find(kid))
-            .ok_or_else(|| AppError::Unauthorized("không tìm thấy khoá ký".into()))?;
+        let jwk = cache.set.as_ref().and_then(|s| s.find(kid)).ok_or_else(|| missing_key(cache.failed))?;
         DecodingKey::from_jwk(jwk).map_err(|e| AppError::Internal(format!("dựng khoá: {e}")))
     }
 
@@ -327,6 +361,50 @@ impl Oidc {
             return Err(bad());
         }
         Ok(claims)
+    }
+
+    /// SET báo xoá tài khoản (auth-next ADR 0018) gửi tới đúng URL nhận `audience`: header `alg` ES256 (kiểm trước
+    /// chữ ký) và `typ` `secevent+jwt`, chữ ký theo JWKS, đúng `iss`, `aud` đúng bằng `audience`, còn hạn (lệch 60
+    /// giây), có sự kiện [`ACCOUNT_DELETED_EVENT`]. Trả `sub` của tài khoản đã xoá.
+    pub async fn verify_account_deleted(
+        &self,
+        http: &reqwest::Client,
+        token: &str,
+        audience: &str,
+    ) -> Result<String, SetError> {
+        let header = decode_header(token).map_err(|_| SetError::Malformed)?;
+        let is_set = header
+            .typ
+            .as_deref()
+            .is_some_and(|t| t.eq_ignore_ascii_case("secevent+jwt") || t.eq_ignore_ascii_case("application/secevent+jwt"));
+        if !is_set {
+            return Err(SetError::Malformed);
+        }
+        if header.alg != Algorithm::ES256 {
+            return Err(SetError::Invalid);
+        }
+        let kid = header.kid.ok_or(SetError::Invalid)?;
+        let key = self.key_for(http, &kid).await.map_err(|e| match e {
+            AppError::Unavailable(_) => SetError::Unavailable,
+            _ => SetError::Invalid,
+        })?;
+        let mut validation = Validation::new(Algorithm::ES256);
+        validation.set_issuer(&[&self.issuer]);
+        validation.validate_aud = false;
+        validation.leeway = SET_CLOCK_SKEW_S as u64;
+        validation.required_spec_claims = HashSet::from(["exp".to_string(), "iss".to_string()]);
+        let claims = decode::<AccountDeletedClaims>(token, &key, &validation).map_err(|_| SetError::Invalid)?.claims;
+        if claims.aud.as_str() != Some(audience) {
+            return Err(SetError::Invalid);
+        }
+        if claims.iat.is_some_and(|iat| iat - SET_CLOCK_SKEW_S > chrono::Utc::now().timestamp()) {
+            return Err(SetError::Invalid);
+        }
+        let has_event = claims.events.as_ref().and_then(|e| e.get(ACCOUNT_DELETED_EVENT)).is_some_and(|v| v.is_object());
+        match claims.sub {
+            Some(sub) if has_event && !sub.is_empty() => Ok(sub),
+            _ => Err(SetError::Invalid),
+        }
     }
 
     async fn token_request(

@@ -31,5 +31,11 @@ const IDP_ORIGIN =
 /** The user's hoandat account page. */
 export const IDP_ACCOUNT_URL = `${IDP_ORIGIN}/account`;
 
+/**
+ * Account deletion, a section of the account page: an account is deleted
+ * only there, and Scribe then deletes its data (auth-next ADR 0018).
+ */
+export const IDP_ACCOUNT_DELETE_URL = `${IDP_ACCOUNT_URL}#account-delete`;
+
 /** Apps the user has authorised, a section of the account page. */
 export const IDP_APPS_URL = `${IDP_ACCOUNT_URL}#account-apps`;

@@ -8,10 +8,7 @@ import {
 	useMemo,
 	useState,
 } from "react";
-import {
-	NativeRecorderPlugin,
-	userKeyOf,
-} from "../features/recorder/native-recorder";
+import { NativeRecorderPlugin } from "../features/recorder/native-recorder";
 import { activeTranslator } from "../i18n/active-translator";
 import { apiUrl, isNativeShell } from "../lib/api";
 import { HoandatAuth, NativeFiles, Secrets } from "../lib/native";
@@ -22,15 +19,10 @@ import {
 	fetchCurrentUser,
 } from "./auth-api";
 
-/** The account was just deleted here: all gone, or the server still finishes. */
-export type AccountDeleted = "done" | "pending";
-
 interface AuthState {
 	/** False until `/api/me` has answered once. */
 	ready: boolean;
 	user: CurrentUser | null;
-	/** Set once the account is deleted on this page, for the sign-in page to say so. */
-	accountDeleted?: AccountDeleted;
 }
 
 interface AuthApi extends AuthState {
@@ -41,13 +33,6 @@ interface AuthApi extends AuthState {
 	 */
 	login: () => Promise<void>;
 	logout: () => Promise<void>;
-	/**
-	 * After the account was deleted (`POST /api/me/delete` already ended every
-	 * session): clears what this device holds, without ending the
-	 * hoandat-auth session (the hoandat account still exists). The app then
-	 * lands on /login, which reads `accountDeleted`.
-	 */
-	forgetDeletedAccount: (deleted: AccountDeleted) => Promise<void>;
 	/** Re-reads `/api/me` (minutes on the own key after a transcription request). */
 	refresh: () => Promise<void>;
 }
@@ -93,21 +78,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 	 * on the web, the hoandat-auth one (returns where to go for that).
 	 */
 	const signOutHere = useCallback(
-		async (
-			endSession: boolean,
-			accountDeleted?: AccountDeleted,
-		): Promise<string | null> => {
+		async (endSession: boolean): Promise<string | null> => {
 			let endSessionUrl: string | null = null;
 			// iOS: stop recording and uploads first, so nothing reaches the old
-			// account after the cookie is gone (plan D5.2). A deleted account's
-			// segments still on the phone go too.
+			// account after the cookie is gone (plan D5.2).
 			if (isNativeShell()) {
-				const email = state.user?.email;
-				const discardUserKey =
-					accountDeleted && email ? await userKeyOf(email) : undefined;
-				await NativeRecorderPlugin.signOut(
-					discardUserKey ? { discardUserKey } : undefined,
-				).catch(() => undefined);
+				await NativeRecorderPlugin.signOut().catch(() => undefined);
 				// Audio copied for playback belongs to this account.
 				await NativeFiles.clear().catch(() => undefined);
 				// Drops the device token from the Keychain (the server answers
@@ -120,10 +96,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 			}
 			// The next user must not see this user's cached lists.
 			queryClient.clear();
-			setState({ ready: true, user: null, accountDeleted });
+			setState({ ready: true, user: null });
 			return endSessionUrl;
 		},
-		[queryClient, state.user?.email],
+		[queryClient],
 	);
 
 	const logout = useCallback(async () => {
@@ -132,21 +108,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 		if (endSessionUrl) window.location.assign(endSessionUrl);
 	}, [signOutHere]);
 
-	const forgetDeletedAccount = useCallback(
-		async (deleted: AccountDeleted) => {
-			await signOutHere(false, deleted);
-		},
-		[signOutHere],
-	);
-
 	const refresh = useCallback(async () => {
 		const user = await fetchCurrentUser().catch(() => null);
 		if (user) setState({ ready: true, user });
 	}, []);
 
 	const api = useMemo<AuthApi>(
-		() => ({ ...state, login, logout, forgetDeletedAccount, refresh }),
-		[state, login, logout, forgetDeletedAccount, refresh],
+		() => ({ ...state, login, logout, refresh }),
+		[state, login, logout, refresh],
 	);
 	return <AuthContext.Provider value={api}>{children}</AuthContext.Provider>;
 }

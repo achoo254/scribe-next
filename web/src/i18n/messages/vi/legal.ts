@@ -40,7 +40,7 @@ export const legal = {
 		},
 		rights: {
 			title: "Quyền của bạn",
-			body: "- <b>Xem và tải về:</b> phát và tải từng bản ghi, “Tải tất cả” ở Lịch sử ghi, xuất lời chép dạng TXT, SRT, VTT, Markdown hoặc Word.\n- <b>Sửa:</b> sửa câu, tiêu đề, tên người nói.\n- <b>Xoá:</b> xoá từng bản ghi, “Xoá tất cả”, xoá Key riêng, gỡ liên kết chat.\n- <b>Xoá tài khoản:</b> trong menu tài khoản chọn “Xoá tài khoản”. Scribe xoá ngay mọi tệp, lời chép, biên bản, bản dịch, dấu mốc, chỉ mục tìm kiếm, Key riêng, liên kết chat, phiên đăng nhập và số liệu mức dùng của bạn. Nhật ký bảo mật được giữ tới hết 180 ngày nhưng không còn email, tên tệp hay nội dung lỗi; số liệu chi phí được giữ ở dạng ẩn danh. Tài khoản {idpName} dùng chung cho nhiều ứng dụng; xoá tài khoản đó ở <account>auth.hoandat.com/account</account>.\n- Yêu cầu khác về dữ liệu (ví dụ bản sao dữ liệu tài khoản): liên hệ theo mục Liên hệ.",
+			body: "- <b>Xem và tải về:</b> phát và tải từng bản ghi, “Tải tất cả” ở Lịch sử ghi, xuất lời chép dạng TXT, SRT, VTT, Markdown hoặc Word.\n- <b>Sửa:</b> sửa câu, tiêu đề, tên người nói.\n- <b>Xoá:</b> xoá từng bản ghi, “Xoá tất cả”, xoá Key riêng, gỡ liên kết chat.\n- <b>Xoá tài khoản:</b> tài khoản chỉ xoá ở một nơi, trang tài khoản {idpName} (<accountDelete>auth.hoandat.com/account</accountDelete>; menu tài khoản của Scribe có mục dẫn tới đó). Khi bạn xoá ở đó, dữ liệu ở mọi ứng dụng dùng tài khoản này bị xoá theo, và Scribe xoá ngay mọi tệp, lời chép, biên bản, bản dịch, dấu mốc, chỉ mục tìm kiếm, Key riêng, liên kết chat, phiên đăng nhập và số liệu mức dùng của bạn. Nhật ký bảo mật được giữ tới hết 180 ngày nhưng không còn email, tên tệp hay nội dung lỗi; số liệu chi phí được giữ ở dạng ẩn danh.\n- Yêu cầu khác về dữ liệu (ví dụ bản sao dữ liệu tài khoản): liên hệ theo mục Liên hệ.",
 		},
 		security: {
 			title: "Bảo mật",
@@ -95,7 +95,7 @@ export const legal = {
 		},
 		end: {
 			title: "Chấm dứt",
-			body: "Bạn có thể xoá tài khoản Scribe bất cứ lúc nào trong menu tài khoản. Chúng tôi có thể khoá tài khoản vi phạm các điều khoản này.",
+			body: "Bạn có thể xoá tài khoản bất cứ lúc nào ở trang tài khoản auth.hoandat.com; dữ liệu Scribe bị xoá theo. Chúng tôi có thể khoá tài khoản vi phạm các điều khoản này.",
 		},
 		law: {
 			title: "Luật áp dụng",

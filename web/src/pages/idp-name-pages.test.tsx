@@ -7,7 +7,7 @@ import { LegalPage } from "./legal-page";
 import { LoginPage } from "./login-page";
 
 vi.mock("../auth/auth-context", () => ({
-	useAuth: () => ({ login: vi.fn(), accountDeleted: "done" }),
+	useAuth: () => ({ login: vi.fn() }),
 }));
 // No support email (web/.env may set one): "Liên hệ" names the account.
 vi.mock("../lib/legal", async (importOriginal) => ({
@@ -35,9 +35,6 @@ describe("pages naming the sign-in account", () => {
 		await act(() => loadIdpName(fetcher));
 		expect(
 			screen.getByText("Ghi âm, cắt file và chép lời bằng tài khoản Acme."),
-		).toBeVisible();
-		expect(
-			screen.getByText(/Tài khoản Acme vẫn còn ở auth\.hoandat\.com\./),
 		).toBeVisible();
 		// The call to action is the shared card's: every app names the root domain.
 		expect(

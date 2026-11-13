@@ -24,8 +24,4 @@ export const login = {
 		failed: "Đăng nhập thất bại — thử lại sau.",
 	},
 	failed: "Đăng nhập thất bại",
-	accountDeleted:
-		"Đã xoá tài khoản Scribe và mọi dữ liệu của bạn. Tài khoản {idpName} vẫn còn ở auth.hoandat.com.",
-	accountDeletedPending:
-		"Đã xoá tài khoản Scribe. Phần dữ liệu còn lại sẽ được xoá xong trong vòng một giờ.",
 } as const;

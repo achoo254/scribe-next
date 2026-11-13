@@ -10,7 +10,7 @@ import { PATHS } from "../layout/app-paths";
 import { LegalLinks, TEXT_LINK } from "../layout/legal-links";
 import { PageHeader } from "../layout/page-header";
 import { cn } from "../lib/cn";
-import { IDP_ACCOUNT_URL } from "../lib/idp";
+import { IDP_ACCOUNT_DELETE_URL } from "../lib/idp";
 import { useIdpName } from "../lib/idp-name";
 import {
 	LEGAL_EFFECTIVE_DATE,
@@ -118,7 +118,7 @@ const LINK_TAGS: TagRenderers = {
 			externalLink(url),
 		]),
 	),
-	account: externalLink(IDP_ACCOUNT_URL),
+	accountDelete: externalLink(IDP_ACCOUNT_DELETE_URL),
 	privacy: (chunk) => (
 		<Link to={PATHS.privacy} className={TEXT_LINK}>
 			{chunk}

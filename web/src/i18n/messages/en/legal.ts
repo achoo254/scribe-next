@@ -42,7 +42,7 @@ export const legal: Translation<SourceMessages["legal"]> = {
 		},
 		rights: {
 			title: "Your rights",
-			body: "- <b>View and download:</b> play and download each recording, “Download all” in Recording history, export transcripts as TXT, SRT, VTT, Markdown or Word.\n- <b>Edit:</b> edit sentences, titles and speaker names.\n- <b>Delete:</b> delete individual recordings, “Delete all”, delete your API keys, unlink chat.\n- <b>Delete your account:</b> choose “Delete account” in the account menu. Scribe immediately deletes all your files, transcripts, minutes, translations, bookmarks, search index, API keys, chat link, sign-in sessions and usage figures. Security logs are kept until the end of the 180 days but no longer contain your email, file names or error details; cost figures are kept in anonymised form. Your {idpName} account is shared by several apps; delete it at <account>auth.hoandat.com/account</account>.\n- Other data requests (for example a copy of your account data): contact us as described under Contact.",
+			body: "- <b>View and download:</b> play and download each recording, “Download all” in Recording history, export transcripts as TXT, SRT, VTT, Markdown or Word.\n- <b>Edit:</b> edit sentences, titles and speaker names.\n- <b>Delete:</b> delete individual recordings, “Delete all”, delete your API keys, unlink chat.\n- <b>Delete your account:</b> an account is deleted in one place only, your {idpName} account page (<accountDelete>auth.hoandat.com/account</accountDelete>; Scribe’s account menu links there). When you delete it there, your data in every app that uses this account is deleted too, and Scribe immediately deletes all your files, transcripts, minutes, translations, bookmarks, search index, API keys, chat link, sign-in sessions and usage figures. Security logs are kept until the end of the 180 days but no longer contain your email, file names or error details; cost figures are kept in anonymised form.\n- Other data requests (for example a copy of your account data): contact us as described under Contact.",
 		},
 		security: {
 			title: "Security",
@@ -97,7 +97,7 @@ export const legal: Translation<SourceMessages["legal"]> = {
 		},
 		end: {
 			title: "Termination",
-			body: "You can delete your Scribe account at any time from the account menu. We may block accounts that break these terms.",
+			body: "You can delete your account at any time on the auth.hoandat.com account page; your Scribe data is deleted with it. We may block accounts that break these terms.",
 		},
 		law: {
 			title: "Governing law",

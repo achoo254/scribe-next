@@ -55,7 +55,6 @@ export const errors: Translation<SourceMessages["errors"]> = {
 	server: {
 		notTranscribed:
 			"No part of this recording is transcribed yet. Transcribe it first.",
-		confirmRequired: "Type the confirmation word to delete your account.",
 		chatLinkDisabled: "Chat linking is not enabled on this server.",
 		chatNotLinked: "chat.hoandat.com is not linked yet.",
 		chatBlocked:

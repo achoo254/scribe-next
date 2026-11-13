@@ -1,7 +1,7 @@
-//! Xoá tài khoản Scribe ngay trong app (`POST /api/me/delete`, cũng nhận `DELETE /api/me`; App Store guideline
-//! 5.1.1(v)).
-//!
-//! Tài khoản hoandat (auth.hoandat.com) là của IdP, không xoá ở đây: Scribe xoá mọi dữ liệu của chính nó.
+//! Xoá dữ liệu Scribe của một tài khoản khi IdP báo tài khoản đã xoá (`POST /api/idp/account-deleted`, auth-next
+//! ADR 0018). Tài khoản chỉ xoá ở auth.hoandat.com/account: Scribe không có nút, màn hay API xoá; IdP gửi một SET ký
+//! ES256 và Scribe xoá ngay mọi dữ liệu của chính nó. Scribe không có tài sản dùng chung với người khác (biên bản
+//! chia sẻ bằng link là của chủ, xoá theo), nên không có gì phải chuyển chủ.
 //!
 //! **Xoá hẳn**: tệp trên đĩa (cả thư mục `{data_dir}/<userId>`) và doc `files`; lượt chép (`transcripts`, lượt
 //! còn chạy được quyết toán như khi xoá file); `transcript_docs` (tiêu đề, câu sửa, biên bản, dấu mốc, tên người
@@ -17,31 +17,29 @@
 //! giữ tới hết hạn TTL 180 ngày (nhật ký bảo mật, chống lạm dụng): `userId` chỉ còn là một id không trỏ tới ai, bỏ
 //! các trường có nội dung của người dùng (tên tệp, email, tiêu đề, id chat, câu lỗi, lý do khoá do quản trị ghi).
 //!
-//! **Trình tự và việc đang chạy**: đang ghi trên trình duyệt thì từ chối (409 `RECORDING_OPEN`). Còn lại:
-//! (1) `users.deletingAt` + `deleted_users` (chỉ id, TTL [`TOMBSTONE_DAYS`] ngày) — từ đây đăng nhập (web, iPhone,
+//! **Trình tự và việc đang chạy**: tài khoản đã xoá ở IdP nên không từ chối (cả khi đang ghi: phiên ghi bị xoá
+//! cùng mọi thứ). (1) `users.deletingAt` + `deleted_users` (chỉ id, TTL [`TOMBSTONE_DAYS`] ngày) — từ đây đăng nhập (web, iPhone,
 //! làm mới phiên) bị từ chối và tiếp tục việc xoá, middleware phiên coi tài khoản như không còn, worker bỏ qua lượt
 //! của user; (2) thu hồi grant IdP của các thiết bị (lỗi thì giữ bản mã hoá trong `deleted_users` để thử lại),
-//! xoá phiên và bỏ khỏi cache; (3) [`purge_user`]. Bước (2)–(3) chạy trong task riêng: client ngắt kết nối không
-//! làm dừng việc xoá; lỗi sau bước (1) trả 200 `complete: false` ("đang xoá"). Việc nền ghi thêm sau khi xoá (vd
+//! xoá phiên và bỏ khỏi cache; (3) [`purge_user`]. Bước (1) là hàng đợi bền: ghi xong thì trả 202 (lỗi trước đó trả
+//! 503 để IdP gửi lại). Bước (2)–(3) chạy trong task riêng: IdP ngắt kết nối không làm dừng việc xoá; lỗi ở đây
+//! chỉ ghi log, vòng retention làm nốt. Việc nền ghi thêm sau khi xoá (vd
 //! lượt chép xong đặt tên người nói bằng upsert) được vòng retention mỗi giờ dọn lại qua `deleted_users`.
 
 use crate::audit;
-use crate::auth::{without_session_cookie, UserId};
 use crate::error::AppError;
 use crate::models::session as sessions;
 use crate::models::{file, transcript, user};
+use crate::oidc::SetError;
 use crate::session::open;
 use crate::state::AppState;
 use axum::extract::State;
-use axum::http::StatusCode;
-use axum::{Extension, Json};
-use axum_extra::extract::cookie::CookieJar;
+use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
+use axum::response::{IntoResponse, Response};
 use futures_util::StreamExt;
 use mongodb::bson::{doc, oid::ObjectId, Bson, DateTime, Document, Regex};
 use mongodb::options::IndexOptions;
 use mongodb::{Database, IndexModel};
-use serde::Deserialize;
-use serde_json::{json, Value};
 use std::path::{Component, Path};
 use std::time::Duration;
 
@@ -50,10 +48,11 @@ const TOMBSTONES: &str = "deleted_users";
 const TOMBSTONE_DAYS: u64 = 7;
 /// `userId` của sổ chi tiết sau khi tài khoản bị xoá.
 pub const DELETED_USER: &str = "deleted";
-/// Mỗi phút một user gọi xoá tài khoản tối đa chừng này lần.
-const DELETE_PER_MINUTE: u32 = 3;
-/// Chữ người dùng gõ để xác nhận (so sau khi chuẩn hoá: "XOÁ", "xóa", "xoa" đều được).
-const CONFIRM_WORD: &str = "xoa";
+/// Đường dẫn IdP gọi khi một tài khoản bị xoá; `aud` của SET là `{PUBLIC_URL}` + đường dẫn này.
+pub const ACCOUNT_DELETED_PATH: &str = "/api/idp/account-deleted";
+/// SET (RFC 8417) chỉ vài trăm byte.
+pub const ACCOUNT_DELETED_BODY_LIMIT: usize = 8 * 1024;
+const SET_MEDIA_TYPE: &str = "application/secevent+jwt";
 
 /// Xoá thẳng theo `userId`.
 const BY_USER: [&str; 12] = [
@@ -119,11 +118,6 @@ pub async fn ensure_indexes(db: &Database) -> Result<(), String> {
             .map_err(|e| format!("index {coll}.userId: {e}"))?;
     }
     Ok(())
-}
-
-/// Chữ xác nhận người dùng gõ có đúng "XOÁ" không (có dấu hay không, hoa hay thường).
-pub fn confirm_matches(text: &str) -> bool {
-    crate::search::norm::normalize(text) == CONFIRM_WORD
 }
 
 /// Tiền tố `_id` của các sổ dùng riêng của user, mỗi tiền tố một regex `^…` (dùng được index `_id`).
@@ -353,88 +347,232 @@ pub async fn sweep_deleted(state: &AppState) -> u64 {
     cleaned
 }
 
-#[derive(Deserialize)]
-pub struct DeleteBody {
-    /// Chữ người dùng gõ vào ô xác nhận ("XOÁ").
-    confirm: String,
+/// Trả lời `status` không body, không cache.
+fn no_store(status: StatusCode) -> Response {
+    let mut res = status.into_response();
+    res.headers_mut().insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    res
 }
 
-/// `POST /api/me/delete` (và `DELETE /api/me`) — xoá tài khoản Scribe và mọi dữ liệu của nó, thu hồi phiên và
-/// thiết bị, bỏ cookie. Trả `{deleted, files, bytes, complete}`; `complete: false` khi phần còn lại đang chạy tiếp
-/// hoặc lỗi (vòng retention làm nốt).
-pub async fn delete_me(
-    State(state): State<AppState>,
-    Extension(me): Extension<UserId>,
-    jar: CookieJar,
-    Json(body): Json<DeleteBody>,
-) -> Result<(CookieJar, Json<Value>), AppError> {
-    if !state.rate.allow(&format!("account_delete:{}", me.0), DELETE_PER_MINUTE) {
-        return Err(AppError::TooManyRequests("thao tác quá nhanh, thử lại sau một phút".into()));
-    }
-    if !confirm_matches(&body.confirm) {
-        return Err(AppError::Coded {
-            status: StatusCode::BAD_REQUEST,
-            code: "CONFIRM_REQUIRED",
-            message: "Gõ XOÁ để xác nhận xoá tài khoản.".into(),
-        });
-    }
-    if crate::recordings::recording_live(&state, &me.0).await? {
-        return Err(AppError::Coded {
-            status: StatusCode::CONFLICT,
-            code: "RECORDING_OPEN",
-            message: "Đang có bản ghi chạy. Dừng ghi rồi thử lại.".into(),
-        });
-    }
-    // Đã xoá ở lần gọi trước (bấm hai lần): phiên này cũng phải hết.
-    if user::find_profile(&state.db, &me.0).await?.is_none() {
-        return Err(AppError::Unauthorized("tài khoản không còn".into()));
-    }
-    mark(&state.db, &me.0).await?;
+/// Body có khai `Content-Type: application/secevent+jwt` không (bỏ qua tham số và hoa thường).
+fn is_set_media_type(headers: &HeaderMap) -> bool {
+    headers
+        .get(header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.split(';').next())
+        .is_some_and(|v| v.trim().eq_ignore_ascii_case(SET_MEDIA_TYPE))
+}
 
-    // Từ đây tài khoản coi như đã xoá: lỗi chỉ làm `complete: false`. Task riêng: client ngắt kết nối không làm
-    // dừng việc xoá.
+/// `POST /api/idp/account-deleted` — IdP báo tài khoản `sub` đã xoá (body là SET ký ES256, server gọi server, không
+/// phiên). Trả 202 khi đã ghi việc xoá vào hàng đợi bền (bước (1), rồi làm luôn (2)–(3)) hoặc không có tài khoản
+/// nào mang `sub` đó (chưa từng đăng nhập, đã xoá: IdP gửi lại thì không làm gì); 400 khi body không phải SET; 401
+/// khi SET không hợp lệ cho URL này (alg, chữ ký, iss, aud, exp, sự kiện); 503 khi chưa tải được khoá IdP hoặc ghi
+/// việc xoá lỗi, để IdP thử lại. Log không có SET hay `sub`, chỉ id user và kết quả.
+pub async fn idp_account_deleted(State(state): State<AppState>, headers: HeaderMap, body: String) -> Response {
+    if !is_set_media_type(&headers) {
+        return no_store(StatusCode::BAD_REQUEST);
+    }
+    let audience = format!("{}{ACCOUNT_DELETED_PATH}", state.config.public_url);
+    let sub = match state.oidc.verify_account_deleted(&state.http, body.trim(), &audience).await {
+        Ok(sub) => sub,
+        Err(SetError::Malformed) => return no_store(StatusCode::BAD_REQUEST),
+        Err(SetError::Invalid) => return no_store(StatusCode::UNAUTHORIZED),
+        Err(SetError::Unavailable) => {
+            tracing::warn!("thông báo xoá tài khoản: chưa tải được khoá IdP");
+            return no_store(StatusCode::SERVICE_UNAVAILABLE);
+        }
+    };
+    let user_id = match user::find_id_by_sub(&state.db, &sub).await {
+        Ok(Some(id)) => id,
+        Ok(None) => {
+            tracing::info!("thông báo xoá tài khoản: không có tài khoản ở Scribe");
+            return no_store(StatusCode::ACCEPTED);
+        }
+        Err(e) => {
+            tracing::error!("thông báo xoá tài khoản: tra tài khoản lỗi: {e:?}");
+            return no_store(StatusCode::SERVICE_UNAVAILABLE);
+        }
+    };
+    if let Err(e) = mark(&state.db, &user_id).await {
+        tracing::error!(user = %user_id, "thông báo xoá tài khoản: ghi dấu xoá lỗi: {e:?}");
+        return no_store(StatusCode::SERVICE_UNAVAILABLE);
+    }
+
+    // Từ đây việc xoá đã nằm trong hàng đợi bền (`deleted_users`): lỗi chỉ để vòng retention làm nốt. Task riêng:
+    // IdP ngắt kết nối không làm dừng việc xoá.
     let task = {
-        let (state, user_id) = (state.clone(), me.0.clone());
+        let (state, user_id) = (state.clone(), user_id.clone());
         tokio::spawn(async move { finish(&state, &user_id).await })
     };
     let purged = match task.await {
         Ok(Ok(p)) => Some(p),
         Ok(Err(e)) => {
-            tracing::error!("xoá tài khoản dở dang (vòng retention làm nốt): {e:?}");
+            tracing::error!(user = %user_id, "xoá tài khoản dở dang (vòng retention làm nốt): {e:?}");
             None
         }
         Err(e) => {
-            tracing::error!("task xoá tài khoản dừng bất thường (vòng retention làm nốt): {e}");
+            tracing::error!(user = %user_id, "task xoá tài khoản dừng bất thường (vòng retention làm nốt): {e}");
             None
         }
     };
     let complete = purged.as_ref().is_some_and(|p| p.failed == 0);
     let purged = purged.unwrap_or_default();
     let details = doc! {
+        "source": "idp",
         "files": purged.files as i64,
         "bytes": purged.bytes as i64,
         "docs": purged.docs as i64,
         "failed": purged.failed as i64,
         "complete": complete,
     };
-    audit::record(&state, Some(&me.0), "account.delete", details);
-    let body = json!({ "deleted": true, "files": purged.files, "bytes": purged.bytes, "complete": complete });
-    Ok((without_session_cookie(&state, jar), Json(body)))
+    audit::record(&state, Some(&user_id), "account.delete", details);
+    tracing::info!(user = %user_id, complete, "thông báo xoá tài khoản: đã xoá");
+    no_store(StatusCode::ACCEPTED)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::models::file::{FileDoc, Owner};
+    use serde_json::{json, Value};
 
-    #[test]
-    fn confirm_word_accepts_any_vietnamese_spelling() {
-        for ok in ["XOÁ", "xoá", "Xóa", "xoa", " XOA "] {
-            assert!(confirm_matches(ok), "{ok}");
+    /// Server thật (router đầy đủ) với IdP giả; trả `(base, idp)`.
+    async fn notice_server(db: Database, issuer: Option<&str>) -> (String, crate::oidc::tests::FakeIdp) {
+        let idp = crate::oidc::tests::fake_idp().await;
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let base = format!("http://{}", listener.local_addr().expect("addr"));
+        let config = crate::config::Config::for_tests(&base, issuer.unwrap_or(&idp.issuer));
+        let app = crate::routes::build_router(AppState::for_tests(config, db));
+        tokio::spawn(async move { axum::serve(listener, app).await });
+        (base, idp)
+    }
+
+    /// Database không kết nối được (chọn server hỏng nhanh).
+    async fn unreachable_db() -> Database {
+        mongodb::Client::with_uri_str("mongodb://127.0.0.1:9/?serverSelectionTimeoutMS=200&connectTimeoutMS=200")
+            .await
+            .expect("uri")
+            .database("scribe_account_test")
+    }
+
+    /// Claim hợp lệ của SET cho receiver ở `base`, ghi đè bằng `extra`.
+    fn set_claims(issuer: &str, base: &str, sub: &str, extra: Value) -> Value {
+        let now = crate::oidc::tests::now();
+        let mut c = json!({
+            "iss": issuer, "aud": format!("{base}{ACCOUNT_DELETED_PATH}"), "sub": sub, "jti": "j1", "iat": now,
+            "exp": now + 600, "toe": now, "events": { crate::oidc::ACCOUNT_DELETED_EVENT: {} },
+        });
+        if let (Some(c), Some(extra)) = (c.as_object_mut(), extra.as_object()) {
+            c.extend(extra.clone());
         }
-        for bad in ["", "xo", "xoá tài khoản", "delete", "XOAA"] {
-            assert!(!confirm_matches(bad), "{bad}");
+        c
+    }
+
+    async fn post_notice(base: &str, body: &str, content_type: &str) -> reqwest::Response {
+        reqwest::Client::new()
+            .post(format!("{base}{ACCOUNT_DELETED_PATH}"))
+            .header("content-type", content_type)
+            .body(body.to_string())
+            .send()
+            .await
+            .expect("gửi")
+    }
+
+    #[tokio::test]
+    async fn notices_that_are_not_a_valid_set_for_this_url_are_refused() {
+        use crate::oidc::tests::{now, sign};
+        let (base, idp) = notice_server(unreachable_db().await, None).await;
+        let set = |extra: Value| sign(&idp, Some("secevent+jwt"), "k1", set_claims(&idp.issuer, &base, "acc_1", extra));
+        let status = |body: String, ct: &'static str| {
+            let base = base.clone();
+            async move { post_notice(&base, &body, ct).await.status().as_u16() }
+        };
+        // Không phải SET: 400.
+        assert_eq!(status(set(json!({})), "application/json").await, 400, "sai media type");
+        assert_eq!(status("không phải token".into(), SET_MEDIA_TYPE).await, 400, "không phải JWS");
+        let logout = sign(&idp, Some("logout+jwt"), "k1", set_claims(&idp.issuer, &base, "acc_1", json!({})));
+        assert_eq!(status(logout, SET_MEDIA_TYPE).await, 400, "typ khác");
+        // SET không hợp lệ cho URL này: 401.
+        let mut hs = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::HS256);
+        hs.typ = Some("secevent+jwt".into());
+        hs.kid = Some("k1".into());
+        let hmac = jsonwebtoken::encode(&hs, &set_claims(&idp.issuer, &base, "acc_1", json!({})), &jsonwebtoken::EncodingKey::from_secret(b"s"))
+            .expect("ký");
+        assert_eq!(status(hmac, SET_MEDIA_TYPE).await, 401, "thuật toán khác");
+        let unknown_kid = sign(&idp, Some("secevent+jwt"), "k9", set_claims(&idp.issuer, &base, "acc_1", json!({})));
+        assert_eq!(status(unknown_kid, SET_MEDIA_TYPE).await, 401, "khoá lạ");
+        let cases = [
+            ("iss khác", json!({ "iss": "https://evil.example" })),
+            ("aud của app khác", json!({ "aud": "https://kb.hoandat.com/api/idp/account-deleted" })),
+            ("aud là mảng", json!({ "aud": [format!("{base}{ACCOUNT_DELETED_PATH}")] })),
+            ("hết hạn", json!({ "exp": now() - 120 })),
+            ("thiếu exp", json!({ "exp": null })),
+            ("sự kiện khác", json!({ "events": { "http://schemas.openid.net/event/backchannel-logout": {} } })),
+            ("sub rỗng", json!({ "sub": "" })),
+            ("iat ở tương lai", json!({ "iat": now() + 3600 })),
+        ];
+        for (name, extra) in cases {
+            assert_eq!(status(set(extra), SET_MEDIA_TYPE).await, 401, "{name}");
         }
+        // SET hợp lệ nhưng không đọc được database: 503 để IdP gửi lại.
+        let res = post_notice(&base, &set(json!({})), "application/secevent+jwt; charset=utf-8").await;
+        assert_eq!(res.status(), 503);
+        assert_eq!(res.headers().get("cache-control").and_then(|v| v.to_str().ok()), Some("no-store"));
+    }
+
+    #[tokio::test]
+    async fn notices_wait_for_the_idp_keys() {
+        // IdP không trả lời: không kiểm được chữ ký, 503 (IdP thử lại), không phải 401.
+        let (base, idp) = notice_server(unreachable_db().await, Some("http://127.0.0.1:9")).await;
+        let token = crate::oidc::tests::sign(&idp, Some("secevent+jwt"), "k1", set_claims("http://127.0.0.1:9", &base, "acc_1", json!({})));
+        assert_eq!(post_notice(&base, &token, SET_MEDIA_TYPE).await.status(), 503);
+    }
+
+    /// Trên Mongo thật: `TRANSCRIPT_TEST_MONGO_URI=… TRANSCRIPT_TEST_DB_NAME=… cargo test
+    /// account_deleted_notice_on_real_mongo -- --ignored`. SET hợp lệ cho một user: 202, user và dữ liệu không còn;
+    /// gửi lại và `sub` lạ cũng 202.
+    #[tokio::test]
+    #[ignore]
+    async fn account_deleted_notice_on_real_mongo() {
+        let uri = std::env::var("TRANSCRIPT_TEST_MONGO_URI").expect("TRANSCRIPT_TEST_MONGO_URI");
+        let db_name = std::env::var("TRANSCRIPT_TEST_DB_NAME").expect("TRANSCRIPT_TEST_DB_NAME");
+        let db = crate::db::connect(&uri, &db_name).await.expect("kết nối Mongo");
+        let (base, idp) = notice_server(db.clone(), None).await;
+        let (a, b) = (ObjectId::new(), ObjectId::new());
+        let (sub_a, sub_b) = (format!("selftest-purge-{}", a.to_hex()), format!("selftest-purge-{}", b.to_hex()));
+        for (oid, sub) in [(a, &sub_a), (b, &sub_b)] {
+            db.collection::<Document>("users")
+                .insert_one(doc! { "_id": oid, "tenantId": crate::tenant::PRIMARY_ID, "idpSub": sub, "email": format!("{sub}@example.com") })
+                .await
+                .expect("user");
+            db.collection::<Document>("sessions")
+                .insert_one(doc! { "_id": uuid::Uuid::new_v4().to_string(), "userId": oid.to_hex(), "client": "web" })
+                .await
+                .expect("phiên");
+        }
+        let token = crate::oidc::tests::sign(&idp, Some("secevent+jwt"), "k1", set_claims(&idp.issuer, &base, &sub_a, json!({})));
+        assert_eq!(post_notice(&base, &token, SET_MEDIA_TYPE).await.status(), 202);
+        let count = |coll: &'static str, filter: Document| {
+            let db = db.clone();
+            async move { db.collection::<Document>(coll).count_documents(filter).await.expect(coll) }
+        };
+        assert_eq!(count("users", doc! { "_id": a }).await, 0, "user A đã xoá");
+        assert_eq!(count("sessions", doc! { "userId": a.to_hex() }).await, 0, "phiên của A đã xoá");
+        assert_eq!(count(TOMBSTONES, doc! { "_id": a.to_hex() }).await, 1, "A nằm trong hàng đợi dọn lại");
+        assert_eq!(count("users", doc! { "_id": b }).await, 1, "B nguyên");
+        assert_eq!(count("sessions", doc! { "userId": b.to_hex() }).await, 1, "phiên của B nguyên");
+        // Gửi lại (IdP thử lại) và `sub` không có ở Scribe: 202, không làm gì.
+        assert_eq!(post_notice(&base, &token, SET_MEDIA_TYPE).await.status(), 202);
+        let stranger = crate::oidc::tests::sign(&idp, Some("secevent+jwt"), "k1", set_claims(&idp.issuer, &base, "sub-chua-tung-dang-nhap", json!({})));
+        assert_eq!(post_notice(&base, &stranger, SET_MEDIA_TYPE).await.status(), 202);
+
+        // Dọn.
+        purge_user(&db, "/nonexistent", &b.to_hex()).await.expect("dọn B");
+        db.collection::<Document>(TOMBSTONES).delete_one(doc! { "_id": a.to_hex() }).await.expect("dọn dấu xoá");
+        db.collection::<Document>("audit_events")
+            .delete_many(doc! { "userId": { "$in": [a.to_hex(), b.to_hex()] } })
+            .await
+            .expect("dọn audit");
     }
 
     #[test]

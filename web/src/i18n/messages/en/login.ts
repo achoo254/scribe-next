@@ -21,8 +21,4 @@ export const login: Translation<SourceMessages["login"]> = {
 		failed: "Sign-in failed. Try again later.",
 	},
 	failed: "Sign-in failed",
-	accountDeleted:
-		"Your Scribe account and all your data are deleted. Your {idpName} account remains at auth.hoandat.com.",
-	accountDeletedPending:
-		"Your Scribe account is deleted. The rest of your data will be removed within an hour.",
 };

@@ -52,7 +52,7 @@ TÌM LẠI MỌI THỨ
 RIÊNG TƯ
 • Không quảng cáo, không theo dõi.
 • Tệp tự xoá sau 7 ngày (gói miễn phí) hoặc 14 ngày (gói Plus).
-• Xoá tài khoản và mọi dữ liệu ngay trong app.
+• Xoá tài khoản ở trang tài khoản hoandat.com (menu tài khoản có đường dẫn), mọi dữ liệu Scribe bị xoá theo.
 • Có thể dùng key API của chính bạn (OpenAI, Gemini, Claude, ElevenLabs).
 
 Đăng nhập bằng tài khoản hoandat.com. Hãy xin phép mọi người trước khi ghi âm.
@@ -188,9 +188,10 @@ the lock-screen entry used to bookmark moments; nothing audible is played.
 Microphone: used only while recording. Camera / Photos: only when the user chooses to film or
 pick a video to upload for transcription.
 
-Account deletion (5.1.1(v)): account menu (avatar, top right) → "Xoá tài khoản" (Delete
-account) → type XOÁ → "Xoá tài khoản". All Scribe data is deleted at once. The shared hoandat.com
-account itself can be deleted at auth.hoandat.com/account (linked in the same dialog).
+Account deletion (5.1.1(v)): account menu (avatar, top right) → "Xoá tài khoản ở hoandat.com"
+(Delete account at hoandat.com) opens https://auth.hoandat.com/account#account-delete, where the
+shared hoandat.com account is deleted. The sign-in service then tells Scribe, which deletes all
+Scribe data at once.
 
 Privacy policy and terms: account menu → "Quyền riêng tư" / "Điều khoản", also on the sign-in
 page and at https://scribe.hoandat.com/privacy and /terms.

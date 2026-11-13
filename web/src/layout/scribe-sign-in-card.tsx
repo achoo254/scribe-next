@@ -7,7 +7,6 @@ import { loginErrorFromCode, loginErrorMessage } from "../auth/login-error";
 import { Alert } from "../components/ui/alert";
 import { useI18n } from "../i18n/i18n-context";
 import { apiUrl, isNativeShell } from "../lib/api";
-import { useIdpName } from "../lib/idp-name";
 import { TEXT_LINK } from "./legal-links";
 import { SHELL_BRAND } from "./scribe-public-page";
 
@@ -34,8 +33,7 @@ export function ScribeSignInCard({
 	headingLevel?: 1 | 2;
 }) {
 	const { locale, t } = useI18n();
-	const { login, accountDeleted } = useAuth();
-	const idpName = useIdpName();
+	const { login } = useAuth();
 	const navigate = useNavigate();
 	const [params] = useSearchParams();
 	const [failure, setFailure] = useState("");
@@ -74,13 +72,6 @@ export function ScribeSignInCard({
 			description={description}
 			headingLevel={headingLevel}
 		>
-			{accountDeleted ? (
-				<Alert tone="success" data-id="login-account-deleted">
-					{accountDeleted === "pending"
-						? t("login.accountDeletedPending")
-						: t("login.accountDeleted", { idpName })}
-				</Alert>
-			) : null}
 			{error ? (
 				<Alert tone="danger" data-id="login-error">
 					{error}

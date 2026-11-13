@@ -2,8 +2,9 @@
    (`AccountMenu` of @achoo254/app-shell: IdP picture or initial, name,
    the IdP account pages, sign-out). Scribe adds its own entries: "Key
    riêng", linking chat.hoandat.com (where the minutes are sent), the
-   privacy policy and terms, "Xoá tài khoản" (App Store guideline
-   5.1.1(v)). Signing out goes through auth-context (`useSignOut`) and asks
+   privacy policy and terms, and the way to delete the account: it opens
+   the IdP's deletion section, the only place an account is deleted (the
+   IdP then tells Scribe, auth-next ADR 0018). Signing out goes through auth-context (`useSignOut`) and asks
    first while a recording or an upload would be cut short. */
 import { AccountMenu, type AccountMenuEntry } from "@achoo254/app-shell";
 import {
@@ -17,7 +18,6 @@ import {
 import { useState } from "react";
 import type { CurrentUser } from "../auth/auth-api";
 import { ChatLinkDialog } from "../components/chat-link-dialog";
-import { DeleteAccountDialog } from "../components/delete-account-dialog";
 import { ConfirmModal } from "../components/ui/confirm-modal";
 import { useToast } from "../components/ui/toast";
 import { useOpenUserKeys } from "../components/user-keys-entry";
@@ -28,7 +28,7 @@ import {
 import { useI18n } from "../i18n/i18n-context";
 import { errorMessage, isNativeShell } from "../lib/api";
 import { openExternal } from "../lib/external-link";
-import { IDP_ACCOUNT_URL } from "../lib/idp";
+import { IDP_ACCOUNT_DELETE_URL, IDP_ACCOUNT_URL } from "../lib/idp";
 import { PATHS } from "./app-paths";
 import { RouterLink, SHELL_BRAND } from "./scribe-public-page";
 import {
@@ -69,7 +69,6 @@ export function AccountControls({
 	const unlink = useUnlinkChat();
 	const [linking, setLinking] = useState(false);
 	const openKeys = useOpenUserKeys();
-	const [deleting, setDeleting] = useState(false);
 
 	function unlinkChat(): void {
 		if (unlink.isPending) return;
@@ -152,7 +151,7 @@ export function AccountControls({
 				label: t("account.menu"),
 				dataId: "account-menu-delete",
 				icon: <IconTrash {...ICON} />,
-				onClick: () => setDeleting(true),
+				onClick: () => openExternal(IDP_ACCOUNT_DELETE_URL),
 			},
 		],
 	];
@@ -170,12 +169,6 @@ export function AccountControls({
 				// hands `window.open` over); the web keeps the new-tab link.
 				onOpenExternal={isNativeShell() ? openExternal : undefined}
 				linkComponent={RouterLink}
-			/>
-			<DeleteAccountDialog
-				open={deleting}
-				onOpenChange={setDeleting}
-				email={user.email}
-				busy={isSessionBusy(activity)}
 			/>
 			{canSend ? (
 				<ChatLinkDialog open={linking} onOpenChange={setLinking} />

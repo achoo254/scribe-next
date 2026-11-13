@@ -352,14 +352,6 @@ fn recording_alive(created_ms: i64, part_modified_ms: Option<i64>, now_ms: i64) 
     now_ms - last < RECORDING_IDLE_S * 1000
 }
 
-/// User có phiên ghi (trình duyệt) đang chạy không: xoá tài khoản từ chối khi đang ghi.
-pub(crate) async fn recording_live(state: &AppState, user_id: &str) -> Result<bool, AppError> {
-    let live = count_live(&state.db, &state.config.data_dir, doc! { "userId": user_id })
-        .await
-        .map_err(|e| AppError::Internal(format!("tra phiên ghi đang chạy: {e}")))?;
-    Ok(live > 0)
-}
-
 /// Số phiên ghi khớp `filter` còn sống theo [`recording_alive`] (`.part` nằm ở `{data_dir}/{userId}/tmp/`). Phiên bỏ dở
 /// (đóng tab giữa chừng) còn doc tới khi retention dọn nhưng không được tính.
 pub(crate) async fn count_live(db: &mongodb::Database, data_dir: &str, filter: Document) -> Result<u64, mongodb::error::Error> {

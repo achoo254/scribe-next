@@ -15,10 +15,6 @@ export function serverErrorText(
 	switch (code) {
 		case "NOT_TRANSCRIBED":
 			return t("errors.server.notTranscribed");
-		case "CONFIRM_REQUIRED":
-			return t("errors.server.confirmRequired");
-		case "RECORDING_OPEN":
-			return t("account.delete.recordingOpen");
 		case "CHAT_LINK_DISABLED":
 			return t("errors.server.chatLinkDisabled");
 		case "CHAT_NOT_LINKED":

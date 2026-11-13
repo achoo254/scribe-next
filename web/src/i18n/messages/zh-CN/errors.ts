@@ -54,7 +54,6 @@ export const errors: Translation<SourceMessages["errors"]> = {
 	},
 	server: {
 		notTranscribed: "这条录音还没有任何片段完成转写。请先转写。",
-		confirmRequired: "请输入确认词以删除账号。",
 		chatLinkDisabled: "此服务器未启用 chat 关联。",
 		chatNotLinked: "尚未关联 chat.hoandat.com。",
 		chatBlocked:

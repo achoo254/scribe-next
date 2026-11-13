@@ -137,17 +137,21 @@ describe("account menu", () => {
 		expect(await screen.findByText(`trang ${path}`)).toBeInTheDocument();
 	});
 
-	it("opens 'Xoá tài khoản', which waits while a recording runs", async () => {
-		renderControls({ ...IDLE_ACTIVITY, recording: true });
-		const menu = await openMenu();
-		await userEvent.click(item(menu, "Xoá tài khoản"));
-		const dialog = await screen.findByRole("dialog", {
-			name: "Xoá tài khoản Scribe",
-		});
-		expect(dialog).toHaveTextContent("Dừng ghi và chờ tải xong");
-		expect(
-			within(dialog).getByRole("button", { name: "Xoá tài khoản" }),
-		).toBeDisabled();
+	it("has no delete dialog: 'Xoá tài khoản ở hoandat.com' opens the IdP's deletion section", async () => {
+		const open = vi.spyOn(window, "open").mockReturnValue(null);
+		try {
+			renderControls();
+			const menu = await openMenu();
+			await userEvent.click(item(menu, "Xoá tài khoản ở hoandat.com"));
+			expect(open).toHaveBeenCalledWith(
+				"https://auth.hoandat.com/account#account-delete",
+				"_blank",
+				"noopener,noreferrer",
+			);
+			expect(screen.queryByRole("dialog")).toBeNull();
+		} finally {
+			open.mockRestore();
+		}
 	});
 
 	it("opens Key riêng from the menu for every account", async () => {

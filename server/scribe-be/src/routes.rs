@@ -37,10 +37,8 @@ pub fn build_router(state: AppState) -> Router {
 
     // Route cần đăng nhập → guard verify session; rate-limit chung (ngưỡng cao, không cản recording).
     let protected = Router::new()
-        // Xoá tài khoản Scribe ngay trong app (App Store 5.1.1(v)), body `{confirm: "XOÁ"}`. App dùng POST (thân JSON của
-        // DELETE qua CapacitorHttp chưa từng được kiểm); DELETE giữ cho client khác.
-        .route("/api/me", get(auth::me).delete(account::delete_me))
-        .route("/api/me/delete", post(account::delete_me))
+        // Không có API xoá tài khoản: tài khoản chỉ xoá ở IdP, IdP báo qua `/api/idp/account-deleted` (auth-next ADR 0018).
+        .route("/api/me", get(auth::me))
         .route("/api/me/usage", get(files::usage))
         .route("/api/upload/init", post(upload::init))
         .route("/api/upload/chunk", post(upload::chunk))
@@ -91,13 +89,20 @@ pub fn build_router(state: AppState) -> Router {
     // web sống tiếp sau khi người dùng đã đăng xuất ở IdP.
     let backchannel = Router::new().route("/api/auth/backchannel-logout", post(auth::backchannel_logout));
 
+    // Thông báo xoá tài khoản của IdP (SET có chữ ký, server gọi server): như back-channel logout, không giới hạn tần
+    // suất — bị 429 thì IdP chỉ thử lại muộn hơn, dữ liệu nằm lại lâu hơn.
+    let account_deleted = Router::new()
+        .route(account::ACCOUNT_DELETED_PATH, post(account::idp_account_deleted))
+        .layer(DefaultBodyLimit::max(account::ACCOUNT_DELETED_BODY_LIMIT));
+
     // MCP cho công cụ AI: xác thực bằng access token IdP (không phiên), giới hạn tần suất theo tài khoản bên trong.
     let public = Router::new()
         .route("/api/health", get(health))
         .merge(crate::mcp::router())
         .merge(auth_routes)
         .merge(exchange_routes)
-        .merge(backchannel);
+        .merge(backchannel)
+        .merge(account_deleted);
 
     Router::new()
         .merge(public)
