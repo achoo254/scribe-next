@@ -180,7 +180,7 @@ transcribe_files(...) ──► Transcriber::transcribe() đọc settings.use_gp
 - [ ] Test toàn luồng: bật toggle (Phase 06 UI) → `ensure_cuda_runtime` → poll pct tăng → marker xuất hiện → pct 100/done
 
 ## Success Criteria
-- `cuda_supported()` trả đúng true trên máy có RTX 5070 Ti, false nếu giả lập không có `nvidia-smi`.
+- `cuda_supported()` trả đúng true trên máy có GPU NVIDIA, false nếu giả lập không có `nvidia-smi`.
 - Gọi `ensure_cuda_runtime` → nhận được event `transcribe_msg` type `cuda_download` với pct tăng dần → cuối cùng `cuda_runtime_status()` trả true.
 - `transcribe_files` với `use_gpu=true` (đã tải runtime) → sidecar log info "cuda (float16)" (verify chéo với Phase 02).
 - `use_gpu=false` (mặc định, chưa đổi setting) → hành vi CPU y hệt trước khi có phase này — regression zero.
@@ -199,4 +199,4 @@ transcribe_files(...) ──► Transcriber::transcribe() đọc settings.use_gp
 
 ## Next Steps
 - Phase 06 UI cần đúng tên 3 command: `cuda_supported`, `cuda_runtime_status`, `ensure_cuda_runtime` + field settings `use_gpu`.
-- Phase 07 verify end-to-end trên máy RTX 5070 Ti thật.
+- Phase 07 verify end-to-end trên máy có GPU thật.

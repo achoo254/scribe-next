@@ -1,9 +1,9 @@
-# Phase 07 — Test & Verify trên máy RTX 5070 Ti thật
+# Phase 07 — Test & Verify trên máy có GPU thật
 
 ## Context Links
 - Overview: [plan.md](plan.md)
 - Depends on: Phase 01-06 (toàn bộ code phải xong)
-- Research: mục 2 (Blackwell int8 bug), mục "Unresolved Questions" #3 (root cause 5070 Ti vs 4070 Ti Super chưa chốt)
+- Research: mục 2 (Blackwell int8 bug), mục "Unresolved Questions" #3 (Root cause card Blackwell vs 4070 Ti Super chưa chốt)
 
 ## Overview
 - Priority: P1 (gate cuối trước khi coi feature "done")
@@ -11,7 +11,7 @@
 - Repo KHÔNG có test framework nào (đã verify: không `vitest`/`pytest`/`cargo test` cấu hình, `package.json` chỉ có `build`/`dev`/`tauri:*` script) → test matrix của phase này = **compile check tự động** (`cargo check`, `npm run build`) + **verify tay có checklist** trên máy thật (không phải automated test suite mới — KHÔNG tự chế test framework mới cho 1 feature, vi phạm YAGNI so với convention hiện tại của repo).
 
 ## Key Insights
-- Đây là gate duy nhất xác nhận giả thuyết `compute_type="float16"` KHÔNG crash Blackwell sm_120 trên chính máy user — research report dựa trên báo cáo GitHub (SubtitleEdit #10180) của người khác, CHƯA chạy thực tế trên RTX 5070 Ti của user.
+- Đây là gate duy nhất xác nhận giả thuyết `compute_type="float16"` KHÔNG crash Blackwell sm_120 trên chính máy user — research report dựa trên báo cáo GitHub (SubtitleEdit #10180) của người khác, CHƯA chạy thực tế trên GPU thật của user.
 - Benchmark tốc độ GPU vs CPU cùng file → có số liệu thật thay số liệu tham khảo (research report ghi "~4x", "~12x realtime" là số của người khác/GPU khác).
 - Phải test cả 2 nhánh fallback: (1) chưa tải CUDA runtime + toggle GPU on → fallback CPU không crash; (2) tải xong + toggle on → chạy GPU thật.
 
@@ -64,7 +64,7 @@ Không áp dụng (phase verify, không có kiến trúc mới).
 | Risk | Likelihood × Impact | Mitigation |
 |---|---|---|
 | Thiếu `cudart64_12.dll` ngoài dự kiến (xem Phase 01) | Thấp × TB | bước 12 đã có quy trình fallback sẵn, không cần thiết kế lại |
-| Benchmark cho thấy 5070 Ti không nhanh như kỳ vọng (issue #1287 research) | TB × Thấp | không phải blocker — vẫn nhanh hơn CPU nhiều, ghi nhận số liệu thật, không rollback feature |
+| Benchmark cho thấy GPU không nhanh như kỳ vọng (issue #1287 research) | TB × Thấp | không phải blocker — vẫn nhanh hơn CPU nhiều, ghi nhận số liệu thật, không rollback feature |
 | Turbo code-switch không "tốt hơn cảm nhận" như research kỳ vọng | Thấp × Thấp | không phải tiêu chí pass/fail cứng — ghi nhận, để user tự quyết dùng PhoWhisper hay turbo tuỳ file |
 
 ## Security Considerations
@@ -75,4 +75,4 @@ Không áp dụng (phase verify, không có kiến trúc mới).
 - Đóng plan — không có phase tiếp theo.
 
 ## Unresolved Questions
-1. Root cause 5070 Ti chậm hơn 4070 Ti Super (faster-whisper #1287) — số liệu benchmark bước 8 sẽ cho biết có áp dụng cho máy này không, nhưng KHÔNG có action item để "sửa" (thuộc phía CTranslate2 upstream, ngoài tầm kiểm soát).
+1. Root cause card Blackwell chậm hơn 4070 Ti Super (faster-whisper #1287) — số liệu benchmark bước 8 sẽ cho biết có áp dụng cho máy này không, nhưng KHÔNG có action item để "sửa" (thuộc phía CTranslate2 upstream, ngoài tầm kiểm soát).

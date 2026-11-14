@@ -176,7 +176,7 @@ TranscriptView.vue
 - Không áp dụng — thuần UI, không xử lý input nhạy cảm.
 
 ## Next Steps
-- Phase 07 verify toàn luồng UI→Rust→sidecar trên máy RTX 5070 Ti thật.
+- Phase 07 verify toàn luồng UI→Rust→sidecar trên máy có GPU thật.
 
 ## Unresolved Questions
 1. Race điều kiện `deviceInfo` (xem Risk) — chấp nhận được, không chặn ship; có thể vá riêng nếu user thấy khó chịu khi dùng thật.

@@ -1,6 +1,6 @@
 ---
 title: "Bật GPU CUDA transcript + model turbo + glossary DevOps"
-description: "Bật CUDA cho faster-whisper sidecar (RTX 5070 Ti Blackwell), thêm model whisper-large-v3-turbo, xác nhận glossary DevOps mặc định"
+description: "Bật CUDA cho faster-whisper sidecar (GPU Blackwell), thêm model whisper-large-v3-turbo, xác nhận glossary DevOps mặc định"
 status: completed
 priority: P2
 effort: 10h
@@ -11,10 +11,10 @@ created: 2026-07-09
 
 # GPU CUDA Transcription Upgrade — Overview
 
-> **Đóng plan (2026-10-19):** phase 01–07 đã làm và kiểm trên RTX 5070 Ti (2026-07-09). App desktop (Tauri + sidecar) đã bỏ
+> **Đóng plan (2026-10-19):** phase 01–07 đã làm và kiểm trên GPU thật (2026-07-09). App desktop (Tauri + sidecar) đã bỏ
 > ngày 2026-10-16 và chép lời nay chạy trên server bằng ElevenLabs, nên bước QA GUI còn lại không còn áp dụng.
 
-Research: `plans/dattqh/reports/gpu-transcription-model-upgrade-260709-2124-rtx5070ti-report.md`
+Research: `plans/dattqh/reports/gpu-transcription-model-upgrade-260709-2124-report.md`
 
 **Phát hiện quan trọng lúc lập plan:** Quyết định #5 (glossary DevOps mặc định) **ĐÃ triển khai** ở commit `5e05433` (2026-07-08) — `settings.rs:34-35,58-66,68-86` đã có `default_glossary()` y hệt `EXAMPLE_PROMPT` cũ. Phase 05 chỉ còn verify + dọn code chết, không phải implement mới.
 
@@ -32,16 +32,16 @@ Repo model turbo đã chốt: `deepdml/faster-whisper-large-v3-turbo-ct2` (flat,
 | 04 | [Rust CUDA plumbing](phase-04-rust-cuda-plumbing.md) | ✅ done | 01,02,03 | 2.5h | `cuda.rs` (mới), `settings.rs`, `transcribe.rs`, `commands.rs`, `lib.rs` |
 | 05 | [Glossary DevOps — verify](phase-05-glossary-devops-verify.md) | ✅ done | — | 0.25h | `main.py` (đã dọn dead `EXAMPLE_PROMPT`) |
 | 06 | [UI toggle GPU](phase-06-ui-gpu-toggle.md) | ✅ done | 03,04 | 1.5h | `TranscriptView.vue`, `use-gpu.ts` (mới) |
-| 07 | [Test & verify trên máy thật](phase-07-test-verify.md) | ✅ done | 01-06 | 1.5h | verify GPU float16 trên RTX 5070 Ti |
+| 07 | [Test & verify trên máy thật](phase-07-test-verify.md) | ✅ done | 01-06 | 1.5h | verify GPU float16 trên GPU thật |
 
 **Đã hoàn tất (2026-07-09):** implement Phase 01-07; cargo check + vue-tsc + py_compile xanh; code-review (1 Critical + 1 High + 1 Medium + Low) đã fix.
 
-**Phase 07 verify TRÊN MÁY THẬT (RTX 5070 Ti):**
+**Phase 07 verify TRÊN MÁY THẬT (GPU thật):**
 - Downloader Phase 01 chạy thật: tải + giải nén DLL + marker, không rác `.part/.whl`.
 - **Tối ưu dung lượng (user chọn)**: đo `EnumProcessModules` → ct2 4.8 chỉ nạp cublas + cublasLt, KHÔNG dùng cuDNN. Bỏ `nvidia-cudnn-cu12` → **tải 553MB (từ 1.29GB), đĩa ~736MB (từ ~1.8GB), giảm ~57%**. Verify: dời cuDNN ra ngoài, GPU vẫn chạy 73× realtime (kể cả luồng sidecar production word_timestamps).
 - **Bug tìm ra + fix**: `os.add_dll_directory` KHÔNG đủ — CTranslate2 nạp cublas/cudnn theo TÊN qua LoadLibrary, chỉ tra PATH. Fix: `gpu_device._prepare_dll_dir` prepend `cuda_dir` vào `os.environ["PATH"]` (verified). Không có fix này → "cublas64_12.dll cannot be loaded" lúc encode.
 - **Kết quả**: PhoWhisper-large `cuda/float16` chạy KHÔNG crash CUBLAS trên Blackwell. Warm run 60s audio: **GPU 0.82s (73× realtime) vs CPU int8 11.95s (5×) → nhanh x14.5**.
-- Report: `plans/dattqh/reports/gpu-phase07-realmachine-verify-260709-2223-rtx5070ti-report.md`.
+- Report: `plans/dattqh/reports/gpu-phase07-realmachine-verify-260709-2223-report.md`.
 
 **Còn lại (QA thủ công của user):** chạy app GUI thật (npm run tauri:dev) → bật toggle GPU trong UI → tải runtime qua nút → transcribe file thật để xác nhận luồng UI→Rust→sidecar end-to-end (core đã verify qua sidecar code path).
 
@@ -84,4 +84,4 @@ Mọi phase chỉ ADD code mới hoặc thêm field `#[serde(default)]`/optional
 
 ## Unresolved Questions
 
-1. Root cause 5070 Ti chậm hơn 4070 Ti Super (issue #1287) — chưa chốt, chỉ benchmark thực tế ở Phase 07 mới có số liệu áp dụng cho máy này.
+1. Root cause card Blackwell chậm hơn 4070 Ti Super (issue #1287) — chưa chốt, chỉ benchmark thực tế ở Phase 07 mới có số liệu áp dụng cho máy này.

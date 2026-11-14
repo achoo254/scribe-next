@@ -4,7 +4,7 @@
 
 ## Môi trường
 
-- `claude` v**2.1.209** (Claude Code), PATH: `/c/Users/hoandat-pc/.local/bin/claude`.
+- `claude` v**2.1.209** (Claude Code), PATH: `/c/Users/<user>/.local/bin/claude`.
 - `ANTHROPIC_API_KEY` **UNSET** → `claude -p` chạy được ⇒ **dùng OAuth/login (gói sub), không phải API key**. ✓ (mục tiêu chính)
 
 ## Kết quả 5 câu hỏi GATE

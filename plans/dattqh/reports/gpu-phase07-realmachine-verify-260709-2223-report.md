@@ -1,6 +1,6 @@
-# Phase 07 — Verify GPU CUDA transcript trên máy thật (RTX 5070 Ti)
+# Phase 07 — Verify GPU CUDA transcript trên máy thật (GPU NVIDIA)
 
-> Thời điểm: 2026-07-09 22:23 (Asia/Saigon) · Máy: RTX 5070 Ti 16GB (Blackwell sm_120), Ryzen 9 9900X, driver 591.86
+> Thời điểm: 2026-07-09 22:23 (Asia/Saigon) · Máy: GPU NVIDIA Blackwell (sm_120)
 > Verify qua ĐÚNG code path sidecar (`gpu_device.load_whisper_model`), không reimplement.
 
 ## Executive Summary
@@ -64,4 +64,4 @@ Phase 07 tìm ra **1 bug thật** không lộ ở compile/review: `os.add_dll_di
 
 ## Unresolved Questions
 1. Luồng UI end-to-end (Tauri GUI: toggle GPU → nút tải runtime → transcribe) CHƯA chạy qua GUI thật — mới verify tầng sidecar code path. Cần user QA thủ công `npm run tauri:dev`.
-2. Root cause 5070 Ti chậm hơn 4070 Ti Super (issue #1287 từ research) — benchmark này cho thấy GPU rất nhanh (73×), không thấy vấn đề; issue đó có thể đã fix ở ct2 4.8.0 hoặc chỉ ảnh hưởng workload khác.
+2. Root cause card Blackwell chậm hơn 4070 Ti Super (issue #1287 từ research) — benchmark này cho thấy GPU rất nhanh (73×), không thấy vấn đề; issue đó có thể đã fix ở ct2 4.8.0 hoặc chỉ ảnh hưởng workload khác.

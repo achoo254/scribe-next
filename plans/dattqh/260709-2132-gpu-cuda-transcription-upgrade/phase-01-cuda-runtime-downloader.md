@@ -2,7 +2,7 @@
 
 ## Context Links
 - Overview: [plan.md](plan.md)
-- Research: `plans/dattqh/reports/gpu-transcription-model-upgrade-260709-2124-rtx5070ti-report.md` (mục 3)
+- Research: `plans/dattqh/reports/gpu-transcription-model-upgrade-260709-2124-report.md` (mục 3)
 - Verify PyPI (thực hiện lúc lập plan, KHÔNG phải research report):
   - `nvidia-cublas-cu12` 12.9.2.10, wheel `nvidia_cublas_cu12-12.9.2.10-py3-none-win_amd64.whl`, 553.2MB, sha256 `623f43027d40d44ceadf0043f002bd25cf353e8f13ce90b9a87057019f560661`
   - `nvidia-cudnn-cu12` 9.24.0.43, wheel `nvidia_cudnn_cu12-9.24.0.43-py3-none-win_amd64.whl`, 737.1MB, sha256 `cbd41a0ab084422c936dc9fb2fc89be5ea9a85bc421c6f23d0243bdfc945fbef`

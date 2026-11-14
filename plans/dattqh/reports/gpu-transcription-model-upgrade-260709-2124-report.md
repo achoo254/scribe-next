@@ -1,10 +1,10 @@
-# Research Report: Nâng cấp model transcript tận dụng GPU RTX 5070 Ti (Scribe)
+# Research Report: Nâng cấp model transcript tận dụng GPU NVIDIA (Scribe)
 
 > Thời điểm research: 2026-07-09 21:24 (Asia/Saigon) · Gemini: tắt → dùng WebSearch
 
 ## Executive Summary
 
-Máy có **RTX 5070 Ti 16GB VRAM** (Blackwell, sm_120) + Ryzen 9 9900X + 61GB RAM — thừa sức chạy model transcript lớn nhất trên GPU. **Hiện app đang bỏ không GPU hoàn toàn**: sidecar `faster-whisper` (CTranslate2) chỉ chạy **CPU int8**, PhoWhisper small/medium/large.
+Máy có **GPU NVIDIA Blackwell (sm_120) 16 GB VRAM** — thừa sức chạy model transcript lớn nhất trên GPU. **Hiện app đang bỏ không GPU hoàn toàn**: sidecar `faster-whisper` (CTranslate2) chỉ chạy **CPU int8**, PhoWhisper small/medium/large.
 
 **Kết luận thẳng:** thứ bạn thiếu KHÔNG phải "model xịn hơn" — mà là **bật GPU cho model đang có**. `PhoWhisper-large` (đã có sẵn trong app, CER tiếng Việt tốt nhất) hiện quá chậm trên CPU nên mặc định để medium. Bật CUDA → large chạy nhanh gấp ~4× CPU, thành model mặc định khả thi. Đây là "win" lớn nhất, chi phí thấp nhất.
 
@@ -18,8 +18,7 @@ Model "xịn hơn thật sự" (parakeet Vietnamese của NVIDIA) tồn tại nh
 
 | Thành phần | Giá trị | Ghi chú |
 |---|---|---|
-| GPU | RTX 5070 Ti, **16303 MiB** | Blackwell, **compute 12.0 / sm_120**, driver 591.86 |
-| CPU | Ryzen 9 9900X | 12C/24T, Zen 5 |
+| GPU | NVIDIA Blackwell, 16 GB VRAM | **compute 12.0 / sm_120** |
 | RAM | 61.6 GB | |
 | CUDA Toolkit | **chưa cài** (`nvcc` not found) | chỉ có driver — đủ để chạy, KHÔNG đủ để build CTranslate2 từ nguồn |
 
@@ -36,7 +35,7 @@ Model "xịn hơn thật sự" (parakeet Vietnamese của NVIDIA) tồn tại nh
 ## Key Findings
 
 ### 1. GPU nhanh hơn CPU rõ rệt — và model đang có chạy được ngay trên GPU
-- faster-whisper GPU nhanh **~4× CPU**; `large-v3 int8` trên RTX 4070 đạt **~12× realtime, ~2.5GB VRAM**. 5070 Ti mạnh hơn 4070.
+- faster-whisper GPU nhanh **~4× CPU**; `large-v3 int8` trên RTX 4070 đạt **~12× realtime, ~2.5GB VRAM**. GPU Blackwell của máy dev mạnh hơn 4070.
 - **Model PhoWhisper ct2 đã tải KHÔNG cần tải lại** — CTranslate2 chọn CPU/GPU lúc load (`device="cuda"`), tự upcast precision. Chỉ cần đổi device + có thư viện CUDA.
 - `large` float16 cần ~5GB VRAM → 16GB thừa sức (có thể bật cả batching).
 
@@ -44,7 +43,7 @@ Model "xịn hơn thật sự" (parakeet Vietnamese của NVIDIA) tồn tại nh
 - RTX 50-series **crash `CUBLAS_STATUS_NOT_SUPPORTED`** khi để int8 mặc định — int8 tensor core Blackwell cần padding mà CTranslate2 bản cũ chưa có.
 - **Workaround xác nhận: đặt `compute_type="float16"` → chạy bình thường.** (Tránh `int8` và `int8_float16` trên GPU này.)
 - Yêu cầu: **CTranslate2 build CUDA 12 + cuDNN 9 + cuBLAS**. Bản CTranslate2 mới chỉ hỗ trợ CUDA 12/cuDNN 9. Blackwell cần CUDA 12.8-class libs.
-- Có báo cáo 5070 Ti chậm hơn ~10% so với 4070 Ti Super trên faster-whisper (issue #1287, chưa có root cause chốt) — vẫn nhanh gấp bội CPU, chỉ là chưa khai thác hết Blackwell. Không phải blocker.
+- Có báo cáo card Blackwell chậm hơn ~10% so với 4070 Ti Super trên faster-whisper (issue #1287, chưa có root cause chốt) — vẫn nhanh gấp bội CPU, chỉ là chưa khai thác hết Blackwell. Không phải blocker.
 
 ### 3. Phân phối thư viện CUDA — TẢI ON-DEMAND, không bundle
 Sidecar hiện là PyInstaller **CPU-only**. Bật GPU cần cuBLAS + cuDNN 9. **Quan trọng: đây là thư viện, KHÔNG phải model — và tải on-demand được y như model, KHÔNG cần nhúng vào installer.**
@@ -98,7 +97,7 @@ Hướng thay thế:
 
 - [faster-whisper crashes on RTX 50-series (cuBLAS NOT_SUPPORTED) — SubtitleEdit #10180](https://github.com/SubtitleEdit/subtitleedit/issues/10180)
 - [WhisperX không chạy Blackwell sm_120 — whisperX #1211](https://github.com/m-bain/whisperX/issues/1211)
-- [faster-whisper chậm trên 5070 Ti hơn 4070 Ti Super — #1287](https://github.com/SYSTRAN/faster-whisper/issues/1287)
+- [faster-whisper chậm trên một số card Blackwell hơn 4070 Ti Super — #1287](https://github.com/SYSTRAN/faster-whisper/issues/1287)
 - [CUDA compatibility với CTranslate2 — faster-whisper #1086](https://github.com/SYSTRAN/faster-whisper/issues/1086)
 - [SYSTRAN/faster-whisper (README, yêu cầu CUDA12/cuDNN9)](https://github.com/SYSTRAN/faster-whisper)
 - [faster-whisper GPU cloud production guide 2026 — Spheron](https://www.spheron.network/blog/faster-whisper-gpu-cloud-production-deployment-guide/)
@@ -111,4 +110,4 @@ Hướng thay thế:
 
 1. ~~Bundle vs nhẹ hơn~~ → **ĐÃ CHỐT: tải on-demand ~1.3GB CUDA libs (chỉ máy NVIDIA), installer giữ gọn.** Còn lại: xác nhận nguồn tải = PyPI trực tiếp hay mirror nội bộ.
 2. Có cần code-switch Việt–Anh nhiều không? Nếu có → thêm large-v3-turbo lên ưu tiên cao hơn.
-3. Root cause 5070 Ti chậm hơn 4070 Ti Super (issue #1287) chưa chốt — cần benchmark thực tế trên máy sau khi bật GPU để xác nhận tốc độ thực.
+3. Root cause card Blackwell chậm hơn 4070 Ti Super (issue #1287) chưa chốt — cần benchmark thực tế trên máy sau khi bật GPU để xác nhận tốc độ thực.
