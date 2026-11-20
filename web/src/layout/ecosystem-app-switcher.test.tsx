@@ -38,7 +38,6 @@ describe("EcosystemAppSwitcher", () => {
 			`https://tunnel.hoandat.com/?${UTM}`,
 			`https://tuvi.hoandat.com/?${UTM}`,
 			`https://clip.hoandat.com/?${UTM}`,
-			`https://truyen.hoandat.com/?${UTM}`,
 			`https://lockin.hoandat.com/?${UTM}`,
 			`https://chuanho.hoandat.com/?${UTM}`,
 			`https://miu.hoandat.com/?${UTM}`,
