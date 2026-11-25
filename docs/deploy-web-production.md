@@ -1,6 +1,6 @@
 # Deploy Guide — Scribe Web (prod .65)
 
-Hướng dẫn build + deploy **Scribe** (web + backend dùng chung với app iPhone) (BE axum musl + FE React) lên box prod `.65`. **Deploy bình thường = gọi workflow `deploy`** (`tools/deploy-prod.sh` của workspace) khi xong việc, và mỗi tối 22:20 nó tự chạy nếu `main` đi trước lần deploy gần nhất; push chỉ chạy CI. Workflow chờ CI của commit đó xanh rồi build, đẩy và kích hoạt bản mới (§Deploy); script local `deploy/deploy.sh` chỉ dùng khi CI hỏng. Chuẩn chung của mọi repo: `docs/deploy-standard.md` ở workspace hoandat-app. Mục đích: AI Agent / dev có full context deploy mà không cần dò lại hạ tầng.
+Hướng dẫn build + deploy **Scribe** (web + backend dùng chung với app iPhone) (BE axum musl + FE React) lên box prod `.65`. **Deploy bình thường = gọi workflow `deploy`** (`tools/deploy-prod.sh` của workspace) khi xong việc, và mỗi tối 22:20 nó tự chạy nếu `main` đi trước lần deploy gần nhất; push chỉ chạy CI. Workflow không chờ CI mà build ngay, đẩy và kích hoạt bản mới (§Deploy); script local `deploy/deploy.sh` chỉ dùng khi CI hỏng. Chuẩn chung của mọi repo: `docs/deploy-standard.md` ở workspace hoandat-app. Mục đích: AI Agent / dev có full context deploy mà không cần dò lại hạ tầng.
 
 ## Tên trên prod
 
@@ -218,7 +218,7 @@ nginx -t && systemctl reload nginx
 
 ## Deploy
 
-**Deploy khi gọi (từ 25/11/2026):** push lên `main` chỉ chạy `ci`. Xong một việc thì chạy `tools/deploy-prod.sh` của workspace `hoandat-app` (hoặc `gh workflow run deploy.yml`); mỗi tối 22:20 workflow tự chạy nếu `main` đi trước lần deploy thành công gần nhất. Workflow lấy đầu `main`, chờ `ci` của commit đó xanh rồi build và kích hoạt. Không chạy script deploy từ máy khi CI còn chạy được.
+**Deploy khi gọi (từ 25/11/2026):** push lên `main` chỉ chạy `ci`. Xong một việc thì chạy `tools/deploy-prod.sh` của workspace `hoandat-app` (hoặc `gh workflow run deploy.yml`); mỗi tối 22:20 workflow tự chạy nếu `main` đi trước lần deploy thành công gần nhất. Workflow lấy đầu `main` (không chờ `ci`) rồi build và kích hoạt. Không chạy script deploy từ máy khi CI còn chạy được.
 
 `deploy.yml` có hai job:
 
