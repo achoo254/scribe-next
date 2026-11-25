@@ -1,6 +1,6 @@
 # Deploy Guide — Scribe Web (prod .65)
 
-Hướng dẫn build + deploy **Scribe** (web + backend dùng chung với app iPhone) (BE axum musl + FE React) lên box prod `.65`. **Deploy bình thường = push lên `main`**: CI xanh thì `.github/workflows/deploy.yml` build, đẩy và kích hoạt bản mới (§Deploy); script local `deploy/deploy.sh` chỉ dùng khi CI hỏng. Chuẩn chung của mọi repo: `docs/deploy-standard.md` ở workspace hoandat-app. Mục đích: AI Agent / dev có full context deploy mà không cần dò lại hạ tầng.
+Hướng dẫn build + deploy **Scribe** (web + backend dùng chung với app iPhone) (BE axum musl + FE React) lên box prod `.65`. **Deploy bình thường = gọi workflow `deploy`** (`tools/deploy-prod.sh` của workspace) khi xong việc, và mỗi tối 22:20 nó tự chạy nếu `main` đi trước lần deploy gần nhất; push chỉ chạy CI. Workflow chờ CI của commit đó xanh rồi build, đẩy và kích hoạt bản mới (§Deploy); script local `deploy/deploy.sh` chỉ dùng khi CI hỏng. Chuẩn chung của mọi repo: `docs/deploy-standard.md` ở workspace hoandat-app. Mục đích: AI Agent / dev có full context deploy mà không cần dò lại hạ tầng.
 
 ## Tên trên prod
 
@@ -169,7 +169,7 @@ Tuỳ chọn: `VITE_IDP_ORIGIN` — origin auth-next cho link "Tài khoản hoan
 
 - **Repo duy nhất là GitHub** (`origin` = `achoo254/scribe-next`, **public**: không ghi IP, cổng SSH hay user máy chủ vào repo). GitLab đã bỏ hoàn toàn ngày 2026-10-16.
 - **CI** `.github/workflows/ci.yml` (tên workflow `CI`) chạy mỗi lần push `main` và mỗi pull request: job `web` (`pnpm install --frozen-lockfile`, `lint` gồm `check:brand` và `check:tokens`, `typecheck`, `test`, `vite build`), job `rust` (`cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`, có ffmpeg cho test cắt file thật). CI build với `VITE_NATIVE_API_ORIGIN=https://scribe.hoandat.com` khai trong workflow.
-- **Deploy** `.github/workflows/deploy.yml` chạy khi `CI` xanh trên push vào `main` (§Deploy). Secret GitHub: `SCRIBE_BUILD_ENV` (cấp repo; nội dung dotenv gồm biến build của BE như `.env.production` bỏ `MONGO_URI` và `DEPLOY_*`, thêm `MONGO_URI_PATH`, cộng các biến `VITE_*` của `web/.env`; không có giá trị bí mật nào, đổi biến build thì cập nhật cả secret này: `gh secret set SCRIBE_BUILD_ENV < <tệp>`), `DEPLOY_HOST`, `DEPLOY_PORT`, `DEPLOY_SSH_KEY` (khoá ed25519 riêng của `scribe-deploy`), `DEPLOY_KNOWN_HOSTS`; environment `production`.
+- **Deploy** `.github/workflows/deploy.yml` chạy khi được gọi và mỗi tối 22:20, chỉ cho commit có `CI` xanh (§Deploy). Secret GitHub: `SCRIBE_BUILD_ENV` (cấp repo; nội dung dotenv gồm biến build của BE như `.env.production` bỏ `MONGO_URI` và `DEPLOY_*`, thêm `MONGO_URI_PATH`, cộng các biến `VITE_*` của `web/.env`; không có giá trị bí mật nào, đổi biến build thì cập nhật cả secret này: `gh secret set SCRIBE_BUILD_ENV < <tệp>`), `DEPLOY_HOST`, `DEPLOY_PORT`, `DEPLOY_SSH_KEY` (khoá ed25519 riêng của `scribe-deploy`), `DEPLOY_KNOWN_HOSTS`; environment `production`.
 
 ### SSH source-IP allowlist
 
@@ -218,7 +218,7 @@ nginx -t && systemctl reload nginx
 
 ## Deploy
 
-**Bình thường: push lên `main`, rồi theo dõi** `gh run watch` (CI rồi tới workflow `deploy`). Không chạy script deploy từ máy khi CI còn chạy được.
+**Deploy khi gọi (từ 25/11/2026):** push lên `main` chỉ chạy `ci`. Xong một việc thì chạy `tools/deploy-prod.sh` của workspace `hoandat-app` (hoặc `gh workflow run deploy.yml`); mỗi tối 22:20 workflow tự chạy nếu `main` đi trước lần deploy thành công gần nhất. Workflow lấy đầu `main`, chờ `ci` của commit đó xanh rồi build và kích hoạt. Không chạy script deploy từ máy khi CI còn chạy được.
 
 `deploy.yml` có hai job:
 

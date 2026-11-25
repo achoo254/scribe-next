@@ -1,4 +1,4 @@
-# Continuous deploy of scribe.hoandat.com: after `CI` passes on a push to main, build the musl backend and the web,
+# Deploy of scribe.hoandat.com: after `CI` passes on a push to main, build the musl backend and the web,
 # pack the release (deploy/pack-release.sh), upload it as the restricted `scribe-deploy` user to
 # /opt/scribe-be/ci-incoming/<id> and switch through the one sudo command that user has
 # (deploy/activate-incoming.sh: waits until no recording, upload or transcription is open, binary swap with
@@ -6,13 +6,22 @@
 # Building (which runs dependency code) happens in a job without the deploy key; the deploy job only downloads the
 # artifact, uploads and activates it. The rule for every repo: docs/deploy-standard.md in the hoandat-app workspace;
 # Scribe specifics: docs/deploy-web-production.md.
+# When it runs: by hand or script (`gh workflow run deploy.yml`, or tools/deploy-prod.sh in the hoandat-app
+# workspace), and every evening at 22:20 Asia/Saigon when main is ahead of the last successful deploy; never on
+# a push, because AI sessions push to main many times a day. A run deploys the tip of main once `ci` of that commit
+# has passed (it waits for a `ci` still running and stops on a failed one).
 name: deploy
 
 on:
-  workflow_run:
-    workflows: [CI]
-    types: [completed]
-    branches: [main]
+  workflow_dispatch:
+    inputs:
+      if_ahead:
+        description: Deploy only when main is ahead of the last successful deploy (what the evening run does)
+        type: boolean
+        default: false
+  # 22:20 Asia/Saigon; GitHub may start it some minutes late. Repos on the shared server are 5 minutes apart.
+  schedule:
+    - cron: "20 15 * * *"
 
 permissions:
   contents: read
@@ -23,19 +32,75 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build:
-    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
+  # The evening run, and a run started by hand with if_ahead, deploys only
+  # when main moved since the last successful deploy; any other run started by
+  # hand always deploys (for example to redeploy).
+  check:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 5
+    permissions:
+      actions: read
+    outputs:
+      needed: ${{ steps.compare.outputs.needed }}
+    steps:
+      - id: compare
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.sha }}
+          EVENT: ${{ github.event_name }}
+          IF_AHEAD: ${{ inputs.if_ahead }}
+        run: |
+          if [ "$EVENT" != schedule ] && [ "$IF_AHEAD" != true ]; then
+            echo "needed=true" >>"$GITHUB_OUTPUT"
+            exit 0
+          fi
+          last="$(gh run list -R "$GITHUB_REPOSITORY" --workflow deploy.yml --status success --limit 1 \
+            --json headSha --jq '.[].headSha')"
+          if [ "$last" = "$SHA" ]; then
+            echo "production already runs $SHA; nothing to deploy"
+            echo "needed=false" >>"$GITHUB_OUTPUT"
+          else
+            echo "main is at $SHA, last deploy was ${last:-none}"
+            echo "needed=true" >>"$GITHUB_OUTPUT"
+          fi
+
+  build:
+    needs: check
+    if: needs.check.outputs.needed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      actions: read
     outputs:
       release_id: ${{ steps.release.outputs.id }}
     env:
       # Same public value as ci.yml; SCRIBE_BUILD_ENV may override it.
       VITE_NATIVE_API_ORIGIN: https://scribe.hoandat.com
     steps:
+      # Only a commit whose push to main passed `ci` goes to production. A run
+      # started right after a push waits for that commit's `ci` (up to 30 min).
+      - name: ci passed for this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.sha }}
+        run: |
+          for _ in $(seq 90); do
+            state="$(gh run list -R "$GITHUB_REPOSITORY" --workflow ci.yml --event push --branch main \
+              --commit "$SHA" --limit 1 --json status,conclusion --jq '.[] | "\(.status) \(.conclusion)"')"
+            case "$state" in
+              "completed success") echo "ci passed for $SHA"; exit 0 ;;
+              completed*) echo "::error::ci of $SHA ended: $state"; exit 1 ;;
+            esac
+            echo "waiting for ci of $SHA (${state:-not started})"
+            sleep 20
+          done
+          echo "::error::ci of $SHA did not finish within 30 minutes"
+          exit 1
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: ${{ github.sha }}
       - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
         with:
           package_json_file: web/package.json
@@ -67,7 +132,7 @@ jobs:
       - id: release
         name: build release
         env:
-          SHA: ${{ github.event.workflow_run.head_sha }}
+          SHA: ${{ github.sha }}
         run: |
           echo "id=$(date -u +%Y%m%d-%H%M%S)-${SHA:0:12}" >>"$GITHUB_OUTPUT"
           set -a; . "$RUNNER_TEMP/build.env"; set +a
